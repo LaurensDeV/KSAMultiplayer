@@ -99,8 +99,9 @@ try
     if (Opt("world") is { } worldPath)
     {
         byte[] zip = WorldStore.Import(worldPath);
-        store.Save(new Blob(BlobKind.World, "", 0, 0.0, zip), options.KsaBuild, [], timeKnown: false);
-        Say($"world imported from {worldPath}: {zip.Length / 1024} KB");
+        string system = WorldStore.SystemOf(zip);
+        store.Save(new Blob(BlobKind.World, "", 0, 0.0, zip), options.KsaBuild, [], system, timeKnown: false);
+        Say($"world imported from {worldPath}: {zip.Length / 1024} KB{(system.Length > 0 ? $", in {system}" : "")}");
     }
     server = new GameServer(options, Now, store, bind);
 }

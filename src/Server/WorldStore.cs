@@ -1,4 +1,6 @@
+using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace KSAMultiplayer.Server;
 
@@ -8,30 +10,30 @@ namespace KSAMultiplayer.Server;
 /// </summary>
 public sealed class WorldStore(string folder)
 {
-    private sealed record Meta(double Universe, bool TimeKnown, string KsaBuild, string[] Mods, DateTime SavedUtc);
+    private sealed record Meta(double Universe, bool TimeKnown, string KsaBuild, string[] Mods, DateTime SavedUtc, string System = "");
 
     public string Folder { get; } = folder;
 
     private string ZipPath => Path.Combine(Folder, "world.zip");
     private string MetaPath => Path.Combine(Folder, "world.json");
 
-    public (Blob World, bool TimeKnown, string KsaBuild, string[] Mods)? Load()
+    public (Blob World, bool TimeKnown, string KsaBuild, string[] Mods, string System)? Load()
     {
         if (!File.Exists(ZipPath)) return null;
         byte[] zip = File.ReadAllBytes(ZipPath);
         Meta meta = File.Exists(MetaPath) ? JsonSerializer.Deserialize<Meta>(File.ReadAllText(MetaPath)) ?? Unknown : Unknown;
-        return (new Blob(BlobKind.World, "", 0, meta.Universe, zip), meta.TimeKnown, meta.KsaBuild, meta.Mods);
+        return (new Blob(BlobKind.World, "", 0, meta.Universe, zip), meta.TimeKnown, meta.KsaBuild, meta.Mods, meta.System ?? "");
     }
 
-    private static readonly Meta Unknown = new(0.0, false, "", [], DateTime.MinValue);
+    private static readonly Meta Unknown = new(0.0, false, "", [], DateTime.MinValue, "");
 
     /// <summary>Written beside and moved over, so a server killed mid-write keeps the save before.</summary>
-    public void Save(Blob world, string ksaBuild, string[] mods, bool timeKnown)
+    public void Save(Blob world, string ksaBuild, string[] mods, string system, bool timeKnown)
     {
         Directory.CreateDirectory(Folder);
         File.WriteAllBytes(ZipPath + ".new", world.Data);
         File.Move(ZipPath + ".new", ZipPath, overwrite: true);
-        File.WriteAllText(MetaPath, JsonSerializer.Serialize(new Meta(world.Universe, timeKnown, ksaBuild, mods, DateTime.UtcNow), Indented));
+        File.WriteAllText(MetaPath, JsonSerializer.Serialize(new Meta(world.Universe, timeKnown, ksaBuild, mods, DateTime.UtcNow, system), Indented));
     }
 
     private static readonly JsonSerializerOptions Indented = new() { WriteIndented = true };
@@ -51,6 +53,28 @@ public sealed class WorldStore(string folder)
         string prefix = SaveRoot(files.Select(f => f.Name));
         if (prefix.Length == 0) return Blob.Zip(files);
         return Blob.Zip(files.Where(f => f.Name.StartsWith(prefix + "/", StringComparison.Ordinal)).Select(f => (f.Name[(prefix.Length + 1)..], f.Data)));
+    }
+
+    /// <summary>
+    /// The celestial system a save was made in, off its own <c>meta.toml</c>, or empty when it does not
+    /// say: an operator's world then asks no system of a player, and the first to join settles it.
+    /// </summary>
+    public static string SystemOf(byte[] zip)
+    {
+        try
+        {
+            foreach ((string name, byte[] data) in Blob.Unzip(zip))
+            {
+                if (!name.EndsWith("meta.toml", StringComparison.OrdinalIgnoreCase)) continue;
+                Match found = Regex.Match(Encoding.UTF8.GetString(data), "systems\\s*=\\s*\\[\\s*\"([^\"]+)\"");
+                if (found.Success) return found.Groups[1].Value;
+            }
+        }
+        catch (Exception e) when (e is InvalidDataException or IOException or ArgumentException)
+        {
+            // A save that cannot be read here is reported when it is handed out, not now.
+        }
+        return "";
     }
 
     // The folder universe.xml is in, which is the top of a KSA save; nothing if it is at the top already.

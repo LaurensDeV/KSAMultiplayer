@@ -51,6 +51,9 @@ internal static class World
 
     public static string KsaBuild => typeof(Vehicle).Assembly.GetName().Version?.ToString() ?? "";
 
+    /// <summary>The celestial system being played, such as Sol entire or Earth and its Moon alone.</summary>
+    public static string System => KSA.Universe.CurrentSystem?.Id ?? "";
+
     public static string Mods =>
         ModLibrary.Manifest is { } manifest ? string.Join(',', manifest.Mods.Where(m => m.Enabled).Select(m => m.Id)) : "";
 

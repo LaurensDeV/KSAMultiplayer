@@ -41,6 +41,7 @@ public sealed class GameServer : IDisposable
         public double JoinedAt { get; } = now;
         public string KsaBuild { get; init; } = "";
         public string[] Mods { get; init; } = [];
+        public string System { get; init; } = "";
         public Link Link { get; } = new();
 
         /// <summary>Whether it has loaded the world and is playing in it, and since when on the server's clock.</summary>
@@ -87,7 +88,7 @@ public sealed class GameServer : IDisposable
     private readonly Dictionary<string, Craft> _crafts = [];
     private readonly Dictionary<string, double> _gone = [];
     private Blob? _world;
-    private string _worldBuild = "";
+    private string _worldBuild = "", _worldSystem = "";
     private string[] _worldMods = [];
     private double _rosterNext, _ownersNext, _clockNext, _snapshotNext, _snapshotAskedAt = double.NegativeInfinity;
 
@@ -99,7 +100,7 @@ public sealed class GameServer : IDisposable
         if (store?.Load() is { } saved)
         {
             _world = saved.World;
-            (_worldBuild, _worldMods) = (saved.KsaBuild, saved.Mods);
+            (_worldBuild, _worldMods, _worldSystem) = (saved.KsaBuild, saved.Mods, saved.System);
             if (saved.TimeKnown) UniverseClock.Set(saved.World.Universe, clock());
             Log($"world loaded from {store.Folder}: {saved.World.Data.Length / 1024} KB"
                 + (saved.TimeKnown ? $" at universe time {saved.World.Universe:F0} s" : ", its universe time to come from the first player to load it"));
@@ -123,13 +124,13 @@ public sealed class GameServer : IDisposable
 
     /// <summary>Puts a world in place of the one there is, as an operator would from the console.</summary>
     /// <param name="timeKnown">False for a save copied in by hand, whose universe time the server cannot read: the first player to load it says it.</param>
-    public void SetWorld(Blob world, string ksaBuild, string[] mods, bool timeKnown = true)
+    public void SetWorld(Blob world, string ksaBuild, string[] mods, string system, bool timeKnown = true)
     {
         _world = world;
-        (_worldBuild, _worldMods) = (ksaBuild, mods);
+        (_worldBuild, _worldMods, _worldSystem) = (ksaBuild, mods, system);
         if (timeKnown && !UniverseClock.Known) UniverseClock.Set(world.Universe, _clock());
         if (timeKnown) Prune(world.Universe);
-        _store?.Save(world, ksaBuild, mods, timeKnown);
+        _store?.Save(world, ksaBuild, mods, system, timeKnown);
     }
 
     /// <summary>Handles what has arrived and sends what is due. From the server's one thread, a few dozen times a second.</summary>
@@ -259,6 +260,7 @@ public sealed class GameServer : IDisposable
         {
             KsaBuild = hello.KsaBuild,
             Mods = hello.Mods.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            System = hello.System,
         };
         _players[id] = p;
 
@@ -287,6 +289,12 @@ public sealed class GameServer : IDisposable
         if (build.Length > 0 && hello.KsaBuild.Length > 0 && hello.KsaBuild != build)
         {
             return $"the server's world is KSA {build} and you run {hello.KsaBuild}: you need the same build";
+        }
+        // A world of Sol entire is not a world of Earth and its Moon: the save would load into a game
+        // that has no such bodies, or put every craft of the others nowhere.
+        if (_worldSystem.Length > 0 && hello.System.Length > 0 && hello.System != _worldSystem)
+        {
+            return $"this world is {_worldSystem} and you are playing {hello.System}: start a game in {_worldSystem} to join";
         }
         HashSet<string> theirs = [.. hello.Mods.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
         string[] missing = [.. _worldMods.Where(m => !theirs.Contains(m)).Order()];
@@ -331,7 +339,7 @@ public sealed class GameServer : IDisposable
             case BlobKind.World:
                 // Only a world asked for: anyone else's is theirs.
                 if (!p.Seeding && !p.Loaded) return;
-                SetWorld(blob, p.KsaBuild, p.Mods);
+                SetWorld(blob, p.KsaBuild, p.Mods, p.System);
                 Log($"{p.Name} saved the world: {blob.Data.Length / 1024} KB at universe time {blob.Universe:F0} s");
                 if (p.Seeding) OnLoaded(p, blob.Universe);
                 return;

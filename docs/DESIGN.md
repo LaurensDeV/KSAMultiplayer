@@ -50,8 +50,10 @@ another version is refused by name rather than misread.
   A new save drops what it already holds.
 
 It passes every state on to every other game in the world, checks a state comes from the craft's
-owner, and passes chat on. It refuses a player with another KSA build or without a mod the world's
-giver had enabled, since a save holding a part of a missing mod does not load.
+owner, and passes chat on. It refuses a player with another KSA build, one playing a different celestial system (a world of Sol
+entire is not a world of Earth and its Moon alone), or one without a mod the world's giver had
+enabled, since a save holding a part of a missing mod does not load. A world given by a player
+carries that player's system; one an operator imports carries whatever its own `meta.toml` says.
 
 ## What a game does
 

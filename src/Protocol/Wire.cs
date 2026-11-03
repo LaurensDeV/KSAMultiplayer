@@ -57,7 +57,7 @@ public readonly record struct Quat(double X, double Y, double Z, double W)
 public static class Wire
 {
     /// <summary>Changed whenever what a datagram means changes: a game speaking another version is refused by name.</summary>
-    public const ushort Version = 3;
+    public const ushort Version = 4;
 
     public const int BufferBytes = 8192;
     public const int NameChars = 24;
@@ -97,7 +97,8 @@ public static class Wire
     public abstract record Message(Kind Kind);
 
     /// <param name="Mods">Every mod the game has enabled, comma separated: a world holding a part of one it lacks does not load.</param>
-    public sealed record Hello(string Name, string KsaBuild, string Mods, string Password) : Message(Kind.Hello);
+    /// <param name="System">The celestial system being played, such as the whole of Sol or Earth and its Moon alone: a world of one is not a world of the other.</param>
+    public sealed record Hello(string Name, string KsaBuild, string Mods, string System, string Password) : Message(Kind.Hello);
 
     /// <param name="Id">The number the player is known by from now, or zero with <paramref name="Refused"/> saying why.</param>
     /// <param name="HasWorld">Whether the server has a world to send; without one this player's open world becomes it.</param>
@@ -197,6 +198,7 @@ public static class Wire
                 w.Text(h.Name, NameChars);
                 w.Text(h.KsaBuild, 64);
                 w.LongText(h.Mods, 4000);
+                w.Text(h.System, NameChars);
                 w.Text(h.Password, 64);
                 break;
             case Welcome m:
@@ -316,7 +318,7 @@ public static class Wire
         {
             Message m = (Kind)data[6] switch
             {
-                Kind.Hello => new Hello(r.Text(NameChars), r.Text(64), r.LongText(4000), r.Text(64)),
+                Kind.Hello => new Hello(r.Text(NameChars), r.Text(64), r.LongText(4000), r.Text(NameChars), r.Text(64)),
                 Kind.Welcome => new Welcome(r.U8(), r.Text(200), r.Text(64), r.U8() != 0),
                 Kind.Roster => ReadRoster(ref r),
                 Kind.Bye => new Bye(r.Text(200)),

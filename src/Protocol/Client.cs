@@ -106,10 +106,10 @@ public sealed class Client : IDisposable
 
     public IEnumerable<string> Tracked => _tracks.Keys;
 
-    public void Connect(IPEndPoint server, string name, string ksaBuild, string mods, string password)
+    public void Connect(IPEndPoint server, string name, string ksaBuild, string mods, string system, string password)
     {
         (_server, Id, Out, ServerName, ServerHasWorld) = (server, 0, "", "", false);
-        _hello = new Wire.Hello(Wire.Clip(name, Wire.NameChars), ksaBuild, mods, password);
+        _hello = new Wire.Hello(Wire.Clip(name, Wire.NameChars), ksaBuild, mods, system, password);
         (_helloNext, _joinUntil, _heardAt) = (0.0, _clock() + JoinWithinSeconds, _clock());
         (_bestRtt, _lastRtt, ServerOffset, _serverClock, _serverRate) = (double.PositiveInfinity, double.NaN, 0.0, null, 0.0);
         _owners.Clear();

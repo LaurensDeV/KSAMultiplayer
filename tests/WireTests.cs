@@ -16,7 +16,7 @@ public class WireTests
     [Fact]
     public void EveryMessageComesBackAsItWent()
     {
-        Assert.Equal(new Wire.Hello("Jeb", "2026.10.25.5707", "Core,KSAMultiplayer", "pw"), RoundTrip(new Wire.Hello("Jeb", "2026.10.25.5707", "Core,KSAMultiplayer", "pw")));
+        Assert.Equal(new Wire.Hello("Jeb", "2026.10.25.5707", "Core,KSAMultiplayer", "SolLite", "pw"), RoundTrip(new Wire.Hello("Jeb", "2026.10.25.5707", "Core,KSAMultiplayer", "SolLite", "pw")));
         Assert.Equal(new Wire.Welcome(3, "", "Moon base", true), RoundTrip(new Wire.Welcome(3, "", "Moon base", true)));
         Assert.Equal(new Wire.Bye("kicked"), RoundTrip(new Wire.Bye("kicked")));
         Assert.Equal(new Wire.Ping(12.5, 0.035f), RoundTrip(new Wire.Ping(12.5, 0.035f)));
@@ -77,7 +77,7 @@ public class WireTests
         Assert.Equal(99, version);
 
         // Cut short anywhere, a datagram is dropped rather than read wrong.
-        n = Wire.Write(new Wire.Hello("Jeb", "b", "m", "p"), buffer);
+        n = Wire.Write(new Wire.Hello("Jeb", "b", "m", "s", "p"), buffer);
         for (int k = 7; k < n; k++) Assert.Null(Wire.Read(buffer.AsSpan(0, k), out _));
     }
 

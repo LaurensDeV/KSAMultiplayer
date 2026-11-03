@@ -19,10 +19,10 @@ public sealed class Rig : IDisposable
 
     public double Now() => _watch.Elapsed.TotalSeconds;
 
-    public Client Join(string name, string build = "B1", string mods = "Core", string password = "")
+    public Client Join(string name, string build = "B1", string mods = "Core", string password = "", string system = "SolLite")
     {
         Client c = new(Now);
-        c.Connect(new IPEndPoint(IPAddress.Loopback, Server.Port), name, build, mods, password);
+        c.Connect(new IPEndPoint(IPAddress.Loopback, Server.Port), name, build, mods, system, password);
         Clients.Add(c);
         return c;
     }
@@ -393,6 +393,23 @@ public class ServerTests
         rig.For(0.5);
         Assert.Empty(b.Renamed);
         Assert.Equal(a.Id, rig.Server.OwnerOf("Rocket"));
+    }
+
+    [Fact]
+    public void APlayerInAnotherCelestialSystemIsTurnedAway()
+    {
+        using Rig rig = new();
+        Seed(rig);
+
+        // The world is Earth and its Moon; this player is playing the whole of Sol.
+        Client other = rig.Join("Bob", system: "Sol");
+        rig.Until(() => other.Out.Length > 0, what: "Bob to be turned away");
+        Assert.Contains("SolLite", other.Out);
+        Assert.Contains("Sol", other.Out);
+
+        // One in the same system is let in.
+        Client same = rig.Join("Carol");
+        rig.Until(() => same.Joined, what: "Carol to be let in");
     }
 
     [Fact]

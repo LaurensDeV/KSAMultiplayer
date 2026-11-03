@@ -189,7 +189,7 @@ internal static class Sync
                 _finding = null;
                 if (finding.IsCompletedSuccessfully && finding.Result is { } at && _asking is { } ask)
                 {
-                    c.Connect(at, ask.Name, World.KsaBuild, World.Mods, ask.Password);
+                    c.Connect(at, ask.Name, World.KsaBuild, World.Mods, World.System, ask.Password);
                     Log.Info($"connecting to {at}");
                 }
                 else
