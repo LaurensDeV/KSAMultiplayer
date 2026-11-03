@@ -11,8 +11,18 @@ namespace KSAMultiplayer;
 /// </summary>
 internal static class Panel
 {
-    private const ImGuiWindowFlags Flags = ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoCollapse
+    // Not AlwaysAutoResize: a window sized to its content is as wide as the longest line the server
+    // ever sends, which is most of the screen. It is given a size instead, and the text is wrapped to it.
+    private const ImGuiWindowFlags Flags = ImGuiWindowFlags.NoCollapse
                                            | ImGuiWindowFlags.NoFocusOnAppearing | ImGuiWindowFlags.NoNav;
+
+    private static readonly float2 FirstSize = new(320f, 250f);
+    private static readonly float2 SmallestSize = new(240f, 120f);
+    private static readonly float2 LargestSize = new(560f, 720f);
+
+    // What the widest label beside a field ("Your name") needs, so a field takes the rest of the
+    // window however it is resized and no label is cut off at the edge.
+    private const float LabelRoom = -112f;
 
     private sealed record Settings(string Name, string Address, string Password, bool Visible);
 
@@ -31,12 +41,13 @@ internal static class Panel
         if (!_loaded) Load();
 
         ImGuiViewportPtr screen = ImGui.GetMainViewport();
-        float2 at = new(screen.WorkPos.X + screen.WorkSize.X - 360f, screen.WorkPos.Y + 80f);
+        // Clear of KSA's own instruments down the right edge, which are drawn over this window.
+        float2 at = new(screen.WorkPos.X + screen.WorkSize.X - (FirstSize.X + 140f), screen.WorkPos.Y + 80f);
         ImGui.SetNextWindowPos(in at, ImGuiCond.FirstUseEver, null);
 
         if (!Visible)
         {
-            if (ImGui.Begin("Multiplayer##reopen", Flags | ImGuiWindowFlags.NoTitleBar))
+            if (ImGui.Begin("Multiplayer##reopen", Flags | ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoTitleBar))
             {
                 string label = Sync.Now == Sync.Stage.Off ? "MP" : $"MP: {Sync.Client?.Players.Length ?? 0}";
                 if (ImGui.SmallButton(label)) Visible = true;
@@ -45,12 +56,18 @@ internal static class Panel
             return;
         }
 
+        ImGui.SetNextWindowSize(in FirstSize, ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowSizeConstraints(in SmallestSize, in LargestSize);
+
         bool open = true;
         if (ImGui.Begin("Multiplayer###KSAMultiplayer", ref open, Flags))
         {
+            // 0: wrap at the edge of the window, so nothing a server says runs off the side.
+            ImGui.PushTextWrapPos(0f);
             if (Sync.Now == Sync.Stage.Off) Join();
             else Joined();
             foreach (string said in Sync.Said.TakeLast(3)) ImGui.TextDisabled(said);
+            ImGui.PopTextWrapPos();
         }
         ImGui.End();
         if (!open)
@@ -62,12 +79,19 @@ internal static class Panel
 
     private static void Join()
     {
-        ImGui.SetNextItemWidth(220f);
+        bool edited = false;
+        ImGui.SetNextItemWidth(LabelRoom);
         ImGui.InputText("Server", AddressText);
-        ImGui.SetNextItemWidth(220f);
+        edited |= ImGui.IsItemDeactivatedAfterEdit();
+        ImGui.SetNextItemWidth(LabelRoom);
         ImGui.InputText("Your name", NameText);
-        ImGui.SetNextItemWidth(220f);
+        edited |= ImGui.IsItemDeactivatedAfterEdit();
+        ImGui.SetNextItemWidth(LabelRoom);
         ImGui.InputText("Password", PasswordText, ImGuiInputTextFlags.Password);
+        edited |= ImGui.IsItemDeactivatedAfterEdit();
+        // Kept as soon as a field is done with, not only on connecting: a name typed before a server
+        // refuses, or before the player thinks better of it, is still the name they want next time.
+        if (edited) Save();
         bool ready = AddressText.ToString().Trim().Length > 0 && NameText.ToString().Trim().Length > 0;
         ImGui.BeginDisabled(!ready);
         if (ImGui.Button("Connect", null))
@@ -104,7 +128,7 @@ internal static class Panel
             }
             ImGui.Separator();
             foreach (string line in Sync.Chat.TakeLast(8)) ImGui.TextWrapped(line);
-            ImGui.SetNextItemWidth(260f);
+            ImGui.SetNextItemWidth(-46f);
             if (ImGui.InputText("##chat", ChatText, ImGuiInputTextFlags.EnterReturnsTrue))
             {
                 Sync.SayChat(ChatText.ToString());
@@ -138,8 +162,10 @@ internal static class Panel
         Visible = s.Visible;
     }
 
-    private static void Save()
+    /// <summary>Keeps what was typed, for the next session. Nothing to keep until the panel has read what there is.</summary>
+    public static void Save()
     {
+        if (!_loaded) return;
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
