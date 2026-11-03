@@ -286,6 +286,34 @@ internal static class World
         if (v.LightsOn != on) v.LightsOn = on;
     }
 
+    /// <summary>Where a craft is on the screen, or null when it is behind the camera or off to the side.</summary>
+    public static float2? ScreenOf(Vehicle v)
+    {
+        try
+        {
+            if (Program.GetMainCamera() is not { } camera) return null;
+            float2 at = camera.EclToScreen(v.GetPositionEcl());
+            return float.IsFinite(at.X) && float.IsFinite(at.Y) ? at : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>How far a craft is from the camera, m, or infinity when there is no camera.</summary>
+    public static double RangeFromCamera(Vehicle v)
+    {
+        try
+        {
+            return Program.GetMainCamera() is { } camera ? Vec(v.GetPositionEcl() - camera.PositionEcl) : double.PositiveInfinity;
+        }
+        catch (Exception)
+        {
+            return double.PositiveInfinity;
+        }
+    }
+
     /// <summary>The distance between two craft, m, or infinity if they are not near the same body.</summary>
     public static double Between(Vehicle a, Vehicle b)
     {

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Brutal.Numerics;
 using System.Net;
 using System.Net.Sockets;
 using KSA;
@@ -533,6 +534,28 @@ internal static class Sync
         foreach (Vehicle v in Renamed.Keys.Where(x => !World.IsAlive(x)).ToArray()) Renamed.Remove(v);
         foreach (Vehicle v in Seen.Where(x => !World.IsAlive(x)).ToArray()) Seen.Remove(v);
         foreach (Vehicle v in MadeHere.Where(x => !World.IsAlive(x)).ToArray()) MadeHere.Remove(v);
+    }
+
+    // Nothing further off than this is labelled: a tag on a craft half a world away is noise.
+    private const double NametagWithinM = 2_000_000.0;
+
+    /// <summary>
+    /// Where each other player's craft is on the screen and whose it is, for the panel to draw over
+    /// the world. Only craft another player owns: this player knows which one is theirs.
+    /// </summary>
+    public static List<(float2 At, string Who, string Craft, double Range)> Nametags()
+    {
+        List<(float2, string, string, double)> tags = [];
+        if (_client is not { Joined: true } c) return tags;
+        foreach ((Vehicle v, string key) in Puppets)
+        {
+            if (!World.IsAlive(v)) continue;
+            double range = World.RangeFromCamera(v);
+            if (!(range < NametagWithinM)) continue;
+            if (World.ScreenOf(v) is not { } at) continue;
+            tags.Add((at, c.NameOf(c.OwnerOf(key)), key, range));
+        }
+        return tags;
     }
 
     /// <summary>A puppet pulled to its owner's state, from the physics window.</summary>

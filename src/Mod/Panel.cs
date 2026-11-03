@@ -61,6 +61,7 @@ internal static class Panel
     public static void Draw()
     {
         if (!_loaded) Load();
+        Nametags();
         Scoreboard();
         ChatWindow();
 
@@ -100,6 +101,58 @@ internal static class Panel
             Save();
         }
     }
+
+    /// <summary>
+    /// Whose craft is whose, written over the world: every other player's craft in sight carries its
+    /// owner's name. Drawn into a window the size of the screen that takes no input and has no
+    /// background of its own, so it is only the text.
+    /// </summary>
+    private static void Nametags()
+    {
+        if (World.InMapView) return;
+        List<(float2 At, string Who, string Craft, double Range)> tags = Sync.Nametags();
+        if (tags.Count == 0) return;
+
+        ImGuiViewportPtr screen = ImGui.GetMainViewport();
+        ImGui.SetNextWindowPos(screen.WorkPos, ImGuiCond.Always, null);
+        ImGui.SetNextWindowSize(screen.WorkSize, ImGuiCond.Always);
+
+        const ImGuiWindowFlags over = ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize
+                                      | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoScrollbar
+                                      | ImGuiWindowFlags.NoBackground | ImGuiWindowFlags.NoInputs
+                                      | ImGuiWindowFlags.NoNav | ImGuiWindowFlags.NoFocusOnAppearing
+                                      | ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.NoBringToFrontOnFocus;
+        if (ImGui.Begin("###KSAMultiplayerTags", over))
+        {
+            ImDrawListPtr draw = ImGui.GetWindowDrawList();
+            float line = ImGui.GetFontSize();
+            foreach ((float2 at, string who, string craft, double range) in tags)
+            {
+                string name = who;
+                string under = $"{craft} · {Far(range)}";
+                // KSA's font is of one width, so the middle of a line is half its characters along.
+                Write(draw, at, -line, name, Tag, line);
+                Write(draw, at, 0f, under, TagFaint, line);
+            }
+        }
+        ImGui.End();
+    }
+
+    private static readonly ImColor8 Tag = new(255, 255, 255, 235);
+    private static readonly ImColor8 TagFaint = new(190, 205, 225, 200);
+    private static readonly ImColor8 TagShadow = new(0, 0, 0, 190);
+
+    // Centred on the craft and written over its own shadow, so it can be read against the sky as well
+    // as against the ground.
+    private static void Write(ImDrawListPtr draw, float2 at, float dy, string text, ImColor8 colour, float line)
+    {
+        float2 where = new(at.X - (text.Length * line * 0.25f), at.Y + dy - (line * 1.6f));
+        draw.AddText(new float2(where.X + 1f, where.Y + 1f), TagShadow, text);
+        draw.AddText(where, colour, text);
+    }
+
+    private static string Far(double m) =>
+        m < 1_000.0 ? $"{m:F0} m" : m < 100_000.0 ? $"{m / 1000.0:F1} km" : $"{m / 1000.0:F0} km";
 
     /// <summary>
     /// Who is here, while Tab is held, as a shooter shows its scoreboard: each player's ping, what
