@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Brutal.GlfwApi;
 using Brutal.ImGuiApi;
 using Brutal.Numerics;
 
@@ -28,6 +29,16 @@ internal static class Panel
     private const float PingColumn = 150f, FlyingColumn = 215f;
     private const float BoardWidth = 330f;
 
+    private static readonly float2 ChatFirstSize = new(420f, 190f);
+    private const int ChatShown = 14;
+
+    // Whether a chat line is being typed: only then does any window of this mod hold the keyboard.
+    private static bool _typing, _focusChat;
+
+    // Enter is read as a press, not as a hold: it both opens a line and sends it, and the key is
+    // still down the frame a line is sent.
+    private static bool _enterWas, _escapeWas;
+
     private sealed record Settings(string Name, string Address, string Password, bool Visible);
 
     private static readonly ImInputString NameText = new(Wire.NameChars * 4, ""u8);
@@ -51,6 +62,7 @@ internal static class Panel
     {
         if (!_loaded) Load();
         Scoreboard();
+        ChatWindow();
 
         ImGuiViewportPtr screen = ImGui.GetMainViewport();
         // Clear of KSA's own instruments down the right edge, which are drawn over this window.
@@ -98,7 +110,7 @@ internal static class Panel
     {
         if (Sync.Client is not { Joined: true } c) return;
         if (World.InMapView || ImGui.IsAnyItemActive()) return;
-        if (!ImGui.IsKeyDown(ImGuiKey.Tab) && Sync.Wall() >= BoardUntil) return;
+        if (!World.KeyDown(GlfwKey.Tab) && Sync.Wall() >= BoardUntil) return;
 
         ImGuiViewportPtr screen = ImGui.GetMainViewport();
         float2 at = new(screen.WorkPos.X + ((screen.WorkSize.X - BoardWidth) * 0.5f), screen.WorkPos.Y + 60f);
@@ -128,6 +140,85 @@ internal static class Panel
             }
         }
         ImGui.End();
+    }
+
+    /// <summary>
+    /// The chat, in a window of its own that can be dragged and resized and is seen through until it
+    /// is used. Enter starts a line, Enter sends it, Escape drops it.
+    ///
+    /// <para>The window holds the keyboard only while a line is being typed: KSA gives the flown
+    /// craft's held keys up to whatever has the keyboard, so a chat box that always had it would
+    /// take the controls away for the whole session.</para>
+    /// </summary>
+    private static void ChatWindow()
+    {
+        if (Sync.Client is not { Joined: true }) return;
+
+        // Both edges are read from the window. KSA's ImGui is given typed characters but not key
+        // presses, so a text field cannot tell that Enter was struck: it would take the line and
+        // never send it.
+        bool enter = World.KeyDown(GlfwKey.Enter) || World.KeyDown(GlfwKey.KpEnter);
+        bool struck = enter && !_enterWas;
+        _enterWas = enter;
+        bool escape = World.KeyDown(GlfwKey.Escape);
+        bool quit = escape && !_escapeWas;
+        _escapeWas = escape;
+
+        if (_typing && quit) Stop();
+        else if (struck && !World.InMapView)
+        {
+            if (_typing) Send();
+            else if (!ImGui.IsAnyItemActive()) (_typing, _focusChat) = (true, true);
+        }
+
+        ImGuiViewportPtr screen = ImGui.GetMainViewport();
+        float2 at = new(screen.WorkPos.X + 24f, screen.WorkPos.Y + screen.WorkSize.Y - (ChatFirstSize.Y + 24f));
+        ImGui.SetNextWindowPos(in at, ImGuiCond.FirstUseEver, null);
+        ImGui.SetNextWindowSize(in ChatFirstSize, ImGuiCond.FirstUseEver);
+        // Seen through while it is only being read, solid enough to read against the sky while typed in.
+        ImGui.SetNextWindowBgAlpha(_typing ? 0.72f : 0.22f);
+
+        const ImGuiWindowFlags chat = ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoNav
+                                      | ImGuiWindowFlags.NoFocusOnAppearing;
+        if (ImGui.Begin("###KSAMultiplayerChat", chat))
+        {
+            ImGui.PushTextWrapPos(0f);
+            foreach (string line in Sync.Chat.TakeLast(ChatShown)) ImGui.TextWrapped(line);
+            ImGui.PopTextWrapPos();
+
+            if (_typing)
+            {
+                if (_focusChat)
+                {
+                    ImGui.SetKeyboardFocusHere(0);
+                    _focusChat = false;
+                }
+                ImGui.SetNextItemWidth(-1f);
+                ImGui.InputText("##chatline", ChatText);
+            }
+            else
+            {
+                ImGui.TextDisabled("Enter to chat");
+            }
+        }
+        ImGui.End();
+    }
+
+    // The line said and the box closed; an empty one just closes it.
+    private static void Send()
+    {
+        string said = ChatText.ToString().Trim();
+        Log.Info($"chat line of {said.Length} characters{(said.Length > 0 ? " sent" : ", nothing to send")}");
+        if (said.Length > 0) Sync.SayChat(said);
+        Stop();
+    }
+
+    private static void Stop()
+    {
+        ChatText.SetValue("");
+        // The box stops being drawn, which is what gives the keyboard back: ImGui drops an active
+        // item that is no longer there, and KSA hands the craft its keys again the same frame.
+        (_typing, _focusChat) = (false, false);
     }
 
     private static void Join()
@@ -180,20 +271,6 @@ internal static class Panel
             {
                 float4 warn = new(1.0f, 0.5f, 0.3f, 1.0f);
                 ImGui.TextColored(in warn, $"Rename for others to see: {string.Join(", ", Sync.ConflictingCraft)}");
-            }
-            ImGui.Separator();
-            foreach (string line in Sync.Chat.TakeLast(8)) ImGui.TextWrapped(line);
-            ImGui.SetNextItemWidth(-46f);
-            if (ImGui.InputText("##chat", ChatText, ImGuiInputTextFlags.EnterReturnsTrue))
-            {
-                Sync.SayChat(ChatText.ToString());
-                ChatText.SetValue("");
-            }
-            ImGui.SameLine(0f, -1f);
-            if (ImGui.Button("Say", null))
-            {
-                Sync.SayChat(ChatText.ToString());
-                ChatText.SetValue("");
             }
         }
         if (ImGui.Button("Disconnect", null)) Sync.Disconnect();

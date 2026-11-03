@@ -1,4 +1,5 @@
 using System.Xml.Serialization;
+using Brutal.GlfwApi;
 using Brutal.Numerics;
 using KSA;
 
@@ -20,6 +21,20 @@ internal static class World
     public static double Universe => KSA.Universe.GetElapsedSeconds();
 
     public static double Speed => KSA.Universe.SimulationSpeed;
+
+    /// <summary>
+    /// Whether a key is held, asked of the window rather than of ImGui.
+    ///
+    /// <para>KSA hands a key to the game only while ImGui does not want the keyboard, and gives ImGui
+    /// keys only when one of its windows has the focus, so a window that wants a key without taking
+    /// the focus first -- a scoreboard, a chat line that opens on Enter -- never sees one. The window
+    /// itself always knows.</para>
+    /// </summary>
+    public static bool KeyDown(GlfwKey key)
+    {
+        try { return Glfw.PInvoke.GetKey(Program.GetWindow(), (int)key) != 0; }
+        catch (Exception) { return false; }
+    }
 
     /// <summary>
     /// Whether the map is the view. KSA binds Tab there, to take and release control of a craft from
