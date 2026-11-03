@@ -57,7 +57,7 @@ public readonly record struct Quat(double X, double Y, double Z, double W)
 public static class Wire
 {
     /// <summary>Changed whenever what a datagram means changes: a game speaking another version is refused by name.</summary>
-    public const ushort Version = 2;
+    public const ushort Version = 3;
 
     public const int BufferBytes = 8192;
     public const int NameChars = 24;
@@ -91,6 +91,7 @@ public static class Wire
         Gone = 15,
         Chat = 16,
         Snapshot = 17,
+        Rename = 18,
     }
 
     public abstract record Message(Kind Kind);
@@ -160,7 +161,16 @@ public static class Wire
                                Quat Body2Ccf, Vec3 Spin, float Throttle, StateFlags Flags) : Message(Kind.State);
 
     /// <param name="Controlling">Whether the player is flying it now, which nobody may take it from; otherwise only kept, as debris it dropped.</param>
-    public sealed record Claim(string Key, bool Controlling) : Message(Kind.Claim);
+    /// <param name="Made">
+    /// Whether this game made the craft rather than finding it in the world everyone loaded. Two games
+    /// that each send a kitten out of the same capsule call it what KSA calls it and so make one name
+    /// for two craft; the server can only tell that apart from two players reaching for one shared
+    /// craft because the game says which it is.
+    /// </param>
+    public sealed record Claim(string Key, bool Controlling, bool Made) : Message(Kind.Claim);
+
+    /// <summary>A craft of this game's whose name another player already had, and what it is called from now on.</summary>
+    public sealed record Rename(string Was, string Now) : Message(Kind.Rename);
 
     public readonly record struct Owner(string Key, byte Id);
 
@@ -261,6 +271,11 @@ public static class Wire
             case Claim c:
                 w.Text(c.Key, KeyChars);
                 w.U8(c.Controlling ? (byte)1 : (byte)0);
+                w.U8(c.Made ? (byte)1 : (byte)0);
+                break;
+            case Rename n:
+                w.Text(n.Was, KeyChars);
+                w.Text(n.Now, KeyChars);
                 break;
             case Owners o:
                 w.U16(o.Page);
@@ -314,7 +329,8 @@ public static class Wire
                 Kind.Loaded => new Loaded(r.F64()),
                 Kind.State => new State(r.U8(), r.Text(KeyChars), r.U32(), r.F64(), r.Text(64), r.V3d(), r.V3f(), r.V3d(), r.V3f(),
                                         new Quat(r.F32(), r.F32(), r.F32(), r.F32()).Normalized(), r.V3f(), r.F32(), (StateFlags)r.U8()),
-                Kind.Claim => new Claim(r.Text(KeyChars), r.U8() != 0),
+                Kind.Claim => new Claim(r.Text(KeyChars), r.U8() != 0, r.U8() != 0),
+                Kind.Rename => new Rename(r.Text(KeyChars), r.Text(KeyChars)),
                 Kind.Owners => ReadOwners(ref r),
                 Kind.Gone => new Gone(r.Text(KeyChars)),
                 Kind.Chat => new Chat(r.U8(), r.Text(ChatChars)),

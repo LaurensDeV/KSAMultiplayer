@@ -212,6 +212,10 @@ TOOLS = {
     "ksa_goto": ("Fly the craft of this Id and point the camera at it, so each of two games flies a "
                  "different craft out of the same world.", {"craft": {"type": "string"}}, ["craft"],
                 lambda a: _dump(send("goto", **a))),
+    "ksa_eva": ("Send a kitten out of a craft's hatch: the named craft, or the flown one, and the named "
+                "kitten or the first aboard. The shortest way to make a craft the loaded world did not have.",
+                {"craft": {"type": "string"}, "kitten": {"type": "string"}}, [],
+                lambda a: _dump(send("eva", **a))),
     "ksa_launch": ("Start KSA with this tree's deployed build if it is not running, and optionally load a "
                    "save. Uses a running game rather than starting a second.",
                    {"save": {"type": "string"}}, [], lambda a: [_text(launch(a.get("save")))]),

@@ -130,7 +130,7 @@ public class ServerTests
         using Rig rig = new();
         Client a = Seed(rig);
         Client b = JoinAndLoad(rig, "Bob");
-        a.Claim("Rocket", controlling: true);
+        a.Claim("Rocket", controlling: true, made: false);
         rig.Until(() => b.OwnerOf("Rocket") == a.Id && a.Owns("Rocket"), what: "the owners table");
         for (int i = 0; i < 5; i++) a.SendState(Rig.State("Rocket", 5000 + i, x: i));
         rig.Until(() => b.TrackOf("Rocket").Newest is { Universe: 5004 }, what: "the states");
@@ -145,9 +145,9 @@ public class ServerTests
         using Rig rig = new();
         Client a = Seed(rig);
         Client b = JoinAndLoad(rig, "Bob");
-        a.Claim("Rocket", controlling: true);
+        a.Claim("Rocket", controlling: true, made: false);
         rig.Until(() => rig.Server.OwnerOf("Rocket") == a.Id, what: "Alice to own the rocket");
-        b.Claim("Rocket", controlling: true);
+        b.Claim("Rocket", controlling: true, made: false);
         // States from someone who does not own it go nowhere.
         b.SendState(Rig.State("Rocket", 6000));
         rig.For(0.3);
@@ -156,9 +156,9 @@ public class ServerTests
 
         // Alice flies something else. The rocket is still hers and Bob still only watches: a craft
         // taken back the moment its owner looked away put two players on one craft.
-        a.Claim("Lander", controlling: true);
+        a.Claim("Lander", controlling: true, made: false);
         rig.Until(() => rig.Server.Players.First(p => p.Id == a.Id).Controlling == "Lander", what: "Alice to fly the lander");
-        b.Claim("Rocket", controlling: true);
+        b.Claim("Rocket", controlling: true, made: false);
         rig.For(0.5);
         Assert.Equal(a.Id, rig.Server.OwnerOf("Rocket"));
 
@@ -166,7 +166,7 @@ public class ServerTests
         a.Dispose();
         rig.Clients.Remove(a);
         rig.Until(() => rig.Server.OwnerOf("Rocket") != a.Id, what: "Alice's craft to be let go of");
-        b.Claim("Rocket", controlling: true);
+        b.Claim("Rocket", controlling: true, made: false);
         rig.Until(() => rig.Server.OwnerOf("Rocket") == b.Id, what: "Bob to take the rocket now");
     }
 
@@ -178,7 +178,7 @@ public class ServerTests
         Client b = JoinAndLoad(rig, "Bob");
         byte[] definition = new byte[30_000];
         new Random(1).NextBytes(definition);
-        a.Claim("Rocket", controlling: true);
+        a.Claim("Rocket", controlling: true, made: false);
         a.Upload(new Blob(BlobKind.Vehicle, "Rocket", a.Id, 5001, definition));
         rig.Until(() => b.Blobs.Any(x => x.Kind == BlobKind.Vehicle), what: "Bob to get the rocket");
         Blob got = b.Blobs.First(x => x.Kind == BlobKind.Vehicle);
@@ -197,7 +197,7 @@ public class ServerTests
         using Rig rig = new();
         Client a = Seed(rig);
         Client b = JoinAndLoad(rig, "Bob");
-        a.Claim("Debris", controlling: false);
+        a.Claim("Debris", controlling: false, made: false);
         rig.Until(() => b.OwnerOf("Debris") == a.Id, what: "Bob to hear of the debris");
         a.SayGone("Debris");
         rig.Until(() => b.Gone.Contains("Debris"), what: "Bob to hear it is gone");
@@ -213,7 +213,7 @@ public class ServerTests
         using Rig rig = new();
         Client a = Seed(rig);
         Client b = JoinAndLoad(rig, "Bob");
-        b.Claim("Rover", controlling: true);
+        b.Claim("Rover", controlling: true, made: false);
         rig.Until(() => a.OwnerOf("Rover") == b.Id, what: "Alice to hear Bob flies the rover");
         b.Dispose();
         rig.Clients.Remove(b);
@@ -347,6 +347,52 @@ public class ServerTests
         a.Dispose();
         rig.Clients.Remove(a);
         rig.Until(() => b.SnapshotWanted is not null, what: "Bob to be asked instead");
+    }
+
+    [Fact]
+    public void TwoGamesThatEachMakeACraftOfOneNameEachGetACraftOfTheirOwn()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+
+        // Each game sends a kitten out of its own capsule, and KSA calls both of them the same thing.
+        a.Claim("Pamont", controlling: true, made: true);
+        rig.Until(() => rig.Server.OwnerOf("Pamont") == a.Id, what: "Alice to take her kitten");
+
+        b.Claim("Pamont", controlling: true, made: true);
+        rig.Until(() => b.Renamed.Count > 0, what: "Bob's kitten to be given a name of its own");
+
+        (string was, string now) = b.Renamed.Dequeue();
+        Assert.Equal("Pamont", was);
+        Assert.NotEqual("Pamont", now);
+
+        // Two craft, one each, and neither is the other.
+        Assert.Equal(a.Id, rig.Server.OwnerOf("Pamont"));
+        Assert.Equal(b.Id, rig.Server.OwnerOf(now));
+        rig.Until(() => a.OwnerOf(now) == b.Id, what: "Alice to hear of Bob's kitten");
+
+        // Bob's states under the new name reach Alice; under the old one they are Alice's craft.
+        b.SendState(Rig.State(now, 5001));
+        rig.Until(() => a.TrackOf(now).Newest is not null, what: "Alice to get Bob's kitten's state");
+        Assert.Null(b.TrackOf("Pamont").Newest);
+    }
+
+    [Fact]
+    public void ACraftFromTheSharedWorldIsNeverRenamed()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+
+        // Both games loaded this one with the world, so it is one craft and Bob only watches it.
+        a.Claim("Rocket", controlling: true, made: false);
+        rig.Until(() => rig.Server.OwnerOf("Rocket") == a.Id, what: "Alice to take the rocket");
+
+        b.Claim("Rocket", controlling: true, made: false);
+        rig.For(0.5);
+        Assert.Empty(b.Renamed);
+        Assert.Equal(a.Id, rig.Server.OwnerOf("Rocket"));
     }
 
     [Fact]

@@ -74,6 +74,9 @@ public sealed class Client : IDisposable
 
     public Queue<Blob> Blobs { get; } = new();
     public Queue<string> Gone { get; } = new();
+
+    /// <summary>Craft of this game the server has given another name, because a player already had that one.</summary>
+    public Queue<(string Was, string Now)> Renamed { get; } = new();
     public Queue<(string Who, string Text)> Chat { get; } = new();
     public Queue<string> Said { get; } = new();
 
@@ -123,9 +126,10 @@ public sealed class Client : IDisposable
         Send(s with { Owner = Id, Sequence = ++_sequence });
     }
 
-    public void Claim(string key, bool controlling)
+    /// <param name="made">Whether this game made the craft, rather than finding it in the world everyone loaded.</param>
+    public void Claim(string key, bool controlling, bool made = false)
     {
-        if (Joined && key.Length > 0) Send(new Wire.Claim(key, controlling));
+        if (Joined && key.Length > 0) Send(new Wire.Claim(key, controlling, made));
     }
 
     public void SayGone(string key)
@@ -249,6 +253,11 @@ public sealed class Client : IDisposable
                 }
                 else _serverRate = c.Speed;
                 _serverClock = (c.Universe, c.Sent, c.Speed);
+                return;
+            case Wire.Rename n when Joined && n.Was.Length > 0 && n.Now.Length > 0:
+                // Everything held under the old name follows it, so nothing of this craft is lost.
+                if (_tracks.Remove(n.Was, out Track? moved)) _tracks[n.Now] = moved;
+                Renamed.Enqueue((n.Was, n.Now));
                 return;
             case Wire.Gone g when Joined:
                 _owners.Remove(g.Key);

@@ -93,6 +93,7 @@ internal sealed class Bridge
             "craft" => CraftList(),
             "mp" => Multiplayer(command),
             "goto" => GoTo(command),
+            "eva" => Eva(command),
             "pause" => Paused(true),
             "resume" => Paused(false),
             "speed" => Speed(command),
@@ -189,16 +190,19 @@ internal sealed class Bridge
         List<object?> all = [];
         foreach (Vehicle v in World.Vehicles())
         {
+            string key = Sync.KeyOf(v);
             all.Add(new Dictionary<string, object?>
             {
                 ["id"] = v.Id,
+                // What everyone calls it, which differs from this world's name when the server renamed it.
+                ["key"] = key == v.Id ? null : key,
                 ["parent"] = (v.Parent as Astronomical)?.Id,
                 ["situation"] = v.Situation.ToString(),
                 ["parts"] = v.Parts.Count,
                 ["physics"] = v.HasPhysicsBubble,
                 ["flown"] = ReferenceEquals(v, flown),
                 ["puppet"] = Sync.IsPuppet(v),
-                ["owned"] = Sync.OwnedCraft.Contains(v.Id),
+                ["owned"] = Sync.OwnedCraft.Contains(key),
                 ["from_flown_m"] = flown is null || ReferenceEquals(v, flown) ? null : Math.Round(World.Between(flown, v), 1),
             });
         }
@@ -247,6 +251,28 @@ internal sealed class Bridge
         if (id.Length == 0) return Failed("goto needs a craft");
         if (World.Vehicles().FirstOrDefault(v => v.Id == id) is not { } v) return Failed($"no craft '{id}' in this world");
         return World.GoTo(v) ? Done(new() { ["craft"] = v.Id }) : Failed($"could not fly '{id}'");
+    }
+
+    // A kitten out of a craft's hatch: the shortest way to make a craft that the loaded world did not
+    // have, and the way two games come to make one name for two craft.
+    private static Reply Eva(BridgeCommand command)
+    {
+        string id = command.String("craft");
+        Vehicle? craft = id.Length > 0 ? World.Vehicles().FirstOrDefault(v => v.Id == id) : World.Controlled;
+        if (craft is null) return Failed(id.Length > 0 ? $"no craft '{id}' in this world" : "no craft is being flown");
+
+        string who = command.String("kitten");
+        IVASeat? seat = null;
+        foreach (IVASeat s in craft.Parts.Modules.Get<IVASeat>())
+        {
+            if (s.AssignedKittenHash == KeyHash.Zero) continue;
+            if (who.Length > 0 && KSA.Universe.KittenRoster.Find(s.AssignedKittenHash) is { } k && k.Name != who) continue;
+            seat = s;
+            break;
+        }
+        if (seat is null) return Failed($"nobody aboard {craft.Id} to get out");
+        if (!EVADoor.PerformEvaForSeat(craft, seat)) return Failed($"{craft.Id} would not let anybody out");
+        return Done(new() { ["from"] = craft.Id });
     }
 
     // ---- the clock -------------------------------------------------------------------------

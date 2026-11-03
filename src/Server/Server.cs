@@ -209,14 +209,16 @@ public sealed class GameServer : IDisposable
                 OnLoaded(player, loaded.Universe);
                 return;
             case Wire.State state when player.Loaded:
-                if (!Grant(player, state.Key)) return;
+                if (Grant(player, state.Key) is null) return;
                 Wire.State relayed = state with { Owner = player.Id };
                 Broadcast(relayed, p => p.Loaded && p != player);
                 return;
             case Wire.Claim claim when player.Loaded && claim.Key.Length > 0:
-                if (claim.Controlling) player.Controlling = claim.Key;
                 bool had = OwnerOf(claim.Key) == player.Id;
-                if (Grant(player, claim.Key, taking: claim.Controlling) && !had) OwnersChanged();
+                // Only once it is theirs: a player refused a craft is not flying it, whatever they asked.
+                if (Grant(player, claim.Key, taking: claim.Controlling, made: claim.Made) is not { } granted) return;
+                if (claim.Controlling) player.Controlling = granted;
+                if (!had) OwnersChanged();
                 return;
             case Wire.Gone gone when player.Loaded && OwnerOf(gone.Key) == player.Id:
                 _crafts.Remove(gone.Key);
@@ -334,7 +336,9 @@ public sealed class GameServer : IDisposable
                 if (p.Seeding) OnLoaded(p, blob.Universe);
                 return;
             case BlobKind.Vehicle when p.Loaded && blob.Key.Length > 0:
-                if (!Grant(p, blob.Key)) return;
+                // A definition under a name this player was refused is dropped; the claim that goes with
+                // it tells their game the name it may use, and the definition is sent again under that.
+                if (Grant(p, blob.Key) is null) return;
                 Craft craft = _crafts[blob.Key];
                 Blob stamped = blob with { Owner = p.Id, Universe = UniverseClock.Now(_clock()) };
                 craft.Definition = stamped.Encode();
@@ -350,19 +354,47 @@ public sealed class GameServer : IDisposable
     // second, and everyone else only watches. Letting a craft be taken back the moment its owner
     // looked away put two players on one kitten, each game pulling it towards its own idea of where
     // it was, and one of them was flung.
-    private bool Grant(Player p, string key, bool taking = false)
+    /// <summary>
+    /// The name this player may fly the craft under: the one they asked for, or one of its own when
+    /// that name is another player's and this is a craft their game made. Null when it is not theirs.
+    /// </summary>
+    private string? Grant(Player p, string key, bool taking = false, bool made = false)
     {
         if (!_crafts.TryGetValue(key, out Craft? craft))
         {
-            if (_gone.ContainsKey(key) && !taking) return false;
+            if (_gone.ContainsKey(key) && !taking) return null;
             _crafts[key] = craft = new Craft();
         }
-        if (craft.Owner == p.Id) return true;
-        if (craft.Owner != 0 && _players.ContainsKey(craft.Owner)) return false;
+        if (craft.Owner == p.Id) return key;
+        if (craft.Owner != 0 && _players.TryGetValue(craft.Owner, out Player? holder))
+        {
+            // A craft this game made that happens to share a name is a second craft, not the one the
+            // holder has, and is given a name of its own. Anything else is the holder's to fly.
+            if (!made) return null;
+            string fresh = FreeKey(key);
+            _crafts[fresh] = new Craft { Owner = p.Id };
+            _gone.Remove(fresh);
+            OwnersChanged();
+            _udp.Send(new Wire.Rename(key, fresh), p.At);
+            Log($"{holder.Name} already has a craft called {key}, so {p.Name}'s is {fresh} here");
+            return fresh;
+        }
         craft.Owner = p.Id;
         _gone.Remove(key);
         OwnersChanged();
-        return true;
+        return key;
+    }
+
+    // A name like the one asked for that no craft here has, gone or not: one that came back under a
+    // name just handed out would be taken for the craft that left.
+    private string FreeKey(string root)
+    {
+        for (int n = 2; n < 1000; n++)
+        {
+            string tried = Wire.Clip($"{root} {n}", Wire.KeyChars);
+            if (!_crafts.ContainsKey(tried) && !_gone.ContainsKey(tried)) return tried;
+        }
+        return Wire.Clip($"{root} {Guid.NewGuid():N}", Wire.KeyChars);
     }
 
     private void OwnersChanged() => _ownersNext = 0.0;

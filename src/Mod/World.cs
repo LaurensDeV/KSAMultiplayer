@@ -103,18 +103,47 @@ internal static class World
     private static XmlSerializer? _serializer;
     private static XmlSerializer Serializer => _serializer ??= new XmlSerializer(typeof(VehicleData), XmlHelper.AttributeOverrides);
 
-    /// <summary>A craft as KSA saves it, gzipped: what another game builds it from.</summary>
-    public static byte[] Define(Vehicle v)
+    /// <summary>
+    /// A craft as KSA saves it, gzipped: what another game builds it from, under <paramref name="key"/>.
+    ///
+    /// <para>The name in the definition is the one the whole world knows the craft by, which is not
+    /// this game's own when the server has had to rename it: a craft is built from this elsewhere, and
+    /// two craft of one name in one world would be one craft to everything that looks them up.</para>
+    /// </summary>
+    public static byte[] Define(Vehicle v, string key)
     {
         VehicleData data = v.SerializeSave();
         if (v is KittenEva kitten) data.Character = kitten.Character.Id;
+        if (key != v.Id)
+        {
+            data.Id = key;
+            data.IdHash = KeyHash.Make(key.AsSpan());
+        }
         using MemoryStream stream = new();
         XmlHelper.SerializeWithoutNaN(Serializer, data, stream);
         return Blob.Gzip(stream.ToArray());
     }
 
-    /// <summary>A craft built from another game's definition, or null with why.</summary>
-    public static Vehicle? Build(byte[] definition, out string why)
+    /// <summary>A name no craft in this world has, like the one asked for.</summary>
+    public static string FreeLocalId(string root)
+    {
+        List<Vehicle> all = Vehicles();
+        for (int n = 2; n < 1000; n++)
+        {
+            string tried = $"{root} ({n})";
+            if (!all.Any(v => v.Id == tried)) return tried;
+        }
+        return $"{root} ({Guid.NewGuid():N})";
+    }
+
+    /// <summary>
+    /// A craft built from another game's definition under <paramref name="localId"/>, or null with why.
+    ///
+    /// <para>The name it is built under is this world's, which is not what everyone calls the craft when
+    /// this game already has one of that name: KSA looks a craft up by its Id, and two of one name here
+    /// would be one craft to everything that does.</para>
+    /// </summary>
+    public static Vehicle? Build(byte[] definition, string localId, out string why)
     {
         why = "";
         try
@@ -129,6 +158,11 @@ internal static class World
             {
                 why = "it could not be read";
                 return null;
+            }
+            if (localId.Length > 0 && localId != data.Id)
+            {
+                data.Id = localId;
+                data.IdHash = KeyHash.Make(localId.AsSpan());
             }
             data.OnDataLoad(Mod.Empty);
             if (data.RootPartInstance?.FindMissingParts() is { } missing)
@@ -169,7 +203,8 @@ internal static class World
     // ------------------------------------------------------------------ states
 
     /// <summary>Where a craft is now, in its body's fixed frame off the physics state and in its inertial frame off the ecliptic.</summary>
-    public static Wire.State? StateOf(Vehicle v, bool controlled)
+    /// <param name="key">What the world knows this craft by, which is not this game's own name for it when the server has renamed it.</param>
+    public static Wire.State? StateOf(Vehicle v, string key, bool controlled)
     {
         if (v.Parent is not Astronomical parent || v.Parent is not IPosition parentPos || v.Parent is not IVelocity parentVel) return null;
         PhysicsStates states = v.GetPhysicsStatesMutable();
@@ -185,7 +220,7 @@ internal static class World
         if (v.LightsOn) flags |= Wire.StateFlags.Lights;
         if (controlled) flags |= Wire.StateFlags.Controlled;
 
-        Wire.State s = new(0, v.Id, 0, Universe, parent.Id, V(positionCcf), V(velocityCcf), V(positionCci), V(velocityCci),
+        Wire.State s = new(0, key, 0, Universe, parent.Id, V(positionCcf), V(velocityCcf), V(positionCci), V(velocityCci),
                            new Quat(body2Ccf.X, body2Ccf.Y, body2Ccf.Z, body2Ccf.W), V(spin), 0f, flags);
         return s.PositionCcf.IsFinite && s.PositionCci.IsFinite && s.Body2Ccf.IsFinite ? s : null;
     }

@@ -57,8 +57,18 @@ internal static class Sync
     private static readonly Dictionary<string, Mine> Owned = [];
     private static readonly Dictionary<Vehicle, string> Puppets = [];
     private static readonly Dictionary<string, double> PlacedAt = [];
-    private static readonly HashSet<string> Known = [];
+    // Every craft this world has had since it was loaded, by craft rather than by name: one name can
+    // belong to two craft here at once -- this player's kitten and the one another player sent out of
+    // the same capsule -- and what matters is which object was already here, not what it is called.
+    private static readonly HashSet<Vehicle> Seen = [];
     private static readonly HashSet<string> Conflicts = [];
+
+    // What the shared world calls a craft, when that is not what this world calls it: two games that
+    // each send a kitten out of the same capsule both call it what KSA calls it, and the server gives
+    // the second one a name of its own. By craft rather than by name, because the two names this is
+    // between are exactly the ones that collide: this world can hold its own Nasley and another
+    // player's, and they are not the same craft.
+    private static readonly Dictionary<Vehicle, string> Renamed = [];
 
     // Craft this game made itself, which are never another player's puppet here, whatever the server says of their name.
     private static readonly HashSet<Vehicle> MadeHere = [];
@@ -69,7 +79,7 @@ internal static class Sync
     private static Task<IPEndPoint?>? _finding;
     private static (string Name, string Password)? _asking;
     private static double _frameAt, _loadingSince, _claimNext;
-    private static string _claimed = "", _address = "", _stoodAsideFrom = "";
+    private static string _claimed = "", _address = "", _watching = "";
     private static int _settle;
 
     public static Stage Now { get; private set; } = Stage.Off;
@@ -111,6 +121,9 @@ internal static class Sync
 
     public static bool IsPuppet(Vehicle v) => Puppets.ContainsKey(v);
 
+    /// <summary>What the shared world calls this craft, which is this game's own name for it unless the server renamed it.</summary>
+    public static string KeyOf(Vehicle v) => Renamed.GetValueOrDefault(v, v.Id);
+
     /// <summary>Connects to a server at "host:port" or "host"; this world is then the server's, or becomes it.</summary>
     public static void Connect(string address, string name, string password)
     {
@@ -144,12 +157,13 @@ internal static class Sync
         foreach (Vehicle v in Puppets.Keys) Log.Info($"let go of {v.Id}");
         Puppets.Clear();
         Owned.Clear();
-        Known.Clear();
+        Seen.Clear();
         Conflicts.Clear();
+        Renamed.Clear();
         MadeHere.Clear();
         Definitions.Clear();
         PlacedAt.Clear();
-        (_claimed, _address, Behind, Now) = ("", "", null, Stage.Off);
+        (_claimed, _address, _watching, Behind, Now) = ("", "", "", null, Stage.Off);
         if (HeldSpeed is not null)
         {
             HeldSpeed = null;
@@ -247,8 +261,9 @@ internal static class Sync
 
     private static void StartPlaying(Client c)
     {
-        Known.Clear();
-        foreach (Vehicle v in World.Vehicles()) Known.Add(v.Id);
+        Renamed.Clear();
+        Seen.Clear();
+        foreach (Vehicle v in World.Vehicles()) Seen.Add(v);
         c.ForgetTracks();
         c.SayLoaded(World.Universe);
         Now = Stage.Playing;
@@ -271,30 +286,39 @@ internal static class Sync
             SendWorld(c);
         }
 
+        TakeRenames(c);
+
+        // By what the shared world calls each craft. Two of this world's craft can want one name for a
+        // moment -- another player's kitten built here, and this player's own out of the same capsule
+        // before the server has renamed it -- and the one that is already another player's keeps it.
         Dictionary<string, Vehicle> here = [];
-        foreach (Vehicle v in World.Vehicles()) here.TryAdd(v.Id, v);
+        foreach (Vehicle v in World.Vehicles())
+        {
+            string k = KeyOf(v);
+            if (!here.TryAdd(k, v) && (Puppets.ContainsKey(v) || Renamed.ContainsKey(v))) here[k] = v;
+        }
         Vehicle? flown = World.Controlled;
 
         while (c.Blobs.TryDequeue(out Blob? blob))
         {
             if (blob.Kind != BlobKind.Vehicle || blob.Key.Length == 0) continue;
             Definitions[blob.Key] = blob.Data;
-            // A craft rebuilt by its owner, as one that drops a stage is: the old one here goes, and the new one is built below.
-            if (here.TryGetValue(blob.Key, out Vehicle? old) && !Owned.ContainsKey(blob.Key) && !ReferenceEquals(old, flown))
+            // A craft rebuilt by its owner, as one that drops a stage is: the old one here goes, and the
+            // new one is built below. Never one this game made: another player's kitten out of the same
+            // capsule arrives under the name this game gave its own, and that one is not theirs to take.
+            if (here.TryGetValue(blob.Key, out Vehicle? old) && !Owned.ContainsKey(blob.Key)
+                && !ReferenceEquals(old, flown) && !MadeHere.Contains(old))
             {
                 Puppets.Remove(old);
                 World.Destroy(old);
                 here.Remove(blob.Key);
             }
-            else if (old is not null && Owned.ContainsKey(blob.Key) && Conflicts.Add(blob.Key))
-            {
-                Say($"another player has a craft called '{blob.Key}' too: rename yours for them to see it");
-            }
+
         }
         while (c.Gone.TryDequeue(out string? key))
         {
             Definitions.Remove(key);
-            if (here.TryGetValue(key, out Vehicle? gone) && !Owned.ContainsKey(key))
+            if (here.TryGetValue(key, out Vehicle? gone) && !Owned.ContainsKey(key) && !MadeHere.Contains(gone))
             {
                 Puppets.Remove(gone);
                 World.Destroy(gone);
@@ -302,53 +326,68 @@ internal static class Sync
             }
         }
 
-        flown = StandAside(c, here, flown);
         ClaimFlown(c, flown);
         Adopt(c, here, flown);
         SendOwned(c, here, flown);
         PlaceOthers(c, here, flown);
     }
 
-    // A game that joins loads the server's world still flying the craft whoever gave it the world was
-    // flying, so two players begin on one craft every time. The server keeps a craft for whoever is
-    // flying it, and this game takes the player off it rather than steer what is also somebody else's.
-    private static Vehicle? StandAside(Client c, Dictionary<string, Vehicle> here, Vehicle? flown)
+    // A craft of this game's that the server has renamed, because a player already had that name.
+    // Everything held under the old name follows it, and the definition goes again so that every other
+    // game builds the craft under the name they will all know it by.
+    private static void TakeRenames(Client c)
     {
-        if (flown is null) return null;
-        byte owner = c.OwnerOf(flown.Id);
-        if (owner == 0 || owner == c.Id)
+        while (c.Renamed.TryDequeue(out (string Was, string Now) r))
         {
-            _stoodAsideFrom = "";
-            return flown;
-        }
-
-        Vehicle? free = here.Values.FirstOrDefault(v => !ReferenceEquals(v, flown) && World.IsAlive(v)
-                                                        && c.OwnerOf(v.Id) == 0 && !Puppets.ContainsKey(v));
-        if (free is null || !World.GoTo(free))
-        {
-            if (_stoodAsideFrom != flown.Id)
+            // Found before the new name is written down, since that is what it is called until then.
+            Vehicle? craft = World.Vehicles().FirstOrDefault(v => KeyOf(v) == r.Was && !Puppets.ContainsKey(v));
+            Conflicts.Remove(r.Was);
+            Definitions.Remove(r.Was);
+            PlacedAt.Remove(r.Was);
+            if (_claimed == r.Was) _claimed = "";
+            if (Owned.Remove(r.Was, out Mine? mine)) craft ??= mine.Craft;
+            if (craft is null || !World.IsAlive(craft))
             {
-                _stoodAsideFrom = flown.Id;
-                Say($"{c.NameOf(owner)} is flying {flown.Id}, and there is no other craft here to take");
+                Say($"another player already has a craft called '{r.Was}', but this game has no such craft now");
+                continue;
             }
-            return flown;
+            // Said again under the name everyone will know it by: the server dropped what came before,
+            // and this game may already have let go of it while the name was somebody else's.
+            Renamed[craft] = r.Now;
+            Owned[r.Now] = mine ?? new Mine(craft);
+            c.Claim(r.Now, controlling: ReferenceEquals(craft, World.Controlled), made: true);
+            Define(c, craft);
+            Say($"another player already has a craft called '{r.Was}': yours is '{r.Now}' to them");
         }
-        _stoodAsideFrom = flown.Id;
-        Say($"{c.NameOf(owner)} is flying {flown.Id}: you fly {free.Id} now");
-        return free;
     }
 
     // The craft this player flies, claimed whenever it changes and now and then after.
     private static void ClaimFlown(Client c, Vehicle? flown)
     {
-        string key = flown?.Id ?? "";
-        if (key.Length == 0 || (key == _claimed && Wall() < _claimNext)) return;
-        c.Claim(key, controlling: true);
+        string key = flown is null ? "" : KeyOf(flown);
+        if (key.Length == 0) return;
+
+        // Another player holds it, so this player is watching: never claimed, and left to be pulled to
+        // wherever its owner's game says it is, which is the whole of what watching means.
+        if (c.OwnerOf(key) is var held && held != 0 && held != c.Id && !MadeHere.Contains(flown!))
+        {
+            if (_watching != key)
+            {
+                _watching = key;
+                Say($"{c.NameOf(held)} is flying {key}: you are watching");
+            }
+            return;
+        }
+        _watching = "";
+        if (key == _claimed && Wall() < _claimNext) return;
+        // Anything the loaded world did not have is one this game made, and may need a name of its own.
+        bool made = flown is not null && !Seen.Contains(flown);
+        c.Claim(key, controlling: true, made: made);
         (_claimed, _claimNext) = (key, Wall() + ClaimEverySeconds);
-        if (Known.Add(key) && flown is not null)
+        if (flown is not null && Seen.Add(flown))
         {
             MadeHere.Add(flown);
-            if (!Owned.ContainsKey(key) && c.OwnerOf(key) == 0) Own(c, flown, define: true);
+            if (!Owned.ContainsKey(key) && c.OwnerOf(key) == 0) Own(c, flown, define: true, made: true);
         }
     }
 
@@ -356,39 +395,40 @@ internal static class Sync
     // Each is this player's when it is the one flown or nearer to this player's craft than to anyone else's.
     private static void Adopt(Client c, Dictionary<string, Vehicle> here, Vehicle? flown)
     {
-        foreach ((string key, Vehicle v) in here)
+        foreach (Vehicle v in World.Vehicles())
         {
-            if (Known.Contains(key) || Puppets.ContainsKey(v)) continue;
-            Known.Add(key);
+            // Not by what is in `here`: a craft this game has just made can share its name with one
+            // already standing here for another player, and only one of the two is in there.
+            if (Seen.Contains(v) || Puppets.ContainsKey(v) || Renamed.ContainsKey(v)) continue;
+            string key = KeyOf(v);
+            Seen.Add(v);
             MadeHere.Add(v);
-            if (c.OwnerOf(key) is var owner && owner != 0 && owner != c.Id)
-            {
-                if (Conflicts.Add(key)) Say($"another player has a craft called '{key}' too: rename yours for them to see it");
-                continue;
-            }
             double mine = Owned.Values.Where(m => World.IsAlive(m.Craft)).Select(m => World.Between(m.Craft, v)).DefaultIfEmpty(double.PositiveInfinity).Min();
             double theirs = Puppets.Keys.Where(World.IsAlive).Select(p => World.Between(p, v)).DefaultIfEmpty(double.PositiveInfinity).Min();
-            if (ReferenceEquals(v, flown) || mine < theirs) Own(c, v, define: true);
+            // Made here, so the server gives it a name of its own if another player has that one.
+            if (ReferenceEquals(v, flown) || mine < theirs) Own(c, v, define: true, made: true);
         }
     }
 
-    private static void Own(Client c, Vehicle v, bool define)
+    private static void Own(Client c, Vehicle v, bool define, bool made)
     {
-        Owned[v.Id] = new Mine(v);
-        c.Claim(v.Id, controlling: ReferenceEquals(v, World.Controlled));
+        string key = KeyOf(v);
+        Owned[key] = new Mine(v);
+        c.Claim(key, controlling: ReferenceEquals(v, World.Controlled), made: made);
         if (define) Define(c, v);
     }
 
     private static void Define(Client c, Vehicle v)
     {
+        string key = KeyOf(v);
         try
         {
-            c.Upload(new Blob(BlobKind.Vehicle, v.Id, c.Id, World.Universe, World.Define(v)));
-            Log.Info($"sent the server how {v.Id} is built");
+            c.Upload(new Blob(BlobKind.Vehicle, key, c.Id, World.Universe, World.Define(v, key)));
+            Log.Info($"sent the server how {key} is built");
         }
         catch (Exception e)
         {
-            Log.Warn($"{v.Id} could not be written down for the others: {e.GetBaseException().Message}");
+            Log.Warn($"{key} could not be written down for the others: {e.GetBaseException().Message}");
         }
     }
 
@@ -397,27 +437,35 @@ internal static class Sync
     {
         foreach (string key in c.Owners.Where(o => o.Value == c.Id).Select(o => o.Key))
         {
-            if (Owned.ContainsKey(key) || !here.TryGetValue(key, out Vehicle? v)) continue;
+            if (Owned.ContainsKey(key) || !here.TryGetValue(key, out Vehicle? taken)) continue;
             // The server gave this player a craft it took control of: it is no puppet now.
-            Puppets.Remove(v);
-            Owned[key] = new Mine(v);
+            Puppets.Remove(taken);
+            Owned[key] = new Mine(taken);
         }
         double now = Wall();
         foreach ((string key, Mine entry) in Owned.ToArray())
         {
             Mine m = entry;
-            if (!here.TryGetValue(key, out Vehicle? v))
+            // The craft itself, not whatever stands here under its name: another player's craft of the
+            // same name can be the one `here` holds, and sending its state as this player's own would
+            // tell everyone that their craft is where somebody else's is.
+            if (!World.IsAlive(m.Craft))
             {
-                Owned.Remove(key);
-                if (c.Owns(key)) c.SayGone(key);
-                Conflicts.Remove(key);
-                continue;
+                // KSA can rebuild a craft as another object. One standing here under the same name that
+                // is nobody else's is that craft carrying on; anything else means it is gone.
+                if (here.TryGetValue(key, out Vehicle? again) && World.IsAlive(again) && !Puppets.ContainsKey(again))
+                {
+                    Owned[key] = m = new Mine(again) { Shape = 0 };
+                }
+                else
+                {
+                    Owned.Remove(key);
+                    if (c.Owns(key)) c.SayGone(key);
+                    Conflicts.Remove(key);
+                    continue;
+                }
             }
-            if (!ReferenceEquals(v, m.Craft))
-            {
-                // The same craft as another object, as KSA can rebuild one: still this player's, and described again.
-                Owned[key] = m = new Mine(v) { Shape = 0 };
-            }
+            Vehicle v = m.Craft;
             if (c.OwnerOf(key) is var owner && owner != 0 && owner != c.Id)
             {
                 // Taken by another player, who is flying it now.
@@ -433,7 +481,7 @@ internal static class Sync
             if (now < m.SendNext) continue;
             bool controlled = ReferenceEquals(v, flown);
             m.SendNext = now + (controlled ? ControlledEverySeconds : OwnedEverySeconds);
-            if (World.StateOf(v, controlled) is { } state) c.SendState(state);
+            if (World.StateOf(v, key, controlled) is { } state) c.SendState(state);
         }
     }
 
@@ -447,20 +495,21 @@ internal static class Sync
         {
             if (owner == c.Id || Owned.ContainsKey(key)) continue;
             if (here.TryGetValue(key, out Vehicle? ours) && MadeHere.Contains(ours)) continue;
-            // Never the craft this player steers: pulling it to another game's state would fight the
-            // player's own controls, and StandAside has already tried to move them off it.
-            if (flown is not null && key == flown.Id) continue;
             Track track = c.TrackOf(key);
             if (!here.TryGetValue(key, out Vehicle? v))
             {
                 // One a frame: each is a craft built.
                 if (builtOne || track.Newest is null || !Definitions.TryGetValue(key, out byte[]? definition)) continue;
                 builtOne = true;
-                if (World.Build(definition, out string why) is { } built)
+                // This world may already hold a craft of that name -- this player's own kitten out of
+                // the same capsule -- so the one built here is given a name this world has free.
+                string localId = World.Vehicles().Any(x => x.Id == key) ? World.FreeLocalId(key) : key;
+                if (World.Build(definition, localId, out string why) is { } built)
                 {
-                    Known.Add(key);
+                    if (localId != key) Renamed[built] = key;
+                    Seen.Add(built);
                     here[key] = v = built;
-                    Log.Info($"built {key}, {c.NameOf(owner)}'s");
+                    Log.Info($"built {key}, {c.NameOf(owner)}'s{(localId != key ? $", called {localId} here" : "")}");
                 }
                 else
                 {
@@ -481,6 +530,9 @@ internal static class Sync
             }
         }
         foreach (Vehicle v in Puppets.Keys.Where(p => !wanted.Contains(p)).ToArray()) Puppets.Remove(v);
+        foreach (Vehicle v in Renamed.Keys.Where(x => !World.IsAlive(x)).ToArray()) Renamed.Remove(v);
+        foreach (Vehicle v in Seen.Where(x => !World.IsAlive(x)).ToArray()) Seen.Remove(v);
+        foreach (Vehicle v in MadeHere.Where(x => !World.IsAlive(x)).ToArray()) MadeHere.Remove(v);
     }
 
     /// <summary>A puppet pulled to its owner's state, from the physics window.</summary>
