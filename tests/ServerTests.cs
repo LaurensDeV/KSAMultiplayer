@@ -339,4 +339,21 @@ public class ServerTests
         rig.Clients.Remove(a);
         rig.Until(() => b.SnapshotWanted is not null, what: "Bob to be asked instead");
     }
+
+    [Fact]
+    public void EveryPlayerIsToldWhatEveryOtherPlayersPingIs()
+    {
+        using Rig rig = new();
+        Client a = rig.Join("Alice");
+        Client b = rig.Join("Bob");
+        rig.Until(() => a.Joined && b.Joined, what: "both to join");
+
+        // A game says what its own round trip is; the server passes it on, so each sees the other's.
+        rig.Until(() => double.IsFinite(a.Ping) && double.IsFinite(b.Ping), what: "both to measure a round trip");
+        rig.Until(() => a.Players.Any(p => p.Name == "Bob" && p.Rtt >= 0f), what: "Alice to be told Bob's ping");
+
+        Wire.Player bob = a.Players.First(p => p.Name == "Bob");
+        Assert.InRange(bob.Rtt, 0f, 1f);
+        Assert.Equal((float)b.Ping, bob.Rtt, 3);
+    }
 }

@@ -24,6 +24,10 @@ internal static class Panel
     // window however it is resized and no label is cut off at the edge.
     private const float LabelRoom = -112f;
 
+    // Where the player list's columns start, from the left of its window.
+    private const float PingColumn = 150f, FlyingColumn = 215f;
+    private const float BoardWidth = 330f;
+
     private sealed record Settings(string Name, string Address, string Password, bool Visible);
 
     private static readonly ImInputString NameText = new(Wire.NameChars * 4, ""u8);
@@ -34,11 +38,19 @@ internal static class Panel
 
     public static bool Visible = true;
 
+    /// <summary>
+    /// Until when the player list is shown without Tab held, on this game's own clock. The bridge sets
+    /// it, which only a developer's install starts: holding a key is the one thing it cannot do, and a
+    /// list nobody can photograph is a list nobody can check.
+    /// </summary>
+    public static double BoardUntil;
+
     private static string SettingsPath => Path.Combine(KSA.Constants.DocumentsFolderPath, "KSAMultiplayer", "settings.json");
 
     public static void Draw()
     {
         if (!_loaded) Load();
+        Scoreboard();
 
         ImGuiViewportPtr screen = ImGui.GetMainViewport();
         // Clear of KSA's own instruments down the right edge, which are drawn over this window.
@@ -77,6 +89,47 @@ internal static class Panel
         }
     }
 
+    /// <summary>
+    /// Who is here, while Tab is held, as a shooter shows its scoreboard: each player's ping, what
+    /// they fly and whether they are still loading. Shown whether or not the panel itself is open,
+    /// and never in the map, where Tab is KSA's own, nor while something is being typed into.
+    /// </summary>
+    private static void Scoreboard()
+    {
+        if (Sync.Client is not { Joined: true } c) return;
+        if (World.InMapView || ImGui.IsAnyItemActive()) return;
+        if (!ImGui.IsKeyDown(ImGuiKey.Tab) && Sync.Wall() >= BoardUntil) return;
+
+        ImGuiViewportPtr screen = ImGui.GetMainViewport();
+        float2 at = new(screen.WorkPos.X + ((screen.WorkSize.X - BoardWidth) * 0.5f), screen.WorkPos.Y + 60f);
+        ImGui.SetNextWindowPos(in at, ImGuiCond.Always, null);
+        ImGui.SetNextWindowBgAlpha(0.85f);
+
+        const ImGuiWindowFlags board = ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoTitleBar
+                                       | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove
+                                       | ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.NoFocusOnAppearing
+                                       | ImGuiWindowFlags.NoNav | ImGuiWindowFlags.NoInputs;
+        if (ImGui.Begin("###KSAMultiplayerPlayers", board))
+        {
+            ImGui.Text(c.ServerName.Length > 0 ? c.ServerName : "Multiplayer");
+            ImGui.SameLine(PingColumn, -1f);
+            ImGui.TextDisabled("Ping");
+            ImGui.SameLine(FlyingColumn, -1f);
+            ImGui.TextDisabled("Flying");
+            ImGui.Separator();
+            foreach (Wire.Player p in c.Players.OrderBy(p => p.Id))
+            {
+                ImGui.Text(p.Id == c.Id ? $"{p.Name} (you)" : p.Name);
+                ImGui.SameLine(PingColumn, -1f);
+                // Every game measures its own and tells the server, so this is each player's own line.
+                ImGui.TextDisabled(p.Rtt >= 0f ? $"{p.Rtt * 1000f:F0} ms" : "--");
+                ImGui.SameLine(FlyingColumn, -1f);
+                ImGui.TextDisabled(!p.Loaded ? "joining" : p.Controlling.Length > 0 ? p.Controlling : "--");
+            }
+        }
+        ImGui.End();
+    }
+
     private static void Join()
     {
         bool edited = false;
@@ -112,7 +165,9 @@ internal static class Panel
         ImGui.TextDisabled(Sync.Status);
         if (c is { Joined: true })
         {
-            ImGui.TextDisabled(double.IsFinite(c.Rtt) ? $"ping {c.Rtt * 1000:F0} ms" : "ping ...");
+            // The round trip as it is now, the same one the player list shows; Rtt is the best since
+            // joining, which the clock is set by and which reads as 0 ms on one machine.
+            ImGui.TextDisabled(double.IsFinite(c.Ping) ? $"ping {c.Ping * 1000:F0} ms" : "ping ...");
             ImGui.Separator();
             foreach (Wire.Player p in c.Players)
             {

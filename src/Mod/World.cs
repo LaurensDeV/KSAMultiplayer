@@ -21,6 +21,19 @@ internal static class World
 
     public static double Speed => KSA.Universe.SimulationSpeed;
 
+    /// <summary>
+    /// Whether the map is the view. KSA binds Tab there, to take and release control of a craft from
+    /// the map, and nowhere else: the player list keeps out of the map so that binding is left alone.
+    /// </summary>
+    public static bool InMapView
+    {
+        get
+        {
+            try { return Program.GetCameraMode() == CameraMode.Map; }
+            catch (Exception) { return false; }
+        }
+    }
+
     public static string KsaBuild => typeof(Vehicle).Assembly.GetName().Version?.ToString() ?? "";
 
     public static string Mods =>

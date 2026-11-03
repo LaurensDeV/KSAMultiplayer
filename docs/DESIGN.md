@@ -33,6 +33,9 @@ another version is refused by name rather than misread.
   (`--world`), from the first player to join an empty server, or as a fresh save asked of the player
   who has been in longest: every `--snapshot-every` seconds, and whenever a player joins a world more
   than 30 s old, the joiner waiting up to 15 s for it.
+- **Every player's ping.** A game measures its own round trip to the server and says it with each
+  `Ping`; the server passes them all on in the roster, so each game can show what everyone's line is
+  like. Held Tab shows that list in game.
 - **Who flies what.** A table of craft Id to player. A player owns a craft it takes control of, unless
   someone else is flying it now, and keeps it until it leaves, when everything it owned is let go.
 - **How each new craft is built**: the definition of every craft made since the world was saved, handed

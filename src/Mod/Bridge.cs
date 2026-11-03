@@ -224,6 +224,12 @@ internal sealed class Bridge
             return Done(new() { ["stage"] = Sync.Now.ToString(), ["address"] = address });
         }
 
+        if (command.Has("board"))
+        {
+            Panel.BoardUntil = Sync.Wall() + Math.Clamp(command.Number("board", 3.0), 0.0, 60.0);
+            return Done(new() { ["board_for_s"] = Math.Round(Panel.BoardUntil - Sync.Wall(), 1) });
+        }
+
         if (command.String("chat") is { Length: > 0 } text)
         {
             if (Sync.Client is null) return Failed("not connected");

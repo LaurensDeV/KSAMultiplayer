@@ -55,6 +55,9 @@ public sealed class GameServer : IDisposable
         public bool Seeding { get; set; }
 
         public string Controlling { get; set; } = "";
+
+        /// <summary>The player's round trip, s, as that player measured it; negative until it has one.</summary>
+        public float Rtt { get; set; } = -1f;
     }
 
     /// <summary>A craft the server knows of: who flies it and how it is built, if it was made after the world was saved.</summary>
@@ -199,6 +202,7 @@ public sealed class GameServer : IDisposable
                 _udp.Send(new Wire.Welcome(player.Id, "", Options.Name, _world is not null || !player.Seeding), from);
                 return;
             case Wire.Ping ping:
+                player.Rtt = ping.Rtt;
                 _udp.Send(new Wire.Pong(ping.Sent, _clock()), from);
                 return;
             case Wire.Loaded loaded:
@@ -416,7 +420,7 @@ public sealed class GameServer : IDisposable
     }
 
     private Wire.Roster Roster() =>
-        new([.. _players.Values.OrderBy(p => p.Id).Select(p => new Wire.Player(p.Id, p.Name, p.Loaded, p.Controlling))]);
+        new([.. _players.Values.OrderBy(p => p.Id).Select(p => new Wire.Player(p.Id, p.Name, p.Loaded, p.Controlling, p.Rtt))]);
 
     private IEnumerable<Wire.Owners> OwnerPages()
     {

@@ -31,6 +31,10 @@ public sealed class Client : IDisposable
     private Wire.Hello? _hello;
     private double _helloNext, _joinUntil, _pingNext, _heardAt;
     private double _bestRtt = double.PositiveInfinity;
+
+    // The quickest round trip is what the clock is set by; the latest is what a player is shown,
+    // since a scoreboard wants the line as it is now, not at its best since joining.
+    private double _lastRtt = double.NaN;
     private (double Universe, double Sent, double Rate)? _serverClock;
     private double _serverRate;
     private uint _sequence;
@@ -61,6 +65,9 @@ public sealed class Client : IDisposable
 
     /// <summary>The quickest round trip to the server, s.</summary>
     public double Rtt => _bestRtt;
+
+    /// <summary>The round trip last measured, s, or NaN before any: what this player's ping is now.</summary>
+    public double Ping => _lastRtt;
 
     public double? Arriving => _link.Arriving;
     public bool Sending => _link.Busy > 0;
@@ -101,7 +108,7 @@ public sealed class Client : IDisposable
         (_server, Id, Out, ServerName, ServerHasWorld) = (server, 0, "", "", false);
         _hello = new Wire.Hello(Wire.Clip(name, Wire.NameChars), ksaBuild, mods, password);
         (_helloNext, _joinUntil, _heardAt) = (0.0, _clock() + JoinWithinSeconds, _clock());
-        (_bestRtt, ServerOffset, _serverClock, _serverRate) = (double.PositiveInfinity, 0.0, null, 0.0);
+        (_bestRtt, _lastRtt, ServerOffset, _serverClock, _serverRate) = (double.PositiveInfinity, double.NaN, 0.0, null, 0.0);
         _owners.Clear();
         _tracks.Clear();
         Players = [];
@@ -177,7 +184,7 @@ public sealed class Client : IDisposable
         }
         if (now >= _pingNext)
         {
-            Send(new Wire.Ping(now));
+            Send(new Wire.Ping(now, double.IsFinite(_lastRtt) ? (float)_lastRtt : -1f));
             _pingNext = now + PingEverySeconds;
         }
         _link.Pump(now, Send);
@@ -225,6 +232,7 @@ public sealed class Client : IDisposable
                 return;
             case Wire.Pong pong:
                 double rtt = arrived - pong.Echo;
+                if (rtt >= 0.0 && rtt <= ClockRttSeconds) _lastRtt = rtt;
                 // The quickest answer is the one least held up on the way, so it says the clocks' difference best.
                 if (rtt >= 0.0 && rtt <= ClockRttSeconds && rtt <= _bestRtt * 1.5)
                 {

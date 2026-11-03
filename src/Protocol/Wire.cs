@@ -57,7 +57,7 @@ public readonly record struct Quat(double X, double Y, double Z, double W)
 public static class Wire
 {
     /// <summary>Changed whenever what a datagram means changes: a game speaking another version is refused by name.</summary>
-    public const ushort Version = 1;
+    public const ushort Version = 2;
 
     public const int BufferBytes = 8192;
     public const int NameChars = 24;
@@ -102,13 +102,15 @@ public static class Wire
     /// <param name="HasWorld">Whether the server has a world to send; without one this player's open world becomes it.</param>
     public sealed record Welcome(byte Id, string Refused, string ServerName, bool HasWorld) : Message(Kind.Welcome);
 
-    public readonly record struct Player(byte Id, string Name, bool Loaded, string Controlling);
+    /// <param name="Rtt">The player's round trip to the server, s, as that player last measured it; negative until it has.</param>
+    public readonly record struct Player(byte Id, string Name, bool Loaded, string Controlling, float Rtt);
 
     public sealed record Roster(Player[] Players) : Message(Kind.Roster);
 
     public sealed record Bye(string Why) : Message(Kind.Bye);
 
-    public sealed record Ping(double Sent) : Message(Kind.Ping);
+    /// <param name="Rtt">The round trip this game last measured, s, so the server can tell every player what every other player's is. Negative until it has one.</param>
+    public sealed record Ping(double Sent, float Rtt) : Message(Kind.Ping);
 
     /// <param name="Echo">The ping's own time, on the asker's clock.</param>
     /// <param name="Answered">When it was answered, on the answerer's clock.</param>
@@ -201,6 +203,7 @@ public static class Wire
                     w.Text(p.Name, NameChars);
                     w.U8(p.Loaded ? (byte)1 : (byte)0);
                     w.Text(p.Controlling, KeyChars);
+                    w.F32(p.Rtt);
                 }
                 break;
             case Bye b:
@@ -208,6 +211,7 @@ public static class Wire
                 break;
             case Ping p:
                 w.F64(p.Sent);
+                w.F32(p.Rtt);
                 break;
             case Pong p:
                 w.F64(p.Echo);
@@ -301,7 +305,7 @@ public static class Wire
                 Kind.Welcome => new Welcome(r.U8(), r.Text(200), r.Text(64), r.U8() != 0),
                 Kind.Roster => ReadRoster(ref r),
                 Kind.Bye => new Bye(r.Text(200)),
-                Kind.Ping => new Ping(r.F64()),
+                Kind.Ping => new Ping(r.F64(), r.F32()),
                 Kind.Pong => new Pong(r.F64(), r.F64()),
                 Kind.Clock => new Clock(r.F64(), r.F64(), r.F32()),
                 Kind.Chunk => new Chunk(r.U32(), r.U16(), r.U16(), r.Take(r.U16()).ToArray()),
@@ -333,7 +337,7 @@ public static class Wire
     private static Roster ReadRoster(ref Reader r)
     {
         Player[] players = new Player[r.U8()];
-        for (int i = 0; i < players.Length; i++) players[i] = new Player(r.U8(), r.Text(NameChars), r.U8() != 0, r.Text(KeyChars));
+        for (int i = 0; i < players.Length; i++) players[i] = new Player(r.U8(), r.Text(NameChars), r.U8() != 0, r.Text(KeyChars), r.F32());
         return new Roster(players);
     }
 
