@@ -69,7 +69,7 @@ internal static class Sync
     private static Task<IPEndPoint?>? _finding;
     private static (string Name, string Password)? _asking;
     private static double _frameAt, _loadingSince, _claimNext;
-    private static string _claimed = "";
+    private static string _claimed = "", _address = "", _stoodAsideFrom = "";
     private static int _settle;
 
     public static Stage Now { get; private set; } = Stage.Off;
@@ -85,6 +85,15 @@ internal static class Sync
     public static IReadOnlyList<string> Chat => ChatLines;
     public static IReadOnlyList<string> Said => SaidLines;
     public static IReadOnlyCollection<string> ConflictingCraft => Conflicts;
+
+    /// <summary>The craft this player owns and sends, by Id.</summary>
+    public static IReadOnlyCollection<string> OwnedCraft => Owned.Keys;
+
+    /// <summary>The craft of other players standing in this world, by Id.</summary>
+    public static IReadOnlyCollection<string> PuppetCraft => Puppets.Values;
+
+    /// <summary>The server this game was told to join, as it was given.</summary>
+    public static string ServerAddress => _address;
 
     public static double Wall() => Clock.Elapsed.TotalSeconds;
 
@@ -120,7 +129,7 @@ internal static class Sync
             Say($"could not open a socket: {e.Message}");
             return;
         }
-        _asking = (name, password);
+        (_asking, _address) = ((name, password), address);
         _finding = Find(host, port);
         Now = Stage.Joining;
         Say($"looking up {host}...");
@@ -140,7 +149,7 @@ internal static class Sync
         MadeHere.Clear();
         Definitions.Clear();
         PlacedAt.Clear();
-        (_claimed, Behind, Now) = ("", null, Stage.Off);
+        (_claimed, _address, Behind, Now) = ("", "", null, Stage.Off);
         if (HeldSpeed is not null)
         {
             HeldSpeed = null;
@@ -293,10 +302,42 @@ internal static class Sync
             }
         }
 
+        flown = StandAside(c, here, flown);
         ClaimFlown(c, flown);
         Adopt(c, here, flown);
         SendOwned(c, here, flown);
         PlaceOthers(c, here, flown);
+    }
+
+    // A game that joins loads the server's world still flying the craft whoever gave it the world was
+    // flying, so two players begin on one craft every time. The server keeps a craft for whoever is
+    // flying it, and this game takes the player off it rather than steer what is also somebody else's.
+    private static Vehicle? StandAside(Client c, Dictionary<string, Vehicle> here, Vehicle? flown)
+    {
+        if (flown is null) return null;
+        byte owner = c.OwnerOf(flown.Id);
+        if (owner == 0 || owner == c.Id)
+        {
+            _stoodAsideFrom = "";
+            return flown;
+        }
+        // Only while its owner is actually flying it: one merely owned is still this player's to take.
+        if (!c.Players.Any(p => p.Id == owner && p.Controlling == flown.Id)) return flown;
+
+        Vehicle? free = here.Values.FirstOrDefault(v => !ReferenceEquals(v, flown) && World.IsAlive(v)
+                                                        && c.OwnerOf(v.Id) == 0 && !Puppets.ContainsKey(v));
+        if (free is null || !World.GoTo(free))
+        {
+            if (_stoodAsideFrom != flown.Id)
+            {
+                _stoodAsideFrom = flown.Id;
+                Say($"{c.NameOf(owner)} is flying {flown.Id}, and there is no other craft here to take");
+            }
+            return flown;
+        }
+        _stoodAsideFrom = flown.Id;
+        Say($"{c.NameOf(owner)} is flying {flown.Id}: you fly {free.Id} now");
+        return free;
     }
 
     // The craft this player flies, claimed whenever it changes and now and then after.
@@ -408,6 +449,9 @@ internal static class Sync
         {
             if (owner == c.Id || Owned.ContainsKey(key)) continue;
             if (here.TryGetValue(key, out Vehicle? ours) && MadeHere.Contains(ours)) continue;
+            // Never the craft this player steers: pulling it to another game's state would fight the
+            // player's own controls, and StandAside has already tried to move them off it.
+            if (flown is not null && key == flown.Id) continue;
             Track track = c.TrackOf(key);
             if (!here.TryGetValue(key, out Vehicle? v))
             {

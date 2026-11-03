@@ -18,7 +18,8 @@ server runs no world at all, which is why it needs no game and runs anywhere .NE
   The mod compiles these files into its own DLL, so a player installs one assembly.
 - **`src/Server`** is `GameServer` and a console program round it.
 - **`src/Mod`** is the StarMap mod. `World` is every call into KSA; `Sync` is what a game does each frame;
-  `Hooks` are three Harmony prefixes; `Panel` is the window.
+  `Hooks` are three Harmony prefixes; `Panel` is the window. `Bridge` reads commands from a folder and
+  answers in another, so the tools can drive a game; only a developer's install starts it.
 
 Every datagram starts with `KSMP` and the protocol version, so anything else is dropped, and a game of
 another version is refused by name rather than misread.
@@ -53,6 +54,9 @@ giver had enabled, since a save holding a part of a missing mod does not load.
    `GameSaves.LoadSaveGame`, as Fast & Purrious's online race already does. After 30 frames in flight
    it says it has loaded, with its universe time.
 4. **Playing**, each frame:
+   - **A craft somebody else is flying is given up.** A game that joins loads the world still flying
+     whoever gave it that world, so two players begin on one craft every time; this game takes the
+     player to a craft nobody owns instead, and says so.
    - **The flown craft is claimed**, when it changes and every two seconds.
    - **Craft this game made are adopted.** Anything that appears that was not in the world it loaded
      and was not built from someone's definition is this player's if it is the flown craft or nearer
@@ -92,23 +96,36 @@ again. Both give up after two minutes. What it carries says what it is in front:
 the craft's Id, its owner and the universe time. A zip from another machine is unpacked only into its
 own folder: a name that climbs out of it is refused.
 
+## What has been seen in a game
+
+Two games on one machine, each with a profile of its own, joined to one server: `tools/two-games.sh
+--test` sets that up and `tools/ksa-mcp` drives both through the mod's bridge (`src/Mod/Bridge.cs`),
+so a run is repeatable and what each game thinks is readable rather than guessed at. Seen working
+against KSA `2026.10.25.5707`:
+
+- **Joining, seeding and the handover.** The first game's world became the server's, 31 KB, and the
+  second received it, loaded it and reached the shared world.
+- **Who flies what.** Claims relayed both ways; each game held the other's craft as a puppet and its
+  own as its own.
+- **Building a craft from another game's definition.** A kitten the second game sent out on EVA was
+  built in the first from its definition and stood where its owner put it.
+- **Adopting a new craft.** That kitten appeared as a new craft, was taken as its player's and
+  described to the other game, unprompted.
+- **Keeping the server's time.** Both the ±10% nudge and the catch-up warp: a game 15 s behind after
+  a load was run at 8.4x until it caught up, and both then settled at 1.1x.
+
 ## What has not been tried
 
-**Nothing of the mod has been run in a game.** It compiles against KSA `2026.10.25.5707`, every engine
-call it makes is one the decompiled source shows doing the same job, and the patterns it copies from
-Fast & Purrious's online race (handing over a save, holding the speed, pulling a puppet in
-`PrepareWorker`) were seen working there. What is new, and most likely to need fixing in game:
-
-- **Building a craft from another game's definition.** `SerializeSave` and `CreateVehicleFromSaveGameData`
-  are what KSA's own saves go through, but a craft built mid-flight rather than at load may need more
-  done to it. A craft with a kitten aboard that the other world's roster lacks is untried.
-- **Placing a puppet without physics.** `SetFlightPlan` called from the frame hook on a railed craft,
-  and `TeleportToLocation` on a moving one, are both untried this way.
-- **Adopting new craft.** Whether a dropped stage or an EVA kitten appears as a new craft the frame it
-  separates, and whether the nearest-craft rule gives it to the right player when two are close.
-- **Catching up by warp.** Up to 10x with craft in physics; KSA may cap the warp lower in places.
-- **Two games joined across the internet.** The server has been run as a process and driven over
-  loopback, not across a network.
+- **Placing a puppet without physics.** `SetFlightPlan` on a railed craft and `TeleportToLocation` on
+  a moving one are reached in a run, but neither has been checked against where the craft should be.
+- **Pulling a puppet in physics.** Two craft were close enough to share a bubble; that the pull holds
+  one steady there has not been measured.
+- **A craft of many parts.** What has been built from a definition is a one-part kitten, not a rocket,
+  and nothing has staged or dropped a stage while another game watched.
+- **Catching up by warp with craft in physics.** The catch-up seen was of craft at rest on a pad.
+- **Two games across the internet.** Both games and the server were on one machine. WSL in its default
+  NAT mode cannot be reached from a Windows game at all, which is why `two-games.sh` publishes a
+  Windows server unless WSL is in mirrored mode.
 
 ## What it does not do
 
