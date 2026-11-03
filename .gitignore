@@ -12,3 +12,12 @@ dist/
 # The two-games harness: a scratch world for the test server, and its log.
 .two-games-data/
 .two-games-server.log
+
+# Infrastructure: credentials and local working files. The provider lock file is committed, so
+# everyone plans against the same provider versions.
+infra/**/.env
+infra/**/backend.hcl
+.terraform/
+.terraform.tfstate.lock.info
+*.tfstate
+*.tfstate.backup

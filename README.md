@@ -18,9 +18,11 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
    anyone who differs and says what is missing.
 3. Load any world and get into flight. The **Multiplayer** window is at the top right: enter the server's
    address (`host:port`, or just `host` for port 50100), your name and the password if there is one, then
-   press **Connect**.
+   press **Connect**. There is a server at **`mp.ksarmory.com`** to try it on.
 4. Connecting **replaces your open world with the server's**: save first. If the server has no world
    yet, yours becomes the server's world instead, and nothing is replaced.
+5. Hold **Tab** for who is playing and what their ping is. **Enter** opens a chat line, **Enter** sends
+   it. Another player's craft carries their name, and is theirs: you can watch it, not fly it.
 
 Once you're in:
 
@@ -120,4 +122,5 @@ docker run -d --name ksamp -p 50100:50100/udp -v ksamp-data:/data -e KSAMP_NAME=
 | `tests/` | the protocol and the server driven over loopback |
 | `tools/ksa-mcp/` | commands into a running game through the mod's bridge, for driving a test without a hand on the keyboard |
 | `deploy/` | a systemd unit and a Dockerfile |
+| `infra/` | `mp.ksarmory.com` and the server behind it, as OpenTofu |
 | `docs/DESIGN.md` | how it works, and what it cannot do yet |
