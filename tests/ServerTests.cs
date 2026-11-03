@@ -140,7 +140,7 @@ public class ServerTests
     }
 
     [Fact]
-    public void NobodyTakesACraftSomeoneIsFlyingButAnyoneTakesOneLeftBehind()
+    public void NobodyTakesACraftAnotherPlayerHoldsUntilThatPlayerLeaves()
     {
         using Rig rig = new();
         Client a = Seed(rig);
@@ -154,11 +154,20 @@ public class ServerTests
         Assert.Equal(a.Id, rig.Server.OwnerOf("Rocket"));
         Assert.Null(a.TrackOf("Rocket").Newest);
 
+        // Alice flies something else. The rocket is still hers and Bob still only watches: a craft
+        // taken back the moment its owner looked away put two players on one craft.
         a.Claim("Lander", controlling: true);
         rig.Until(() => rig.Server.Players.First(p => p.Id == a.Id).Controlling == "Lander", what: "Alice to fly the lander");
         b.Claim("Rocket", controlling: true);
-        rig.Until(() => rig.Server.OwnerOf("Rocket") == b.Id, what: "Bob to take the rocket");
-        rig.Until(() => a.OwnerOf("Rocket") == b.Id, what: "Alice to hear so");
+        rig.For(0.5);
+        Assert.Equal(a.Id, rig.Server.OwnerOf("Rocket"));
+
+        // It is let go of when she leaves, and then it is anyone's.
+        a.Dispose();
+        rig.Clients.Remove(a);
+        rig.Until(() => rig.Server.OwnerOf("Rocket") != a.Id, what: "Alice's craft to be let go of");
+        b.Claim("Rocket", controlling: true);
+        rig.Until(() => rig.Server.OwnerOf("Rocket") == b.Id, what: "Bob to take the rocket now");
     }
 
     [Fact]
@@ -349,8 +358,9 @@ public class ServerTests
         rig.Until(() => a.Joined && b.Joined, what: "both to join");
 
         // A game says what its own round trip is; the server passes it on, so each sees the other's.
-        rig.Until(() => double.IsFinite(a.Ping) && double.IsFinite(b.Ping), what: "both to measure a round trip");
-        rig.Until(() => a.Players.Any(p => p.Name == "Bob" && p.Rtt >= 0f), what: "Alice to be told Bob's ping");
+        // A ping goes once a second and a roster every two, so this is given room to be slow.
+        rig.Until(() => double.IsFinite(a.Ping) && double.IsFinite(b.Ping), 15.0, "both to measure a round trip");
+        rig.Until(() => a.Players.Any(p => p.Name == "Bob" && p.Rtt >= 0f), 15.0, "Alice to be told Bob's ping");
 
         Wire.Player bob = a.Players.First(p => p.Name == "Bob");
         Assert.InRange(bob.Rtt, 0f, 1f);

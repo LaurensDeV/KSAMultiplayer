@@ -345,8 +345,11 @@ public sealed class GameServer : IDisposable
         }
     }
 
-    // Whether a player may fly a craft, taking it if nobody does: one that nobody is flying now may be
-    // taken by whoever takes control of it; one somebody is flying is theirs.
+    // Whether a player may fly a craft. The first to take one that nobody has keeps it until they
+    // leave: a craft another player here holds is theirs whether or not they are flying it this
+    // second, and everyone else only watches. Letting a craft be taken back the moment its owner
+    // looked away put two players on one kitten, each game pulling it towards its own idea of where
+    // it was, and one of them was flung.
     private bool Grant(Player p, string key, bool taking = false)
     {
         if (!_crafts.TryGetValue(key, out Craft? craft))
@@ -355,7 +358,7 @@ public sealed class GameServer : IDisposable
             _crafts[key] = craft = new Craft();
         }
         if (craft.Owner == p.Id) return true;
-        if (craft.Owner != 0 && _players.TryGetValue(craft.Owner, out Player? owner) && (owner.Controlling == key || !taking)) return false;
+        if (craft.Owner != 0 && _players.ContainsKey(craft.Owner)) return false;
         craft.Owner = p.Id;
         _gone.Remove(key);
         OwnersChanged();

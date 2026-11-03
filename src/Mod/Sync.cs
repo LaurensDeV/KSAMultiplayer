@@ -321,8 +321,6 @@ internal static class Sync
             _stoodAsideFrom = "";
             return flown;
         }
-        // Only while its owner is actually flying it: one merely owned is still this player's to take.
-        if (!c.Players.Any(p => p.Id == owner && p.Controlling == flown.Id)) return flown;
 
         Vehicle? free = here.Values.FirstOrDefault(v => !ReferenceEquals(v, flown) && World.IsAlive(v)
                                                         && c.OwnerOf(v.Id) == 0 && !Puppets.ContainsKey(v));

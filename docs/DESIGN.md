@@ -36,8 +36,9 @@ another version is refused by name rather than misread.
 - **Every player's ping.** A game measures its own round trip to the server and says it with each
   `Ping`; the server passes them all on in the roster, so each game can show what everyone's line is
   like. Held Tab shows that list in game.
-- **Who flies what.** A table of craft Id to player. A player owns a craft it takes control of, unless
-  someone else is flying it now, and keeps it until it leaves, when everything it owned is let go.
+- **Who flies what.** A table of craft Id to player. The first player to take a craft nobody holds
+  keeps it until they leave, when everything they owned is let go; while they hold it everyone else
+  only watches, whether or not they are flying it this second.
 - **How each new craft is built**: the definition of every craft made since the world was saved, handed
   to every game in it and to each game that loads that world later; and which craft have gone since.
   A new save drops what it already holds.
@@ -57,7 +58,7 @@ giver had enabled, since a save holding a part of a missing mod does not load.
    `GameSaves.LoadSaveGame`, as Fast & Purrious's online race already does. After 30 frames in flight
    it says it has loaded, with its universe time.
 4. **Playing**, each frame:
-   - **A craft somebody else is flying is given up.** A game that joins loads the world still flying
+   - **A craft somebody else holds is given up.** A game that joins loads the world still flying
      whoever gave it that world, so two players begin on one craft every time; this game takes the
      player to a craft nobody owns instead, and says so.
    - **The flown craft is claimed**, when it changes and every two seconds.
@@ -138,6 +139,9 @@ against KSA `2026.10.25.5707`:
 - **One world, one time.** Nobody warps; a player who wants to wait for a transfer window waits.
 - **No authority over physics.** Each game is trusted for its own craft; the server only checks a state
   comes from the craft's owner.
-- **Same-named craft collide**: Ids are KSA's own, and two players launching craft of one name in the
-  same session see only the first. The second is told to rename.
+- **Same-named craft collide**: Ids are KSA's own, so two games that make a craft the same way make
+  one Id. Two players who each send a kitten out of the same capsule both call it what KSA calls it,
+  the server knows one craft of that name, and the second player's own kitten becomes a puppet of the
+  first's and is flung at it. The second is told to rename, which is no answer: the server should
+  give a colliding craft a name of its own and tell its game to use it.
 - **Ownership is not kept across a server restart**: it starts afresh, and the first to take control of a craft has it.
