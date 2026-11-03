@@ -46,6 +46,12 @@ another version is refused by name rather than misread.
 - **Who flies what.** A table of craft Id to player. The first player to take a craft nobody holds
   keeps it until they leave, when everything they owned is let go; while they hold it everyone else
   only watches, whether or not they are flying it this second.
+- **The world's speed.** One world has one time, so nobody changes it alone. A game asks, everyone
+  else is asked, and it runs only if they all agree; saying nothing is not agreeing, and the ask runs
+  out after ten seconds. A pause is a warp like any other, since stopping the world stops it for
+  everyone. The warp is then the asker's to steer and theirs to stop, ends if they leave, and another
+  cannot be asked for within five seconds of one ending. What makes the games warp together is that
+  the server warps *its own clock*, which is the thing they all follow anyway.
 - **A name for every craft.** Craft Ids are KSA's own, so two games that make a craft the same way
   make one Id: two players who each send a kitten out of the same capsule both call it what KSA calls
   it. A game says, with each claim, whether it made the craft or found it in the world everyone
@@ -97,7 +103,8 @@ carries that player's system; one an operator imports carries whatever its own `
    - **Time is kept** (`ClockFollow`): a gap under 3 s is closed at up to a tenth faster or slower, one
      larger by warping up to 10x, and a world well ahead waits. KSA steps a world by no more than its
      33 ms a frame, so the speed asked makes up a slower frame. The warp keys and pause are held to that
-     speed by prefixes on both `Universe.SetSimulationSpeed`.
+     speed by prefixes on both `Universe.SetSimulationSpeed`, and a speed asked for that is not that
+     one is the player reaching for a warp: it is put to the others instead of taken.
 
 What nobody owns is left to each world: a craft on rails goes the same way in every one, and a craft
 in physics that nobody flies drifts apart from world to world.
@@ -154,6 +161,10 @@ against KSA `2026.10.25.5707`:
 - **A craft of many parts.** What has been built from a definition is a one-part kitten, not a rocket,
   and nothing has staged or dropped a stage while another game watched.
 - **Catching up by warp with craft in physics.** The catch-up seen was of craft at rest on a pad.
+- **Warping together.** The vote is driven over loopback by the tests, and the server's half of it is
+  covered there; no game has yet been seen following a warp its player voted for. A shared warp asks
+  every world to run at that speed, and a machine that cannot keep up falls behind and is left
+  catching up at the end of it.
 - **Two games across the internet.** Both games and the server were on one machine. WSL in its default
   NAT mode cannot be reached from a Windows game at all, which is why `two-games.sh` publishes a
   Windows server unless WSL is in mirrored mode.
@@ -163,7 +174,6 @@ against KSA `2026.10.25.5707`:
 - **No docking, no shared craft.** A craft is flown by one player at a time. Docking two players' craft
   is untried and probably wrong.
 - **Engines are not shown firing** on another player's craft: the throttle is sent and not yet applied.
-- **One world, one time.** Nobody warps; a player who wants to wait for a transfer window waits.
 - **No authority over physics.** Each game is trusted for its own craft; the server only checks a state
   comes from the craft's owner.
 - **Ownership is not kept across a server restart**: it starts afresh, and the first to take control of a craft has it.

@@ -30,6 +30,9 @@ internal static class Sync
     // A claim is said again this often, since a datagram can be lost.
     private const double ClaimEverySeconds = 2.0;
 
+    // A speed the player wants is said again this often while they still want it.
+    private const double AskWarpEverySeconds = 1.0;
+
     // A puppet with no physics here is placed by its orbit or on the ground at most this often, and only when this far out.
     private const double PlaceEverySeconds = 1.0, PlaceNearEnoughM = 25.0;
 
@@ -81,6 +84,7 @@ internal static class Sync
     private static (string Name, string Password)? _asking;
     private static double _frameAt, _loadingSince, _claimNext;
     private static string _claimed = "", _address = "", _watching = "";
+    private static double _askedSpeed = 1.0, _askWarpNext;
     private static int _settle;
 
     public static Stage Now { get; private set; } = Stage.Off;
@@ -107,6 +111,24 @@ internal static class Sync
     public static string ServerAddress => _address;
 
     public static double Wall() => Clock.Elapsed.TotalSeconds;
+
+    /// <summary>
+    /// The player has reached for a speed, from a warp key or the pause. One world has one time, so
+    /// this is put to everyone rather than done: the speed itself stays whatever keeps the server's.
+    /// </summary>
+    public static void WantSpeed(double speed)
+    {
+        if (_client is not { Joined: true } c || Now != Stage.Playing || !double.IsFinite(speed)) return;
+
+        // Normal speed means nothing unless this player has a warp of their own to end with it.
+        bool mine = c.Warp is { Phase: Wire.WarpPhase.Running } w && w.Who == c.Id;
+        if (Math.Abs(speed - 1.0) < 0.01 && !mine) return;
+
+        // Said again now and then, since a datagram can be lost, but not every frame a key is held.
+        if (Math.Abs(speed - _askedSpeed) < 0.01 && Wall() < _askWarpNext) return;
+        (_askedSpeed, _askWarpNext) = (speed, Wall() + AskWarpEverySeconds);
+        c.AskWarp(speed);
+    }
 
     /// <summary>What the panel shows under the server's name.</summary>
     public static string Status => Now switch
@@ -165,6 +187,7 @@ internal static class Sync
         Definitions.Clear();
         PlacedAt.Clear();
         (_claimed, _address, _watching, Behind, Now) = ("", "", "", null, Stage.Off);
+        (_askedSpeed, _askWarpNext) = (1.0, 0.0);
         if (HeldSpeed is not null)
         {
             HeldSpeed = null;

@@ -85,16 +85,37 @@ internal static class Hooks
         }
     }
 
+    // The speed stays the one that keeps the server's time. A speed asked for that is not that one
+    // came from the player reaching for a warp key or the pause, and is put to the other players
+    // instead: this game's own clock is not its own to change while it shares a world.
     private static void BeforeSpeed(ref double simulationSpeed, ref bool alert)
     {
         if (Held() is not { } held) return;
-        if (Math.Abs(held - simulationSpeed) > 1e-9) alert = false;
+        if (Math.Abs(held - simulationSpeed) > 1e-9)
+        {
+            Wanted(simulationSpeed);
+            alert = false;
+        }
         simulationSpeed = held;
     }
 
     private static void BeforeNamedSpeed(ref SimSpeed speed)
     {
-        if (Held() is { } held && Math.Abs(held - speed.Value) > 1e-9) speed = new SimSpeed(held);
+        if (Held() is not { } held || Math.Abs(held - speed.Value) <= 1e-9) return;
+        Wanted(speed.Value);
+        speed = new SimSpeed(held);
+    }
+
+    private static void Wanted(double speed)
+    {
+        try
+        {
+            Sync.WantSpeed(speed);
+        }
+        catch (Exception e)
+        {
+            Complain("asking the others for a warp", e);
+        }
     }
 
     private static bool BeforeDestroy(Vehicle vehicle)

@@ -207,7 +207,9 @@ TOOLS = {
                "answers as ksa_status does.",
                {"connect": {"type": "string"}, "name": {"type": "string"}, "password": {"type": "string"},
                 "disconnect": {"type": "boolean"}, "chat": {"type": "string"},
-                "board": _num("show the player list for this many seconds, as holding Tab does")}, [],
+                "board": _num("show the player list for this many seconds, as holding Tab does"),
+                "warp": _num("ask everyone for the world to run at this speed; 0 pauses"),
+                "vote": {"type": "boolean", "description": "answer the warp somebody asked for"}}, [],
                lambda a: _dump(send("mp", **a))),
     "ksa_goto": ("Fly the craft of this Id and point the camera at it, so each of two games flies a "
                  "different craft out of the same world.", {"craft": {"type": "string"}}, ["craft"],

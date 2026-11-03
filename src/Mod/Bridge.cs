@@ -177,6 +177,15 @@ internal sealed class Bridge
             data["puppets_here"] = Sync.PuppetCraft.Order(StringComparer.Ordinal).ToList();
             data["conflicts"] = Sync.ConflictingCraft.Order(StringComparer.Ordinal).ToList();
             data["arriving"] = c.Arriving;
+            data["warp"] = c.Warp is { } w
+                ? new Dictionary<string, object?>
+                {
+                    ["who"] = c.NameOf(w.Who),
+                    ["speed"] = Math.Round(w.Speed, 3),
+                    ["phase"] = w.Phase.ToString(),
+                    ["waiting"] = w.Waiting.Select(c.NameOf).ToList(),
+                }
+                : null;
         }
 
         return Done(data);
@@ -226,6 +235,22 @@ internal sealed class Bridge
             string name = command.String("name");
             Sync.Connect(address, name.Length > 0 ? name : "Kitten", command.String("password"));
             return Done(new() { ["stage"] = Sync.Now.ToString(), ["address"] = address });
+        }
+
+        // A warp is asked for and answered through the panel; these are the same two things, for a
+        // test that has no hands.
+        if (command.Has("warp"))
+        {
+            if (Sync.Client is not { Joined: true } c) return Failed("not connected");
+            c.AskWarp(command.Number("warp", 1.0));
+            return Done(new() { ["asked"] = command.Number("warp", 1.0) });
+        }
+
+        if (command.Has("vote"))
+        {
+            if (Sync.Client is not { Joined: true } c) return Failed("not connected");
+            c.VoteWarp(command.Flag("vote", true));
+            return Done(new() { ["voted"] = command.Flag("vote", true) });
         }
 
         if (command.Has("board"))

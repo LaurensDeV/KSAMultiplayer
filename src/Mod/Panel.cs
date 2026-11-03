@@ -30,6 +30,7 @@ internal static class Panel
     private const float BoardWidth = 330f;
 
     private static readonly float2 ChatFirstSize = new(420f, 190f);
+    private const float WarpWidth = 340f;
     private const int ChatShown = 14;
 
     // Whether a chat line is being typed: only then does any window of this mod hold the keyboard.
@@ -62,6 +63,7 @@ internal static class Panel
     {
         if (!_loaded) Load();
         Nametags();
+        WarpWindow();
         Scoreboard();
         ChatWindow();
 
@@ -101,6 +103,70 @@ internal static class Panel
             Save();
         }
     }
+
+    /// <summary>
+    /// What is being asked of this player about the world's speed, and what it is doing. Its own
+    /// window near the top of the screen, so an ask is seen whether or not the panel is open: a
+    /// warp nobody noticed being asked for is a warp that never happens.
+    /// </summary>
+    private static void WarpWindow()
+    {
+        if (Sync.Client is not { Joined: true } c || c.Warp is not { } w) return;
+
+        ImGuiViewportPtr screen = ImGui.GetMainViewport();
+        float2 at = new(screen.WorkPos.X + ((screen.WorkSize.X - WarpWidth) * 0.5f), screen.WorkPos.Y + 150f);
+        ImGui.SetNextWindowPos(in at, ImGuiCond.Always, null);
+        ImGui.SetNextWindowSize(new float2(WarpWidth, 0f), ImGuiCond.Always);
+        ImGui.SetNextWindowBgAlpha(0.88f);
+
+        const ImGuiWindowFlags ask = ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoTitleBar
+                                     | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove
+                                     | ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.NoNav
+                                     | ImGuiWindowFlags.NoFocusOnAppearing;
+        if (ImGui.Begin("###KSAMultiplayerWarp", ask))
+        {
+            ImGui.PushTextWrapPos(0f);
+            if (w.Phase == Wire.WarpPhase.Asking) Asking(c, w);
+            else Warping(c, w);
+            ImGui.PopTextWrapPos();
+        }
+        ImGui.End();
+    }
+
+    private static void Asking(Client c, Wire.Warp w)
+    {
+        float4 warn = new(1.0f, 0.82f, 0.4f, 1.0f);
+        ImGui.TextColored(in warn, w.Who == c.Id
+            ? $"You want to {Fast(w.Speed)}. Waiting for everyone."
+            : $"{c.NameOf(w.Who)} wants to {Fast(w.Speed)}.");
+
+        if (w.Waiting.Contains(c.Id))
+        {
+            // Everyone has to agree, so saying nothing is not a quiet yes: it simply runs out.
+            if (ImGui.Button("Agree", null)) c.VoteWarp(true);
+            ImGui.SameLine(0f, -1f);
+            if (ImGui.Button("No", null)) c.VoteWarp(false);
+        }
+        else
+        {
+            ImGui.TextDisabled(w.Waiting.Length == 0
+                ? "waiting..."
+                : $"waiting on {string.Join(", ", w.Waiting.Select(c.NameOf))}");
+        }
+    }
+
+    private static void Warping(Client c, Wire.Warp w)
+    {
+        ImGui.Text($"The world is at {w.Speed:0.##}x, {c.NameOf(w.Who)}'s.");
+        if (w.Who != c.Id)
+        {
+            ImGui.TextDisabled("whoever started it ends it");
+            return;
+        }
+        if (ImGui.Button("Stop", null)) c.AskWarp(1.0);
+    }
+
+    private static string Fast(float speed) => speed < 0.01f ? "pause the world" : $"warp the world to {speed:0.##}x";
 
     /// <summary>
     /// Whose craft is whose, written over the world: every other player's craft in sight carries its
