@@ -14,6 +14,7 @@ public sealed class MultiplayerMod
     private const int FaultLimit = 10;
     private int _faults;
     private bool _disabled;
+    private Bridge? _bridge;
 
     [StarMapImmediateLoad]
     public void OnImmediateLoad(Mod mod)
@@ -22,7 +23,14 @@ public sealed class MultiplayerMod
     }
 
     [StarMapAllModsLoaded]
-    public void OnFullyLoaded() => Hooks.Install();
+    public void OnFullyLoaded()
+    {
+        Hooks.Install();
+        // A developer's install only: the bridge is how the tools drive two games against one
+        // server, and a released mod has no business watching a folder for commands.
+        if (Build.Developer) _bridge = new Bridge();
+        if (_bridge is not null) Log.Info("developer install: the bridge is listening");
+    }
 
     [StarMapAfterOnFrame]
     public void OnAfterFrame(double currentPlayerTime, double dtPlayer)
@@ -35,6 +43,15 @@ public sealed class MultiplayerMod
         catch (Exception e)
         {
             Fault("frame", e);
+        }
+        // After the session, so a command reads the state this frame left and never half of it.
+        try
+        {
+            _bridge?.Update(dtPlayer);
+        }
+        catch (Exception e)
+        {
+            Fault("bridge", e);
         }
     }
 
@@ -55,6 +72,7 @@ public sealed class MultiplayerMod
     [StarMapUnload]
     public void Unload()
     {
+        try { Panel.Save(); } catch (Exception e) { Log.Warn($"could not keep the panel's settings: {e.Message}"); }
         try { Sync.Shutdown(); } catch (Exception e) { Log.Error("leaving the server", e); }
         Hooks.Remove();
         Log.Info("unloaded");

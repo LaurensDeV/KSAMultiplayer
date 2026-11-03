@@ -21,4 +21,10 @@ dedicated server (`ksamp-server`) that runs on Linux with no game installed.
 ./tools/build.sh                    # server and mod
 ./tools/publish-server.sh [rid]     # one self-contained server executable
 ./tools/package.sh                  # the mod's zip
+./tools/deploy.sh                   # the mod into this machine's KSA, with the bridge on
+./tools/two-games.sh --test         # two games and a server on this machine, in one world
 ```
+
+The mod has been run in a game, through `src/Mod/Bridge.cs` and `tools/ksa-mcp`. `two-games.sh` runs
+a Windows server unless WSL is in mirrored networking mode, because a Windows game cannot reach a UDP
+socket bound inside WSL's own network stack.

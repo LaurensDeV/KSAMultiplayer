@@ -108,6 +108,9 @@ docker run -d --name ksamp -p 50100:50100/udp -v ksamp-data:/data -e KSAMP_NAME=
 | `./tools/build.sh` | the server and the mod; the mod needs KSA's assemblies, found by `Directory.Build.props` (set `KSA_DLL_DIR`) |
 | `./tools/publish-server.sh [rid]` | the server as one self-contained executable |
 | `./tools/package.sh` | the mod as a player installs it, `dist/KSAMultiplayer-<version>.zip` |
+| `./tools/deploy.sh` | the mod into this machine's KSA, as a developer's install: it starts the bridge |
+| `./tools/run.sh` | deploy and launch the game, showing the mod's log |
+| `./tools/two-games.sh --test` | two games and a server on this machine, joined to one world |
 
 | Path | |
 | --- | --- |
@@ -115,5 +118,6 @@ docker run -d --name ksamp -p 50100:50100/udp -v ksamp-data:/data -e KSAMP_NAME=
 | `src/Server/` | the dedicated server: `GameServer`, the world kept on disk, and the console program |
 | `src/Mod/` | the StarMap mod: `Sync` runs the session each frame, `World` is every contact with KSA, `Hooks` the three patches, `Panel` the window |
 | `tests/` | the protocol and the server driven over loopback |
+| `tools/ksa-mcp/` | commands into a running game through the mod's bridge, for driving a test without a hand on the keyboard |
 | `deploy/` | a systemd unit and a Dockerfile |
 | `docs/DESIGN.md` | how it works, and what it cannot do yet |
