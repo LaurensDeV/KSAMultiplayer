@@ -1,0 +1,75 @@
+using Xunit;
+
+namespace KSAMultiplayer.Tests;
+
+public class ClockTests
+{
+    [Fact]
+    public void TheServersClockHoldsWhileNobodyPlaysAndCarriesOnFromWhereItWas()
+    {
+        UniverseClock c = new();
+        Assert.False(c.Known);
+        c.Set(1000, now: 0);
+        c.Run(true, now: 0);
+        Assert.Equal(1010, c.Now(10), 9);
+        c.Run(false, now: 10);
+        Assert.Equal(1010, c.Now(500), 9);
+        Assert.Equal(0, c.Rate);
+        c.Run(true, now: 500);
+        Assert.Equal(1015, c.Now(505), 9);
+    }
+
+    [Fact]
+    public void AWorldAlmostInStepIsNudgedAndOneFarBehindIsWarped()
+    {
+        Assert.Equal(1.0, ClockFollow.Speed(0, 1), 9);
+        Assert.InRange(ClockFollow.Speed(0.2, 1), 1.0, 1.0 + ClockFollow.MostNudge);
+        Assert.InRange(ClockFollow.Speed(-0.2, 1), 1.0 - ClockFollow.MostNudge, 1.0);
+        Assert.Equal(1.0 + ClockFollow.MostNudge, ClockFollow.Speed(2.9, 1), 9);
+        Assert.Equal(ClockFollow.MostCatchUp, ClockFollow.Speed(600, 1), 9);
+        Assert.True(ClockFollow.Speed(5, 1) > 1.0 + ClockFollow.MostNudge);
+        Assert.Equal(0, ClockFollow.Speed(-10, 1));
+        Assert.Equal(0, ClockFollow.Speed(5, 0));
+    }
+
+    [Fact]
+    public void AFrameLongerThanKsasStepIsMadeUp()
+    {
+        Assert.Equal(1.0, ClockFollow.Asked(1.0, 1.0 / 60, 1.0 / 30), 9);
+        Assert.Equal(1.0 + ClockFollow.MostNudge, ClockFollow.Asked(1.0, 1.0 / 20, 1.0 / 30), 9);
+        Assert.Equal(10.0, ClockFollow.Asked(10.0, 1.0 / 60, 1.0 / 30), 9);
+    }
+
+    private static Wire.State At(double t, double x) =>
+        new(1, "R", 0, t, "Earth", new Vec3(x, 0, 0), new Vec3(10, 0, 0), new Vec3(x, 0, 0), new Vec3(10, 0, 0), Quat.Identity, Vec3.Zero, 0, 0);
+
+    [Fact]
+    public void ACraftIsDrawnBetweenItsStatesALittleInThePast()
+    {
+        Track track = new();
+        track.Add(At(10.0, 100));
+        track.Add(At(10.1, 101));
+        track.Add(At(10.05, 100.5));
+        Wire.State s = Assert.IsType<Wire.State>(track.At(10.075 + Track.DelaySeconds));
+        Assert.Equal(100.75, s.PositionCcf.X, 6);
+    }
+
+    [Fact]
+    public void ACraftIsCarriedOnPastItsNewestStateForAMomentOnly()
+    {
+        Track track = new();
+        track.Add(At(10.0, 100));
+        Assert.Equal(105, track.At(10.5 + Track.DelaySeconds)!.PositionCcf.X, 6);
+        Assert.Equal(100 + (10 * Track.MostAheadSeconds), track.At(60)!.PositionCcf.X, 6);
+    }
+
+    [Fact]
+    public void ACraftIsNotBlendedAcrossAChangeOfBody()
+    {
+        Track track = new();
+        track.Add(At(10.0, 100));
+        track.Add(At(10.1, 5) with { Body = "Moon" });
+        Assert.Equal("Moon", track.At(10.05 + Track.DelaySeconds)!.Body);
+        Assert.Equal(5, track.At(10.05 + Track.DelaySeconds)!.PositionCcf.X, 6);
+    }
+}

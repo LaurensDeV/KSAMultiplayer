@@ -1,0 +1,28 @@
+<Project>
+
+  <!--
+    Where the KSA assemblies the mod compiles against come from. They are RocketWerkz's copyrighted
+    files and are never committed. First match wins: KSA_DLL_DIR, then Import/, then a
+    ksa-game-assemblies checkout beside this repository, then a game install.
+
+    Only the mod needs them. The protocol, the server and the tests reference nothing of KSA.
+  -->
+  <PropertyGroup>
+    <KsaDllDir Condition="'$(KsaDllDir)' == '' AND '$(KSA_DLL_DIR)' != ''">$([MSBuild]::EnsureTrailingSlash('$(KSA_DLL_DIR)'))</KsaDllDir>
+    <KsaDllDir Condition="'$(KsaDllDir)' == '' AND Exists('$(MSBuildThisFileDirectory)Import/KSA.dll')">$(MSBuildThisFileDirectory)Import/</KsaDllDir>
+    <KsaDllDir Condition="'$(KsaDllDir)' == '' AND Exists('$(MSBuildThisFileDirectory)../ksa-game-assemblies/current/dll/KSA.dll')">$(MSBuildThisFileDirectory)../ksa-game-assemblies/current/dll/</KsaDllDir>
+    <KsaDllDir Condition="'$(KsaDllDir)' == '' AND Exists('C:\Program Files\Kitten Space Agency\KSA.dll')">C:\Program Files\Kitten Space Agency\</KsaDllDir>
+    <KsaDllDir Condition="'$(KsaDllDir)' == '' AND Exists('$(HOME)/.local/share/Steam/steamapps/common/Kitten Space Agency/KSA.dll')">$(HOME)/.local/share/Steam/steamapps/common/Kitten Space Agency/</KsaDllDir>
+    <KsaDllDir Condition="'$(KsaDllDir)' == '' AND Exists('/mnt/c/Program Files/Kitten Space Agency/KSA.dll')">/mnt/c/Program Files/Kitten Space Agency/</KsaDllDir>
+  </PropertyGroup>
+
+  <!--
+    A game install has KSA.dll but not StarMap's or Harmony's assemblies, which the mod also needs;
+    say so plainly rather than with a wall of missing types.
+  -->
+  <Target Name="KsaMpCheckAssemblies" BeforeTargets="CoreCompile" Condition="'$(NeedsKsa)' == 'true'">
+    <Error Condition="'$(KsaDllDir)' == '' OR !Exists('$(KsaDllDir)KSA.dll') OR !Exists('$(KsaDllDir)StarMap.API.dll') OR !Exists('$(KsaDllDir)0Harmony.dll')"
+           Text="The mod needs KSA.dll, StarMap.API.dll and 0Harmony.dll in one folder, and none was found with all three (looked in: '$(KsaDllDir)'). Point KSA_DLL_DIR at one, for example a copy of the game's folder with StarMap installed in it. They are copyrighted: never commit them. The server and the tests need none of this." />
+  </Target>
+
+</Project>

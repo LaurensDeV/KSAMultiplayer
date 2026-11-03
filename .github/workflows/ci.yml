@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # The protocol and the server have nothing of KSA in them, so they are tested on every push, forks included.
+  server:
+    name: Server and protocol
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Test
+        run: ./tools/test.sh
+      - name: Publish the Linux server
+        run: ./tools/publish-server.sh linux-x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ksamp-server-linux-x64
+          path: dist/ksamp-server-linux-x64/
+
+  # The mod needs KSA's assemblies, which are private: set KSA_ASSEMBLIES_KEY to a read-only deploy
+  # key for a repository holding them, or this job skips.
+  mod:
+    name: Mod
+    runs-on: ubuntu-latest
+    env:
+      HAVE_KEY: ${{ secrets.KSA_ASSEMBLIES_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Skip notice
+        if: env.HAVE_KEY != 'true'
+        run: echo "::notice::KSA_ASSEMBLIES_KEY is not set, so the mod cannot be compiled here."
+      - uses: actions/checkout@v4
+        if: env.HAVE_KEY == 'true'
+        with:
+          repository: LaurensDeV/ksa-game-assemblies
+          path: .ksa-assemblies
+          ssh-key: ${{ secrets.KSA_ASSEMBLIES_KEY }}
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        if: env.HAVE_KEY == 'true'
+        with:
+          dotnet-version: "10.0.x"
+      - name: Package the mod
+        if: env.HAVE_KEY == 'true'
+        env:
+          KSA_DLL_DIR: ${{ github.workspace }}/.ksa-assemblies/current/dll
+        run: ./tools/package.sh

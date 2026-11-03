@@ -1,0 +1,6 @@
+# KSA reads this as a content mod, StarMap reads it as a code mod. One folder does both.
+
+name = "KSAMultiplayer"
+
+[StarMap]
+EntryAssembly = "KSAMultiplayer"

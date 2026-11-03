@@ -1,0 +1,10 @@
+# Game assemblies: RocketWerkz's copyrighted files, never committed.
+Import/
+
+bin/
+obj/
+dist/
+*.user
+.vs/
+.idea/
+.vscode/

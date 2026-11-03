@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>KSAMultiplayer</RootNamespace>
+    <!-- StarMap loads "<EntryAssembly>.dll" from mod.toml, so this name must match it. -->
+    <AssemblyName>KSAMultiplayer</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <Version>0.1.0</Version>
+    <Product>KSAMultiplayer</Product>
+    <NeedsKsa>true</NeedsKsa>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <Optimize>true</Optimize>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Update="mod.toml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!-- The protocol compiled in rather than referenced, so a player installs one assembly. -->
+  <ItemGroup>
+    <Compile Include="..\Protocol\**\*.cs" Exclude="..\Protocol\obj\**;..\Protocol\bin\**" Link="Protocol\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!--
+    The game's and the loader's assemblies, compile-time only: they are already loaded in the KSA
+    process, and a second copy would be another type identity. $(KsaDllDir) is resolved by
+    Directory.Build.props.
+  -->
+  <ItemGroup>
+    <Reference Include="$(KsaDllDir)KSA.dll" Private="false" />
+    <Reference Include="$(KsaDllDir)StarMap.API.dll" Private="false" />
+    <Reference Include="$(KsaDllDir)Brutal.Numerics.dll" Private="false" />
+    <Reference Include="$(KsaDllDir)Brutal.Core.dll" Private="false" />
+    <Reference Include="$(KsaDllDir)Brutal.Strings.dll" Private="false" />
+    <Reference Include="$(KsaDllDir)Brutal.ImGui.dll" Private="false" />
+    <Reference Include="$(KsaDllDir)Brutal.ImGui.Abstractions.dll" Private="false" />
+    <Reference Include="$(KsaDllDir)Planet.Render.Core.dll" Private="false" />
+    <Reference Include="$(KsaDllDir)Planet.Core.dll" Private="false" />
+    <Reference Include="$(KsaDllDir)BepuUtilities.dll" Private="false" />
+    <Reference Include="$(KsaDllDir)BepuPhysics.dll" Private="false" />
+    <Reference Include="$(KsaDllDir)0Harmony.dll" Private="false" />
+  </ItemGroup>
+
+</Project>

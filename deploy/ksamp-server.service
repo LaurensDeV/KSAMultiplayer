@@ -1,0 +1,31 @@
+# A systemd unit for the dedicated server. Install:
+#
+#   sudo useradd --system --home /var/lib/ksamp --create-home ksamp
+#   sudo cp ksamp-server /usr/local/bin/
+#   sudo cp ksamp-server.service /etc/systemd/system/
+#   sudo systemctl enable --now ksamp-server
+#   journalctl -u ksamp-server -f
+#
+# Open the UDP port in the firewall: sudo ufw allow 50100/udp
+
+[Unit]
+Description=KSA Multiplayer dedicated server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ksamp
+WorkingDirectory=/var/lib/ksamp
+ExecStart=/usr/local/bin/ksamp-server --data /var/lib/ksamp/data
+Environment=KSAMP_NAME=KSA server
+# Environment=KSAMP_PASSWORD=change-me
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/ksamp
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
