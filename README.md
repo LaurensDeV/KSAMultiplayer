@@ -112,6 +112,7 @@ docker run -d --name ksamp -p 50100:50100/udp -v ksamp-data:/data -e KSAMP_NAME=
 | `./tools/package.sh` | the mod as a player installs it, `dist/KSAMultiplayer-<version>.zip` |
 | `./tools/deploy.sh` | the mod into this machine's KSA, as a developer's install: it starts the bridge |
 | `./tools/run.sh` | deploy and launch the game, showing the mod's log |
+| `./tools/play.sh` | the game with this mod and nothing else, in a profile of its own |
 | `./tools/two-games.sh --test` | two games and a server on this machine, joined to one world |
 
 | Path | |

@@ -21,3 +21,5 @@ infra/**/backend.hcl
 .terraform.tfstate.lock.info
 *.tfstate
 *.tfstate.backup
+
+# The isolated play profile, made by tools/play.sh on whatever machine it runs on.
