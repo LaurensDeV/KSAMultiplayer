@@ -30,10 +30,13 @@ variable "port" {
   default     = 50100
 }
 
+# Free text, not an address: the panel shows this where a player might expect what they typed, so a
+# name that is almost the hostname reads as a broken one. Either match the hostname exactly or do
+# not look like it at all.
 variable "server_name" {
   description = "What the server calls itself in the mod's panel and its player list."
   type        = string
-  default     = "ksarmory.com"
+  default     = "mp.ksarmory.com"
 }
 
 variable "max_players" {
