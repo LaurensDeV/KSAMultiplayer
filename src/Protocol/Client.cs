@@ -77,6 +77,12 @@ public sealed class Client : IDisposable
 
     /// <summary>Craft of this game the server has given another name, because a player already had that one.</summary>
     public Queue<(string Was, string Now)> Renamed { get; } = new();
+
+    /// <summary>What the shared world's speed is doing: who asked, how fast, and whether it is being answered or running.</summary>
+    public Wire.Warp? Warp { get; private set; }
+
+    /// <summary>Whether this game has been asked to answer a warp and has not yet.</summary>
+    public bool WarpWantsAnswer => Warp is { Phase: Wire.WarpPhase.Asking } w && w.Waiting.Contains(Id);
     public Queue<(string Who, string Text)> Chat { get; } = new();
     public Queue<string> Said { get; } = new();
 
@@ -112,6 +118,7 @@ public sealed class Client : IDisposable
         _hello = new Wire.Hello(Wire.Clip(name, Wire.NameChars), ksaBuild, mods, system, password);
         (_helloNext, _joinUntil, _heardAt) = (0.0, _clock() + JoinWithinSeconds, _clock());
         (_bestRtt, _lastRtt, ServerOffset, _serverClock, _serverRate) = (double.PositiveInfinity, double.NaN, 0.0, null, 0.0);
+        Warp = null;
         _owners.Clear();
         _tracks.Clear();
         Players = [];
@@ -147,6 +154,18 @@ public sealed class Client : IDisposable
     public void SayLoaded(double universe)
     {
         if (Joined) Send(new Wire.Loaded(universe));
+    }
+
+    /// <summary>Asks for the shared world to run at this speed, 0 being a pause. Everyone has to agree.</summary>
+    public void AskWarp(double speed)
+    {
+        if (Joined) Send(new Wire.WarpAsk((float)speed));
+    }
+
+    /// <summary>Answers what somebody asked for.</summary>
+    public void VoteWarp(bool yes)
+    {
+        if (Joined) Send(new Wire.WarpVote(yes));
     }
 
     public void SayChat(string text)
@@ -253,6 +272,9 @@ public sealed class Client : IDisposable
                 }
                 else _serverRate = c.Speed;
                 _serverClock = (c.Universe, c.Sent, c.Speed);
+                return;
+            case Wire.Warp warp when Joined:
+                Warp = warp.Phase == Wire.WarpPhase.None ? null : warp;
                 return;
             case Wire.Rename n when Joined && n.Was.Length > 0 && n.Now.Length > 0:
                 // Everything held under the old name follows it, so nothing of this craft is lost.

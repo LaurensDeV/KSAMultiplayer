@@ -81,6 +81,16 @@ public sealed class GameServer : IDisposable
     // A craft defined or gone this long before a world was saved is in that save already.
     private const double SaveMarginSeconds = 10.0;
 
+    // How long everyone has to answer a warp, and how long after one ends before another may be
+    // asked for: a warp that could be re-proposed the instant it stopped is a warp nobody can end.
+    private const double WarpAnswerSeconds = 10.0, WarpQuietSeconds = 5.0;
+
+    // Higher than any world can actually run, but a number rather than whatever a game sends.
+    private const double MostWarp = 100_000.0;
+
+    // Told again this often while a warp is asked for or running, since a datagram can be lost.
+    private const double WarpEverySeconds = 1.0;
+
     private readonly Udp _udp;
     private readonly Func<double> _clock;
     private readonly WorldStore? _store;
@@ -95,6 +105,14 @@ public sealed class GameServer : IDisposable
     private bool _worldTimeKnown;
     private string[] _worldMods = [];
     private double _rosterNext, _ownersNext, _clockNext, _snapshotNext, _snapshotAskedAt = double.NegativeInfinity;
+
+    // One world has one time, so nobody changes its speed alone: somebody asks, everybody answers,
+    // and it runs only if they all agree. It is then theirs to steer and theirs to stop.
+    private byte _warpWho;
+    private float _warpSpeed = 1f;
+    private Wire.WarpPhase _warpPhase;
+    private double _warpAskedAt, _warpNext, _warpQuietSince = double.NegativeInfinity;
+    private readonly Dictionary<byte, bool> _warpVotes = [];
 
     public GameServer(ServerOptions options, Func<double> clock, WorldStore? store = null, IPAddress? bind = null)
     {
@@ -121,6 +139,9 @@ public sealed class GameServer : IDisposable
     public bool HasWorld => _world is not null;
     public Blob? World => _world;
     public int CraftCount => _crafts.Count;
+
+    /// <summary>Whose warp it is, how fast, and whether it is asked for or running.</summary>
+    public (byte Who, double Speed, Wire.WarpPhase Phase) Warp => (_warpWho, _warpSpeed, _warpPhase);
 
     /// <summary>What has happened, for the console.</summary>
     public Queue<string> Said { get; } = new();
@@ -166,6 +187,20 @@ public sealed class GameServer : IDisposable
         {
             AskSnapshot("the world is saved now and then for players who join");
             _snapshotNext = now + Options.SnapshotEverySeconds;
+        }
+
+        if (_warpPhase == Wire.WarpPhase.Asking && now - _warpAskedAt > WarpAnswerSeconds)
+        {
+            EndWarp(now, $"{Named(_warpWho)}'s warp: not everyone answered");
+        }
+        if (_warpPhase == Wire.WarpPhase.Running && !_players.ContainsKey(_warpWho))
+        {
+            EndWarp(now, "the warp ends: whoever started it has gone");
+        }
+        if (_warpPhase != Wire.WarpPhase.None && now >= _warpNext)
+        {
+            Broadcast(WarpState(), p => p.Loaded);
+            _warpNext = now + WarpEverySeconds;
         }
 
         if (now >= _rosterNext)
@@ -233,6 +268,12 @@ public sealed class GameServer : IDisposable
                 _gone[gone.Key] = UniverseClock.Now(_clock());
                 if (player.Controlling == gone.Key) player.Controlling = "";
                 Broadcast(gone, p => p.Loaded && p != player);
+                return;
+            case Wire.WarpAsk ask when player.Loaded:
+                OnWarpAsk(player, ask.Speed);
+                return;
+            case Wire.WarpVote vote when player.Loaded:
+                OnWarpVote(player, vote.Yes);
                 return;
             case Wire.Chat chat:
                 string text = Wire.Clip(chat.Text, Wire.ChatChars);
@@ -430,6 +471,84 @@ public sealed class GameServer : IDisposable
 
     private void OwnersChanged() => _ownersNext = 0.0;
 
+    private string Named(byte id) => _players.TryGetValue(id, out Player? p) ? p.Name : "somebody";
+
+    // Somebody wants the world to run at another speed. While one is running it is the asker's alone
+    // to change or stop; otherwise it is put to everyone, and the asking counts as their own yes.
+    private void OnWarpAsk(Player p, float speed)
+    {
+        double now = _clock();
+        speed = float.IsFinite(speed) ? (float)Math.Clamp(speed, 0.0, MostWarp) : 1f;
+        bool normal = Math.Abs(speed - 1f) < 0.001f;
+
+        if (_warpPhase == Wire.WarpPhase.Running)
+        {
+            if (p.Id != _warpWho) return;
+            if (normal) EndWarp(now, $"{p.Name} ended the warp");
+            else RunWarp(speed, now);
+            return;
+        }
+        if (_warpPhase == Wire.WarpPhase.Asking || normal) return;
+        // Just ended: a warp that can be asked for again at once is a warp nobody can get out of.
+        if (now - _warpQuietSince < WarpQuietSeconds) return;
+
+        (_warpWho, _warpSpeed, _warpPhase, _warpAskedAt, _warpNext) = (p.Id, speed, Wire.WarpPhase.Asking, now, 0.0);
+        _warpVotes.Clear();
+        _warpVotes[p.Id] = true;
+        Log($"{p.Name} asks to run the world at {speed:0.##}x");
+        Broadcast(WarpState(), q => q.Loaded);
+        Counted(now);
+    }
+
+    private void OnWarpVote(Player p, bool yes)
+    {
+        if (_warpPhase != Wire.WarpPhase.Asking || !_warpVotes.TryAdd(p.Id, yes)) return;
+        double now = _clock();
+        if (!yes)
+        {
+            EndWarp(now, $"{Named(_warpWho)}'s warp: {p.Name} said no");
+            return;
+        }
+        _warpNext = 0.0;
+        Counted(now);
+    }
+
+    // Everyone in the world must have answered, and all of them yes. Somebody who says nothing is
+    // somebody who has not agreed, so the ask runs out rather than passing without them.
+    private void Counted(double now)
+    {
+        if (_warpPhase != Wire.WarpPhase.Asking) return;
+        if (_players.Values.Any(q => q.Loaded && !_warpVotes.ContainsKey(q.Id))) return;
+        _warpPhase = Wire.WarpPhase.Running;
+        RunWarp(_warpSpeed, now);
+        Log($"everyone agreed: the world runs at {_warpSpeed:0.##}x for {Named(_warpWho)}");
+        Broadcast(new Wire.Chat(0, $"the world is warping at {_warpSpeed:0.##}x, {Named(_warpWho)}'s"), q => q.Loaded);
+    }
+
+    private void RunWarp(float speed, double now)
+    {
+        // The server's own clock is what every game follows, so warping it warps all of them together.
+        (_warpSpeed, _warpQuietSince, _warpNext) = (speed, now, 0.0);
+        UniverseClock.Speed = speed;
+        Broadcast(WarpState(), p => p.Loaded);
+    }
+
+    private void EndWarp(double now, string why)
+    {
+        if (_warpPhase == Wire.WarpPhase.None) return;
+        (_warpPhase, _warpSpeed, _warpQuietSince, _warpNext) = (Wire.WarpPhase.None, 1f, now, 0.0);
+        _warpVotes.Clear();
+        UniverseClock.Speed = Options.Speed;
+        Log(why);
+        Broadcast(new Wire.Chat(0, why), p => p.Loaded);
+        Broadcast(WarpState(), p => p.Loaded);
+    }
+
+    private Wire.Warp WarpState() => new(_warpWho, _warpSpeed, _warpPhase,
+        _warpPhase == Wire.WarpPhase.Asking
+            ? [.. _players.Values.Where(q => q.Loaded && !_warpVotes.ContainsKey(q.Id)).Select(q => q.Id).Order()]
+            : []);
+
     private void AskSnapshot(string why)
     {
         // The player in the world longest, whose world has had the most time to settle.
@@ -449,6 +568,10 @@ public sealed class GameServer : IDisposable
             released = true;
         }
         if (released) OwnersChanged();
+        // Gone is not an answer, but it is no longer a vote anybody waits on: a warp waiting only on
+        // somebody who has left would otherwise sit there until it ran out.
+        _warpVotes.Remove(p.Id);
+        if (_warpPhase == Wire.WarpPhase.Asking) Counted(_clock());
         _rosterNext = 0.0;
         Log($"{p.Name} {why}");
         Broadcast(new Wire.Chat(0, $"{p.Name} {why}"), _ => true);

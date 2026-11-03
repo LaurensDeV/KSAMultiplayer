@@ -57,7 +57,7 @@ public readonly record struct Quat(double X, double Y, double Z, double W)
 public static class Wire
 {
     /// <summary>Changed whenever what a datagram means changes: a game speaking another version is refused by name.</summary>
-    public const ushort Version = 4;
+    public const ushort Version = 5;
 
     public const int BufferBytes = 8192;
     public const int NameChars = 24;
@@ -92,6 +92,17 @@ public static class Wire
         Chat = 16,
         Snapshot = 17,
         Rename = 18,
+        WarpAsk = 19,
+        WarpVote = 20,
+        Warp = 21,
+    }
+
+    /// <summary>Where a warp has got to: nobody has asked, somebody has and is waiting, or it is running.</summary>
+    public enum WarpPhase : byte
+    {
+        None = 0,
+        Asking = 1,
+        Running = 2,
     }
 
     public abstract record Message(Kind Kind);
@@ -172,6 +183,19 @@ public static class Wire
 
     /// <summary>A craft of this game's whose name another player already had, and what it is called from now on.</summary>
     public sealed record Rename(string Was, string Now) : Message(Kind.Rename);
+
+    /// <summary>
+    /// A game asking for the shared world to run at this speed, 0 being a pause. One world has one
+    /// time, so this is a request put to everyone else rather than a thing a game may simply do.
+    /// </summary>
+    public sealed record WarpAsk(float Speed) : Message(Kind.WarpAsk);
+
+    /// <summary>A game's answer to what somebody asked for.</summary>
+    public sealed record WarpVote(bool Yes) : Message(Kind.WarpVote);
+
+    /// <param name="Who">Whose warp it is: who asked, and who alone may change or stop it.</param>
+    /// <param name="Waiting">Players yet to answer, while asking. Empty otherwise.</param>
+    public sealed record Warp(byte Who, float Speed, WarpPhase Phase, byte[] Waiting) : Message(Kind.Warp);
 
     public readonly record struct Owner(string Key, byte Id);
 
@@ -279,6 +303,19 @@ public static class Wire
                 w.Text(n.Was, KeyChars);
                 w.Text(n.Now, KeyChars);
                 break;
+            case WarpAsk a:
+                w.F32(a.Speed);
+                break;
+            case WarpVote v:
+                w.U8(v.Yes ? (byte)1 : (byte)0);
+                break;
+            case Warp warp:
+                w.U8(warp.Who);
+                w.F32(warp.Speed);
+                w.U8((byte)warp.Phase);
+                w.U8((byte)Math.Min(warp.Waiting.Length, 64));
+                foreach (byte id in warp.Waiting.Take(64)) w.U8(id);
+                break;
             case Owners o:
                 w.U16(o.Page);
                 w.U16(o.Pages);
@@ -333,6 +370,9 @@ public static class Wire
                                         new Quat(r.F32(), r.F32(), r.F32(), r.F32()).Normalized(), r.V3f(), r.F32(), (StateFlags)r.U8()),
                 Kind.Claim => new Claim(r.Text(KeyChars), r.U8() != 0, r.U8() != 0),
                 Kind.Rename => new Rename(r.Text(KeyChars), r.Text(KeyChars)),
+                Kind.WarpAsk => new WarpAsk(r.F32()),
+                Kind.WarpVote => new WarpVote(r.U8() != 0),
+                Kind.Warp => ReadWarp(ref r),
                 Kind.Owners => ReadOwners(ref r),
                 Kind.Gone => new Gone(r.Text(KeyChars)),
                 Kind.Chat => new Chat(r.U8(), r.Text(ChatChars)),
@@ -351,6 +391,16 @@ public static class Wire
     private static bool Finite(State s) =>
         double.IsFinite(s.Universe) && s.PositionCcf.IsFinite && s.VelocityCcf.IsFinite && s.PositionCci.IsFinite && s.VelocityCci.IsFinite
         && s.Body2Ccf.IsFinite && s.Spin.IsFinite && float.IsFinite(s.Throttle) && s.Key.Length > 0;
+
+    private static Warp ReadWarp(ref Reader r)
+    {
+        byte who = r.U8();
+        float speed = r.F32();
+        WarpPhase phase = (WarpPhase)r.U8();
+        byte[] waiting = new byte[Math.Min((int)r.U8(), 64)];
+        for (int i = 0; i < waiting.Length; i++) waiting[i] = r.U8();
+        return new Warp(who, speed, phase, waiting);
+    }
 
     private static Roster ReadRoster(ref Reader r)
     {

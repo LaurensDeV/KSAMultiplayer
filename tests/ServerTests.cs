@@ -466,6 +466,121 @@ public class ServerTests
     }
 
     [Fact]
+    public void AWarpRunsOnlyWhenEveryoneAgrees()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+
+        a.AskWarp(5.0);
+        rig.Until(() => b.WarpWantsAnswer, what: "Bob to be asked");
+
+        // Asked, not running: Alice agreeing with herself is not everyone.
+        Assert.Equal(Wire.WarpPhase.Asking, rig.Server.Warp.Phase);
+        Assert.Equal(1.0, rig.Server.UniverseClock.Speed);
+
+        b.VoteWarp(true);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Running, what: "the warp to run");
+        Assert.Equal(5.0, rig.Server.UniverseClock.Speed, 3);
+        rig.Until(() => a.Warp is { Phase: Wire.WarpPhase.Running }, what: "Alice to be told");
+    }
+
+    [Fact]
+    public void OneNoIsEnoughToStopAWarp()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+
+        a.AskWarp(10.0);
+        rig.Until(() => b.WarpWantsAnswer, what: "Bob to be asked");
+        b.VoteWarp(false);
+
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.None, what: "the warp to be refused");
+        Assert.Equal(1.0, rig.Server.UniverseClock.Speed);
+    }
+
+    [Fact]
+    public void SayingNothingIsNotAgreeing()
+    {
+        // The ask runs out rather than passing without the player who never answered.
+        using Rig rig = new(new ServerOptions());
+        Client a = Seed(rig);
+        JoinAndLoad(rig, "Bob");
+
+        a.AskWarp(4.0);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Asking, what: "the ask to go out");
+        rig.For(1.0);
+
+        // Bob never votes. Nothing has started.
+        Assert.Equal(Wire.WarpPhase.Asking, rig.Server.Warp.Phase);
+        Assert.Equal(1.0, rig.Server.UniverseClock.Speed);
+    }
+
+    [Fact]
+    public void AWarpIsTheAskersToStopAndNobodyElses()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+
+        a.AskWarp(5.0);
+        rig.Until(() => b.WarpWantsAnswer, what: "Bob to be asked");
+        b.VoteWarp(true);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Running, what: "the warp to run");
+
+        // Bob did not start it, so Bob cannot steer it or end it.
+        b.AskWarp(1.0);
+        b.AskWarp(50.0);
+        rig.For(0.5);
+        Assert.Equal(Wire.WarpPhase.Running, rig.Server.Warp.Phase);
+        Assert.Equal(5.0, rig.Server.UniverseClock.Speed, 3);
+
+        a.AskWarp(1.0);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.None, what: "Alice to end her warp");
+        Assert.Equal(1.0, rig.Server.UniverseClock.Speed);
+    }
+
+    [Fact]
+    public void AWarpCannotBeAskedForAgainTheInstantItEnds()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+
+        a.AskWarp(5.0);
+        rig.Until(() => b.WarpWantsAnswer, what: "Bob to be asked");
+        b.VoteWarp(true);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Running, what: "the warp to run");
+        a.AskWarp(1.0);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.None, what: "the warp to end");
+
+        // Straight back in: ignored, or a warp would be one nobody could get out of.
+        b.AskWarp(8.0);
+        rig.For(0.5);
+        Assert.Equal(Wire.WarpPhase.None, rig.Server.Warp.Phase);
+    }
+
+    [Fact]
+    public void APauseIsAWarpLikeAnyOther()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+
+        a.AskWarp(0.0);
+        rig.Until(() => b.WarpWantsAnswer, what: "Bob to be asked");
+        b.VoteWarp(true);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Running, what: "the pause to take");
+
+        // Stopped for everyone: the clock the games follow does not move.
+        Assert.Equal(0.0, rig.Server.UniverseClock.Speed);
+        double at = rig.Server.UniverseClock.Now(rig.Now());
+        rig.For(0.4);
+        Assert.Equal(at, rig.Server.UniverseClock.Now(rig.Now()), 3);
+    }
+
+    [Fact]
     public void EveryPlayerIsToldWhatEveryOtherPlayersPingIs()
     {
         using Rig rig = new();
