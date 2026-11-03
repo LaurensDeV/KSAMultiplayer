@@ -331,7 +331,9 @@ internal static class World
             if (Program.GetMainCamera() is not { } camera) return false;
             camera.SetFollow(v, tidalLocking: true);
             Program.ControlledVehicle = v;
-            return true;
+            // The hook on the setter refuses another player's craft without saying so, so whether it
+            // took is read back rather than assumed.
+            return ReferenceEquals(Program.ControlledVehicle, v);
         }
         catch (Exception e)
         {

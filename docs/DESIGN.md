@@ -18,7 +18,7 @@ server runs no world at all, which is why it needs no game and runs anywhere .NE
   The mod compiles these files into its own DLL, so a player installs one assembly.
 - **`src/Server`** is `GameServer` and a console program round it.
 - **`src/Mod`** is the StarMap mod. `World` is every call into KSA; `Sync` is what a game does each frame;
-  `Hooks` are three Harmony prefixes; `Panel` is the window. `Bridge` reads commands from a folder and
+  `Hooks` are the Harmony prefixes; `Panel` is the window. `Bridge` reads commands from a folder and
   answers in another, so the tools can drive a game; only a developer's install starts it.
 
 Every datagram starts with `KSMP` and the protocol version, so anything else is dropped, and a game of
@@ -94,6 +94,13 @@ carries that player's system; one an operator imports carries whatever its own `
 
 What nobody owns is left to each world: a craft on rails goes the same way in every one, and a craft
 in physics that nobody flies drifts apart from world to world.
+
+Another player's craft cannot be taken here at all: prefixes on the setter of
+`Program.ControlledVehicle`, on `KittenEva.BoardVehicle` and on `EVADoor.PerformEvaForSeat` leave
+control where it is, turn a kitten away before it climbs in, and refuse to empty it. Without them a
+player can still point at someone else's craft and press keys; nothing they did would reach anyone,
+but it would happen in their own world, and a kitten pulled out of someone else's capsule would
+become a craft of their own.
 
 A puppet is never destroyed by a crash in this world (a prefix on `Universe.DestroyVehicleFromEvent`),
 only when its owner's game says it is gone. Otherwise one game's collision would wreck a craft that is

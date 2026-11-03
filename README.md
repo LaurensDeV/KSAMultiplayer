@@ -116,7 +116,7 @@ docker run -d --name ksamp -p 50100:50100/udp -v ksamp-data:/data -e KSAMP_NAME=
 | --- | --- |
 | `src/Protocol/` | what the server and the mod both speak: the wire format, transfers, the clocks, a client session. Nothing of KSA |
 | `src/Server/` | the dedicated server: `GameServer`, the world kept on disk, and the console program |
-| `src/Mod/` | the StarMap mod: `Sync` runs the session each frame, `World` is every contact with KSA, `Hooks` the three patches, `Panel` the window |
+| `src/Mod/` | the StarMap mod: `Sync` runs the session each frame, `World` is every contact with KSA, `Hooks` the patches, `Panel` the window |
 | `tests/` | the protocol and the server driven over loopback |
 | `tools/ksa-mcp/` | commands into a running game through the mod's bridge, for driving a test without a hand on the keyboard |
 | `deploy/` | a systemd unit and a Dockerfile |

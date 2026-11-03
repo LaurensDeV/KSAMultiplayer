@@ -5,7 +5,7 @@ using KSA;
 namespace KSAMultiplayer;
 
 /// <summary>
-/// The three places this mod patches the game, all prefixes on public methods:
+/// Where this mod patches the game, all prefixes on public members:
 ///
 /// <list type="bullet">
 /// <item><see cref="Vehicle.PrepareWorker"/>, the one window in which a write to a craft's physics
@@ -15,6 +15,10 @@ namespace KSAMultiplayer;
 /// and the pause go through: while connected, the speed is the one that keeps the server's time.</item>
 /// <item><see cref="Universe.DestroyVehicleFromEvent"/>: another player's craft is never destroyed
 /// here by a crash this world sees, only when its owner's game says it is gone.</item>
+/// <item>The setter of <see cref="Program.ControlledVehicle"/>, which clicking a craft, the map and
+/// boarding all go through; <see cref="KittenEva.BoardVehicle"/>, since by the time control is handed
+/// over the kitten is already inside; and <see cref="EVADoor.PerformEvaForSeat"/>: a craft another
+/// player flies is theirs to fly, and nobody else takes it, climbs into it or empties it.</item>
 /// </list>
 ///
 /// <para>Nothing in any of them may throw: they run inside KSA's own loop.</para>
@@ -39,6 +43,12 @@ internal static class Hooks
                   "time warp is put back a frame late");
             Patch(AccessTools.Method(typeof(Universe), nameof(Universe.DestroyVehicleFromEvent)), nameof(BeforeDestroy),
                   "another player's craft can be wrecked in this world alone");
+            Patch(AccessTools.PropertySetter(typeof(Program), nameof(Program.ControlledVehicle)), nameof(BeforeControl),
+                  "another player's craft can be taken over here");
+            Patch(AccessTools.Method(typeof(KittenEva), nameof(KittenEva.BoardVehicle), [typeof(Vehicle), typeof(EVADoor)]), nameof(BeforeBoard),
+                  "a kitten can climb into another player's craft");
+            Patch(AccessTools.Method(typeof(EVADoor), nameof(EVADoor.PerformEvaForSeat), [typeof(Vehicle), typeof(IVASeat)]), nameof(BeforeEva),
+                  "a kitten can be let out of another player's craft");
         }
         catch (Exception e)
         {
@@ -100,6 +110,37 @@ internal static class Hooks
         }
     }
 
+    // False leaves control where it is. A craft another player flies is watched, never taken: without
+    // this the player can still point at it and press keys, and what they do to it happens here alone.
+    private static bool BeforeControl(Vehicle? value) => !Others(value);
+
+    private static bool BeforeBoard(Vehicle host, ref bool __result)
+    {
+        if (!Others(host)) return true;
+        __result = false;
+        return false;
+    }
+
+    private static bool BeforeEva(Vehicle vehicle, ref bool __result)
+    {
+        if (!Others(vehicle)) return true;
+        __result = false;
+        return false;
+    }
+
+    private static bool Others(Vehicle? craft)
+    {
+        try
+        {
+            return craft is not null && Sync.IsPuppet(craft);
+        }
+        catch (Exception e)
+        {
+            Complain("telling another player's craft from this game's", e);
+            return false;
+        }
+    }
+
     private static double? Held()
     {
         try { return Sync.HeldSpeed; }
@@ -118,11 +159,15 @@ internal static class Hooks
     }
 
     // Never called: puts the patched methods in this assembly's metadata, so a KSA change to one is a build error.
-    private static void PinTheSignatures(Vehicle v, SimStep step, SimSpeed named, VehicleDestructionEvent e)
+    private static void PinTheSignatures(Vehicle v, SimStep step, SimSpeed named, VehicleDestructionEvent e,
+                                        KittenEva kitten, EVADoor door, IVASeat seat)
     {
         v.PrepareWorker(step);
         Universe.SetSimulationSpeed(1.0, true);
         Universe.SetSimulationSpeed(named);
         Universe.DestroyVehicleFromEvent(v, e);
+        Program.ControlledVehicle = v;
+        kitten.BoardVehicle(v, door);
+        EVADoor.PerformEvaForSeat(v, seat);
     }
 }
