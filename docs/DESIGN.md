@@ -27,8 +27,11 @@ another version is refused by name rather than misread.
 ## What the server keeps
 
 - **Universe time.** A clock of its own (`UniverseClock`), set from the world it hands out, running
-  while anyone is in the world and held while nobody is, so a save it hands out is never far behind
-  it. Five times a second it tells every game the time and its rate.
+  while anyone is in the world and held while nobody is. With nobody in it the clock is put back to
+  the world's own time: what the last player simulated past the last save went with them, so a clock
+  that kept it would make the next player warp through time whose results nobody has, and a session
+  that ended before catching up would leave the next one further behind still. `--keep-time` is the
+  operator asking for that time anyway. Five times a second it tells every game the time and its rate.
 - **The world.** The latest save, zipped, kept on disk in `--data`. It comes from an operator
   (`--world`), from the first player to join an empty server, or as a fresh save asked of the player
   who has been in longest: every `--snapshot-every` seconds, and whenever a player joins a world more
@@ -36,6 +39,10 @@ another version is refused by name rather than misread.
 - **Every player's ping.** A game measures its own round trip to the server and says it with each
   `Ping`; the server passes them all on in the roster, so each game can show what everyone's line is
   like. Held Tab shows that list in game.
+- **A save before a player is gone.** What a player did since the last save is in no world the
+  server has once they leave, so whoever is still in it is asked for a fresh one. Nothing can be
+  asked of the last player to leave: that much is lost, and the clock waits at the world rather than
+  pretending otherwise.
 - **Who flies what.** A table of craft Id to player. The first player to take a craft nobody holds
   keeps it until they leave, when everything they owned is let go; while they hold it everyone else
   only watches, whether or not they are flying it this second.

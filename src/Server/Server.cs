@@ -89,6 +89,10 @@ public sealed class GameServer : IDisposable
     private readonly Dictionary<string, double> _gone = [];
     private Blob? _world;
     private string _worldBuild = "", _worldSystem = "";
+
+    // Whether the world's own universe time is anything: a save copied in by hand does not say, and
+    // the clock cannot be put back to a time nobody knows.
+    private bool _worldTimeKnown;
     private string[] _worldMods = [];
     private double _rosterNext, _ownersNext, _clockNext, _snapshotNext, _snapshotAskedAt = double.NegativeInfinity;
 
@@ -101,6 +105,7 @@ public sealed class GameServer : IDisposable
         {
             _world = saved.World;
             (_worldBuild, _worldMods, _worldSystem) = (saved.KsaBuild, saved.Mods, saved.System);
+            _worldTimeKnown = saved.TimeKnown;
             if (saved.TimeKnown) UniverseClock.Set(saved.World.Universe, clock());
             Log($"world loaded from {store.Folder}: {saved.World.Data.Length / 1024} KB"
                 + (saved.TimeKnown ? $" at universe time {saved.World.Universe:F0} s" : ", its universe time to come from the first player to load it"));
@@ -127,7 +132,7 @@ public sealed class GameServer : IDisposable
     public void SetWorld(Blob world, string ksaBuild, string[] mods, string system, bool timeKnown = true)
     {
         _world = world;
-        (_worldBuild, _worldMods, _worldSystem) = (ksaBuild, mods, system);
+        (_worldBuild, _worldMods, _worldSystem, _worldTimeKnown) = (ksaBuild, mods, system, timeKnown);
         if (timeKnown && !UniverseClock.Known) UniverseClock.Set(world.Universe, _clock());
         if (timeKnown) Prune(world.Universe);
         _store?.Save(world, ksaBuild, mods, system, timeKnown);
@@ -145,7 +150,9 @@ public sealed class GameServer : IDisposable
             Remove(gone, "has gone quiet");
         }
 
-        UniverseClock.Run(Options.KeepTime || _players.Values.Any(p => p.Loaded), now);
+        bool anyone = _players.Values.Any(p => p.Loaded);
+        UniverseClock.Run(Options.KeepTime || anyone, now);
+        if (!anyone) HoldTimeAtTheWorld(now);
 
         // Players waiting on a fresh save are sent the one there is once it comes, or after a while without.
         if (_world is not null)
@@ -309,6 +316,22 @@ public sealed class GameServer : IDisposable
         Log($"sending {p.Name} the world, {_world.Data.Length / 1024} KB");
     }
 
+    // An empty server's time is the time of the world it hands out.
+    //
+    // Between the last save and the last player leaving, time was simulated by somebody who has since
+    // gone, and it went with them: it is in no world the server has. A clock that kept it would make
+    // the next player warp through time whose results nobody kept, and because the clock is never put
+    // back, a session that ended before it had caught up would hand the one after it a longer wait
+    // still, and so on. --keep-time is the operator saying they want that time anyway.
+    private void HoldTimeAtTheWorld(double now)
+    {
+        if (Options.KeepTime || !_worldTimeKnown || _world is null || !UniverseClock.Known) return;
+        double ahead = UniverseClock.Now(now) - _world.Universe;
+        if (Math.Abs(ahead) < 0.001) return;
+        UniverseClock.Set(_world.Universe, now);
+        if (ahead > 1.0) Log($"nobody is in the world: universe time waits at {_world.Universe:F0} s, {ahead:F0} s back");
+    }
+
     private void OnLoaded(Player p, double universe)
     {
         if (p.Loaded) return;
@@ -429,6 +452,10 @@ public sealed class GameServer : IDisposable
         _rosterNext = 0.0;
         Log($"{p.Name} {why}");
         Broadcast(new Wire.Chat(0, $"{p.Name} {why}"), _ => true);
+        // What this player did since the last save is in nobody's world once they are gone, so one of
+        // those still here is asked for a fresh one. Nothing can be asked of the last to leave: that
+        // much is lost, and the clock waits at the world rather than pretending otherwise.
+        if (p.Loaded && _players.Values.Any(q => q.Loaded)) AskSnapshot($"{p.Name} {why}");
         // The one asked for the first world went before it came: the next to join is asked.
         if (p.Seeding && _world is null && _players.Values.FirstOrDefault(q => q.WaitingForWorld) is { } next)
         {

@@ -413,6 +413,59 @@ public class ServerTests
     }
 
     [Fact]
+    public void AnEmptyServersTimeIsTheTimeOfTheWorldItHandsOut()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        rig.For(1.0);
+
+        // The clock runs while she is in the world, and so runs past the save it was set from.
+        Assert.True(rig.Server.UniverseClock.Now(rig.Now()) > 5000.0);
+
+        a.Dispose();
+        rig.Clients.Remove(a);
+        rig.Until(() => !rig.Server.Players.Any(p => p.Loaded), what: "Alice to leave");
+        rig.For(0.3);
+
+        // What she simulated past the save went with her, so the clock waits where the world is.
+        Assert.Equal(5000.0, rig.Server.UniverseClock.Now(rig.Now()), 1);
+
+        // The next player therefore has nothing to catch up on.
+        Client b = JoinAndLoad(rig, "Bob");
+        Assert.InRange(rig.Server.UniverseClock.Now(rig.Now()) - rig.Server.World!.Universe, -0.5, 1.5);
+        Assert.True(b.Joined);
+    }
+
+    [Fact]
+    public void TimeRunsOnWithNobodyInItWhenTheOperatorAsksForThat()
+    {
+        using Rig rig = new(new ServerOptions { KeepTime = true });
+        Client a = Seed(rig);
+        a.Dispose();
+        rig.Clients.Remove(a);
+        rig.Until(() => !rig.Server.Players.Any(p => p.Loaded), what: "Alice to leave");
+
+        double at = rig.Server.UniverseClock.Now(rig.Now());
+        rig.For(0.5);
+        Assert.True(rig.Server.UniverseClock.Now(rig.Now()) > at, "--keep-time means the clock keeps going");
+    }
+
+    [Fact]
+    public void APlayerLeavingAsksWhoeverIsStillHereForASave()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        (a.SnapshotWanted, b.SnapshotWanted) = (null, null);
+
+        a.Dispose();
+        rig.Clients.Remove(a);
+
+        // What Alice did since the last save is in nobody's world unless Bob writes it down now.
+        rig.Until(() => b.SnapshotWanted is not null, what: "Bob to be asked for a save");
+    }
+
+    [Fact]
     public void EveryPlayerIsToldWhatEveryOtherPlayersPingIs()
     {
         using Rig rig = new();
