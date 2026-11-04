@@ -575,6 +575,74 @@ public class ServerTests
     }
 
     [Fact]
+    public void AWarpIsPutAtWhatTheRoomCanFly()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+
+        // Bob's machine manages six times real time and he is looking at it.
+        b.Can = 6.0;
+        rig.Until(() => rig.Server.Players.Any(p => p.Name == "Bob" && p.Can is > 0.0 and < 7.0), seconds: 10.0, what: "Bob to say what he can fly");
+
+        // Alice asks for fifty; what is put to the room is six.
+        a.AskWarp(50.0);
+        rig.Until(() => b.WarpWantsAnswer, what: "Bob to be asked");
+        Assert.Equal(6.0, rig.Server.Warp.Speed, 1);
+
+        b.VoteWarp(true);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Running, what: "the warp to run");
+        Assert.Equal(6.0, rig.Server.UniverseClock.Speed, 1);
+    }
+
+    [Fact]
+    public void AWarpFallsBackWhenAMachineCannotFlyIt()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        (a.Can, b.Can) = (20.0, 20.0);
+        rig.Until(() => rig.Server.Players.All(p => p.Can > 10.0), seconds: 10.0, what: "both to say what they can fly");
+
+        a.AskWarp(10.0);
+        rig.Until(() => b.WarpWantsAnswer, what: "Bob to be asked");
+        b.VoteWarp(true);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Running, what: "the warp to run");
+        Assert.Equal(10.0, rig.Server.UniverseClock.Speed, 1);
+
+        // Bob's machine gives out. The world slows to what he can fly rather than leaving him behind.
+        b.Can = 3.0;
+        rig.Until(() => rig.Server.UniverseClock.Speed < 5.0, seconds: 10.0, what: "the world to slow to Bob");
+        Assert.Equal(Wire.WarpPhase.Running, rig.Server.Warp.Phase);
+        Assert.True(rig.Server.UniverseClock.Speed >= 1.0);
+
+        // And climbs back when he recovers, without anybody asking again.
+        b.Can = 20.0;
+        rig.Until(() => rig.Server.UniverseClock.Speed > 8.0, seconds: 20.0, what: "the world to climb back");
+    }
+
+    [Fact]
+    public void NobodyIsHeldToAWindowThatIsNotBeingLookedAt()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        (a.Can, b.Can) = (20.0, 20.0);
+        rig.Until(() => rig.Server.Players.All(p => p.Can > 10.0), seconds: 10.0, what: "both to say what they can fly");
+
+        a.AskWarp(10.0);
+        rig.Until(() => b.WarpWantsAnswer, what: "Bob to be asked");
+        b.VoteWarp(true);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Running, what: "the warp to run");
+
+        // Bob alt-tabs. His window is throttled, so what it manages says nothing about his machine,
+        // and the room does not crawl for somebody who is not watching it.
+        (b.Here, b.Can) = (false, 1.0);
+        rig.For(3.0);
+        Assert.True(rig.Server.UniverseClock.Speed > 8.0);
+    }
+
+    [Fact]
     public void OneNoIsEnoughToStopAWarp()
     {
         using Rig rig = new();

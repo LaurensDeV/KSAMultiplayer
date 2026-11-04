@@ -54,6 +54,12 @@ public sealed class GameServer : IDisposable
         /// <summary>How far behind the server's time this player's world was when it last said, s.</summary>
         public double Late { get; set; }
 
+        /// <summary>The speed this player's game is managing, a multiple of real time; zero until it says.</summary>
+        public double Can { get; set; }
+
+        /// <summary>Whether their window has their attention; an unfocused one is throttled and is not asked to keep up.</summary>
+        public bool Here { get; set; } = true;
+
         /// <summary>Waiting for a world to be sent: there is none yet, or a fresh one has been asked for.</summary>
         public bool WaitingForWorld { get; set; }
         public double WaitingSince { get; set; }
@@ -116,9 +122,9 @@ public sealed class GameServer : IDisposable
     // One world has one time, so nobody changes its speed alone: somebody asks, everybody answers,
     // and it runs only if they all agree. It is then theirs to steer and theirs to stop.
     private byte _warpWho;
-    private float _warpSpeed = 1f;
+    private float _warpSpeed = 1f, _warpWanted = 1f;
     private Wire.WarpPhase _warpPhase;
-    private double _warpAskedAt, _warpNext, _warpQuietSince = double.NegativeInfinity;
+    private double _warpAskedAt, _warpNext, _warpQuietSince = double.NegativeInfinity, _governNext;
     private readonly Dictionary<byte, bool> _warpVotes = [];
 
     public GameServer(ServerOptions options, Func<double> clock, WorldStore? store = null, IPAddress? bind = null)
@@ -204,6 +210,7 @@ public sealed class GameServer : IDisposable
         {
             EndWarp(now, "the warp ends: whoever started it has gone");
         }
+        Govern(now);
         if (_warpPhase != Wire.WarpPhase.None && now >= _warpNext)
         {
             Broadcast(WarpState(), p => p.Loaded);
@@ -254,6 +261,8 @@ public sealed class GameServer : IDisposable
             case Wire.Ping ping:
                 player.Rtt = ping.Rtt;
                 player.Late = float.IsFinite(ping.Late) ? ping.Late : 0.0;
+                player.Can = float.IsFinite(ping.Can) && ping.Can > 0f ? ping.Can : 0.0;
+                player.Here = ping.Here;
                 _udp.Send(new Wire.Pong(ping.Sent, _clock()), from);
                 return;
             case Wire.Loaded loaded:
@@ -492,8 +501,14 @@ public sealed class GameServer : IDisposable
         if (_warpPhase == Wire.WarpPhase.Running)
         {
             if (p.Id != _warpWho) return;
-            if (normal) EndWarp(now, $"{p.Name} ended the warp");
-            else RunWarp(speed, now);
+            if (normal)
+            {
+                EndWarp(now, $"{p.Name} ended the warp");
+                return;
+            }
+            // Asked for, and held to what the room can fly: the governor climbs back towards the rest.
+            _warpWanted = speed;
+            RunWarp((float)Flyable(speed), now);
             return;
         }
         if (_warpPhase == Wire.WarpPhase.Asking)
@@ -514,7 +529,10 @@ public sealed class GameServer : IDisposable
         // nobody can get out of.
         if (now - _warpQuietSince < WarpQuietSeconds) return;
 
-        (_warpWho, _warpSpeed, _warpPhase, _warpAskedAt, _warpNext) = (p.Id, speed, Wire.WarpPhase.Asking, now, 0.0);
+        // Put at what the room can fly, not at what was asked: agreeing to a speed somebody's
+        // machine cannot manage is agreeing to leave them behind.
+        _warpWanted = speed;
+        (_warpWho, _warpSpeed, _warpPhase, _warpAskedAt, _warpNext) = (p.Id, (float)Flyable(speed), Wire.WarpPhase.Asking, now, 0.0);
         _warpVotes.Clear();
         _warpVotes[p.Id] = true;
         Log($"{p.Name} asks to run the world at {speed:0.##}x");
@@ -558,7 +576,7 @@ public sealed class GameServer : IDisposable
     private void EndWarp(double now, string why)
     {
         if (_warpPhase == Wire.WarpPhase.None) return;
-        (_warpPhase, _warpSpeed, _warpQuietSince, _warpNext) = (Wire.WarpPhase.None, 1f, now, 0.0);
+        (_warpPhase, _warpSpeed, _warpWanted, _warpQuietSince, _warpNext) = (Wire.WarpPhase.None, 1f, 1f, now, 0.0);
         _warpVotes.Clear();
         UniverseClock.SetSpeed(Options.Speed, now);
         Log(why);
@@ -577,6 +595,51 @@ public sealed class GameServer : IDisposable
         if (_players.Values.Where(p => p.Loaded).OrderBy(p => p.LoadedAt).FirstOrDefault() is not { } from) return;
         _snapshotAskedAt = UniverseClock.Now(_clock());
         _udp.Send(new Wire.Snapshot(why), from.At);
+    }
+
+    // How often the room's speed is looked at again, and how far out of step it must be to move.
+    private const double GovernEverySeconds = 1.0, GovernFall = 0.8, GovernRise = 1.3, GovernStep = 1.5;
+
+    /// <summary>The fastest the room can fly: the slowest machine among those whose players are looking.</summary>
+    private double Room()
+    {
+        double can = double.PositiveInfinity;
+        foreach (Player p in _players.Values)
+        {
+            // Not an unfocused window: Windows throttles it, so what it manages measures nothing but
+            // Windows. That player falls behind and is caught up afterwards rather than held to.
+            // Nothing said yet is not a slow machine: a game that has not measured itself holds
+            // nobody back, and will say so within a couple of seconds of playing.
+            if (p.Loaded && p.Here && p.Can > 0.0 && p.Can < can) can = p.Can;
+        }
+        return double.IsFinite(can) ? Math.Max(1.0, can) : double.PositiveInfinity;
+    }
+
+    /// <summary>
+    /// A speed held to what the room can fly. Only upwards: a pause or a world in slow motion asks
+    /// nothing of anybody's machine, and is nobody's to refuse on those grounds.
+    /// </summary>
+    private double Flyable(double speed) => speed <= 1.0 ? speed : Math.Max(1.0, Math.Min(speed, Room()));
+
+    /// <summary>
+    /// The running warp held to what the room can fly. It falls as soon as a machine says it cannot
+    /// keep up and climbs back a step at a time while everyone is comfortably ahead of it, so a warp
+    /// decays into something flyable instead of leaving somebody thousands of seconds behind.
+    /// </summary>
+    private void Govern(double now)
+    {
+        if (_warpPhase != Wire.WarpPhase.Running || now < _governNext) return;
+        _governNext = now + GovernEverySeconds;
+
+        double room = Room(), at = _warpSpeed, next = at;
+        if (!double.IsFinite(room)) return;
+
+        if (room < at * GovernFall) next = Math.Max(1.0, room);
+        else if (at < _warpWanted && room > at * GovernRise) next = Math.Min(_warpWanted, at * GovernStep);
+        if (Math.Abs(next - at) < 0.01) return;
+
+        RunWarp((float)next, now);
+        Log($"the world runs at {next:0.##}x: the room can fly {room:0.##}x");
     }
 
     private void Remove(Player p, string why)
@@ -635,7 +698,7 @@ public sealed class GameServer : IDisposable
     }
 
     private Wire.Roster Roster() =>
-        new([.. _players.Values.OrderBy(p => p.Id).Select(p => new Wire.Player(p.Id, p.Name, p.Loaded, p.Controlling, p.Rtt))]);
+        new([.. _players.Values.OrderBy(p => p.Id).Select(p => new Wire.Player(p.Id, p.Name, p.Loaded, p.Controlling, p.Rtt, (float)p.Can))]);
 
     private IEnumerable<Wire.Owners> OwnerPages()
     {

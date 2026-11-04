@@ -117,6 +117,38 @@ internal static class World
     /// <summary>The longest step KSA takes a frame, s: a frame slower than this loses the rest.</summary>
     public static double StepCap => 1.0 / Math.Max(1f, GameSettings.Current.Simulation.MinTargetFrameRate);
 
+    /// <summary>
+    /// Whether this game's window has the player's attention. Windows throttles the window that is
+    /// not in front, so what an unfocused game manages says nothing about the machine behind it: it
+    /// is an absent player rather than a slow one, and a world does not slow down for somebody who
+    /// is not looking at it.
+    /// </summary>
+    public static bool Focused
+    {
+        get
+        {
+            try { return Program.GetWindow() is { IsFocused: true }; }
+            catch (Exception) { return true; }
+        }
+    }
+
+    /// <summary>
+    /// How much of the speed it was asked for this game is managing, 0 to 1, as KSA measures its own
+    /// solver against its frame budget. One means there was room to spare.
+    /// </summary>
+    public static double Achieved
+    {
+        get
+        {
+            try
+            {
+                double f = KSA.Universe.GetAchivedSpeedFraction();
+                return double.IsFinite(f) && f > 0.0 ? Math.Min(f, 1.0) : 1.0;
+            }
+            catch (Exception) { return 1.0; }
+        }
+    }
+
     public static void SetSpeed(double speed)
     {
         if (KSA.Universe.IsAutoWarpActive) KSA.Universe.AutoWarpStop(resetSimulationSpeed: false);

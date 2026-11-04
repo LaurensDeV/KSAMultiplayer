@@ -37,7 +37,9 @@ Once you're in:
   everyone else.
 - **Time is shared.** Every world keeps the server's time, so changing speed is put to everyone
   first: a warp runs only if all agree, and only whoever asked can end it. Pause is a speed like any
-  other. After joining, your game may run fast for a few seconds to catch up.
+  other. The world is never warped past what the slowest machine in it is managing, and slows to
+  that machine rather than leaving it behind. After joining, your game may run fast for a few
+  seconds to catch up.
 - **Chat** from the window.
 
 Two craft with the same name can't both be seen: the panel tells you to rename yours if that happens.

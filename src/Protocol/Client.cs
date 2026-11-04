@@ -65,6 +65,16 @@ public sealed class Client : IDisposable
     /// </summary>
     public double Late { get; set; }
 
+    /// <summary>
+    /// The speed this game is managing to run its world at, as a multiple of real time, as whoever
+    /// runs the world measures it. The server warps no faster than the slowest of these.
+    /// </summary>
+    /// <para>Zero until this game has measured itself, which the room is not held to.</para>
+    public double Can { get; set; }
+
+    /// <summary>Whether this game's window has the player's attention; an unfocused one is throttled.</summary>
+    public bool Here { get; set; } = true;
+
     /// <summary>The server's clock less this game's, s, once a ping has been answered.</summary>
     public double ServerOffset { get; private set; }
 
@@ -214,7 +224,9 @@ public sealed class Client : IDisposable
         }
         if (now >= _pingNext)
         {
-            Send(new Wire.Ping(now, double.IsFinite(_lastRtt) ? (float)_lastRtt : -1f, double.IsFinite(Late) ? (float)Late : 0f));
+            Send(new Wire.Ping(now, double.IsFinite(_lastRtt) ? (float)_lastRtt : -1f,
+                               double.IsFinite(Late) ? (float)Late : 0f,
+                               double.IsFinite(Can) ? (float)Math.Max(Can, 0.0) : 0f, Here));
             _pingNext = now + PingEverySeconds;
         }
         _link.Pump(now, Send);

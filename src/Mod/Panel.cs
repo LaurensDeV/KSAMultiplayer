@@ -132,12 +132,29 @@ internal static class Panel
         ImGui.End();
     }
 
+    // Whose machine the room's speed is held to, when it is held to anybody's. A player reads this
+    // and knows the world is slow for a reason and whose, rather than wondering.
+    private static void Brake(Client c, double asked)
+    {
+        Wire.Player slowest = default;
+        foreach (Wire.Player p in c.Players)
+        {
+            if (!p.Loaded || p.Can <= 0f) continue;
+            if (slowest.Name is null || p.Can < slowest.Can) slowest = p;
+        }
+        if (slowest.Name is null || slowest.Can >= asked - 0.01) return;
+        ImGui.TextDisabled(slowest.Id == c.Id
+            ? $"your machine can fly {slowest.Can:0.##}x"
+            : $"{slowest.Name}'s machine can fly {slowest.Can:0.##}x");
+    }
+
     private static void Asking(Client c, Wire.Warp w)
     {
         float4 warn = new(1.0f, 0.82f, 0.4f, 1.0f);
         ImGui.TextColored(in warn, w.Who == c.Id
             ? $"You want to {Fast(w.Speed)}. Waiting for everyone."
             : $"{c.NameOf(w.Who)} wants to {Fast(w.Speed)}.");
+        Brake(c, w.Speed);
 
         if (w.Waiting.Contains(c.Id))
         {

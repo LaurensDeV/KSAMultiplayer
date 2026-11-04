@@ -19,9 +19,9 @@ public class WireTests
         Assert.Equal(new Wire.Hello("Jeb", "2026.10.25.5707", "Core,KSAMultiplayer", "SolLite", "pw"), RoundTrip(new Wire.Hello("Jeb", "2026.10.25.5707", "Core,KSAMultiplayer", "SolLite", "pw")));
         Assert.Equal(new Wire.Welcome(3, "", "Moon base", true), RoundTrip(new Wire.Welcome(3, "", "Moon base", true)));
         Assert.Equal(new Wire.Bye("kicked"), RoundTrip(new Wire.Bye("kicked")));
-        Assert.Equal(new Wire.Ping(12.5, 0.035f, 0f), RoundTrip(new Wire.Ping(12.5, 0.035f, 0f)));
+        Assert.Equal(new Wire.Ping(12.5, 0.035f, 0f, 1f, true), RoundTrip(new Wire.Ping(12.5, 0.035f, 0f, 1f, true)));
         // A game that has not measured a round trip yet says so rather than claiming none.
-        Assert.Equal(new Wire.Ping(12.5, -1f, 0f), RoundTrip(new Wire.Ping(12.5, -1f, 0f)));
+        Assert.Equal(new Wire.Ping(12.5, -1f, 0f, 1f, true), RoundTrip(new Wire.Ping(12.5, -1f, 0f, 1f, true)));
         Assert.Equal(new Wire.Pong(1, 2), RoundTrip(new Wire.Pong(1, 2)));
         Assert.Equal(new Wire.Clock(1e6, 3.25, 1f), RoundTrip(new Wire.Clock(1e6, 3.25, 1f)));
         Assert.Equal(new Wire.Loaded(42), RoundTrip(new Wire.Loaded(42)));
@@ -33,8 +33,8 @@ public class WireTests
         Assert.Equal(new Wire.Snapshot("why"), RoundTrip(new Wire.Snapshot("why")));
         Assert.Equal(new Wire.Got(9), RoundTrip(new Wire.Got(9)));
 
-        Wire.Roster roster = RoundTrip(new Wire.Roster([new Wire.Player(1, "A", true, "Rocket", 0.012f), new Wire.Player(2, "B", false, "", -1f)]));
-        Assert.Equal([new Wire.Player(1, "A", true, "Rocket", 0.012f), new Wire.Player(2, "B", false, "", -1f)], roster.Players);
+        Wire.Roster roster = RoundTrip(new Wire.Roster([new Wire.Player(1, "A", true, "Rocket", 0.012f, 1f), new Wire.Player(2, "B", false, "", -1f, 1f)]));
+        Assert.Equal([new Wire.Player(1, "A", true, "Rocket", 0.012f, 1f), new Wire.Player(2, "B", false, "", -1f, 1f)], roster.Players);
 
         Wire.Owners owners = RoundTrip(new Wire.Owners(1, 3, [new Wire.Owner("X", 1), new Wire.Owner("Y", 0)]));
         Assert.Equal((ushort)1, owners.Page);
@@ -71,7 +71,7 @@ public class WireTests
         Assert.Null(Wire.Read("FPR!\u0002\u0000\u0004"u8, out _));
 
         byte[] buffer = new byte[Wire.BufferBytes];
-        int n = Wire.Write(new Wire.Ping(1, -1f, 0f), buffer);
+        int n = Wire.Write(new Wire.Ping(1, -1f, 0f, 1f, true), buffer);
         buffer[4] = 99;
         Assert.Null(Wire.Read(buffer.AsSpan(0, n), out ushort version));
         Assert.Equal(99, version);

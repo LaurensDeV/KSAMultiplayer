@@ -244,12 +244,49 @@ internal static class Sync
         return owner == 0 || owner == c.Id ? "" : c.NameOf(owner);
     }
 
+    // Over a window rather than a frame: one slow frame is a hitch, and a hitch is not a machine's
+    // measure. Long enough to mean something, short enough that letting go of a key is felt.
+    private const double SustainOverSeconds = 2.0;
+
+    private static double _sustainAt, _sustainFrom, _sustains = 1.0;
+
+    /// <summary>
+    /// The speed this game is managing to run its world at, a multiple of real time. What the world
+    /// is warped to is held to the slowest of these, so a warp is never agreed that somebody's
+    /// machine cannot fly.
+    /// </summary>
+    public static double Sustains => _sustains;
+
+    private static void MeasureWhatThisMachineDoes(double now)
+    {
+        double universe = World.Universe;
+        if (_sustainAt <= 0.0 || now - _sustainAt > SustainOverSeconds * 4.0)
+        {
+            (_sustainAt, _sustainFrom) = (now, universe);
+            return;
+        }
+        double over = now - _sustainAt;
+        if (over < SustainOverSeconds) return;
+
+        double done = (universe - _sustainFrom) / over;
+        (_sustainAt, _sustainFrom) = (now, universe);
+        if (!double.IsFinite(done) || done < 0.0) return;
+
+        // What it did is the floor of what it can do; what KSA says it managed of what it was asked
+        // is the ceiling. Inside its budget a game is keeping up and could be asked for more, which
+        // the server finds out by asking for a little more and watching.
+        double asked = World.Speed, achieved = World.Achieved;
+        _sustains = achieved < 0.98 && asked > 0.0 ? Math.Max(1.0, asked * achieved) : Math.Max(1.0, done);
+    }
+
     /// <summary>Once a frame, from the frame hook.</summary>
     public static void Update()
     {
         double now = Wall();
         FrameSeconds = _frameAt > 0 ? Math.Min(now - _frameAt, 1.0) : 0.0;
         _frameAt = now;
+        MeasureWhatThisMachineDoes(now);
+        if (_client is { } told) (told.Can, told.Here) = (_sustains, World.Focused);
         if (_client is not { } c) return;
         try
         {

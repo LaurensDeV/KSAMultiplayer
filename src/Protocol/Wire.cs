@@ -57,7 +57,7 @@ public readonly record struct Quat(double X, double Y, double Z, double W)
 public static class Wire
 {
     /// <summary>Changed whenever what a datagram means changes: a game speaking another version is refused by name.</summary>
-    public const ushort Version = 6;
+    public const ushort Version = 7;
 
     public const int BufferBytes = 8192;
     public const int NameChars = 24;
@@ -116,16 +116,23 @@ public static class Wire
     public sealed record Welcome(byte Id, string Refused, string ServerName, bool HasWorld) : Message(Kind.Welcome);
 
     /// <param name="Rtt">The player's round trip to the server, s, as that player last measured it; negative until it has.</param>
-    public readonly record struct Player(byte Id, string Name, bool Loaded, string Controlling, float Rtt);
+    /// <param name="Can">The speed that player's game is managing, as a multiple of real time:
+    /// what the room's own speed is held to, and whose name is on it.</param>
+    public readonly record struct Player(byte Id, string Name, bool Loaded, string Controlling, float Rtt, float Can);
 
     public sealed record Roster(Player[] Players) : Message(Kind.Roster);
 
     public sealed record Bye(string Why) : Message(Kind.Bye);
 
     /// <param name="Rtt">The round trip this game last measured, s, so the server can tell every player what every other player's is. Negative until it has one.</param>
-    /// <param name="Late">How far behind the server's time this game's world is, s, as it last measured:
-    /// what the server holds its clock back for rather than running away from whoever cannot follow.</param>
-    public sealed record Ping(double Sent, float Rtt, float Late) : Message(Kind.Ping);
+    /// <param name="Late">How far behind the server's time this game's world is, s, as it last measured.</param>
+    /// <param name="Can">The speed this game is managing to run its world at, as a multiple of real
+    /// time. The server never warps the world past the slowest of these: a warp nobody can follow is
+    /// a warp that leaves somebody behind, and no amount of catching up afterwards is worth that.</param>
+    /// <param name="Here">Whether this game's window has the player's attention. An unfocused window is
+    /// throttled by Windows, so what it manages says nothing about the machine: it is an absent
+    /// player, not a slow one, and the world does not slow down for somebody who is not looking.</param>
+    public sealed record Ping(double Sent, float Rtt, float Late, float Can, bool Here) : Message(Kind.Ping);
 
     /// <param name="Echo">The ping's own time, on the asker's clock.</param>
     /// <param name="Answered">When it was answered, on the answerer's clock.</param>
@@ -242,6 +249,7 @@ public static class Wire
                     w.U8(p.Loaded ? (byte)1 : (byte)0);
                     w.Text(p.Controlling, KeyChars);
                     w.F32(p.Rtt);
+                    w.F32(p.Can);
                 }
                 break;
             case Bye b:
@@ -251,6 +259,8 @@ public static class Wire
                 w.F64(p.Sent);
                 w.F32(p.Rtt);
                 w.F32(p.Late);
+                w.F32(p.Can);
+                w.U8(p.Here ? (byte)1 : (byte)0);
                 break;
             case Pong p:
                 w.F64(p.Echo);
@@ -362,7 +372,7 @@ public static class Wire
                 Kind.Welcome => new Welcome(r.U8(), r.Text(200), r.Text(64), r.U8() != 0),
                 Kind.Roster => ReadRoster(ref r),
                 Kind.Bye => new Bye(r.Text(200)),
-                Kind.Ping => new Ping(r.F64(), r.F32(), r.F32()),
+                Kind.Ping => new Ping(r.F64(), r.F32(), r.F32(), r.F32(), r.U8() != 0),
                 Kind.Pong => new Pong(r.F64(), r.F64()),
                 Kind.Clock => new Clock(r.F64(), r.F64(), r.F32()),
                 Kind.Chunk => new Chunk(r.U32(), r.U16(), r.U16(), r.Take(r.U16()).ToArray()),
@@ -408,7 +418,7 @@ public static class Wire
     private static Roster ReadRoster(ref Reader r)
     {
         Player[] players = new Player[r.U8()];
-        for (int i = 0; i < players.Length; i++) players[i] = new Player(r.U8(), r.Text(NameChars), r.U8() != 0, r.Text(KeyChars), r.F32());
+        for (int i = 0; i < players.Length; i++) players[i] = new Player(r.U8(), r.Text(NameChars), r.U8() != 0, r.Text(KeyChars), r.F32(), r.F32());
         return new Roster(players);
     }
 
