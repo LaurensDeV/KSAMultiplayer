@@ -182,6 +182,26 @@ internal static class Sync
 
     public static bool IsPuppet(Vehicle v) => Puppets.ContainsKey(v);
 
+    /// <summary>
+    /// A craft taken for this game before its crew is sent out, when nobody holds it. Two games
+    /// looking at the same unclaimed capsule could each send the same kitten out of it, because a
+    /// craft nobody owns is nobody's to refuse: the claim makes it somebody's, and the other game's
+    /// hatch is shut within the tick.
+    /// </summary>
+    /// <returns>Whether this game may send the crew out: its own craft, or one just taken.</returns>
+    public static bool TakeBeforeEva(Vehicle v)
+    {
+        if (_client is not { Joined: true } c) return true;
+        string key = KeyOf(v);
+        if (Owned.ContainsKey(key)) return true;
+
+        byte owner = c.OwnerOf(key);
+        if (owner != 0 && owner != c.Id) return false;
+
+        Own(c, v, define: false, made: false);
+        return true;
+    }
+
     /// <summary>What the shared world calls this craft, which is this game's own name for it unless the server renamed it.</summary>
     public static string KeyOf(Vehicle v) => Renamed.GetValueOrDefault(v, v.Id);
 

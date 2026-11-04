@@ -204,6 +204,10 @@ against KSA `2026.10.25.5707`:
   nudged off a round number to hold its clock; the mod takes the key by which way it points and
   steps the game's own ladder from what the server says instead.
 - **Ownership is not kept across a server restart**: it starts afresh, and the first to take control of a craft has it.
+- **A hatch is claimed before it opens.** A craft another player holds refuses to let its crew out,
+  but a craft nobody holds was nobody's to refuse: two games looking at the same capsule each sent
+  the same kitten out of it and the world got two. Opening a hatch on an unheld craft takes it
+  first, so the second game finds it held within the tick.
 - **The refusal guards taking a craft, not keeping one.** A game that joins while already controlling
   a craft the server gives to somebody else goes on controlling it: it becomes a puppet, overwritten
   by its owner's states every frame, while the game that joined still believes it is flying it.

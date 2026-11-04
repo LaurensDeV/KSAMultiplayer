@@ -187,7 +187,17 @@ internal static class Hooks
     // the refusal has to sit where the queue is emptied, which is here.
     private static bool BeforeSpawnEva(Vehicle vehicle)
     {
-        if (!Others(vehicle)) return true;
+        try
+        {
+            // Taken first, if nobody holds it: an unclaimed craft is nobody's to refuse, so two
+            // games looking at one capsule would each send the same kitten out of it.
+            if (Sync.TakeBeforeEva(vehicle)) return true;
+        }
+        catch (Exception e)
+        {
+            Complain("taking a craft before its crew is sent out", e);
+            return true;
+        }
         Sync.Say($"{vehicle.Id} is {Sync.OwnerOf(vehicle)}'s: its crew is theirs to send out");
         return false;
     }
@@ -201,7 +211,15 @@ internal static class Hooks
 
     private static bool BeforeEva(Vehicle vehicle, ref bool __result)
     {
-        if (!Others(vehicle)) return true;
+        try
+        {
+            if (Sync.TakeBeforeEva(vehicle)) return true;
+        }
+        catch (Exception e)
+        {
+            Complain("taking a craft before its crew is sent out", e);
+            return true;
+        }
         __result = false;
         return false;
     }
