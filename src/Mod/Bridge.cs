@@ -93,6 +93,7 @@ internal sealed class Bridge
             "craft" => CraftList(),
             "mp" => Multiplayer(command),
             "goto" => GoTo(command),
+            "watch" => Watch(command),
             "eva" => Eva(command),
             "stage" => Stage(command),
             "pause" => Paused(true),
@@ -141,6 +142,7 @@ internal sealed class Bridge
             ["protocol"] = Wire.Version,
             ["in_flight"] = World.InFlight,
             ["craft"] = World.Controlled?.Id,
+            ["watching"] = World.Watched?.Id,
             ["speed"] = Math.Round(World.Speed, 4),
             ["universe"] = Math.Round(World.Universe, 2),
             ["stage"] = Sync.Now.ToString(),
@@ -211,6 +213,7 @@ internal sealed class Bridge
                 ["parts"] = v.Parts.Count,
                 ["physics"] = v.HasPhysicsBubble,
                 ["flown"] = ReferenceEquals(v, flown),
+                ["watched"] = ReferenceEquals(v, World.Watched),
                 ["puppet"] = Sync.IsPuppet(v),
                 ["owned"] = Sync.OwnedCraft.Contains(key),
                 ["from_flown_m"] = flown is null || ReferenceEquals(v, flown) ? null : Math.Round(World.Between(flown, v), 1),
@@ -276,7 +279,22 @@ internal sealed class Bridge
         string id = command.String("craft");
         if (id.Length == 0) return Failed("goto needs a craft");
         if (World.Vehicles().FirstOrDefault(v => v.Id == id) is not { } v) return Failed($"no craft '{id}' in this world");
-        return World.GoTo(v) ? Done(new() { ["craft"] = v.Id }) : Failed($"could not fly '{id}'");
+        if (World.GoTo(v)) return Done(new() { ["craft"] = v.Id, ["flying"] = true });
+        // Another player's: the camera still goes there, which is all anyone can do with it.
+        return World.Watch(v)
+            ? Done(new() { ["craft"] = v.Id, ["flying"] = false, ["owner"] = Sync.OwnerOf(v) })
+            : Failed($"could not fly or watch '{id}'");
+    }
+
+    // The camera on a craft without taking it: how another player's is seen close up.
+    private static Reply Watch(BridgeCommand command)
+    {
+        string id = command.String("craft");
+        if (id.Length == 0) return Failed("watch needs a craft");
+        if (World.Vehicles().FirstOrDefault(v => v.Id == id) is not { } v) return Failed($"no craft '{id}' in this world");
+        return World.Watch(v)
+            ? Done(new() { ["craft"] = v.Id, ["owner"] = Sync.OwnerOf(v) })
+            : Failed($"could not watch '{id}'");
     }
 
     // A kitten out of a craft's hatch: the shortest way to make a craft that the loaded world did not

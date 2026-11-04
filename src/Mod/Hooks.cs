@@ -133,7 +133,22 @@ internal static class Hooks
 
     // False leaves control where it is. A craft another player flies is watched, never taken: without
     // this the player can still point at it and press keys, and what they do to it happens here alone.
-    private static bool BeforeControl(Vehicle? value) => !Others(value);
+    // The camera is already on it by the time this runs: KSA follows first and takes control after,
+    // so a refusal leaves the player watching rather than nowhere. Said once a craft, since every
+    // click on it comes back through here.
+    private static Vehicle? _refused;
+
+    private static bool BeforeControl(Vehicle? value)
+    {
+        if (!Others(value)) return true;
+        if (!ReferenceEquals(_refused, value))
+        {
+            _refused = value;
+            string whose = Sync.OwnerOf(value!) is { Length: > 0 } name ? $"{name}'s" : "another player's";
+            Sync.Say($"{value!.Id} is {whose}: watching it, not flying it");
+        }
+        return false;
+    }
 
     private static bool BeforeBoard(Vehicle host, ref bool __result)
     {

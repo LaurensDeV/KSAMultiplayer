@@ -218,6 +218,10 @@ TOOLS = {
                 "kitten or the first aboard. The shortest way to make a craft the loaded world did not have.",
                 {"craft": {"type": "string"}, "kitten": {"type": "string"}}, [],
                 lambda a: _dump(send("eva", **a))),
+    "ksa_watch": ("Put the camera on a craft without taking it over, which is the only thing anyone can "
+                  "do with a craft another player flies.",
+                  {"craft": {"type": "string"}}, ["craft"],
+                  lambda a: _dump(send("watch", **a))),
     "ksa_stage": ("Fire a craft's next sequence, which is what the space bar does: the named craft, or the "
                   "flown one. The way to drop a stage while another game is watching.",
                   {"craft": {"type": "string"}}, [],

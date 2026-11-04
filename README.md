@@ -31,7 +31,8 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
 Once you're in:
 
 - **Fly anything nobody else is flying.** Take control of a craft and it's yours until you leave. A
-  craft someone else is flying moves where their game says, and you can watch it but not fly it.
+  craft someone else is flying moves where their game says: ask for it and the camera goes there
+  anyway, so you ride along and watch rather than fly.
 - **Launch as usual.** A craft you launch, a stage you drop and a kitten you send on EVA show up for
   everyone else.
 - **Time is shared.** Every world keeps the server's time, so changing speed is put to everyone

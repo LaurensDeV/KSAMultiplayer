@@ -198,6 +198,14 @@ internal static class Sync
 
     public static void SayChat(string text) => _client?.SayChat(text);
 
+    /// <summary>Who flies this craft, or empty when it is this game's own or nobody is known to.</summary>
+    public static string OwnerOf(Vehicle v)
+    {
+        if (_client is not { Joined: true } c) return "";
+        byte owner = c.OwnerOf(KeyOf(v));
+        return owner == 0 || owner == c.Id ? "" : c.NameOf(owner);
+    }
+
     /// <summary>Once a frame, from the frame hook.</summary>
     public static void Update()
     {
@@ -630,7 +638,7 @@ internal static class Sync
         return host.Length > 0 && !host.Contains(' ');
     }
 
-    private static void Say(string what)
+    public static void Say(string what)
     {
         Log.Info($"multiplayer: {what}");
         SaidLines.Add(what);

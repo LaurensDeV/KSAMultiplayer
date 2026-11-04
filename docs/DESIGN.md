@@ -176,9 +176,6 @@ against KSA `2026.10.25.5707`:
 - **No authority over physics.** Each game is trusted for its own craft; the server only checks a state
   comes from the craft's owner.
 - **Ownership is not kept across a server restart**: it starts afresh, and the first to take control of a craft has it.
-- **A craft that is not yours cannot be followed.** Taking one is refused, and KSA points the camera
-  at the craft being controlled, so another player's rocket is drawn where it is and named, and there
-  is no way to ride along with it.
 - **The refusal guards taking a craft, not keeping one.** A game that joins while already controlling
   a craft the server gives to somebody else goes on controlling it: it becomes a puppet, overwritten
   by its owner's states every frame, while the game that joined still believes it is flying it.

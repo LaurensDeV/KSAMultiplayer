@@ -345,6 +345,32 @@ internal static class World
         catch (Exception) { return double.PositiveInfinity; }
     }
 
+    /// <summary>
+    /// The craft the camera is on, which is not always the one being flown: another player's craft
+    /// can be watched and never taken.
+    /// </summary>
+    public static Vehicle? Watched => Program.GetMainCamera()?.Following as Vehicle;
+
+    /// <summary>
+    /// The camera put on a craft without taking it over. KSA's camera takes control of whatever it
+    /// follows unless told not to, and control of another player's craft is refused, so following
+    /// and flying have to be asked for separately.
+    /// </summary>
+    public static bool Watch(Vehicle v)
+    {
+        try
+        {
+            if (Program.GetMainCamera() is not { } camera) return false;
+            camera.SetFollow(v, tidalLocking: true, changeControl: false);
+            return ReferenceEquals(camera.Following, v);
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"could not watch {v.Id}: {e.GetBaseException().Message}");
+            return false;
+        }
+    }
+
     public static bool GoTo(Vehicle v)
     {
         try
