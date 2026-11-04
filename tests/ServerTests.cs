@@ -665,6 +665,44 @@ public class ServerTests
     }
 
     [Fact]
+    public void ACraftItsOwnerWalksAwayFromGoesBackToBeingAnybodys()
+    {
+        using Rig rig = new(new ServerOptions { LapseWithin = 1.0 });
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+
+        a.Claim("Rocket", controlling: true, made: false);
+        a.Claim("Lander", controlling: true, made: false);
+        rig.Until(() => rig.Server.OwnerOf("Rocket") == a.Id && rig.Server.OwnerOf("Lander") == a.Id,
+                  what: "Alice to hold both");
+
+        // She is in the lander and not looking at the rocket. It is not hers to hold for ever.
+        rig.Until(() => rig.Server.OwnerOf("Rocket") == 0, seconds: 15.0, what: "the rocket to be let go of");
+        Assert.Equal(a.Id, rig.Server.OwnerOf("Lander"));
+
+        // And Bob may have it, which before this he could not until she left.
+        b.Claim("Rocket", controlling: true, made: false);
+        rig.Until(() => rig.Server.OwnerOf("Rocket") == b.Id, what: "Bob to take the rocket");
+    }
+
+    [Fact]
+    public void ACraftItsOwnerIsLookingAtStaysTheirs()
+    {
+        using Rig rig = new(new ServerOptions { LapseWithin = 1.0 });
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+
+        a.Claim("Rocket", controlling: true, made: false);
+        a.Claim("Lander", controlling: true, made: false);
+        rig.Until(() => rig.Server.OwnerOf("Rocket") == a.Id, what: "Alice to hold the rocket");
+
+        // Watching is being near it: she has stepped out to look at it, not walked away from it.
+        a.Watching = "Rocket";
+        rig.For(3.0);
+        Assert.Equal(a.Id, rig.Server.OwnerOf("Rocket"));
+    }
+
+    [Fact]
     public void OneNoIsEnoughToStopAWarp()
     {
         using Rig rig = new();

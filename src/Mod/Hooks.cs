@@ -53,6 +53,10 @@ internal static class Hooks
                   "another player's craft can be taken over here");
             Patch(AccessTools.Method(typeof(KittenEva), nameof(KittenEva.BoardVehicle), [typeof(Vehicle), typeof(EVADoor)]), nameof(BeforeBoard),
                   "a kitten can climb into another player's craft");
+            // The hatch's own button, so a craft that is somebody else's does not offer a way out of
+            // it that will be refused: an offer nobody can take is worse than no offer.
+            Patch(AccessTools.Method(typeof(EVADoor), nameof(EVADoor.ShowContextMenu), [typeof(Vehicle)]), nameof(BeforeHatchMenu),
+                  "a hatch of another player's craft offers a way out that is then refused");
             Patch(AccessTools.Method(typeof(EVADoor), nameof(EVADoor.PerformEvaForSeat), [typeof(Vehicle), typeof(IVASeat)]), nameof(BeforeEva),
                   "a kitten can be let out of another player's craft");
             // Where every way out meets: the hatch's own EVA button fills the spawn buffer itself
@@ -205,6 +209,15 @@ internal static class Hooks
     private static bool BeforeBoard(Vehicle host, ref bool __result)
     {
         if (!Others(host)) return true;
+        __result = false;
+        return false;
+    }
+
+    // Shown on a craft this game may not empty? Then not shown. The refusal still stands behind it;
+    // this is only so nobody presses a button that was never going to work.
+    private static bool BeforeHatchMenu(Vehicle vehicle, ref bool __result)
+    {
+        if (!Others(vehicle)) return true;
         __result = false;
         return false;
     }

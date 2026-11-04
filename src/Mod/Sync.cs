@@ -306,7 +306,11 @@ internal static class Sync
         FrameSeconds = _frameAt > 0 ? Math.Min(now - _frameAt, 1.0) : 0.0;
         _frameAt = now;
         MeasureWhatThisMachineDoes(now);
-        if (_client is { } told) (told.Can, told.Here) = (_sustains, World.Focused);
+        if (_client is { } told)
+        {
+            (told.Can, told.Here) = (_sustains, World.Focused);
+            told.Watching = World.Watched is { } seen && World.IsAlive(seen) ? KeyOf(seen) : "";
+        }
         if (_client is not { } c) return;
         try
         {

@@ -75,6 +75,9 @@ public sealed class Client : IDisposable
     /// <summary>Whether this game's window has the player's attention; an unfocused one is throttled.</summary>
     public bool Here { get; set; } = true;
 
+    /// <summary>The craft this game's camera is on, by the name the world knows it by, or empty.</summary>
+    public string Watching { get; set; } = "";
+
     /// <summary>The server's clock less this game's, s, once a ping has been answered.</summary>
     public double ServerOffset { get; private set; }
 
@@ -226,7 +229,7 @@ public sealed class Client : IDisposable
         {
             Send(new Wire.Ping(now, double.IsFinite(_lastRtt) ? (float)_lastRtt : -1f,
                                double.IsFinite(Late) ? (float)Late : 0f,
-                               double.IsFinite(Can) ? (float)Math.Max(Can, 0.0) : 0f, Here));
+                               double.IsFinite(Can) ? (float)Math.Max(Can, 0.0) : 0f, Here, Watching));
             _pingNext = now + PingEverySeconds;
         }
         _link.Pump(now, Send);

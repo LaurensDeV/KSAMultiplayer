@@ -22,6 +22,13 @@ public sealed record ServerOptions
     /// <summary>How long everyone has to answer a warp before the ask runs out. Saying nothing is not agreeing.</summary>
     public double WarpAnswerSeconds { get; init; } = 30.0;
 
+    /// <summary>
+    /// How long a craft stays its owner's while they are neither in it nor looking at it. Sticky
+    /// ownership is what stops two games pulling one hull in two directions; sticky for ever meant
+    /// the first player to touch a thing held it until they left, and a second could fly nothing.
+    /// </summary>
+    public double LapseWithin { get; init; } = 30.0;
+
     public double Speed { get; init; } = 1.0;
 }
 
@@ -60,6 +67,9 @@ public sealed class GameServer : IDisposable
         /// <summary>Whether their window has their attention; an unfocused one is throttled and is not asked to keep up.</summary>
         public bool Here { get; set; } = true;
 
+        /// <summary>The craft their camera is on, which need not be the one they are flying.</summary>
+        public string Watching { get; set; } = "";
+
         /// <summary>Waiting for a world to be sent: there is none yet, or a fresh one has been asked for.</summary>
         public bool WaitingForWorld { get; set; }
         public double WaitingSince { get; set; }
@@ -79,6 +89,9 @@ public sealed class GameServer : IDisposable
         public byte Owner;
         public byte[]? Definition;
         public double Universe;
+
+        /// <summary>When its owner was last in it or looking at it, on the server's own clock.</summary>
+        public double AttendedAt;
     }
 
     private const double SilentSeconds = 10.0, LoadingSilentSeconds = 120.0;
@@ -211,6 +224,7 @@ public sealed class GameServer : IDisposable
             EndWarp(now, "the warp ends: whoever started it has gone");
         }
         Govern(now);
+        Lapse(now);
         if (_warpPhase != Wire.WarpPhase.None && now >= _warpNext)
         {
             Broadcast(WarpState(), p => p.Loaded);
@@ -263,6 +277,7 @@ public sealed class GameServer : IDisposable
                 player.Late = float.IsFinite(ping.Late) ? ping.Late : 0.0;
                 player.Can = float.IsFinite(ping.Can) && ping.Can > 0f ? ping.Can : 0.0;
                 player.Here = ping.Here;
+                player.Watching = ping.Watching;
                 _udp.Send(new Wire.Pong(ping.Sent, _clock()), from);
                 return;
             case Wire.Loaded loaded:
@@ -466,14 +481,14 @@ public sealed class GameServer : IDisposable
             // holder has, and is given a name of its own. Anything else is the holder's to fly.
             if (!made) return null;
             string fresh = FreeKey(key);
-            _crafts[fresh] = new Craft { Owner = p.Id };
+            _crafts[fresh] = new Craft { Owner = p.Id, AttendedAt = _clock() };
             _gone.Remove(fresh);
             OwnersChanged();
             _udp.Send(new Wire.Rename(key, fresh), p.At);
             Log($"{holder.Name} already has a craft called {key}, so {p.Name}'s is {fresh} here");
             return fresh;
         }
-        craft.Owner = p.Id;
+        (craft.Owner, craft.AttendedAt) = (p.Id, _clock());
         _gone.Remove(key);
         OwnersChanged();
         return key;
@@ -674,6 +689,35 @@ public sealed class GameServer : IDisposable
     /// roster: a name still hanging over the craft its player has just stepped out of is the whole
     /// of what anybody notices.
     /// </summary>
+    /// <summary>
+    /// Craft their owners have walked away from, given back. Ownership is sticky so that two games
+    /// never pull one hull in two directions -- but sticky for ever meant the first player to touch
+    /// a thing held it until they left, and a second player could fly nothing at all.
+    /// </summary>
+    private void Lapse(double now)
+    {
+        bool any = false;
+        foreach ((string key, Craft craft) in _crafts)
+        {
+            if (craft.Owner == 0) continue;
+            if (!_players.TryGetValue(craft.Owner, out Player? owner))
+            {
+                continue;
+            }
+            if (owner.Controlling == key || owner.Watching == key)
+            {
+                craft.AttendedAt = now;
+                continue;
+            }
+            if (now - craft.AttendedAt < Options.LapseWithin) continue;
+
+            craft.Owner = 0;
+            any = true;
+            Log($"{key} is anybody's again: {owner.Name} has not been near it for {Options.LapseWithin:0} s");
+        }
+        if (any) OwnersChanged();
+    }
+
     private void Flying(Player p, string key)
     {
         if (p.Controlling == key) return;

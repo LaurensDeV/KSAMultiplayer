@@ -57,7 +57,7 @@ public readonly record struct Quat(double X, double Y, double Z, double W)
 public static class Wire
 {
     /// <summary>Changed whenever what a datagram means changes: a game speaking another version is refused by name.</summary>
-    public const ushort Version = 7;
+    public const ushort Version = 8;
 
     public const int BufferBytes = 8192;
     public const int NameChars = 24;
@@ -132,7 +132,10 @@ public static class Wire
     /// <param name="Here">Whether this game's window has the player's attention. An unfocused window is
     /// throttled by Windows, so what it manages says nothing about the machine: it is an absent
     /// player, not a slow one, and the world does not slow down for somebody who is not looking.</param>
-    public sealed record Ping(double Sent, float Rtt, float Late, float Can, bool Here) : Message(Kind.Ping);
+    /// <param name="Watching">The craft this game's camera is on, which need not be the one it flies:
+    /// a craft its owner is neither in nor looking at is one they have walked away from, and after a
+    /// while it goes back to being anybody's.</param>
+    public sealed record Ping(double Sent, float Rtt, float Late, float Can, bool Here, string Watching) : Message(Kind.Ping);
 
     /// <param name="Echo">The ping's own time, on the asker's clock.</param>
     /// <param name="Answered">When it was answered, on the answerer's clock.</param>
@@ -261,6 +264,7 @@ public static class Wire
                 w.F32(p.Late);
                 w.F32(p.Can);
                 w.U8(p.Here ? (byte)1 : (byte)0);
+                w.Text(p.Watching, KeyChars);
                 break;
             case Pong p:
                 w.F64(p.Echo);
@@ -372,7 +376,7 @@ public static class Wire
                 Kind.Welcome => new Welcome(r.U8(), r.Text(200), r.Text(64), r.U8() != 0),
                 Kind.Roster => ReadRoster(ref r),
                 Kind.Bye => new Bye(r.Text(200)),
-                Kind.Ping => new Ping(r.F64(), r.F32(), r.F32(), r.F32(), r.U8() != 0),
+                Kind.Ping => new Ping(r.F64(), r.F32(), r.F32(), r.F32(), r.U8() != 0, r.Text(KeyChars)),
                 Kind.Pong => new Pong(r.F64(), r.F64()),
                 Kind.Clock => new Clock(r.F64(), r.F64(), r.F32()),
                 Kind.Chunk => new Chunk(r.U32(), r.U16(), r.U16(), r.Take(r.U16()).ToArray()),

@@ -30,9 +30,10 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
 
 Once you're in:
 
-- **Fly anything nobody else is flying.** Take control of a craft and it's yours until you leave. A
-  craft someone else is flying moves where their game says: ask for it and the camera goes there
-  anyway, so you ride along and watch rather than fly.
+- **Fly anything nobody else is flying.** Take control of a craft and it's yours while you are in it
+  or looking at it, and for half a minute after. A craft someone else is flying moves where their
+  game says: ask for it and the camera goes there anyway, so you ride along and watch rather than
+  fly. Their name is over the craft they're in; their other craft carry a faint `Alice's Lander`.
 - **Launch as usual.** A craft you launch, a stage you drop and a kitten you send on EVA show up for
   everyone else.
 - **Time is shared.** Every world keeps the server's time, so changing speed is put to everyone
@@ -93,6 +94,7 @@ nobody is connected, unless `--keep-time` is given.
 | `--snapshot-every` | `KSAMP_SNAPSHOT_EVERY` | `300` | seconds between fresh saves |
 | `--keep-time` | `KSAMP_KEEP_TIME` | off | let time run with nobody connected |
 | `--warp-answer` | `KSAMP_WARP_ANSWER` | `30` | seconds everyone has to answer a warp |
+| `--lapse-within` | `KSAMP_LAPSE_WITHIN` | `30` | seconds a craft stays its owner's while they are neither in it nor looking at it |
 | `--speed` | `KSAMP_SPEED` | `1` | how fast universe time runs |
 
 Commands typed into the server's console: `players`, `say <text>`, `kick <name> [why]`, `save`,
