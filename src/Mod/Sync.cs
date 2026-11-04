@@ -64,6 +64,11 @@ internal static class Sync
     private static readonly Dictionary<string, Mine> Owned = [];
     private static readonly Dictionary<Vehicle, string> Puppets = [];
     private static readonly Dictionary<string, double> PlacedAt = [];
+    // Another player's craft built here, by what the shared world calls it. World.Vehicles() does not
+    // list a craft the moment it is made, so asking the world whether a craft is here answers no for
+    // a frame or two after it was built, and the answer is taken as leave to build it again. This is
+    // what was built, and it is believed over the world until the craft is gone.
+    private static readonly Dictionary<string, Vehicle> Built = [];
     // Every craft this world has had since it was loaded, by craft rather than by name: one name can
     // belong to two craft here at once -- this player's kitten and the one another player sent out of
     // the same capsule -- and what matters is which object was already here, not what it is called.
@@ -256,6 +261,7 @@ internal static class Sync
         _finding = null;
         foreach (Vehicle v in Puppets.Keys) Log.Info($"let go of {v.Id}");
         Puppets.Clear();
+        Built.Clear();
         Owned.Clear();
         Seen.Clear();
         Conflicts.Clear();
@@ -404,6 +410,7 @@ internal static class Sync
             Say($"the world has come, {blob.Data.Length / 1024} KB: loading it");
             (_loadingSince, _settle, Now) = (Wall(), 0, Stage.Loading);
             Puppets.Clear();
+            Built.Clear();
             MadeHere.Clear();
             World.LoadWorld(blob.Data);
             return;
@@ -453,6 +460,10 @@ internal static class Sync
         while (c.Blobs.TryDequeue(out Blob? blob))
         {
             if (blob.Kind != BlobKind.Vehicle || blob.Key.Length == 0) continue;
+            // The same craft again, which its owner sends whenever KSA reshapes it. The craft standing
+            // here is already that one, and destroying it to build it back is how a world comes to
+            // hold two of it.
+            if (Definitions.TryGetValue(blob.Key, out byte[]? had) && had.AsSpan().SequenceEqual(blob.Data)) continue;
             Definitions[blob.Key] = blob.Data;
             // A craft rebuilt by its owner, as one that drops a stage is: the old one here goes, and the
             // new one is built below. Never one this game made: another player's kitten out of the same
@@ -461,6 +472,7 @@ internal static class Sync
                 && !ReferenceEquals(old, flown) && !MadeHere.Contains(old))
             {
                 Puppets.Remove(old);
+                Built.Remove(blob.Key);
                 World.Destroy(old);
                 here.Remove(blob.Key);
             }
@@ -472,6 +484,7 @@ internal static class Sync
             if (here.TryGetValue(key, out Vehicle? gone) && !Owned.ContainsKey(key) && !MadeHere.Contains(gone))
             {
                 Puppets.Remove(gone);
+                Built.Remove(key);
                 World.Destroy(gone);
                 here.Remove(key);
             }
@@ -660,7 +673,9 @@ internal static class Sync
             if (owner == c.Id || Owned.ContainsKey(key)) continue;
             if (here.TryGetValue(key, out Vehicle? ours) && MadeHere.Contains(ours)) continue;
             Track track = c.TrackOf(key);
-            if (!here.TryGetValue(key, out Vehicle? v))
+            here.TryGetValue(key, out Vehicle? v);
+            if (v is null && Built.TryGetValue(key, out Vehicle? standing) && World.IsAlive(standing)) here[key] = v = standing;
+            if (v is null)
             {
                 // One a frame: each is a craft built.
                 if (builtOne || track.Newest is null || !Definitions.TryGetValue(key, out byte[]? definition)) continue;
@@ -672,6 +687,7 @@ internal static class Sync
                 {
                     if (localId != key) Renamed[built] = key;
                     Seen.Add(built);
+                    Built[key] = built;
                     here[key] = v = built;
                     Log.Info($"built {key}, {c.NameOf(owner)}'s{(localId != key ? $", called {localId} here" : "")}");
                 }
@@ -695,6 +711,7 @@ internal static class Sync
             }
         }
         foreach (Vehicle v in Puppets.Keys.Where(p => !wanted.Contains(p)).ToArray()) Puppets.Remove(v);
+        foreach (string k in Built.Where(p => !World.IsAlive(p.Value)).Select(p => p.Key).ToArray()) Built.Remove(k);
         foreach (Vehicle v in Renamed.Keys.Where(x => !World.IsAlive(x)).ToArray()) Renamed.Remove(v);
         foreach (Vehicle v in Seen.Where(x => !World.IsAlive(x)).ToArray()) Seen.Remove(v);
         foreach (Vehicle v in MadeHere.Where(x => !World.IsAlive(x)).ToArray()) MadeHere.Remove(v);

@@ -93,7 +93,11 @@ carries that player's system; one an operator imports carries whatever its own `
      ground. A craft whose parts change, as one that stages does, is described again.
    - **Every other player's craft is a puppet.** Built from its definition if this world has none
      (`Vehicle.CreateVehicleFromSaveGameData`, or `KittenEva.CreateKittenFromSaveData` for a kitten),
-     one a frame. With physics here it is pulled to its owner's state in `Vehicle.PrepareWorker`, the
+     one a frame, and then remembered by name: KSA does not list a craft the moment it is made, so a
+     world asked whether it holds one says no for a frame or two and would otherwise be told to build
+     it again. A definition whose bytes are the ones already held is ignored rather than acted on, for
+     the same reason: tearing the craft down to build it back is how a world comes to hold two of it,
+     and KSA throws when a physics step meets one craft twice. With physics here it is pulled to its owner's state in `Vehicle.PrepareWorker`, the
      one window where a write to a craft's state survives the frame: put there outright from more than
      5 m, drawn there over 0.15 s nearer. Without physics it is placed once a second at most, and only
      if 25 m out: set down on the ground with `TeleportToLocation`, or given its owner's orbit.
