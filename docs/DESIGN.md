@@ -48,7 +48,7 @@ another version is refused by name rather than misread.
   only watches, whether or not they are flying it this second.
 - **The world's speed.** One world has one time, so nobody changes it alone. A game asks, everyone
   else is asked, and it runs only if they all agree; saying nothing is not agreeing, and the ask runs
-  out after ten seconds. A pause is a warp like any other, since stopping the world stops it for
+  out after `--warp-answer` seconds, thirty by default. A pause is a warp like any other, since stopping the world stops it for
   everyone. The warp is then the asker's to steer and theirs to stop, ends if they leave, and another
   cannot be asked for within five seconds of one ending. What makes the games warp together is that
   the server warps *its own clock*, which is the thing they all follow anyway.

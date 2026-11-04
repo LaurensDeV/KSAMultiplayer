@@ -21,6 +21,7 @@ const string Usage = """
       --ksa-build <build>    the KSA build players must run (default: that of
                              whoever gave the server its world)
       --snapshot-every <s>   seconds between fresh saves of the world (default 300)
+      --warp-answer <s>      seconds everyone has to answer a warp (default 30)
       --keep-time            let universe time run with nobody playing
       --speed <x>            how fast universe time runs (default 1)
       --help                 this
@@ -76,6 +77,7 @@ try
         MaxPlayers = Math.Clamp(OptInt("max-players", 16), 1, 250),
         KsaBuild = Opt("ksa-build") ?? "",
         SnapshotEverySeconds = Math.Max(30.0, OptDouble("snapshot-every", 300.0)),
+        WarpAnswerSeconds = Math.Clamp(OptDouble("warp-answer", 30.0), 1.0, 300.0),
         KeepTime = Opt("keep-time") is "true" or "1" or "yes",
         Speed = Math.Clamp(OptDouble("speed", 1.0), 0.0, 100.0),
     };

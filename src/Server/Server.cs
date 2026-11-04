@@ -19,6 +19,9 @@ public sealed record ServerOptions
     /// <summary>Whether universe time runs with nobody playing; held by default, so a save handed out is never far behind.</summary>
     public bool KeepTime { get; init; }
 
+    /// <summary>How long everyone has to answer a warp before the ask runs out. Saying nothing is not agreeing.</summary>
+    public double WarpAnswerSeconds { get; init; } = 30.0;
+
     public double Speed { get; init; } = 1.0;
 }
 
@@ -81,9 +84,10 @@ public sealed class GameServer : IDisposable
     // A craft defined or gone this long before a world was saved is in that save already.
     private const double SaveMarginSeconds = 10.0;
 
-    // How long everyone has to answer a warp, and how long after one ends before another may be
-    // asked for: a warp that could be re-proposed the instant it stopped is a warp nobody can end.
-    private const double WarpAnswerSeconds = 10.0, WarpQuietSeconds = 5.0;
+    // How long after a warp ends before another may be asked for: one that could be re-proposed the
+    // instant it stopped is a warp nobody can get out of. How long there is to answer is an option,
+    // since it is the one number here a player waits on.
+    private const double WarpQuietSeconds = 5.0;
 
     // Higher than any world can actually run, but a number rather than whatever a game sends.
     private const double MostWarp = 100_000.0;
@@ -189,7 +193,7 @@ public sealed class GameServer : IDisposable
             _snapshotNext = now + Options.SnapshotEverySeconds;
         }
 
-        if (_warpPhase == Wire.WarpPhase.Asking && now - _warpAskedAt > WarpAnswerSeconds)
+        if (_warpPhase == Wire.WarpPhase.Asking && now - _warpAskedAt > Options.WarpAnswerSeconds)
         {
             EndWarp(now, $"{Named(_warpWho)}'s warp: not everyone answered");
         }

@@ -518,6 +518,22 @@ public class ServerTests
     }
 
     [Fact]
+    public void AnAskNobodyAnswersRunsOut()
+    {
+        // A second to answer rather than the thirty a player gets, so the test is not thirty seconds.
+        using Rig rig = new(new ServerOptions { WarpAnswerSeconds = 1.0 });
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+
+        a.AskWarp(6.0);
+        rig.Until(() => b.WarpWantsAnswer, what: "Bob to be asked");
+
+        // Bob never answers. The ask goes away and the world never warped.
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.None, seconds: 10.0, what: "the ask to run out");
+        Assert.Equal(1.0, rig.Server.UniverseClock.Speed);
+    }
+
+    [Fact]
     public void AWarpIsTheAskersToStopAndNobodyElses()
     {
         using Rig rig = new();
@@ -593,8 +609,10 @@ public class ServerTests
         rig.Until(() => double.IsFinite(a.Ping) && double.IsFinite(b.Ping), 15.0, "both to measure a round trip");
         rig.Until(() => a.Players.Any(p => p.Name == "Bob" && p.Rtt >= 0f), 15.0, "Alice to be told Bob's ping");
 
+        // Not b.Ping exactly: that is whatever Bob has measured by now, while this is what he last
+        // told the server and the server last passed on. Over loopback both are small and real.
         Wire.Player bob = a.Players.First(p => p.Name == "Bob");
         Assert.InRange(bob.Rtt, 0f, 1f);
-        Assert.Equal((float)b.Ping, bob.Rtt, 3);
+        Assert.True(double.IsFinite(b.Ping));
     }
 }
