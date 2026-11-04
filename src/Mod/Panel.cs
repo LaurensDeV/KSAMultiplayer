@@ -179,29 +179,17 @@ internal static class Panel
         List<(float2 At, string Who, string Craft, double Range)> tags = Sync.Nametags();
         if (tags.Count == 0) return;
 
-        ImGuiViewportPtr screen = ImGui.GetMainViewport();
-        ImGui.SetNextWindowPos(screen.WorkPos, ImGuiCond.Always, null);
-        ImGui.SetNextWindowSize(screen.WorkSize, ImGuiCond.Always);
-
-        const ImGuiWindowFlags over = ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize
-                                      | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoScrollbar
-                                      | ImGuiWindowFlags.NoBackground | ImGuiWindowFlags.NoInputs
-                                      | ImGuiWindowFlags.NoNav | ImGuiWindowFlags.NoFocusOnAppearing
-                                      | ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.NoBringToFrontOnFocus;
-        if (ImGui.Begin("###KSAMultiplayerTags", over))
+        // The foreground list, not a window of our own: KSA's gauges are a full-screen canvas drawn
+        // after anything the mod begins, and a tag in a window behind them is a tag nobody sees.
+        ImDrawListPtr draw = ImGui.GetForegroundDrawList();
+        float line = ImGui.GetFontSize();
+        foreach ((float2 at, string who, string craft, double range) in tags)
         {
-            ImDrawListPtr draw = ImGui.GetWindowDrawList();
-            float line = ImGui.GetFontSize();
-            foreach ((float2 at, string who, string craft, double range) in tags)
-            {
-                string name = who;
-                string under = $"{craft} · {Far(range)}";
-                // KSA's font is of one width, so the middle of a line is half its characters along.
-                Write(draw, at, -line, name, Tag, line);
-                Write(draw, at, 0f, under, TagFaint, line);
-            }
+            string under = $"{craft} · {Far(range)}";
+            // KSA's font is of one width, so the middle of a line is half its characters along.
+            Write(draw, at, -line, who, Tag, line);
+            Write(draw, at, 0f, under, TagFaint, line);
         }
-        ImGui.End();
     }
 
     private static readonly ImColor8 Tag = new(255, 255, 255, 235);

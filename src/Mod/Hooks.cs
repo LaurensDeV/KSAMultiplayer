@@ -49,6 +49,11 @@ internal static class Hooks
                   "a kitten can climb into another player's craft");
             Patch(AccessTools.Method(typeof(EVADoor), nameof(EVADoor.PerformEvaForSeat), [typeof(Vehicle), typeof(IVASeat)]), nameof(BeforeEva),
                   "a kitten can be let out of another player's craft");
+            // Where every way out meets: the hatch's own EVA button fills the spawn buffer itself
+            // rather than going through PerformEvaForSeat, and this is what drains it.
+            Patch(AccessTools.Method(typeof(EVADoor), nameof(EVADoor.SpawnEva),
+                                     [typeof(Vehicle), typeof(IVASeat), typeof(KittenRosterEntryData), typeof(Camera)]), nameof(BeforeSpawnEva),
+                  "a kitten can be let out of another player's craft by its hatch");
         }
         catch (Exception e)
         {
@@ -147,6 +152,15 @@ internal static class Hooks
             string whose = Sync.OwnerOf(value!) is { Length: > 0 } name ? $"{name}'s" : "another player's";
             Sync.Say($"{value!.Id} is {whose}: watching it, not flying it");
         }
+        return false;
+    }
+
+    // The hatch's own EVA button never calls PerformEvaForSeat: it queues the spawn straight off, so
+    // the refusal has to sit where the queue is emptied, which is here.
+    private static bool BeforeSpawnEva(Vehicle vehicle)
+    {
+        if (!Others(vehicle)) return true;
+        Sync.Say($"{vehicle.Id} is {Sync.OwnerOf(vehicle)}'s: its crew is theirs to send out");
         return false;
     }
 

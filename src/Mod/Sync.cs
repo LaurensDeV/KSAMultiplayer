@@ -408,6 +408,9 @@ internal static class Sync
                 _watching = key;
                 Say($"{c.NameOf(held)} is flying {key}: you are watching");
             }
+            // Watching means watching: control is given up here, since a game that joined already
+            // holding this craft would otherwise keep steering it.
+            if (flown is not null) World.LetGo(flown);
             return;
         }
         _watching = "";

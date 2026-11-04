@@ -143,6 +143,17 @@ internal sealed class Bridge
             ["in_flight"] = World.InFlight,
             ["craft"] = World.Controlled?.Id,
             ["watching"] = World.Watched?.Id,
+            // What the nametag pass would draw this frame, so a tag that never appears can be told
+            // from one drawn somewhere nobody looks.
+            ["nametags"] = Sync.Nametags().Select(t => (object?)new Dictionary<string, object?>
+            {
+                ["craft"] = t.Craft,
+                ["who"] = t.Who,
+                ["range_m"] = Math.Round(t.Range, 1),
+                ["x"] = Math.Round(t.At.X, 1),
+                ["y"] = Math.Round(t.At.Y, 1),
+            }).ToList(),
+            ["screen"] = World.ScreenSize is { } size ? new Dictionary<string, object?> { ["w"] = size.X, ["h"] = size.Y } : null,
             ["speed"] = Math.Round(World.Speed, 4),
             ["universe"] = Math.Round(World.Universe, 2),
             ["stage"] = Sync.Now.ToString(),

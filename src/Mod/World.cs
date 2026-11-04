@@ -1,6 +1,7 @@
 using System.Xml.Serialization;
 using Brutal.GlfwApi;
 using Brutal.Numerics;
+using Brutal.ImGuiApi;
 using KSA;
 
 namespace KSAMultiplayer;
@@ -311,6 +312,22 @@ internal static class World
     }
 
     /// <summary>Where a craft is on the screen, or null when it is behind the camera or off to the side.</summary>
+    /// <summary>How big the window is, for telling a tag drawn off the edge from one never drawn.</summary>
+    public static float2? ScreenSize
+    {
+        get
+        {
+            try
+            {
+                return ImGui.GetMainViewport().WorkSize;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+    }
+
     public static float2? ScreenOf(Vehicle v)
     {
         try
@@ -367,6 +384,27 @@ internal static class World
         catch (Exception e)
         {
             Log.Warn($"could not watch {v.Id}: {e.GetBaseException().Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Control of a craft given up while the camera stays on it, which is what being an observer is.
+    /// Without this a game goes on steering a craft the server has given to somebody else: the pull
+    /// puts the hull back where its owner says, but a kitten still jumps where its owner never did.
+    /// </summary>
+    public static bool LetGo(Vehicle v)
+    {
+        try
+        {
+            if (!ReferenceEquals(Program.ControlledVehicle, v)) return false;
+            Program.ControlledVehicle = null;
+            Watch(v);
+            return true;
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"could not let go of {v.Id}: {e.GetBaseException().Message}");
             return false;
         }
     }
