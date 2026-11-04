@@ -284,7 +284,9 @@ public sealed class GameServer : IDisposable
                 OnLoaded(player, loaded.Universe);
                 return;
             case Wire.State state when player.Loaded:
-                if (Grant(player, state.Key) is null) return;
+                // Owned already, or not relayed. A state used to take an unheld craft, which handed
+                // one back the instant it was let go of and made the letting go meaningless.
+                if (OwnerOf(state.Key) != player.Id) return;
                 // A claim says which craft is being flown; a state says which is not. Only the one
                 // they are said to be in may give it up, so a parked craft cannot unseat another.
                 bool atTheControls = (state.Flags & Wire.StateFlags.Controlled) != 0;

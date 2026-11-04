@@ -600,9 +600,18 @@ internal static class Sync
                 }
             }
             Vehicle v = m.Craft;
-            if (c.OwnerOf(key) is var owner && owner != 0 && owner != c.Id)
+            byte owner = c.OwnerOf(key);
+            if (owner != 0 && owner != c.Id)
             {
                 // Taken by another player, who is flying it now.
+                Owned.Remove(key);
+                continue;
+            }
+            // Let go of by the server because this player walked away from it, and let go of here
+            // too: a state sent for a craft nobody owns takes it straight back, and the two would
+            // hand it to each other for ever. The same rule as the server's, so they agree on it.
+            if (owner == 0 && !ReferenceEquals(v, flown) && KeyOf(v) != (World.Watched is { } at ? KeyOf(at) : ""))
+            {
                 Owned.Remove(key);
                 continue;
             }
