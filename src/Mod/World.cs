@@ -197,20 +197,35 @@ internal static class World
 
     // ------------------------------------------------------------------ saves
 
+    /// <summary>
+    /// The craft in this world that are inside the body they belong to, by name.
+    ///
+    /// <para>KSA loses a craft into a body by itself, and once it is there no orbit can be made from
+    /// where it says it is: a game handed a world holding one aborts on its first physics step. A
+    /// world with any of these in it is not fit to give to anybody.</para>
+    /// </summary>
+    public static List<string> LostCraft()
+    {
+        List<string> lost = [];
+        try
+        {
+            foreach (Vehicle v in Vehicles())
+            {
+                if (!IsAlive(v) || v.Parent is not Astronomical body || v.Parent is not IPosition at || body.MeanRadius <= 0.0) continue;
+                if (Vec(v.GetPositionEcl() - at.GetPositionEcl()) < body.MeanRadius * HalfWayIn) lost.Add(v.Id);
+            }
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"could not look over this world: {e.GetBaseException().Message}");
+        }
+        return lost;
+    }
+
     /// <summary>This world saved as the handover save and zipped, with the universe time it was saved at.</summary>
     public static (byte[] Zip, double Universe) SaveWorld()
     {
         double universe = Universe;
-        // Said, not mended: a craft inside a body is one every game that loads this world dies on,
-        // and the player handing it over is the only one who can do anything about it.
-        foreach (Vehicle v in Vehicles())
-        {
-            if (!IsAlive(v) || v.Parent is not Astronomical body || v.Parent is not IPosition at || body.MeanRadius <= 0.0) continue;
-            if (Vec(v.GetPositionEcl() - at.GetPositionEcl()) < body.MeanRadius * HalfWayIn)
-            {
-                Log.Warn($"{v.Id} is inside {body.Id}: a world with it in cannot be loaded");
-            }
-        }
         GameSaves.MakeUncompressedSave(HandoverSave);
         string folder = Path.Combine(GameSaves.SaveFolderPath, HandoverSave);
         return (Blob.ZipFolder(folder), universe);

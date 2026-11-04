@@ -182,6 +182,12 @@ public sealed class Client : IDisposable
         if (Joined) Send(new Wire.WarpAsk((float)speed));
     }
 
+    /// <summary>Tell the server this game's world is not fit to hand out, so it asks somebody else.</summary>
+    public void SayNoWorld(string why)
+    {
+        if (Joined) Send(new Wire.NoWorld(why));
+    }
+
     /// <summary>Answers what somebody asked for.</summary>
     public void VoteWarp(bool yes)
     {

@@ -96,7 +96,8 @@ carries that player's system; one an operator imports carries whatever its own `
      placed from one that arrives: KSA has lost such a craft, no orbit can be made from where it
      says it is, and a game handed a world holding one aborts on its first physics step with
      "cannot construct a UniverseTime from NaN". Finite is not enough -- the centre of the Earth is
-     a finite place to be. A craft whose parts change, as one that stages does, is described again.
+     a finite place to be. Nor is such a world handed over: the game asked for it says no and names
+     the craft, and the server asks somebody else rather than keeping a world nobody can open. A craft whose parts change, as one that stages does, is described again.
    - **Every other player's craft is a puppet.** Built from its definition if this world has none
      (`Vehicle.CreateVehicleFromSaveGameData`, or `KittenEva.CreateKittenFromSaveData` for a kitten),
      one a frame, and then remembered by name: KSA does not list a craft the moment it is made, so a

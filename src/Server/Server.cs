@@ -329,6 +329,9 @@ public sealed class GameServer : IDisposable
                 if (player.Controlling == gone.Key) Flying(player, "");
                 Broadcast(gone, p => p.Loaded && p != player);
                 return;
+            case Wire.NoWorld no:
+                OnNoWorld(player, Wire.Clip(no.Why, 200));
+                return;
             case Wire.WarpAsk ask when player.Loaded:
                 OnWarpAsk(player, ask.Speed);
                 return;
@@ -645,12 +648,34 @@ public sealed class GameServer : IDisposable
             ? [.. _players.Values.Where(q => q.Loaded && !_warpVotes.ContainsKey(q.Id)).Select(q => q.Id).Order()]
             : []);
 
-    private void AskSnapshot(string why)
+    private void AskSnapshot(string why, byte notThisOne = 0)
     {
         // The player in the world longest, whose world has had the most time to settle.
-        if (_players.Values.Where(p => p.Loaded).OrderBy(p => p.LoadedAt).FirstOrDefault() is not { } from) return;
+        if (_players.Values.Where(p => p.Loaded && p.Id != notThisOne).OrderBy(p => p.LoadedAt).FirstOrDefault() is not { } from) return;
         _snapshotAskedAt = UniverseClock.Now(_clock());
         _udp.Send(new Wire.Snapshot(why), from.At);
+    }
+
+    /// <summary>
+    /// A game that will not hand its world over, because what it holds would not load anywhere.
+    /// Somebody else is asked: a world an hour old is worth more than one nobody can open, and the
+    /// world already here is left alone until a good one comes.
+    /// </summary>
+    private void OnNoWorld(Player p, string why)
+    {
+        Log($"{p.Name} will not hand over a world: {why}");
+        Broadcast(new Wire.Chat(0, $"{p.Name}'s world cannot be handed on: {why}"), q => q.Loaded);
+        if (p.Seeding)
+        {
+            p.Seeding = false;
+            if (_players.Values.FirstOrDefault(q => q.WaitingForWorld && q.Id != p.Id) is { } next)
+            {
+                (next.Seeding, next.WaitingForWorld) = (true, false);
+                _udp.Send(new Wire.Snapshot("the server has no world yet: yours becomes it"), next.At);
+            }
+            return;
+        }
+        AskSnapshot(why, notThisOne: p.Id);
     }
 
     // How often the room's speed is looked at again, and how far out of step it must be to move.

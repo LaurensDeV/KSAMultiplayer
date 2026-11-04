@@ -710,6 +710,25 @@ public class ServerTests
     }
 
     [Fact]
+    public void AGameThatWillNotHandOverItsWorldHasSomebodyElseAskedInstead()
+    {
+        using Rig rig = new();
+        Client a = rig.Join("Alice");
+        rig.Until(() => a.Joined && a.SnapshotWanted is not null, what: "Alice to be asked for a world");
+        a.SnapshotWanted = null;
+        Client b = rig.Join("Bob");
+        rig.Until(() => b.Joined, what: "Bob to join");
+
+        // Hers holds a craft KSA has lost inside a body: a world nobody could open is worse than none.
+        a.SayNoWorld("Rocket is inside the body it belongs to");
+        rig.Until(() => b.SnapshotWanted is not null, what: "Bob to be asked instead");
+
+        b.SnapshotWanted = null;
+        b.Upload(new Blob(BlobKind.World, "", b.Id, 5000, Rig.FakeWorld()));
+        rig.Until(() => rig.Server.HasWorld, what: "Bob's world");
+    }
+
+    [Fact]
     public void OneNoIsEnoughToStopAWarp()
     {
         using Rig rig = new();

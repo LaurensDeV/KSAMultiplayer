@@ -57,7 +57,7 @@ public readonly record struct Quat(double X, double Y, double Z, double W)
 public static class Wire
 {
     /// <summary>Changed whenever what a datagram means changes: a game speaking another version is refused by name.</summary>
-    public const ushort Version = 9;
+    public const ushort Version = 10;
 
     public const int BufferBytes = 8192;
     public const int NameChars = 24;
@@ -95,6 +95,7 @@ public static class Wire
         WarpAsk = 19,
         WarpVote = 20,
         Warp = 21,
+        NoWorld = 22,
     }
 
     /// <summary>Where a warp has got to: nobody has asked, somebody has and is waiting, or it is running.</summary>
@@ -222,6 +223,11 @@ public static class Wire
 
     /// <summary>The server asking a player for a save of its world, to hand players who join after.</summary>
     public sealed record Snapshot(string Why) : Message(Kind.Snapshot);
+
+    /// <param name="Why">Why this game will not hand its world over, said to everyone.</param>
+    /// <remarks>A world KSA cannot load is worse than a world an hour old: a game that has one keeps
+    /// it to itself and the server asks somebody else.</remarks>
+    public sealed record NoWorld(string Why) : Message(Kind.NoWorld);
 
     public static int Write(Message message, Span<byte> into)
     {
@@ -354,6 +360,9 @@ public static class Wire
             case Snapshot s:
                 w.Text(s.Why, 200);
                 break;
+            case NoWorld n:
+                w.Text(n.Why, 200);
+                break;
         }
         return w.At;
     }
@@ -395,6 +404,7 @@ public static class Wire
                 Kind.Gone => new Gone(r.Text(KeyChars)),
                 Kind.Chat => new Chat(r.U8(), r.Text(ChatChars)),
                 Kind.Snapshot => new Snapshot(r.Text(200)),
+            Kind.NoWorld => new NoWorld(r.Text(200)),
                 _ => throw new FormatException(),
             };
             return m is State s && !Finite(s) ? null : m;

@@ -430,6 +430,18 @@ internal static class Sync
 
     private static void SendWorld(Client c)
     {
+        // A world holding a craft KSA has lost inside a body kills every game that loads it, on
+        // every join, for as long as the server keeps it. The server is told no and asks somebody
+        // else; what it already has is older but can be opened.
+        if (World.LostCraft() is { Count: > 0 } lost)
+        {
+            string names = string.Join(", ", lost.Take(3)) + (lost.Count > 3 ? $" and {lost.Count - 3} more" : "");
+            string why = $"{names} {(lost.Count == 1 ? "is" : "are")} inside the body {(lost.Count == 1 ? "it belongs" : "they belong")} to";
+            c.SayNoWorld(why);
+            Say($"this world is not fit to hand over: {why}");
+            Log.Warn($"did not hand this world over: {why}");
+            return;
+        }
         (byte[] zip, double universe) = World.SaveWorld();
         c.Upload(new Blob(BlobKind.World, "", c.Id, universe, zip));
         Log.Info($"sent the server a save of this world, {zip.Length / 1024} KB at {universe:F1} s");
