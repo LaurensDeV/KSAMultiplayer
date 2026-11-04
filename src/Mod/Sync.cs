@@ -189,6 +189,25 @@ internal static class Sync
     /// hatch is shut within the tick.
     /// </summary>
     /// <returns>Whether this game may send the crew out: its own craft, or one just taken.</returns>
+    /// <summary>
+    /// A craft somebody has walked away from, taken by whoever is watching it and flying nothing.
+    /// An observer is watching because they want to be in it; once it is nobody's there is nothing
+    /// left to ask, and making them click a thing they are already looking at is ceremony.
+    /// </summary>
+    private static void TakeWhatIsWatched(Client c)
+    {
+        if (World.Controlled is not null || World.Watched is not { } v || !World.IsAlive(v)) return;
+
+        string key = KeyOf(v);
+        if (c.OwnerOf(key) != 0 || Owned.ContainsKey(key) || MadeHere.Contains(v)) return;
+
+        // No longer anybody's puppet, or the hook that keeps players off each other's craft would
+        // refuse this player their own.
+        Puppets.Remove(v);
+        Own(c, v, define: false, made: false);
+        if (World.GoTo(v)) Say($"{key} is nobody's now: it is yours");
+    }
+
     public static bool TakeBeforeEva(Vehicle v)
     {
         if (_client is not { Joined: true } c) return true;
@@ -364,6 +383,7 @@ internal static class Sync
                     break;
                 case Stage.Playing:
                     Play(c);
+                    TakeWhatIsWatched(c);
                     break;
             }
             HoldTheClock(c);
