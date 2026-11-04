@@ -6,9 +6,11 @@ universe kept by a **dedicated server that runs on Linux** with no game installe
 Any craft syncs: rockets, rovers, kittens on EVA. The mod's folder and
 id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
 
-> **Status: untested in game.** The server and the protocol are tested headlessly (29 tests, real UDP
-> over loopback, a lossy line included), and the mod compiles against KSA `2026.10.25.5707`. No two
-> games have been joined through it yet. See [docs/DESIGN.md](docs/DESIGN.md#what-has-not-been-tried).
+> **Status: played, not finished.** Two games on one machine have flown in one world through it,
+> against KSA `2026.10.25.5707`, and the server and the protocol are tested headlessly besides
+> (43 tests, real UDP over loopback, a lossy line included). What a rocket of many parts does, and
+> what two games across the internet do, is not known yet.
+> See [docs/DESIGN.md](docs/DESIGN.md#what-has-not-been-tried).
 
 ## Playing
 
@@ -30,8 +32,9 @@ Once you're in:
   craft someone else is flying moves where their game says, and you can watch it but not fly it.
 - **Launch as usual.** A craft you launch, a stage you drop and a kitten you send on EVA show up for
   everyone else.
-- **Time is shared.** Time warp and pause are off while connected: every world keeps the server's time.
-  After joining, your game may run fast for a few seconds to catch up.
+- **Time is shared.** Every world keeps the server's time, so changing speed is put to everyone
+  first: a warp runs only if all agree, and only whoever asked can end it. Pause is a speed like any
+  other. After joining, your game may run fast for a few seconds to catch up.
 - **Chat** from the window.
 
 Two craft with the same name can't both be seen: the panel tells you to rename yours if that happens.

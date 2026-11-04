@@ -52,7 +52,15 @@ no token at all beyond SSH to the machine: the image is public.
    `export TF_VAR_server_image=ghcr.io/<owner>/ksamp-server@sha256:...`
 3. `tofu apply` in `infra/server`.
 
-By digest rather than by tag, so the machine runs the image that was built.
+By digest rather than by tag, so the machine runs the image that was built. A run whose summary has
+scrolled away can be asked of the registry instead, by the commit that built it:
+
+```bash
+tag=sha-$(git rev-parse HEAD) owner=<owner>
+token=$(curl -sS "https://ghcr.io/token?scope=repository:$owner/ksamp-server:pull" | jq -r .token)
+curl -sSI -H "Authorization: Bearer $token" -H 'Accept: application/vnd.oci.image.index.v1+json' \
+    "https://ghcr.io/v2/$owner/ksamp-server/manifests/$tag" | grep -i docker-content-digest
+```
 
 **A release is the mod and the server together.** `Wire.Version` is what a server and a game must
 agree on, and a game of another version is refused by name rather than misread — so a server

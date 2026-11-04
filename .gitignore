@@ -23,3 +23,6 @@ infra/**/backend.hcl
 *.tfstate.backup
 
 # The isolated play profile, made by tools/play.sh on whatever machine it runs on.
+
+# A saved plan: local, and a credential of sorts once variables are in it.
+infra/**/tfplan
