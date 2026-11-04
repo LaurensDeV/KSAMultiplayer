@@ -172,48 +172,46 @@ internal static class Panel
     /// owner's name. Drawn into a window the size of the screen that takes no input and has no
     /// background of its own, so it is only the text.
     /// </summary>
+    /// <summary>What the last draw of the tags did, for a tag that is computed and never seen.</summary>
+    public static string TagReport { get; private set; } = "not drawn yet";
+
+    /// <summary>
+    /// Each other player's name over their craft, drawn as KSACars draws a racer's: on the main
+    /// viewport's background list, which is written after the world and before every window, with
+    /// the font given outright, since a list taken outside a window carries none.
+    /// </summary>
     public static void DrawTags()
     {
-        // Drawn in the map view as well: a craft is a dot there and whose it is matters more, not
-        // less. The camera is in map mode for anyone controlling nothing, which an observer is.
         List<(float2 At, string Who, string Craft, double Range)> tags = Sync.Nametags();
-        if (tags.Count == 0) return;
-
-        // A window of the mod's own, not the viewport's background or foreground list: those two are
-        // never rendered from the pass this mod draws in, while a window is, which is why the panel
-        // and the chat appear and anything put on a bare list does not.
-        ImGuiViewportPtr screen = ImGui.GetMainViewport();
-        ImGui.SetNextWindowPos(screen.WorkPos, ImGuiCond.Always, null);
-        ImGui.SetNextWindowSize(screen.WorkSize, ImGuiCond.Always);
-        const ImGuiWindowFlags over = ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize
-                                      | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoScrollbar
-                                      | ImGuiWindowFlags.NoBackground | ImGuiWindowFlags.NoInputs
-                                      | ImGuiWindowFlags.NoNav | ImGuiWindowFlags.NoFocusOnAppearing
-                                      | ImGuiWindowFlags.NoSavedSettings;
-        if (!ImGui.Begin("###KSAMultiplayerTags", over))
+        if (tags.Count == 0)
         {
-            ImGui.End();
+            TagReport = "nothing of another player's to name";
             return;
         }
 
-        ImDrawListPtr draw = ImGui.GetWindowDrawList();
+        ImDrawListPtr draw = ImGui.GetBackgroundDrawList(ImGui.GetMainViewport());
         ImFontPtr font = ImGui.GetFont();
-        float line = ImGui.GetFontSize();
+        float px = ImGui.GetFontSize();
+        int drawn = 0;
         foreach ((float2 at, string who, string craft, double range) in tags)
         {
             string under = $"{craft} · {Far(range)}";
             float2 nameBox = ImGui.CalcTextSize(who), underBox = ImGui.CalcTextSize(under);
             float wide = Math.Max(nameBox.X, underBox.X), high = nameBox.Y + underBox.Y;
-            float2 corner = new(at.X - (wide / 2f), at.Y - high - 6f);
+            float2 corner = new(at.X - (wide / 2f), at.Y - high - 7f);
 
             draw.AddRectFilled(new float2(corner.X - 5f, corner.Y - 3f),
                                new float2(corner.X + wide + 5f, corner.Y + high + 3f), TagShade, 4f);
-            draw.AddText(font, line, new float2(at.X - (nameBox.X / 2f), corner.Y), Tag, who);
-            draw.AddText(font, line, new float2(at.X - (underBox.X / 2f), corner.Y + nameBox.Y), TagFaint, under);
+            // A nose on the box pointing at what it names, so two near each other are told apart.
+            draw.AddTriangleFilled(new float2(at.X - 5f, at.Y - 7f), new float2(at.X + 5f, at.Y - 7f), at, TagShade);
+            draw.AddText(font, px, new float2(at.X - (nameBox.X / 2f), corner.Y), Tag, who);
+            draw.AddText(font, px, new float2(at.X - (underBox.X / 2f), corner.Y + nameBox.Y), TagFaint, under);
+            drawn++;
         }
-        ImGui.End();
+        TagReport = $"{drawn} of {tags.Count} drawn at {px:F0}px, first at {tags[0].At.X:F0},{tags[0].At.Y:F0}";
     }
 
+    private static readonly float4 TagText = new(1f, 1f, 1f, 0.95f);
     private static readonly ImColor8 TagShade = new(0, 0, 0, 160);
     private static readonly ImColor8 Tag = new(255, 255, 255, 235);
     private static readonly ImColor8 TagFaint = new(190, 205, 225, 200);

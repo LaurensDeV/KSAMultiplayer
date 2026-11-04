@@ -144,6 +144,7 @@ internal sealed class Bridge
             ["craft"] = World.Controlled?.Id,
             ["watching"] = World.Watched?.Id,
             ["map_view"] = World.InMapView,
+            ["tag_draw"] = Panel.TagReport,
             // What the nametag pass would draw this frame, so a tag that never appears can be told
             // from one drawn somewhere nobody looks.
             ["nametags"] = Sync.Nametags().Select(t => (object?)new Dictionary<string, object?>
