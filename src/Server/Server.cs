@@ -92,10 +92,19 @@ public sealed class GameServer : IDisposable
 
         /// <summary>When its owner was last in it or looking at it, on the server's own clock.</summary>
         public double AttendedAt;
+
+        /// <summary>How many times its owner has said how it is built. Every one of these is the craft
+        /// torn down and built again in every other game, so a craft described over and over is a
+        /// fault worth seeing from here.</summary>
+        public int Described;
     }
 
     private const double SilentSeconds = 10.0, LoadingSilentSeconds = 120.0;
     private const double RosterEverySeconds = 2.0, OwnersEverySeconds = 5.0, ClockEverySeconds = 0.2;
+
+    // A count that climbs while nobody is launching anything is a world filling with craft that
+    // should not be there, which is not visible in any other line here.
+    private const double CraftCountEverySeconds = 30.0;
 
     // How long a player joining waits for a fresh save before it is sent the one there is.
     private const double FreshWithinSeconds = 15.0;
@@ -235,6 +244,16 @@ public sealed class GameServer : IDisposable
         {
             Broadcast(Roster(), _ => true);
             _rosterNext = now + RosterEverySeconds;
+        }
+        if (now >= _craftCountNext)
+        {
+            _craftCountNext = now + CraftCountEverySeconds;
+            if (_crafts.Count != _craftCountSaid)
+            {
+                int moved = _craftCountSaid < 0 ? 0 : _crafts.Count - _craftCountSaid;
+                Log($"{_crafts.Count} craft known{(moved != 0 ? $", {moved:+#;-#} since" : "")}");
+                _craftCountSaid = _crafts.Count;
+            }
         }
         if (now >= _ownersNext)
         {
@@ -453,6 +472,9 @@ public sealed class GameServer : IDisposable
                 Craft craft = _crafts[blob.Key];
                 Blob stamped = blob with { Owner = p.Id, Universe = UniverseClock.Now(_clock()) };
                 craft.Definition = stamped.Encode();
+                craft.Described++;
+                Log($"{p.Name} says how {blob.Key} is built, {blob.Data.Length / 1024} KB"
+                    + (craft.Described > 1 ? $" -- {craft.Described} times now" : ""));
                 craft.Universe = stamped.Universe;
                 _gone.Remove(blob.Key);
                 foreach (Player other in _players.Values.Where(q => q.Loaded && q != p)) other.Link.Send(craft.Definition, _clock());
