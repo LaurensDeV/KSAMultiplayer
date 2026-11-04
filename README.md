@@ -8,9 +8,10 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
 
 > **Status: played, not finished.** Two games on one machine have flown in one world through it,
 > against KSA `2026.10.25.5707`, and the server and the protocol are tested headlessly besides
-> (43 tests, real UDP over loopback, a lossy line included). A rocket of many parts has been flown
-> and staged in a shared world, though not yet watched from another game, and what two games across
-> the internet do is not known. See [docs/DESIGN.md](docs/DESIGN.md#what-has-not-been-tried).
+> (43 tests, real UDP over loopback, a lossy line included). An 89-part rocket has been flown in a
+> shared world and staged while the other game watched, which rebuilt the dropped stage as its own
+> craft. What two games across the internet do is not known.
+> See [docs/DESIGN.md](docs/DESIGN.md#what-has-not-been-tried).
 
 ## Playing
 
