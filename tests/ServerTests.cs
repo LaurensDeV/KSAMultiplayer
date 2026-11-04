@@ -486,6 +486,56 @@ public class ServerTests
     }
 
     [Fact]
+    public void TheLastPlayerLeftStillHasTheWarp()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+
+        a.AskWarp(5.0);
+        rig.Until(() => b.WarpWantsAnswer, what: "Bob to be asked");
+        b.VoteWarp(true);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Running, what: "the warp to run");
+
+        b.Dispose();
+        rig.Clients.Remove(b);
+        rig.Until(() => rig.Server.Players.Count == 1, seconds: 15.0, what: "Bob to be gone");
+
+        // Alice's warp, and Alice is all there is: hers to speed up and hers to end.
+        a.AskWarp(10.0);
+        rig.Until(() => Math.Abs(rig.Server.UniverseClock.Speed - 10.0) < 0.001, what: "the warp to change");
+
+        a.AskWarp(1.0);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.None, what: "the warp to end");
+    }
+
+    [Fact]
+    public void AWarpOutlivesNobodyWhoStartedIt()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+
+        b.AskWarp(5.0);
+        rig.Until(() => a.WarpWantsAnswer, what: "Alice to be asked");
+        a.VoteWarp(true);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Running, what: "the warp to run");
+
+        b.Dispose();
+        rig.Clients.Remove(b);
+
+        // Nobody else may change a warp that is not theirs, so one left running by a player who has
+        // gone is a world nobody can slow down.
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.None, seconds: 15.0, what: "the warp to end with its owner");
+        Assert.Equal(1.0, rig.Server.UniverseClock.Speed, 3);
+
+        // And the one still here can start a warp of their own, once the quiet after one has passed.
+        rig.For(5.5);
+        a.AskWarp(2.0);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Running, seconds: 15.0, what: "Alice's own warp to run");
+    }
+
+    [Fact]
     public void OneNoIsEnoughToStopAWarp()
     {
         using Rig rig = new();
