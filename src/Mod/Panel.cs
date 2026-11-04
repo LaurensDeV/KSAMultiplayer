@@ -206,23 +206,23 @@ internal static class Panel
             return;
         }
 
+        // The main viewport's background list with the font handed over, as KSACars draws a racer's
+        // name: written after the world and under every window, and never a window of its own, which
+        // ImGui is free to carry outside the game's.
         ImDrawListPtr draw = ImGui.GetBackgroundDrawList(ImGui.GetMainViewport());
         ImFontPtr font = ImGui.GetFont();
         float px = ImGui.GetFontSize();
-        int drawn = 0;
-        int marks = 0;
+        int drawn = 0, marks = 0;
         foreach ((float2 at, string who, string craft, double range, bool flying) in tags.OrderBy(t => t.Range))
         {
+            // Hers, not her: a faint line and no box, so a craft somebody parked is never read as one
+            // they are sitting in. Only the nearest few, or a field of wreckage is a wall of a name.
             if (!flying)
             {
-                // Hers, not her: one faint line and no box, so a craft somebody parked is never read
-                // as one they are sitting in. Only the nearest few, or a field of somebody's wreckage
-                // is a wall of their name.
                 if (++marks > MostMarks) continue;
                 string owned = $"{who}'s {craft}";
                 float2 mark = ImGui.CalcTextSize(owned);
                 float2 put = new(at.X - (mark.X / 2f), at.Y - mark.Y - 4f);
-                // Over its own shadow: there is no box behind it to read it against.
                 draw.AddText(font, px, new float2(put.X + 1f, put.Y + 1f), TagShadow, owned);
                 draw.AddText(font, px, put, Claim, owned);
                 drawn++;
@@ -241,12 +241,13 @@ internal static class Panel
             draw.AddText(font, px, new float2(at.X - (nameBox.X / 2f), corner.Y), Tag, who);
             draw.AddText(font, px, new float2(at.X - (underBox.X / 2f), corner.Y + nameBox.Y), TagFaint, under);
             drawn++;
-
         }
         TagReport = $"{drawn} of {tags.Count} drawn, {tags.Count(t => t.Flying)} flown, at {px:F0}px";
     }
 
     private const int MostMarks = 6;
+
+    private static readonly float4 TagName = new(1f, 1f, 1f, 0.97f);
 
     private static readonly ImColor8 Claim = new(190, 205, 225, 120);
     private static readonly ImColor8 TagShade = new(0, 0, 0, 160);

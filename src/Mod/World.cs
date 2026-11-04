@@ -455,15 +455,17 @@ internal static class World
     {
         try
         {
+            // The camera the rest of this file uses: the viewport's own has come back null here, and a
+            // tag that is never placed is worse than one placed a few pixels out.
             if (Program.GetMainCamera() is not { } camera) return null;
 
             double3 at = v.GetPositionEcl();
-            float2 centre = camera.EclToScreen(at);
-            if (!float.IsFinite(centre.X) || !float.IsFinite(centre.Y)) return null;
+            float2 local = camera.EclToScreen(at);
+            if (!float.IsFinite(local.X) || !float.IsFinite(local.Y)) return null;
 
             // Over the hull rather than through it, by however big the craft looks from here: a
             // metre is nothing across a sky and everything from ten metres off, so the lift is
-            // measured on the screen and not in the world, and capped so a near hull keeps its name.
+            // measured on the screen and capped so a near hull keeps its name on the screen.
             float lift = 14f;
             if (v.Parent is IPosition parent)
             {
@@ -474,12 +476,30 @@ internal static class World
                     float2 edge = camera.EclToScreen(at + (up * (v.MeanRadius / len)));
                     if (float.IsFinite(edge.X) && float.IsFinite(edge.Y))
                     {
-                        float dx = edge.X - centre.X, dy = edge.Y - centre.Y;
+                        float dx = edge.X - local.X, dy = edge.Y - local.Y;
                         lift = Math.Clamp(MathF.Sqrt((dx * dx) + (dy * dy)) + 10f, 14f, 140f);
                     }
                 }
             }
-            return new float2(centre.X, centre.Y - lift);
+            local = new float2(local.X, local.Y - lift);
+
+            // Off the edge of the view, or behind the camera, which projects to somewhere finite and
+            // wrong: nothing is drawn rather than drawn outside the window it belongs to. Measured
+            // against the view's own size, and offset by where the view sits, which is the space a
+            // draw list counts from -- both only when the game will say, and left alone when not.
+            try
+            {
+                if (Program.MainViewport is { Width: > 0, Height: > 0 } viewport)
+                {
+                    if (local.X < 0f || local.Y < 0f || local.X > viewport.Width || local.Y > viewport.Height) return null;
+                    return new float2(viewport.Position.X + local.X, viewport.Position.Y + local.Y);
+                }
+            }
+            catch (Exception)
+            {
+                // Taken as the window's own, which is what it was before anybody asked.
+            }
+            return local;
         }
         catch (Exception)
         {
