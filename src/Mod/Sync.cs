@@ -113,6 +113,34 @@ internal static class Sync
     public static double Wall() => Clock.Elapsed.TotalSeconds;
 
     /// <summary>
+    /// A warp key, taken by which way it points rather than by the speed the game worked out from
+    /// it. The game steps from the speed this world is running at, and while connected that is the
+    /// shared warp nudged a hair off a round number to hold the server's clock -- a hair that lands
+    /// the step on the rung the player is already on, or one past the one they wanted.
+    /// </summary>
+    /// <param name="direction">Up, down, or zero for the key that asks for normal speed.</param>
+    /// <returns>Whether the mod took the key; false leaves it to the game, which is right when
+    /// this world is nobody else's.</returns>
+    /// <summary>The speed last asked of the server, for a test to read back.</summary>
+    public static double AskedSpeed => _askedSpeed;
+
+    public static bool StepSpeed(int direction)
+    {
+        if (_client is not { Joined: true } c || Now != Stage.Playing) return false;
+
+        // The warp as the server has it, which is a round number, rather than as this world runs it.
+        double running = c.Warp is { Phase: Wire.WarpPhase.Running } w ? w.Speed : 1.0;
+        double next = direction == 0 ? 1.0 : World.WarpStepFrom(running, direction);
+        // Either end of the ladder, or asked to stop a warp that is not running: taken and ignored.
+        if (Math.Abs(next - running) >= 0.001)
+        {
+            (_askedSpeed, _askWarpNext) = (next, Wall() + AskWarpEverySeconds);
+            c.AskWarp(next);
+        }
+        return true;
+    }
+
+    /// <summary>
     /// The player has reached for a speed, from a warp key or the pause. One world has one time, so
     /// this is put to everyone rather than done: the speed itself stays whatever keeps the server's.
     /// </summary>

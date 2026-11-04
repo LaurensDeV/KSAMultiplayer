@@ -99,6 +99,7 @@ internal sealed class Bridge
             "pause" => Paused(true),
             "resume" => Paused(false),
             "speed" => Speed(command),
+            "warpkey" => WarpKey(command),
             "save" => SaveGame(command),
             "step" => BeginStep(command),
             "load" => BeginLoad(command),
@@ -330,6 +331,15 @@ internal sealed class Bridge
         if (seat is null) return Failed($"nobody aboard {craft.Id} to get out");
         if (!EVADoor.PerformEvaForSeat(craft, seat)) return Failed($"{craft.Id} would not let anybody out");
         return Done(new() { ["from"] = craft.Id });
+    }
+
+    // A warp key, which is not the same as asking for a speed: the key says which way, and while
+    // connected the mod works out the speed from the warp the server is running.
+    private static Reply WarpKey(BridgeCommand command)
+    {
+        int by = Math.Sign((int)command.Number("by", 1.0));
+        World.WarpKey(by);
+        return Done(new() { ["by"] = by, ["asked"] = Sync.AskedSpeed });
     }
 
     // The space bar: a rocket staged while the other game watches, which is the one thing a test of

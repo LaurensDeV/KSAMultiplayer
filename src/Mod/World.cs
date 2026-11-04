@@ -2,6 +2,7 @@ using System.Xml.Serialization;
 using Brutal.GlfwApi;
 using Brutal.Numerics;
 using Brutal.ImGuiApi;
+using HarmonyLib;
 using KSA;
 
 namespace KSAMultiplayer;
@@ -18,6 +19,55 @@ internal static class World
     public static Vehicle? Controlled => Program.ControlledVehicle is { IsDisposed: false } v ? v : null;
 
     public static bool InFlight => Controlled is not null;
+
+    // KSA's own warp steps, read off the game rather than written down here, so the mod steps the
+    // ladder the keys would. The field is private; a build that moves it falls back to the steps
+    // the game has had, which is wrong only in how far one press goes.
+    private static IReadOnlyList<double>? _warpSteps;
+
+    public static IReadOnlyList<double> WarpSteps
+    {
+        get
+        {
+            if (_warpSteps is not null) return _warpSteps;
+            try
+            {
+                if (AccessTools.Field(typeof(KSA.Universe), "_simulationQuickSpeeds")?.GetValue(null) is List<double> { Count: > 1 } steps)
+                {
+                    return _warpSteps = [.. steps.Order()];
+                }
+                Log.Warn("the game's warp steps could not be read; the mod's own are used");
+            }
+            catch (Exception e)
+            {
+                Log.Warn($"could not read the game's warp steps: {e.GetBaseException().Message}");
+            }
+            return _warpSteps = [1.0, 2.0, 5.0, 10.0, 50.0, 100.0, 1000.0, 10000.0];
+        }
+    }
+
+    /// <summary>A warp key pressed, for a test with no hand on the keyboard.</summary>
+    public static void WarpKey(int direction)
+    {
+        if (direction > 0) KSA.Universe.IncreaseSimulationSpeed();
+        else if (direction < 0) KSA.Universe.DecreaseSimulationSpeed();
+        else KSA.Universe.ResetSimulationSpeed();
+    }
+
+    /// <summary>
+    /// The warp step above or below a speed, or the speed itself at either end of the ladder. The
+    /// step is taken from the nearest rung, so a speed nudged a hair off one still counts as on it.
+    /// </summary>
+    public static double WarpStepFrom(double speed, int direction)
+    {
+        IReadOnlyList<double> steps = WarpSteps;
+        int at = 0;
+        for (int i = 1; i < steps.Count; i++)
+        {
+            if (Math.Abs(steps[i] - speed) < Math.Abs(steps[at] - speed)) at = i;
+        }
+        return steps[Math.Clamp(at + Math.Sign(direction), 0, steps.Count - 1)];
+    }
 
     /// <summary>
     /// Whether this game is looking at a craft at all: one it flies, or another player's it watches.

@@ -41,6 +41,12 @@ internal static class Hooks
                   "time warp is put back a frame late");
             Patch(AccessTools.Method(typeof(Universe), nameof(Universe.SetSimulationSpeed), [typeof(SimSpeed)]), nameof(BeforeNamedSpeed),
                   "time warp is put back a frame late");
+            Patch(AccessTools.Method(typeof(Universe), nameof(Universe.IncreaseSimulationSpeed)), nameof(BeforeFaster),
+                  "a warp key steps from this world's speed rather than the shared one");
+            Patch(AccessTools.Method(typeof(Universe), nameof(Universe.DecreaseSimulationSpeed)), nameof(BeforeSlower),
+                  "a warp key steps from this world's speed rather than the shared one");
+            Patch(AccessTools.Method(typeof(Universe), nameof(Universe.ResetSimulationSpeed)), nameof(BeforeNormalSpeed),
+                  "the key for normal speed steps from this world's speed rather than the shared one");
             Patch(AccessTools.Method(typeof(Universe), nameof(Universe.DestroyVehicleFromEvent)), nameof(BeforeDestroy),
                   "another player's craft can be wrecked in this world alone");
             Patch(AccessTools.PropertySetter(typeof(Program), nameof(Program.ControlledVehicle)), nameof(BeforeControl),
@@ -138,6 +144,28 @@ internal static class Hooks
 
     // False leaves control where it is. A craft another player flies is watched, never taken: without
     // this the player can still point at it and press keys, and what they do to it happens here alone.
+    // The warp keys, by which way they point: the speed the game works these out from is this
+    // world's, nudged off the round number to hold the server's clock, and a step from there is a
+    // step from the wrong rung.
+    private static bool BeforeFaster() => !Step(1);
+
+    private static bool BeforeSlower() => !Step(-1);
+
+    private static bool BeforeNormalSpeed() => !Step(0);
+
+    private static bool Step(int direction)
+    {
+        try
+        {
+            return Sync.StepSpeed(direction);
+        }
+        catch (Exception e)
+        {
+            Complain("taking a warp key", e);
+            return false;
+        }
+    }
+
     // The camera is already on it by the time this runs: KSA follows first and takes control after,
     // so a refusal leaves the player watching rather than nowhere. Said once a craft, since every
     // click on it comes back through here.

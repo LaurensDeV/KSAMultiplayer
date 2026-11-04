@@ -175,6 +175,10 @@ against KSA `2026.10.25.5707`:
 - **Engines are not shown firing** on another player's craft: the throttle is sent and not yet applied.
 - **No authority over physics.** Each game is trusted for its own craft; the server only checks a state
   comes from the craft's owner.
+- **A warp step is taken from the shared warp, not this world's speed.** The game works a key's
+  speed out from the speed the world is running at, which while connected is the server's warp
+  nudged off a round number to hold its clock; the mod takes the key by which way it points and
+  steps the game's own ladder from what the server says instead.
 - **Ownership is not kept across a server restart**: it starts afresh, and the first to take control of a craft has it.
 - **The refusal guards taking a craft, not keeping one.** A game that joins while already controlling
   a craft the server gives to somebody else goes on controlling it: it becomes a puppet, overwritten

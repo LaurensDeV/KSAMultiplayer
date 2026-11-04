@@ -222,6 +222,10 @@ TOOLS = {
                   "do with a craft another player flies.",
                   {"craft": {"type": "string"}}, ["craft"],
                   lambda a: _dump(send("watch", **a))),
+    "ksa_warpkey": ("Press a warp key: by 1 faster, -1 slower, 0 for normal speed. While connected the "
+                    "mod works the speed out from the warp the server is running, not this world's.",
+                    {"by": _num("1, -1 or 0")}, [],
+                    lambda a: _dump(send("warpkey", **a))),
     "ksa_stage": ("Fire a craft's next sequence, which is what the space bar does: the named craft, or the "
                   "flown one. The way to drop a stage while another game is watching.",
                   {"craft": {"type": "string"}}, [],
