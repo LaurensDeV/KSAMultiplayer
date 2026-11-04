@@ -1,7 +1,9 @@
 name: CI
 
 on:
+  # Branches, not tags: a tag goes through Release, which builds and tests the same things.
   push:
+    branches: ["**"]
   pull_request:
 
 permissions:

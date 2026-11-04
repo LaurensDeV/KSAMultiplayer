@@ -6,6 +6,10 @@
 #
 # The version in the tag must be the <Version> in src/Mod/KSAMultiplayer.csproj: package.sh names the
 # zip from the project, so a tag that disagrees would publish a zip of another name.
+#
+# The mod needs KSA's copyrighted assemblies, so this needs KSA_ASSEMBLIES_KEY: a read-only deploy
+# key for a repository holding them. Without it nothing here can compile the mod, and a release has
+# to be made by hand from a machine that has the game.
 
 name: Release
 
@@ -21,13 +25,23 @@ jobs:
   mod:
     name: The mod a player installs
     runs-on: ubuntu-latest
+    env:
+      HAVE_KEY: ${{ secrets.KSA_ASSEMBLIES_KEY != '' }}
     outputs:
       ksa_build: ${{ steps.facts.outputs.ksa_build }}
       protocol: ${{ steps.facts.outputs.protocol }}
     steps:
       - uses: actions/checkout@v4
 
-      # CI skips this job without the key; a release must not. A release with no zip in it is the
+      # Said before the checkout below, which without a key fails on a 404 from the API that says
+      # nothing about why: the key is never sent, so the private repository is simply not there.
+      - name: The assemblies key is set
+        if: env.HAVE_KEY != 'true'
+        run: |
+          echo "::error::KSA_ASSEMBLIES_KEY is not set, so the mod cannot be compiled here. Set it to a read-only deploy key for the assemblies repository, or build the zip with tools/package.sh on a machine that has the game and attach it to the release by hand."
+          exit 1
+
+      # CI skips the mod without the key; a release must not. A release with no zip in it is the
       # thing this workflow is for.
       - uses: actions/checkout@v4
         with:
