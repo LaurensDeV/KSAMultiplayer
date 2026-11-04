@@ -175,6 +175,10 @@ against KSA `2026.10.25.5707`:
 - **Engines are not shown firing** on another player's craft: the throttle is sent and not yet applied.
 - **No authority over physics.** Each game is trusted for its own craft; the server only checks a state
   comes from the craft's owner.
+- **How long a craft may go unheard is counted at the world's speed.** A state is sent on a real
+  clock and its age read on the world's, and the two are the same thing only at normal speed: at ten
+  times, half a second of sending is five seconds of world. Letting go at a fixed five dropped every
+  craft nobody was flying as soon as anyone warped, and with it the pull, the placing and the name.
 - **A warp step is taken from the shared warp, not this world's speed.** The game works a key's
   speed out from the speed the world is running at, which while connected is the server's warp
   nudged off a round number to hold its clock; the mod takes the key by which way it points and

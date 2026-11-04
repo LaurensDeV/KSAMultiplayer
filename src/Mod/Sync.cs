@@ -37,6 +37,9 @@ internal static class Sync
     private const double PlaceEverySeconds = 1.0, PlaceNearEnoughM = 25.0;
 
     // A puppet whose owner has said nothing for this long of universe time is let go of and left where it is.
+    // How long a craft may go unheard before it is let go of. Counted in the world's own seconds,
+    // against a state sent on a real clock: at ten times speed half a second of sending is five
+    // seconds of world, so the allowance is the world's speed times this rather than this alone.
     private const double LostSeconds = 5.0;
 
     // Frames a loaded world is given to settle before it is played in.
@@ -554,6 +557,7 @@ internal static class Sync
         HashSet<Vehicle> wanted = [];
         bool builtOne = false;
         double universe = World.Universe, now = Wall();
+        double lost = LostSeconds * Math.Max(1.0, World.Speed);
         foreach ((string key, byte owner) in c.Owners)
         {
             if (owner == c.Id || Owned.ContainsKey(key)) continue;
@@ -581,7 +585,7 @@ internal static class Sync
                     continue;
                 }
             }
-            if (universe - track.HeardAt > LostSeconds) continue;
+            if (universe - track.HeardAt > lost) continue;
             wanted.Add(v);
             Puppets[v] = key;
             if (track.At(universe) is not { } s) continue;
