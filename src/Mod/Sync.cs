@@ -655,12 +655,14 @@ internal static class Sync
         }
         if (Now != Stage.Playing || c.ServerUniverse is not { } server)
         {
+            // Nothing to be late by while there is no world in front of this game yet.
+            c.Late = 0.0;
             HeldSpeed = Now == Stage.Waiting ? 1.0 : null;
             if (HeldSpeed is { } h) World.SetSpeed(h);
             return;
         }
         double behind = server.Universe - World.Universe;
-        Behind = behind;
+        (Behind, c.Late) = (behind, behind);
         HeldSpeed = ClockFollow.Asked(ClockFollow.Speed(behind, server.Rate), FrameSeconds, World.StepCap);
         World.SetSpeed(HeldSpeed.Value);
     }

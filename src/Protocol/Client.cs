@@ -58,6 +58,13 @@ public sealed class Client : IDisposable
     public Wire.Player[] Players { get; private set; } = [];
     public IReadOnlyDictionary<string, byte> Owners => _owners;
 
+    /// <summary>
+    /// How far behind the server's time this game's world is, s, as whoever runs the world measures
+    /// it. Told to the server with every ping: a server that runs on regardless leaves whoever
+    /// cannot keep up thousands of seconds adrift with no way back.
+    /// </summary>
+    public double Late { get; set; }
+
     /// <summary>The server's clock less this game's, s, once a ping has been answered.</summary>
     public double ServerOffset { get; private set; }
 
@@ -207,7 +214,7 @@ public sealed class Client : IDisposable
         }
         if (now >= _pingNext)
         {
-            Send(new Wire.Ping(now, double.IsFinite(_lastRtt) ? (float)_lastRtt : -1f));
+            Send(new Wire.Ping(now, double.IsFinite(_lastRtt) ? (float)_lastRtt : -1f, double.IsFinite(Late) ? (float)Late : 0f));
             _pingNext = now + PingEverySeconds;
         }
         _link.Pump(now, Send);

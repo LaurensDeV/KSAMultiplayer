@@ -175,6 +175,12 @@ against KSA `2026.10.25.5707`:
 - **Engines are not shown firing** on another player's craft: the throttle is sent and not yet applied.
 - **No authority over physics.** Each game is trusted for its own craft; the server only checks a state
   comes from the craft's owner.
+- **The world waits for whoever cannot keep up with it.** Every game tells the server how far behind
+  its world is with each ping, and the server holds its clock while anyone is more than five seconds
+  back, letting go again under two. Without it a server runs on at whatever speed was agreed whether
+  or not a game can follow -- and Windows slows whichever window is not in front, so the one behind
+  falls away at the warp's full rate and may never return: the most a game may catch up by is ten
+  times the server's own, so a gap opened faster than that only grows.
 - **How long a craft may go unheard is counted at the world's speed.** A state is sent on a real
   clock and its age read on the world's, and the two are the same thing only at normal speed: at ten
   times, half a second of sending is five seconds of world. Letting go at a fixed five dropped every

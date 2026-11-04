@@ -57,7 +57,7 @@ public readonly record struct Quat(double X, double Y, double Z, double W)
 public static class Wire
 {
     /// <summary>Changed whenever what a datagram means changes: a game speaking another version is refused by name.</summary>
-    public const ushort Version = 5;
+    public const ushort Version = 6;
 
     public const int BufferBytes = 8192;
     public const int NameChars = 24;
@@ -123,7 +123,9 @@ public static class Wire
     public sealed record Bye(string Why) : Message(Kind.Bye);
 
     /// <param name="Rtt">The round trip this game last measured, s, so the server can tell every player what every other player's is. Negative until it has one.</param>
-    public sealed record Ping(double Sent, float Rtt) : Message(Kind.Ping);
+    /// <param name="Late">How far behind the server's time this game's world is, s, as it last measured:
+    /// what the server holds its clock back for rather than running away from whoever cannot follow.</param>
+    public sealed record Ping(double Sent, float Rtt, float Late) : Message(Kind.Ping);
 
     /// <param name="Echo">The ping's own time, on the asker's clock.</param>
     /// <param name="Answered">When it was answered, on the answerer's clock.</param>
@@ -248,6 +250,7 @@ public static class Wire
             case Ping p:
                 w.F64(p.Sent);
                 w.F32(p.Rtt);
+                w.F32(p.Late);
                 break;
             case Pong p:
                 w.F64(p.Echo);
@@ -359,7 +362,7 @@ public static class Wire
                 Kind.Welcome => new Welcome(r.U8(), r.Text(200), r.Text(64), r.U8() != 0),
                 Kind.Roster => ReadRoster(ref r),
                 Kind.Bye => new Bye(r.Text(200)),
-                Kind.Ping => new Ping(r.F64(), r.F32()),
+                Kind.Ping => new Ping(r.F64(), r.F32(), r.F32()),
                 Kind.Pong => new Pong(r.F64(), r.F64()),
                 Kind.Clock => new Clock(r.F64(), r.F64(), r.F32()),
                 Kind.Chunk => new Chunk(r.U32(), r.U16(), r.U16(), r.Take(r.U16()).ToArray()),

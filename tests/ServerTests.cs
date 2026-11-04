@@ -575,6 +575,30 @@ public class ServerTests
     }
 
     [Fact]
+    public void TheWorldWaitsForWhoeverCannotKeepUp()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        rig.For(1.5);
+
+        // Bob's world cannot follow this one. He says so with his ping, and the server stops running
+        // away from him rather than leaving him to sprint after it later.
+        b.Late = 30.0;
+        rig.Until(() => rig.Server.Held, seconds: 10.0, what: "the world to be held");
+
+        double held = rig.Server.UniverseClock.Now(rig.Now());
+        rig.For(1.5);
+        Assert.Equal(held, rig.Server.UniverseClock.Now(rig.Now()), 1);
+
+        // And once he is back with everyone it goes on from where it stopped.
+        b.Late = 0.0;
+        rig.Until(() => !rig.Server.Held, seconds: 10.0, what: "the world to run again");
+        rig.For(1.0);
+        Assert.True(rig.Server.UniverseClock.Now(rig.Now()) > held);
+    }
+
+    [Fact]
     public void OneNoIsEnoughToStopAWarp()
     {
         using Rig rig = new();
