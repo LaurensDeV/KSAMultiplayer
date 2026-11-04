@@ -145,6 +145,9 @@ internal sealed class Bridge
             ["craft"] = World.Controlled?.Id,
             ["watching"] = World.Watched?.Id,
             ["map_view"] = World.InMapView,
+            ["can"] = Math.Round(Sync.Sustains, 3),
+            ["here"] = World.Focused,
+            ["achieved"] = Math.Round(World.Achieved, 3),
             ["tag_draw"] = Panel.TagReport,
             // What the nametag pass would draw this frame, so a tag that never appears can be told
             // from one drawn somewhere nobody looks.
@@ -177,6 +180,7 @@ internal sealed class Bridge
                 ["name"] = p.Name,
                 ["loaded"] = p.Loaded,
                 ["flying"] = p.Controlling,
+                ["can"] = Math.Round(p.Can, 3),
             }).ToList();
             // Who the server says flies what, against what this game is doing about it: the one
             // table that says whether a craft should be a puppet here and whether it is one.

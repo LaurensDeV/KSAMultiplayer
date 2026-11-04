@@ -272,11 +272,11 @@ internal static class Sync
         (_sustainAt, _sustainFrom) = (now, universe);
         if (!double.IsFinite(done) || done < 0.0) return;
 
-        // What it did is the floor of what it can do; what KSA says it managed of what it was asked
-        // is the ceiling. Inside its budget a game is keeping up and could be asked for more, which
-        // the server finds out by asking for a little more and watching.
+        // A ceiling, and only once there is one: a game comfortably inside its frame budget has not
+        // found its limit, and what it happens to be running at is no measure of it. Saying 1x
+        // because the world is at 1x would hold every room to 1x for ever.
         double asked = World.Speed, achieved = World.Achieved;
-        _sustains = achieved < 0.98 && asked > 0.0 ? Math.Max(1.0, asked * achieved) : Math.Max(1.0, done);
+        _sustains = achieved < 0.98 && asked > 0.0 ? Math.Max(1.0, Math.Min(asked * achieved, done)) : 0.0;
     }
 
     /// <summary>Once a frame, from the frame hook.</summary>

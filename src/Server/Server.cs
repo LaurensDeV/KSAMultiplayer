@@ -598,7 +598,11 @@ public sealed class GameServer : IDisposable
     }
 
     // How often the room's speed is looked at again, and how far out of step it must be to move.
-    private const double GovernEverySeconds = 1.0, GovernFall = 0.8, GovernRise = 1.3, GovernStep = 1.5;
+    private const double GovernEverySeconds = 1.0, GovernFall = 0.8, GovernStep = 1.5, GovernBackOff = 0.6;
+
+    // How far behind a game may be before the world stops asking more of it. In its own seconds, so
+    // it means the same at every speed.
+    private const double GovernLateSeconds = 4.0;
 
     /// <summary>The fastest the room can fly: the slowest machine among those whose players are looking.</summary>
     private double Room()
@@ -619,6 +623,17 @@ public sealed class GameServer : IDisposable
     /// A speed held to what the room can fly. Only upwards: a pause or a world in slow motion asks
     /// nothing of anybody's machine, and is nobody's to refuse on those grounds.
     /// </summary>
+    /// <summary>The worst any watching player is behind, in their own seconds, or zero if nobody is.</summary>
+    private double Losing()
+    {
+        double rate = Math.Max(UniverseClock.Rate, 1.0), worst = 0.0;
+        foreach (Player p in _players.Values)
+        {
+            if (p.Loaded && p.Here && p.Late / rate > worst) worst = p.Late / rate;
+        }
+        return worst;
+    }
+
     private double Flyable(double speed) => speed <= 1.0 ? speed : Math.Max(1.0, Math.Min(speed, Room()));
 
     /// <summary>
@@ -632,14 +647,21 @@ public sealed class GameServer : IDisposable
         _governNext = now + GovernEverySeconds;
 
         double room = Room(), at = _warpSpeed, next = at;
-        if (!double.IsFinite(room)) return;
+        double late = Losing();
 
-        if (room < at * GovernFall) next = Math.Max(1.0, room);
-        else if (at < _warpWanted && room > at * GovernRise) next = Math.Min(_warpWanted, at * GovernStep);
+        if (double.IsFinite(room) && room < at * GovernFall) next = Math.Max(1.0, room);
+        // Nobody has hit a ceiling, but somebody is losing ground all the same: back off and watch.
+        else if (late > GovernLateSeconds) next = Math.Max(1.0, at * GovernBackOff);
+        // Room to try: a machine's limit is only found by asking it for a little more.
+        // Never past a ceiling somebody has already hit, or the world climbs into it and falls out
+        // of it once a second for as long as the warp lasts.
+        else if (at < _warpWanted && late < GovernLateSeconds * 0.5) next = Math.Min(Math.Min(_warpWanted, at * GovernStep), room);
         if (Math.Abs(next - at) < 0.01) return;
 
         RunWarp((float)next, now);
-        Log($"the world runs at {next:0.##}x: the room can fly {room:0.##}x");
+        Log(next < at
+            ? $"the world falls to {next:0.##}x: {(double.IsFinite(room) ? $"the room can fly {room:0.##}x" : $"somebody is {late:0.#} s behind")}"
+            : $"the world rises to {next:0.##}x of {_warpWanted:0.##}x");
     }
 
     private void Remove(Player p, string why)
