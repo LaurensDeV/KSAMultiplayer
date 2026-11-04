@@ -148,9 +148,10 @@ against KSA `2026.10.25.5707`:
 - **Keeping the server's time.** Both the ±10% nudge and the catch-up warp: a game 15 s behind after
   a load was run at 8.4x until it caught up, and both then settled at 1.1x.
 - **Warping together.** A vote asked of both games, the other player's prompt, agreement, and two
-  worlds running at 5x within a second of each other; a warp refused by the player who did not start
-  it, ended by the one who did; and a pause voted through, with both worlds stopped at the same
-  universe time and still there five seconds later.
+  worlds running at 5x and keeping within a twentieth of a second of the server's time; a warp
+  refused by the player who did not start it, ended by the one who did; and a pause voted through,
+  with both worlds stopped at the same universe time and still there five seconds later. Coming out
+  of a warp overshoots by about two seconds and is nudged off at 0.9x.
 - **Two games making one name.** A kitten sent out of the same capsule in both: the second was named
   `Nasley 2` by the server, each game kept flying its own, and each built the other's and stood it
   where its owner put it. The second game holds the other player's under a name of its own
@@ -165,11 +166,6 @@ against KSA `2026.10.25.5707`:
 - **A craft of many parts.** What has been built from a definition is a one-part kitten, not a rocket,
   and nothing has staged or dropped a stage while another game watched.
 - **Catching up by warp with craft in physics.** The catch-up seen was of craft at rest on a pad.
-- **Coming back from a warp.** Ending one leaves both worlds far ahead of the server: 1,460 s after a
-  run at 8x, with the two games within a tenth of a second of each other, so it is the server's clock
-  that is the odd one out rather than either world. A world that is ahead waits, and waiting off
-  1,460 s at normal speed takes twenty-four minutes. The warp itself works; coming out of one does
-  not, and the cause is not yet known.
 - **Two games across the internet.** Both games and the server were on one machine. WSL in its default
   NAT mode cannot be reached from a Windows game at all, which is why `two-games.sh` publishes a
   Windows server unless WSL is in mirrored mode.

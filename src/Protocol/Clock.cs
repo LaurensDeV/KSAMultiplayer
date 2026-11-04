@@ -13,7 +13,7 @@ public sealed class UniverseClock
     public bool Known { get; private set; }
 
     /// <summary>How fast universe time runs while the clock runs: 1 unless the server is told otherwise.</summary>
-    public double Speed { get; set; } = 1.0;
+    public double Speed { get; private set; } = 1.0;
 
     public bool Running => Known && _running;
 
@@ -21,6 +21,21 @@ public sealed class UniverseClock
     public void Set(double universe, double now)
     {
         (_base, _baseAt, Known) = (universe, now, true);
+    }
+
+    /// <summary>
+    /// Changes how fast the clock runs from now on, carrying on from where it is.
+    ///
+    /// <para>From where it is, because the time it reads is worked out from when it was last set:
+    /// changing the speed without fixing that in place first would read every second since then at
+    /// the new speed, and the clock would jump. Coming out of a warp it jumped backwards, by as much
+    /// as the warp had added, and every game was left hundreds of seconds ahead of a server that had
+    /// quietly rewound.</para>
+    /// </summary>
+    public void SetSpeed(double speed, double now)
+    {
+        if (Known) (_base, _baseAt) = (Now(now), now);
+        Speed = speed;
     }
 
     /// <summary>Lets the clock run or holds it, carrying on from where it is either way.</summary>

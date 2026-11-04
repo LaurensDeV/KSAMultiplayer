@@ -31,6 +31,21 @@ public class ClockTests
         Assert.Equal(0, ClockFollow.Speed(-10, 1));
         Assert.Equal(0, ClockFollow.Speed(5, 0));
 
+        // A clock whose speed changes carries on from where it is rather than reading every second
+        // since it was set at the new speed. Coming out of a warp it used to jump backwards.
+        UniverseClock clock = new();
+        clock.Set(1000.0, 0.0);
+        clock.Run(true, 0.0);
+        Assert.Equal(1010.0, clock.Now(10.0), 6);
+
+        clock.SetSpeed(5.0, 10.0);
+        Assert.Equal(1010.0, clock.Now(10.0), 6);     // no jump at the moment it changes
+        Assert.Equal(1060.0, clock.Now(20.0), 6);     // and five times as fast after it
+
+        clock.SetSpeed(1.0, 20.0);
+        Assert.Equal(1060.0, clock.Now(20.0), 6);     // nor back the other way
+        Assert.Equal(1070.0, clock.Now(30.0), 6);
+
         // While the world is warped, how late a game is counts in its own seconds. Five seconds of
         // universe time at 5x is one second late, which is a nudge and not a chase.
         Assert.Equal(5.0 * (1.0 + ClockFollow.MostNudge), ClockFollow.Speed(5, 5), 9);

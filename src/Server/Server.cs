@@ -121,7 +121,7 @@ public sealed class GameServer : IDisposable
     public GameServer(ServerOptions options, Func<double> clock, WorldStore? store = null, IPAddress? bind = null)
     {
         (Options, _clock, _store) = (options, clock, store);
-        UniverseClock.Speed = options.Speed;
+        UniverseClock.SetSpeed(options.Speed, clock());
         _udp = new Udp(options.Port, clock, "KSAMultiplayer server", bind);
         if (store?.Load() is { } saved)
         {
@@ -533,7 +533,7 @@ public sealed class GameServer : IDisposable
     {
         // The server's own clock is what every game follows, so warping it warps all of them together.
         (_warpSpeed, _warpQuietSince, _warpNext) = (speed, now, 0.0);
-        UniverseClock.Speed = speed;
+        UniverseClock.SetSpeed(speed, now);
         Broadcast(WarpState(), p => p.Loaded);
     }
 
@@ -542,7 +542,7 @@ public sealed class GameServer : IDisposable
         if (_warpPhase == Wire.WarpPhase.None) return;
         (_warpPhase, _warpSpeed, _warpQuietSince, _warpNext) = (Wire.WarpPhase.None, 1f, now, 0.0);
         _warpVotes.Clear();
-        UniverseClock.Speed = Options.Speed;
+        UniverseClock.SetSpeed(Options.Speed, now);
         Log(why);
         Broadcast(new Wire.Chat(0, why), p => p.Loaded);
         Broadcast(WarpState(), p => p.Loaded);
