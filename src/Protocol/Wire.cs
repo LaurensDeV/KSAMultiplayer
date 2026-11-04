@@ -57,7 +57,7 @@ public readonly record struct Quat(double X, double Y, double Z, double W)
 public static class Wire
 {
     /// <summary>Changed whenever what a datagram means changes: a game speaking another version is refused by name.</summary>
-    public const ushort Version = 8;
+    public const ushort Version = 9;
 
     public const int BufferBytes = 8192;
     public const int NameChars = 24;
@@ -166,6 +166,7 @@ public static class Wire
         /// <summary>Touching the ground or the sea, where an orbit says nothing useful.</summary>
         Landed = 2,
 
+        /// <summary>Its engine is lit, so a puppet of it burns rather than coasting silently.</summary>
         EngineOn = 4,
         Lights = 8,
 

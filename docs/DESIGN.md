@@ -176,7 +176,6 @@ against KSA `2026.10.25.5707`:
 
 - **No docking, no shared craft.** A craft is flown by one player at a time. Docking two players' craft
   is untried and probably wrong.
-- **Engines are not shown firing** on another player's craft: the throttle is sent and not yet applied.
 - **No authority over physics.** Each game is trusted for its own craft; the server only checks a state
   comes from the craft's owner.
 - **The world is never warped past what the slowest machine can fly.** Every game measures what it
@@ -203,6 +202,11 @@ against KSA `2026.10.25.5707`:
   speed out from the speed the world is running at, which while connected is the server's warp
   nudged off a round number to hold its clock; the mod takes the key by which way it points and
   steps the game's own ladder from what the server says instead.
+- **Engines are shown firing.** Whether a craft's engine is lit and how far its throttle is open
+  live in a private field of a public type, read through Harmony: the throttle alone can be read
+  without it and neither can be written. A puppet's engines are set from its owner's state, which
+  changes nothing that lasts, since the craft is pulled back to where its owner says it is every
+  frame regardless. A build that moves that field leaves engines dark and says so in the log.
 - **A craft is let go of ten seconds after its owner walks away from it.** Sticky ownership is
   what stops two games pulling one hull in two directions, but sticky for ever meant the first
   player to touch a thing held it until they left: in a session here one player came to own every

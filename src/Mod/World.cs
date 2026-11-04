@@ -331,14 +331,18 @@ internal static class World
         double3 velocityCci = cce2Cci * (v.GetVelocityEcl() - parentVel.GetVelocityEcl());
         double3 spin = states.Kinematic.AngularVelocityPhys.Transform(states.Kinematic.Body2Phys.Inverse());
 
+        (bool lit, float throttle) = EngineOf(v);
+
         Wire.StateFlags flags = Wire.StateFlags.None;
+        if (lit) flags |= Wire.StateFlags.EngineOn;
         if (v.Situation.IsOnRails()) flags |= Wire.StateFlags.Rails;
         if (v.Situation.HasAnyContact()) flags |= Wire.StateFlags.Landed;
         if (v.LightsOn) flags |= Wire.StateFlags.Lights;
         if (controlled) flags |= Wire.StateFlags.Controlled;
 
         Wire.State s = new(0, key, 0, Universe, parent.Id, V(positionCcf), V(velocityCcf), V(positionCci), V(velocityCci),
-                           new Quat(body2Ccf.X, body2Ccf.Y, body2Ccf.Z, body2Ccf.W), V(spin), 0f, flags);
+                           new Quat(body2Ccf.X, body2Ccf.Y, body2Ccf.Z, body2Ccf.W), V(spin),
+                           float.IsFinite(throttle) ? Math.Clamp(throttle, 0f, 1f) : 0f, flags);
         return s.PositionCcf.IsFinite && s.PositionCci.IsFinite && s.Body2Ccf.IsFinite ? s : null;
     }
 
@@ -401,6 +405,64 @@ internal static class World
     public static void SetLights(Vehicle v, bool on)
     {
         if (v.LightsOn != on) v.LightsOn = on;
+    }
+
+    // What a craft's engines are doing is held in a private field of a public type: the throttle can
+    // be read through GetManualThrottle, but whether the engine is lit cannot, and neither can be
+    // written. Read once, kept, and null when a build moves it -- engines simply stay dark then.
+    private static AccessTools.FieldRef<Vehicle, ManualControlInputs>? _engineInputs;
+    private static bool _lookedForEngineInputs;
+
+    private static AccessTools.FieldRef<Vehicle, ManualControlInputs>? EngineInputs
+    {
+        get
+        {
+            if (_lookedForEngineInputs) return _engineInputs;
+            _lookedForEngineInputs = true;
+            try
+            {
+                _engineInputs = AccessTools.FieldRefAccess<Vehicle, ManualControlInputs>("_manualControlInputs");
+            }
+            catch (Exception e)
+            {
+                Log.Warn($"engines of other players' craft cannot be shown firing: {e.GetBaseException().Message}");
+            }
+            return _engineInputs;
+        }
+    }
+
+    /// <summary>Whether a craft's engine is lit, and how far its throttle is open.</summary>
+    public static (bool On, float Throttle) EngineOf(Vehicle v)
+    {
+        try
+        {
+            if (EngineInputs is { } inputs) return (inputs(v).EngineOn, inputs(v).EngineThrottle);
+            return (false, v.GetManualThrottle());
+        }
+        catch (Exception)
+        {
+            return (false, 0f);
+        }
+    }
+
+    /// <summary>
+    /// A puppet's engines lit or dark as its owner has them, so another player's craft is seen to
+    /// burn. What it does to this world is nothing that lasts: the craft is pulled back to where its
+    /// owner says it is every frame regardless.
+    /// </summary>
+    public static void SetEngine(Vehicle v, bool on, float throttle)
+    {
+        try
+        {
+            if (EngineInputs is not { } inputs) return;
+            ref ManualControlInputs now = ref inputs(v);
+            if (now.EngineOn != on) now.EngineOn = on;
+            if (Math.Abs(now.EngineThrottle - throttle) > 1e-4f) now.EngineThrottle = throttle;
+        }
+        catch (Exception)
+        {
+            // An engine that will not light is a plume nobody sees, and nothing worse.
+        }
     }
 
     /// <summary>

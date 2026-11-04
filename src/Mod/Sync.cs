@@ -687,6 +687,7 @@ internal static class Sync
             Puppets[v] = key;
             if (track.At(universe) is not { } s) continue;
             World.SetLights(v, (s.Flags & Wire.StateFlags.Lights) != 0);
+            World.SetEngine(v, (s.Flags & Wire.StateFlags.EngineOn) != 0, s.Throttle);
             if (!v.HasPhysicsBubble && now >= PlacedAt.GetValueOrDefault(key))
             {
                 PlacedAt[key] = now + PlaceEverySeconds;
