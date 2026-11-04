@@ -168,7 +168,7 @@ jobs:
         run: |
           cat > notes.md <<NOTES
           A shared world for Kitten Space Agency: several players, each in their own game, flying in
-          one universe kept by a dedicated server.
+          one universe kept by a dedicated server that runs on Linux with no game installed.
 
           Everyone in a world needs **KSA \`$KSA_BUILD\`** and a mod of this release. A game and a
           server speaking different versions refuse each other by name rather than misread the
@@ -182,6 +182,10 @@ jobs:
 
           There is a server at **\`mp.ksarmory.com\`** to try it on.
 
+          Hold **Tab** for who is playing and their ping, **Enter** for a chat line. A craft someone
+          else is flying carries their name and is theirs: you can watch it, not fly it. Changing the
+          simulation speed is put to everyone first, and only whoever asked can end the warp.
+
           ## Hosting
 
           \`\`\`bash
@@ -190,16 +194,26 @@ jobs:
           \`\`\`
 
           Or \`ksamp-server-linux-x64.tar.gz\` below: one self-contained executable and a systemd
-          unit, needing no .NET and no KSA. The server has no world until a player gives it one.
+          unit, needing no .NET and no KSA. The server has no world until a player gives it one, and
+          hands that world to everyone who joins after.
 
           ## State
 
-          Two games on one machine have flown in one world through it. What a rocket of many parts
-          does, and what two games across the internet do, is not known yet.
+          Two games on one machine have flown in one world through it: launching, EVA, staging
+          between games, chat, the scoreboard, nametags, and a voted time warp. What a rocket of many
+          parts does, and what two games across the internet do, is not known yet.
           NOTES
           cat notes.md
 
+      # Re-runnable: a release already there is brought up to date rather than refused, so a tag
+      # whose run failed halfway can be run again instead of being retired for a tag of its own.
       - name: Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md assets/*
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+              gh release edit "$GITHUB_REF_NAME" --notes-file notes.md
+              gh release upload "$GITHUB_REF_NAME" assets/* --clobber
+          else
+              gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md assets/*
+          fi
