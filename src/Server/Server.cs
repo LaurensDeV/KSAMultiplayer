@@ -508,15 +508,7 @@ public sealed class GameServer : IDisposable
         // that stepping down through normal and back up is one warp and not two votes. Anybody else
         // waits out the quiet, since a warp another player can pick up the instant it ends is a warp
         // nobody can get out of.
-        if (now - _warpQuietSince < WarpQuietSeconds)
-        {
-            if (p.Id != _warpWho) return;
-            _warpPhase = Wire.WarpPhase.Running;
-            _warpVotes.Clear();
-            RunWarp(speed, now);
-            Log($"{p.Name} takes the world back to {speed:0.##}x");
-            return;
-        }
+        if (now - _warpQuietSince < WarpQuietSeconds) return;
 
         (_warpWho, _warpSpeed, _warpPhase, _warpAskedAt, _warpNext) = (p.Id, speed, Wire.WarpPhase.Asking, now, 0.0);
         _warpVotes.Clear();

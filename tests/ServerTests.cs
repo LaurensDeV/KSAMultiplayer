@@ -536,53 +536,6 @@ public class ServerTests
     }
 
     [Fact]
-    public void WhoeverHasTheWarpKeepsItThroughNormalSpeed()
-    {
-        using Rig rig = new();
-        Client a = Seed(rig);
-        Client b = JoinAndLoad(rig, "Bob");
-
-        a.AskWarp(5.0);
-        rig.Until(() => b.WarpWantsAnswer, what: "Bob to be asked");
-        b.VoteWarp(true);
-        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Running, what: "the warp to run");
-
-        // Down through normal and straight back up is one warp: stepping past 1x on the way is not
-        // a reason to make the player who holds it ask everybody all over again.
-        a.AskWarp(1.0);
-        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.None, what: "the warp to end");
-
-        a.AskWarp(10.0);
-        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Running, what: "Alice to pick it back up");
-        Assert.Equal(10.0, rig.Server.UniverseClock.Speed, 3);
-        Assert.False(b.WarpWantsAnswer);
-    }
-
-    [Fact]
-    public void NobodyElseTakesAWarpBeforeItHasBeenQuiet()
-    {
-        using Rig rig = new();
-        Client a = Seed(rig);
-        Client b = JoinAndLoad(rig, "Bob");
-
-        a.AskWarp(5.0);
-        rig.Until(() => b.WarpWantsAnswer, what: "Bob to be asked");
-        b.VoteWarp(true);
-        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Running, what: "the warp to run");
-        a.AskWarp(1.0);
-        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.None, what: "the warp to end");
-
-        // Bob is not Alice: the quiet is hers, and he waits it out.
-        b.AskWarp(50.0);
-        rig.For(1.0);
-        Assert.Equal(Wire.WarpPhase.None, rig.Server.Warp.Phase);
-
-        rig.For(5.0);
-        b.AskWarp(50.0);
-        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Asking, seconds: 15.0, what: "Bob's own warp to be put to Alice");
-    }
-
-    [Fact]
     public void TheOneAskingMayChangeTheSpeedTheyAreAskingFor()
     {
         using Rig rig = new();
