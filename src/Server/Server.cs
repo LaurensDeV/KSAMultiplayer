@@ -406,7 +406,17 @@ public sealed class GameServer : IDisposable
         }
         HashSet<string> theirs = [.. hello.Mods.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
         string[] missing = [.. _worldMods.Where(m => !theirs.Contains(m)).Order()];
-        return missing.Length > 0 ? $"the server's world needs mods you do not have enabled: {string.Join(", ", missing)}" : null;
+        if (missing.Length > 0) return $"the server's world needs mods you do not have enabled: {string.Join(", ", missing)}";
+        // And none the others lack. A mod that adds parts makes craft nobody else can put together,
+        // and the first they hear of it is a craft arriving that their game refuses to build, which
+        // reads as the mod being broken rather than as somebody running something extra. Nothing is
+        // asked of the player whose world this is about to become: they are the ones who set it.
+        if (_worldMods.Length == 0) return null;
+        HashSet<string> world = [.. _worldMods];
+        string[] extra = [.. theirs.Where(m => !world.Contains(m)).Order()];
+        return extra.Length > 0
+            ? $"you are running mods this world does not have ({string.Join(", ", extra)}): turn them off to join"
+            : null;
     }
 
     private void SendWorld(Player p)

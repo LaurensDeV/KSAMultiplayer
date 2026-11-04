@@ -64,8 +64,10 @@ another version is refused by name rather than misread.
 
 It passes every state on to every other game in the world, checks a state comes from the craft's
 owner, and passes chat on. It refuses a player with another KSA build, one playing a different celestial system (a world of Sol
-entire is not a world of Earth and its Moon alone), or one without a mod the world's giver had
-enabled, since a save holding a part of a missing mod does not load. A world given by a player
+entire is not a world of Earth and its Moon alone), or one whose mods are not the world's
+exactly. Without one the world's giver had enabled, a save holding a part of it does not load; with
+one they had not, that player builds craft nobody else can put together, and all the others see is
+a craft arriving that their game refuses, which reads as the mod being broken. A world given by a player
 carries that player's system; one an operator imports carries whatever its own `meta.toml` says.
 
 ## What a game does

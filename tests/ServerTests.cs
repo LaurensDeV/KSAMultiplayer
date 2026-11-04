@@ -252,6 +252,7 @@ public class ServerTests
     [InlineData("wrong", "B1", "Core", "wrong password")]
     [InlineData("pw", "B2", "Core", "you need the same build")]
     [InlineData("pw", "B1", "", "mods you do not have enabled: Core")]
+    [InlineData("pw", "B1", "Core,Shiny,Louder", "mods this world does not have (Louder, Shiny)")]
     public void APlayerWhoCannotLoadTheWorldIsToldWhy(string password, string build, string mods, string why)
     {
         using Rig rig = new(new ServerOptions { Password = "pw" });
