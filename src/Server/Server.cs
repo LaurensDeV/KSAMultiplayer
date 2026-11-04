@@ -179,7 +179,7 @@ public sealed class GameServer : IDisposable
         }
 
         bool anyone = _players.Values.Any(p => p.Loaded);
-        UniverseClock.Run((Options.KeepTime || anyone) && !Waiting(now), now);
+        UniverseClock.Run(Options.KeepTime || anyone, now);
         if (!anyone) HoldTimeAtTheWorld(now);
 
         // Players waiting on a fresh save are sent the one there is once it comes, or after a while without.
@@ -577,45 +577,6 @@ public sealed class GameServer : IDisposable
         if (_players.Values.Where(p => p.Loaded).OrderBy(p => p.LoadedAt).FirstOrDefault() is not { } from) return;
         _snapshotAskedAt = UniverseClock.Now(_clock());
         _udp.Send(new Wire.Snapshot(why), from.At);
-    }
-
-    // Far enough behind that the world waits, and close enough again that it goes on. Two numbers
-    // and not one, so a player hovering at the line does not stop and start the world every tick.
-    private const double WaitAboveSeconds = 5.0, WaitBelowSeconds = 2.0;
-
-    private bool _waiting;
-
-    /// <summary>Whether the world is being held for somebody who cannot keep up with it.</summary>
-    public bool Held => _waiting;
-
-    /// <summary>
-    /// Whether to hold the clock. A server that runs on at whatever speed was agreed, without asking
-    /// whether anyone can follow, leaves a game that cannot thousands of seconds adrift -- and the
-    /// most it may catch up by is ten times the server's own rate, so a gap opened faster than that
-    /// never closes. The world waits instead, which costs everyone a moment and nobody an afternoon.
-    /// </summary>
-    private bool Waiting(double now)
-    {
-        Player? worst = null;
-        foreach (Player p in _players.Values)
-        {
-            if (p.Loaded && (worst is null || p.Late > worst.Late)) worst = p;
-        }
-        double late = worst?.Late ?? 0.0;
-
-        if (!_waiting && late > WaitAboveSeconds)
-        {
-            _waiting = true;
-            Log($"holding the world: {worst!.Name} is {late:0} s behind");
-            Broadcast(new Wire.Chat(0, $"the world is waiting for {worst!.Name}"), q => q.Loaded);
-        }
-        else if (_waiting && late < WaitBelowSeconds)
-        {
-            _waiting = false;
-            Log("the world runs again: everyone has caught up");
-            Broadcast(new Wire.Chat(0, "everyone has caught up"), q => q.Loaded);
-        }
-        return _waiting;
     }
 
     private void Remove(Player p, string why)
