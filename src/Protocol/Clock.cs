@@ -68,8 +68,16 @@ public static class ClockFollow
     /// <summary>Further behind than this, s, a world is warped to catch up rather than nudged.</summary>
     public const double CatchUpAboveSeconds = 3.0;
 
-    /// <summary>The most a world is warped to catch up: KSA keeps a craft in physics up to here.</summary>
+    /// <summary>The most a world is warped to catch up while anything of its own is in physics.</summary>
     public const double MostCatchUp = 10.0;
+
+    /// <summary>
+    /// The most a world is warped to catch up when every craft of its own is on rails or sitting
+    /// still. KSA works those out in closed form, so a step of an hour costs what a step of a frame
+    /// costs and the whole gap closes in a moment rather than in minutes of everything running fast.
+    /// A craft in physics is stepped through, and a step of an hour would be an hour of stepping.
+    /// </summary>
+    public const double MostCatchUpOnRails = 1000.0;
 
     /// <summary>
     /// How fast to run a world that is <paramref name="behind"/> seconds behind the server, whose
@@ -81,11 +89,13 @@ public static class ClockFollow
     /// reading that as five would have it catch up ten times over, overshoot, stop, and judder
     /// between the two for as long as the warp lasted.</para>
     /// </summary>
-    public static double Speed(double behind, double serverRate)
+    /// <param name="mostCatchUp">The most it may be warped by to catch up, which is far more when
+    /// nothing of its own is in physics.</param>
+    public static double Speed(double behind, double serverRate, double mostCatchUp = MostCatchUp)
     {
         if (!(serverRate > 0.0) || !double.IsFinite(behind)) return 0.0;
         double late = behind / serverRate;
-        if (late > CatchUpAboveSeconds) return serverRate * Math.Min(MostCatchUp, 1.0 + (late / 2.0));
+        if (late > CatchUpAboveSeconds) return serverRate * Math.Min(mostCatchUp, 1.0 + (late / 2.0));
         if (late < -CatchUpAboveSeconds) return 0.0;
         return serverRate * Math.Clamp(1.0 + (late / CloseOverSeconds), 1.0 - MostNudge, 1.0 + MostNudge);
     }

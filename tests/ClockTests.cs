@@ -31,6 +31,11 @@ public class ClockTests
         Assert.Equal(0, ClockFollow.Speed(-10, 1));
         Assert.Equal(0, ClockFollow.Speed(5, 0));
 
+        // A world with nothing of its own in physics may close a gap far faster: KSA works a railed
+        // craft out in closed form, so an hour of world costs what a frame of it costs.
+        Assert.Equal(ClockFollow.MostCatchUpOnRails, ClockFollow.Speed(6000, 1, ClockFollow.MostCatchUpOnRails), 9);
+        Assert.True(ClockFollow.Speed(6000, 1, ClockFollow.MostCatchUpOnRails) > ClockFollow.Speed(6000, 1) * 50.0);
+
         // A clock whose speed changes carries on from where it is rather than reading every second
         // since it was set at the new speed. Coming out of a warp it used to jump backwards.
         UniverseClock clock = new();

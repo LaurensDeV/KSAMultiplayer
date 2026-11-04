@@ -118,6 +118,31 @@ internal static class World
     public static double StepCap => 1.0 / Math.Max(1f, GameSettings.Current.Simulation.MinTargetFrameRate);
 
     /// <summary>
+    /// Whether every craft in this world is one KSA works out in closed form rather than stepping
+    /// through: on rails, or sitting on something. A step of an hour costs what a step of a frame
+    /// costs for those, and costs an hour of stepping for anything else, so this is what says
+    /// whether a world may close a long gap in a moment or must crawl back.
+    /// </summary>
+    public static bool Analytic
+    {
+        get
+        {
+            try
+            {
+                foreach (Vehicle v in Vehicles())
+                {
+                    if (!v.Situation.IsOnRails() && !v.Situation.HasAnyContact()) return false;
+                }
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+    }
+
+    /// <summary>
     /// Whether this game's window has the player's attention. Windows throttles the window that is
     /// not in front, so what an unfocused game manages says nothing about the machine behind it: it
     /// is an absent player rather than a slow one, and a world does not slow down for somebody who

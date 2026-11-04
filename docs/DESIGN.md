@@ -185,6 +185,12 @@ against KSA `2026.10.25.5707`:
   it, so what it manages measures Windows and not the machine, and that player is an absent one
   rather than a slow one. A pause or a world in slow motion asks nothing of anybody and is never
   held back.
+- **A world with nothing in physics closes a gap in a moment.** KSA works a craft on rails or
+  sitting still out in closed form, so a step of an hour costs what a step of a frame costs, while a
+  craft being stepped through physics costs an hour of stepping. So how far a world may be warped to
+  catch up is a thousand times its speed when everything here is analytic and ten times when
+  anything is not: a player who was not looking comes back in a moment instead of running fast for
+  minutes, and a player mid-burn is never fast-forwarded through it.
 - **How long a craft may go unheard is counted at the world's speed.** A state is sent on a real
   clock and its age read on the world's, and the two are the same thing only at normal speed: at ten
   times, half a second of sending is five seconds of world. Letting go at a fixed five dropped every

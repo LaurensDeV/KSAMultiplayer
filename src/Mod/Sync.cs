@@ -700,7 +700,11 @@ internal static class Sync
         }
         double behind = server.Universe - World.Universe;
         (Behind, c.Late) = (behind, behind);
-        HeldSpeed = ClockFollow.Asked(ClockFollow.Speed(behind, server.Rate), FrameSeconds, World.StepCap);
+        // Far more room to catch up when nothing here is being stepped through physics: the gap
+        // closes in a moment instead of minutes of everything running fast, which is what makes a
+        // player who was not looking able to come back rather than having to sprint.
+        double most = World.Analytic ? ClockFollow.MostCatchUpOnRails : ClockFollow.MostCatchUp;
+        HeldSpeed = ClockFollow.Asked(ClockFollow.Speed(behind, server.Rate, most), FrameSeconds, World.StepCap);
         World.SetSpeed(HeldSpeed.Value);
     }
 
