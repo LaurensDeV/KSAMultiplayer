@@ -5,6 +5,7 @@ on:
   push:
     branches: ["**"]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -56,3 +57,12 @@ jobs:
         env:
           KSA_DLL_DIR: ${{ github.workspace }}/.ksa-assemblies/current/dll
         run: ./tools/package.sh
+
+      # The zip holds the mod's own assembly and its manifest, and none of KSA's: package.sh copies
+      # those two files and nothing else, so this is publishable from a public repository.
+      - uses: actions/upload-artifact@v4
+        if: env.HAVE_KEY == 'true'
+        with:
+          name: mod
+          path: dist/*.zip
+          if-no-files-found: error
