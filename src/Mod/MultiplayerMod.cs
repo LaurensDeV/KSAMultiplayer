@@ -61,7 +61,14 @@ public sealed class MultiplayerMod
         if (_disabled) return;
         try
         {
-            if (World.InFlight) Panel.Draw();
+            // Not InFlight: an observer flies nothing, and the window, the nametags, the scoreboard
+            // and the chat are exactly what it has instead.
+            if (World.AtACraft)
+            {
+                Panel.Draw();
+                // Last, over everything the mod has drawn.
+                Panel.DrawTags();
+            }
         }
         catch (Exception e)
         {

@@ -19,6 +19,12 @@ internal static class World
 
     public static bool InFlight => Controlled is not null;
 
+    /// <summary>
+    /// Whether this game is looking at a craft at all: one it flies, or another player's it watches.
+    /// An observer controls nothing, and everything the mod draws has to go on being drawn for one.
+    /// </summary>
+    public static bool AtACraft => Controlled is not null || Watched is not null;
+
     public static double Universe => KSA.Universe.GetElapsedSeconds();
 
     public static double Speed => KSA.Universe.SimulationSpeed;
@@ -328,13 +334,45 @@ internal static class World
         }
     }
 
+    /// <summary>
+    /// Where to write a craft's name on the screen: a point above it rather than through it, in
+    /// absolute screen coordinates. <c>EclToScreen</c> answers in the viewport's own, which are the
+    /// window's only when the viewport starts at the corner of it, and a draw list wants the screen's.
+    /// Null when the point is behind the camera or off the edge.
+    /// </summary>
+    /// <summary>
+    /// Where to write a craft's name on the screen: a point above the hull rather than through it.
+    /// Null when there is no camera or the point will not project.
+    /// </summary>
     public static float2? ScreenOf(Vehicle v)
     {
         try
         {
             if (Program.GetMainCamera() is not { } camera) return null;
-            float2 at = camera.EclToScreen(v.GetPositionEcl());
-            return float.IsFinite(at.X) && float.IsFinite(at.Y) ? at : null;
+
+            double3 at = v.GetPositionEcl();
+            float2 centre = camera.EclToScreen(at);
+            if (!float.IsFinite(centre.X) || !float.IsFinite(centre.Y)) return null;
+
+            // Over the hull rather than through it, by however big the craft looks from here: a
+            // metre is nothing across a sky and everything from ten metres off, so the lift is
+            // measured on the screen and not in the world, and capped so a near hull keeps its name.
+            float lift = 14f;
+            if (v.Parent is IPosition parent)
+            {
+                double3 up = at - parent.GetPositionEcl();
+                double len = Vec(up);
+                if (len > 0.0)
+                {
+                    float2 edge = camera.EclToScreen(at + (up * (v.MeanRadius / len)));
+                    if (float.IsFinite(edge.X) && float.IsFinite(edge.Y))
+                    {
+                        float dx = edge.X - centre.X, dy = edge.Y - centre.Y;
+                        lift = Math.Clamp(MathF.Sqrt((dx * dx) + (dy * dy)) + 10f, 14f, 140f);
+                    }
+                }
+            }
+            return new float2(centre.X, centre.Y - lift);
         }
         catch (Exception)
         {

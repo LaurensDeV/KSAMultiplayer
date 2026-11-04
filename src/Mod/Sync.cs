@@ -191,7 +191,7 @@ internal static class Sync
         if (HeldSpeed is not null)
         {
             HeldSpeed = null;
-            if (World.InFlight) World.SetSpeed(1.0);
+            if (World.AtACraft) World.SetSpeed(1.0);
         }
         if (was) Say("disconnected");
     }
@@ -246,7 +246,7 @@ internal static class Sync
                     Now = c.ServerHasWorld ? Stage.Waiting : Stage.Seeding;
                     if (Now == Stage.Seeding) Say("the server has no world yet: yours becomes it");
                     break;
-                case Stage.Seeding when c.SnapshotWanted is not null && World.InFlight:
+                case Stage.Seeding when c.SnapshotWanted is not null && World.AtACraft:
                     c.SnapshotWanted = null;
                     SendWorld(c);
                     StartPlaying(c);
@@ -261,7 +261,7 @@ internal static class Sync
                         Disconnect();
                         return;
                     }
-                    if (World.InFlight && ++_settle > SettleFrames) StartPlaying(c);
+                    if (World.AtACraft && ++_settle > SettleFrames) StartPlaying(c);
                     break;
                 case Stage.Playing:
                     Play(c);
@@ -602,7 +602,10 @@ internal static class Sync
     // The speed this world runs at while connected: the server's time kept, warped forward to catch up after a load.
     private static void HoldTheClock(Client c)
     {
-        if (Now is Stage.Loading or Stage.Joining || !World.InFlight)
+        // AtACraft, not InFlight: an observer controls nothing, and a game that stops holding the
+        // clock keeps whatever speed it last had -- which after a join is the catch-up warp, so it
+        // runs away from the world it is watching and every state it is sent arrives stale.
+        if (Now is Stage.Loading or Stage.Joining || !World.AtACraft)
         {
             // KSA's own load is left to run as it does.
             HeldSpeed = null;

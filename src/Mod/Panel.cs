@@ -62,7 +62,6 @@ internal static class Panel
     public static void Draw()
     {
         if (!_loaded) Load();
-        Nametags();
         WarpWindow();
         Scoreboard();
         ChatWindow();
@@ -173,25 +172,49 @@ internal static class Panel
     /// owner's name. Drawn into a window the size of the screen that takes no input and has no
     /// background of its own, so it is only the text.
     /// </summary>
-    private static void Nametags()
+    public static void DrawTags()
     {
-        if (World.InMapView) return;
+        // Drawn in the map view as well: a craft is a dot there and whose it is matters more, not
+        // less. The camera is in map mode for anyone controlling nothing, which an observer is.
         List<(float2 At, string Who, string Craft, double Range)> tags = Sync.Nametags();
         if (tags.Count == 0) return;
 
-        // The foreground list, not a window of our own: KSA's gauges are a full-screen canvas drawn
-        // after anything the mod begins, and a tag in a window behind them is a tag nobody sees.
-        ImDrawListPtr draw = ImGui.GetForegroundDrawList();
+        // A window of the mod's own, not the viewport's background or foreground list: those two are
+        // never rendered from the pass this mod draws in, while a window is, which is why the panel
+        // and the chat appear and anything put on a bare list does not.
+        ImGuiViewportPtr screen = ImGui.GetMainViewport();
+        ImGui.SetNextWindowPos(screen.WorkPos, ImGuiCond.Always, null);
+        ImGui.SetNextWindowSize(screen.WorkSize, ImGuiCond.Always);
+        const ImGuiWindowFlags over = ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize
+                                      | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoScrollbar
+                                      | ImGuiWindowFlags.NoBackground | ImGuiWindowFlags.NoInputs
+                                      | ImGuiWindowFlags.NoNav | ImGuiWindowFlags.NoFocusOnAppearing
+                                      | ImGuiWindowFlags.NoSavedSettings;
+        if (!ImGui.Begin("###KSAMultiplayerTags", over))
+        {
+            ImGui.End();
+            return;
+        }
+
+        ImDrawListPtr draw = ImGui.GetWindowDrawList();
+        ImFontPtr font = ImGui.GetFont();
         float line = ImGui.GetFontSize();
         foreach ((float2 at, string who, string craft, double range) in tags)
         {
             string under = $"{craft} · {Far(range)}";
-            // KSA's font is of one width, so the middle of a line is half its characters along.
-            Write(draw, at, -line, who, Tag, line);
-            Write(draw, at, 0f, under, TagFaint, line);
+            float2 nameBox = ImGui.CalcTextSize(who), underBox = ImGui.CalcTextSize(under);
+            float wide = Math.Max(nameBox.X, underBox.X), high = nameBox.Y + underBox.Y;
+            float2 corner = new(at.X - (wide / 2f), at.Y - high - 6f);
+
+            draw.AddRectFilled(new float2(corner.X - 5f, corner.Y - 3f),
+                               new float2(corner.X + wide + 5f, corner.Y + high + 3f), TagShade, 4f);
+            draw.AddText(font, line, new float2(at.X - (nameBox.X / 2f), corner.Y), Tag, who);
+            draw.AddText(font, line, new float2(at.X - (underBox.X / 2f), corner.Y + nameBox.Y), TagFaint, under);
         }
+        ImGui.End();
     }
 
+    private static readonly ImColor8 TagShade = new(0, 0, 0, 160);
     private static readonly ImColor8 Tag = new(255, 255, 255, 235);
     private static readonly ImColor8 TagFaint = new(190, 205, 225, 200);
     private static readonly ImColor8 TagShadow = new(0, 0, 0, 190);
