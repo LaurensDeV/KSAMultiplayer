@@ -215,8 +215,11 @@ against KSA `2026.10.25.5707`:
   what stops two games pulling one hull in two directions, but sticky for ever meant the first
   player to touch a thing held it until they left: in a session here one player came to own every
   craft in the world and the other could fly none of them. A craft its owner is neither in nor
-  looking at goes back to being anybody's after ten seconds, `--lapse-within`, and a player's camera counts as being
-  near it so stepping out to watch something is not walking away from it.
+  looking at goes to a player who is watching it after ten seconds, `--lapse-within`, and a player's camera counts as
+  being near it so stepping out to watch something is not walking away from it. Only a craft somebody
+  else is waiting on changes hands: a world is mostly parked craft nobody is looking at, and letting
+  those go lapsed ownership 873 times in 70 minutes, each one moving the camera of whoever was
+  watching a craft when it came free.
 - **Ownership is not kept across a server restart**: it starts afresh, and the first to take control of a craft has it.
 - **A hatch is claimed before it opens.** A craft another player holds refuses to let its crew out,
   but a craft nobody holds was nobody's to refuse: two games looking at the same capsule each sent

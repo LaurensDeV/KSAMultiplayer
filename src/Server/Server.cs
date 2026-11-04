@@ -140,6 +140,8 @@ public sealed class GameServer : IDisposable
     private bool _worldTimeKnown;
     private string[] _worldMods = [];
     private double _rosterNext, _ownersNext, _clockNext, _snapshotNext, _snapshotAskedAt = double.NegativeInfinity;
+    private double _craftCountNext;
+    private int _craftCountSaid = -1;
 
     // One world has one time, so nobody changes its speed alone: somebody asks, everybody answers,
     // and it runs only if they all agree. It is then theirs to steer and theirs to stop.
@@ -734,10 +736,14 @@ public sealed class GameServer : IDisposable
                 continue;
             }
             if (now - craft.AttendedAt < Options.LapseWithin) continue;
+            // Only a craft somebody else is waiting on. Most of a world is parked craft nobody is
+            // looking at, and letting those go handed them round hundreds of times an hour, each
+            // time moving the camera of whoever happened to be watching one.
+            if (_players.Values.FirstOrDefault(q => q.Id != owner.Id && q.Loaded && q.Watching == key) is not { } waiting) continue;
 
             craft.Owner = 0;
             any = true;
-            Log($"{key} is anybody's again: {owner.Name} has not been near it for {Options.LapseWithin:0} s");
+            Log($"{key} is {waiting.Name}'s to take: {owner.Name} has not been near it for {Options.LapseWithin:0} s");
         }
         if (any) OwnersChanged();
     }

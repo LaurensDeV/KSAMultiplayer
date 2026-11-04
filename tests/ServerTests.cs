@@ -665,7 +665,7 @@ public class ServerTests
     }
 
     [Fact]
-    public void ACraftItsOwnerWalksAwayFromGoesBackToBeingAnybodys()
+    public void ACraftItsOwnerWalkedAwayFromGoesToWhoeverIsWaitingOnIt()
     {
         using Rig rig = new(new ServerOptions { LapseWithin = 1.0 });
         Client a = Seed(rig);
@@ -676,7 +676,13 @@ public class ServerTests
         rig.Until(() => rig.Server.OwnerOf("Rocket") == a.Id && rig.Server.OwnerOf("Lander") == a.Id,
                   what: "Alice to hold both");
 
-        // She is in the lander and not looking at the rocket. It is not hers to hold for ever.
+        // She is in the lander and not looking at the rocket, but nobody else wants it, so it stays
+        // hers: a parked craft changing hands for nobody is churn and nothing else.
+        rig.For(3.0);
+        Assert.Equal(a.Id, rig.Server.OwnerOf("Rocket"));
+
+        // Bob looks at it, and now it is not hers to hold.
+        b.Watching = "Rocket";
         rig.Until(() => rig.Server.OwnerOf("Rocket") == 0, seconds: 15.0, what: "the rocket to be let go of");
         Assert.Equal(a.Id, rig.Server.OwnerOf("Lander"));
 
