@@ -201,6 +201,16 @@ internal static class World
     public static (byte[] Zip, double Universe) SaveWorld()
     {
         double universe = Universe;
+        // Said, not mended: a craft inside a body is one every game that loads this world dies on,
+        // and the player handing it over is the only one who can do anything about it.
+        foreach (Vehicle v in Vehicles())
+        {
+            if (!IsAlive(v) || v.Parent is not Astronomical body || v.Parent is not IPosition at || body.MeanRadius <= 0.0) continue;
+            if (Vec(v.GetPositionEcl() - at.GetPositionEcl()) < body.MeanRadius * HalfWayIn)
+            {
+                Log.Warn($"{v.Id} is inside {body.Id}: a world with it in cannot be loaded");
+            }
+        }
         GameSaves.MakeUncompressedSave(HandoverSave);
         string folder = Path.Combine(GameSaves.SaveFolderPath, HandoverSave);
         return (Blob.ZipFolder(folder), universe);
@@ -319,6 +329,13 @@ internal static class World
 
     // ------------------------------------------------------------------ states
 
+    // Nearer the middle of a body than this and a craft is not somewhere, it is broken: a landed
+    // craft stands at the body's own radius and one in orbit is further out again.
+    private const double HalfWayIn = 0.5;
+
+    // Said once a craft, not once a frame.
+    private static readonly HashSet<string> _lost = [];
+
     /// <summary>Where a craft is now, in its body's fixed frame off the physics state and in its inertial frame off the ecliptic.</summary>
     /// <param name="key">What the world knows this craft by, which is not this game's own name for it when the server has renamed it.</param>
     public static Wire.State? StateOf(Vehicle v, string key, bool controlled)
@@ -340,6 +357,17 @@ internal static class World
         if (v.LightsOn) flags |= Wire.StateFlags.Lights;
         if (controlled) flags |= Wire.StateFlags.Controlled;
 
+        // A craft inside its own body is one KSA has lost: near the centre its own gravity maths
+        // runs away, no orbit can be made from the state at all, and the game that is handed it dies
+        // on the first physics step with "cannot construct a UniverseTime from NaN". It stays here.
+        // Finite is not enough: the centre of the Earth is a perfectly finite place to be.
+        if (parent.MeanRadius > 0.0 && Vec(positionCcf) < parent.MeanRadius * HalfWayIn)
+        {
+            if (_lost.Add(key)) Log.Warn($"{key} is inside {parent.Id}: the others are not told where it is");
+            return null;
+        }
+        _lost.Remove(key);
+
         Wire.State s = new(0, key, 0, Universe, parent.Id, V(positionCcf), V(velocityCcf), V(positionCci), V(velocityCci),
                            new Quat(body2Ccf.X, body2Ccf.Y, body2Ccf.Z, body2Ccf.W), V(spin),
                            float.IsFinite(throttle) ? Math.Clamp(throttle, 0f, 1f) : 0f, flags);
@@ -354,6 +382,9 @@ internal static class World
     {
         if (v.HasPhysicsBubble) return false;
         if (KSA.Universe.CurrentSystem?.Get(s.Body) is not Celestial body) return false;
+        // Sent by a game old enough not to hold this back, or lost on the way: a craft put inside a
+        // body here is a world this game cannot save and nobody else can load.
+        if (body.MeanRadius > 0.0 && Vec(D(s.PositionCcf)) < body.MeanRadius * HalfWayIn) return false;
         if ((s.Flags & Wire.StateFlags.Landed) != 0)
         {
             PhysicsStates states = v.GetPhysicsStatesMutable();

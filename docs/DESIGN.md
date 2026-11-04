@@ -92,7 +92,11 @@ carries that player's system; one an operator imports carries whatever its own `
    - **Owned craft are sent**: the flown one 20 times a second, the rest twice. A state is where the
      craft is in its body's fixed frame, off the physics state (`PhysicsStates.GetStatesCcf`), and in
      its inertial frame, off the ecliptic, with its attitude, spin and whether it is on rails or on the
-     ground. A craft whose parts change, as one that stages does, is described again.
+     ground. A craft nearer the middle of its body than half its radius is not sent at all and not
+     placed from one that arrives: KSA has lost such a craft, no orbit can be made from where it
+     says it is, and a game handed a world holding one aborts on its first physics step with
+     "cannot construct a UniverseTime from NaN". Finite is not enough -- the centre of the Earth is
+     a finite place to be. A craft whose parts change, as one that stages does, is described again.
    - **Every other player's craft is a puppet.** Built from its definition if this world has none
      (`Vehicle.CreateVehicleFromSaveGameData`, or `KittenEva.CreateKittenFromSaveData` for a kitten),
      one a frame, and then remembered by name: KSA does not list a craft the moment it is made, so a
