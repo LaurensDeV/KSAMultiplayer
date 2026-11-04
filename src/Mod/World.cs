@@ -289,6 +289,27 @@ internal static class World
         if (v.LightsOn != on) v.LightsOn = on;
     }
 
+    /// <summary>
+    /// A craft's next sequence fired, which is what the space bar does, and the new active sequence
+    /// or null if there was none left. For a test that has to stage a rocket with no hand on the
+    /// keyboard; nothing in the mod itself stages anything.
+    /// </summary>
+    public static int? Stage(Vehicle v)
+    {
+        try
+        {
+            SequenceList sequences = v.Parts.SequenceList;
+            int was = sequences.ActiveSequence;
+            sequences.ActivateNextSequence(v);
+            return sequences.ActiveSequence == was ? null : sequences.ActiveSequence;
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"could not stage {v.Id}: {e.GetBaseException().Message}");
+            return null;
+        }
+    }
+
     /// <summary>Where a craft is on the screen, or null when it is behind the camera or off to the side.</summary>
     public static float2? ScreenOf(Vehicle v)
     {

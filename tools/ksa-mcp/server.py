@@ -218,6 +218,10 @@ TOOLS = {
                 "kitten or the first aboard. The shortest way to make a craft the loaded world did not have.",
                 {"craft": {"type": "string"}, "kitten": {"type": "string"}}, [],
                 lambda a: _dump(send("eva", **a))),
+    "ksa_stage": ("Fire a craft's next sequence, which is what the space bar does: the named craft, or the "
+                  "flown one. The way to drop a stage while another game is watching.",
+                  {"craft": {"type": "string"}}, [],
+                  lambda a: _dump(send("stage", **a))),
     "ksa_launch": ("Start KSA with this tree's deployed build if it is not running, and optionally load a "
                    "save. Uses a running game rather than starting a second.",
                    {"save": {"type": "string"}}, [], lambda a: [_text(launch(a.get("save")))]),

@@ -94,6 +94,7 @@ internal sealed class Bridge
             "mp" => Multiplayer(command),
             "goto" => GoTo(command),
             "eva" => Eva(command),
+            "stage" => Stage(command),
             "pause" => Paused(true),
             "resume" => Paused(false),
             "speed" => Speed(command),
@@ -298,6 +299,17 @@ internal sealed class Bridge
         if (seat is null) return Failed($"nobody aboard {craft.Id} to get out");
         if (!EVADoor.PerformEvaForSeat(craft, seat)) return Failed($"{craft.Id} would not let anybody out");
         return Done(new() { ["from"] = craft.Id });
+    }
+
+    // The space bar: a rocket staged while the other game watches, which is the one thing a test of
+    // many parts needs and no other command can do.
+    private static Reply Stage(BridgeCommand command)
+    {
+        string id = command.String("craft");
+        Vehicle? craft = id.Length > 0 ? World.Vehicles().FirstOrDefault(v => v.Id == id) : World.Controlled;
+        if (craft is null) return Failed(id.Length > 0 ? $"no craft '{id}' in this world" : "no craft is being flown");
+        if (World.Stage(craft) is not { } sequence) return Failed($"{craft.Id} has no sequence left to fire");
+        return Done(new() { ["craft"] = craft.Id, ["sequence"] = sequence, ["parts"] = craft.Parts.Count });
     }
 
     // ---- the clock -------------------------------------------------------------------------

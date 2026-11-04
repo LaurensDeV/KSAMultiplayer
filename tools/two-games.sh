@@ -13,7 +13,9 @@
 #     KSA_USER_DIR="$(./tools/two-games.sh --dir A)" python3 tools/ksa-mcp/server.py cli status '{}'
 #
 # Both copies share one graphics card, and at the player's settings two of them fill its memory;
-# the profiles are made with the graphics turned well down and vsync off.
+# the profiles are made with the graphics turned well down and vsync off. A world of craft on a
+# planet's surface costs about 4.5 GB a copy even so, which two of them and a desktop will not fit
+# in 12 GB -- hence no ground cover and a small streaming budget here.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=ksa-user-dir.sh
@@ -47,7 +49,16 @@ if [[ "${1:-}" == "--stop" ]]; then
     exit 0
 fi
 
-STARMAP_EXE="$(find "${USER_DIR%%/Documents/*}" -maxdepth 2 -iname 'StarMap.exe' 2>/dev/null | head -1 || true)"
+# A machine keeps several StarMaps side by side, and an old one cannot load today's game: it dies
+# on a missing Brutal assembly before the window opens. The folder named exactly StarMap is the one
+# in use; the rest are copies. Which is newest is no guide, since an archived copy is often the most
+# recently touched of them.
+WIN_HOME="${USER_DIR%%/Documents/*}"
+if [[ -f "$WIN_HOME/StarMap/StarMap.exe" ]]; then
+    STARMAP_EXE="$WIN_HOME/StarMap/StarMap.exe"
+else
+    STARMAP_EXE="$(find "$WIN_HOME" -maxdepth 2 -iname 'StarMap.exe' 2>/dev/null | head -1 || true)"
+fi
 [[ -n "${STARMAP_DIR:-}" ]] && STARMAP_EXE="$STARMAP_DIR/StarMap.exe"
 if [[ ! -f "$STARMAP_EXE" ]]; then
     echo "error: StarMap.exe not found; set STARMAP_DIR" >&2
@@ -82,8 +93,8 @@ light = {
     "clouds": "false", "cloudUpscale": '"Low"', "oceanSimQuality": '"Low"', "ocean": "false",
     "ambientOcclusion": "false", "terrainGodrays": "false", "planetaryRings": "false",
     "planetaryRingMeshes": "false", "planetaryRingsVolumetricDust": "false",
-    "groundClutterShadowCasting": "false", "textureStreamingBudgetMb": "1536",
-    "celestialTextureCap": "2048", "vesselTextureCap": "1024", "kittenFurQuality": '"Low"',
+    "groundClutterShadowCasting": "false", "textureStreamingBudgetMb": "512",
+    "celestialTextureCap": "1024", "vesselTextureCap": "1024", "kittenFurQuality": '"Low"',
     "explosionQuality": '"Low"', "exhaustUpscale": '"Low"', "reflections": "false",
     "terrainTessellation": "false", "stars": "false", "lensFlare": "false", "globalBloom": "false",
     "thresholdBloom": "false", "plumeTrails": "false", "plumeTrailShadows": "false",

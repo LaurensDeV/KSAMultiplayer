@@ -163,8 +163,12 @@ against KSA `2026.10.25.5707`:
   a moving one are reached in a run, but neither has been checked against where the craft should be.
 - **Pulling a puppet in physics.** Two craft were close enough to share a bubble; that the pull holds
   one steady there has not been measured.
-- **A craft of many parts.** What has been built from a definition is a one-part kitten, not a rocket,
-  and nothing has staged or dropped a stage while another game watched.
+- **A craft of many parts seen from another game.** An 89-part rocket of ten sequences has been flown
+  in a shared world and staged twice: each dropped stage became a craft of its own, was claimed, and
+  the server registered it, the counts adding up exactly (89 = 21 + 68, then 21 = 4 + 17). What no
+  second game has done is rebuild any of it from a definition, because two games cannot both hold a
+  world of craft around Earth on one 12 GB card: the second dies allocating `Earth_HeightStream`,
+  4096x4096 and deliberately beyond any texture cap the game offers.
 - **Catching up by warp with craft in physics.** The catch-up seen was of craft at rest on a pad.
 - **Two games across the internet.** Both games and the server were on one machine. WSL in its default
   NAT mode cannot be reached from a Windows game at all, which is why `two-games.sh` publishes a
