@@ -78,7 +78,7 @@ try
         KsaBuild = Opt("ksa-build") ?? "",
         SnapshotEverySeconds = Math.Max(30.0, OptDouble("snapshot-every", 300.0)),
         WarpAnswerSeconds = Math.Clamp(OptDouble("warp-answer", 30.0), 1.0, 300.0),
-        LapseWithin = Math.Clamp(OptDouble("lapse-within", 30.0), 1.0, 3600.0),
+        LapseWithin = Math.Clamp(OptDouble("lapse-within", 10.0), 1.0, 3600.0),
         KeepTime = Opt("keep-time") is "true" or "1" or "yes",
         Speed = Math.Clamp(OptDouble("speed", 1.0), 0.0, 100.0),
     };

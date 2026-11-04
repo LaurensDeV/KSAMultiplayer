@@ -27,7 +27,7 @@ public sealed record ServerOptions
     /// ownership is what stops two games pulling one hull in two directions; sticky for ever meant
     /// the first player to touch a thing held it until they left, and a second could fly nothing.
     /// </summary>
-    public double LapseWithin { get; init; } = 30.0;
+    public double LapseWithin { get; init; } = 10.0;
 
     public double Speed { get; init; } = 1.0;
 }
