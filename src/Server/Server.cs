@@ -492,9 +492,31 @@ public sealed class GameServer : IDisposable
             else RunWarp(speed, now);
             return;
         }
-        if (_warpPhase == Wire.WarpPhase.Asking || normal) return;
-        // Just ended: a warp that can be asked for again at once is a warp nobody can get out of.
-        if (now - _warpQuietSince < WarpQuietSeconds) return;
+        if (_warpPhase == Wire.WarpPhase.Asking)
+        {
+            // Whoever is asking may still reach for another speed while the rest answer: it is the
+            // same question at a different number, so the answers already given stand. Nobody else
+            // gets a word in, since two warps put at once is a room that agrees to neither.
+            if (p.Id != _warpWho || normal || Math.Abs(speed - _warpSpeed) < 0.001f) return;
+            _warpSpeed = speed;
+            Log($"{Named(_warpWho)} now asks for {speed:0.##}x");
+            Broadcast(WarpState(), q => q.Loaded);
+            return;
+        }
+        if (normal) return;
+        // Just ended: whoever had it keeps it until the world has been at normal speed this long, so
+        // that stepping down through normal and back up is one warp and not two votes. Anybody else
+        // waits out the quiet, since a warp another player can pick up the instant it ends is a warp
+        // nobody can get out of.
+        if (now - _warpQuietSince < WarpQuietSeconds)
+        {
+            if (p.Id != _warpWho) return;
+            _warpPhase = Wire.WarpPhase.Running;
+            _warpVotes.Clear();
+            RunWarp(speed, now);
+            Log($"{p.Name} takes the world back to {speed:0.##}x");
+            return;
+        }
 
         (_warpWho, _warpSpeed, _warpPhase, _warpAskedAt, _warpNext) = (p.Id, speed, Wire.WarpPhase.Asking, now, 0.0);
         _warpVotes.Clear();

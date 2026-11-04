@@ -131,8 +131,15 @@ internal static class Sync
     {
         if (_client is not { Joined: true } c || Now != Stage.Playing) return false;
 
-        // The warp as the server has it, which is a round number, rather than as this world runs it.
-        double running = c.Warp is { Phase: Wire.WarpPhase.Running } w ? w.Speed : 1.0;
+        // The warp as the server has it, which is a round number, rather than as this world runs it;
+        // and while this player is the one asking, the speed being asked for, so the keys go on
+        // working through the question and the others watch the number they are answering change.
+        double running = c.Warp switch
+        {
+            { Phase: Wire.WarpPhase.Running } w => w.Speed,
+            { Phase: Wire.WarpPhase.Asking } w when w.Who == c.Id => w.Speed,
+            _ => 1.0,
+        };
         double next = direction == 0 ? 1.0 : World.WarpStepFrom(running, direction);
         // Either end of the ladder, or asked to stop a warp that is not running: taken and ignored.
         if (Math.Abs(next - running) >= 0.001)
