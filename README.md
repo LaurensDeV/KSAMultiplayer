@@ -14,8 +14,9 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
 
 ## Playing
 
-1. Install [StarMap](https://github.com/StarMapLoader/StarMap), then unzip `KSAMultiplayer-<version>.zip`
-   into KSA's `mods` folder and enable it, as with any StarMap mod.
+1. Install [StarMap](https://github.com/StarMapLoader/StarMap), then take
+   `KSAMultiplayer-<version>.zip` from the [releases](https://github.com/LaurensDeV/KSAMultiplayer/releases), unzip it into KSA's `mods` folder and
+   enable it, as with any StarMap mod.
 2. Everyone needs **the same KSA build** and **every mod the server's world uses**. The server refuses
    anyone who differs and says what is missing.
 3. Load any world and get into flight. The **Multiplayer** window is at the top right: enter the server's
@@ -41,8 +42,8 @@ Two craft with the same name can't both be seen: the panel tells you to rename y
 
 ## Running a server
 
-The server is a single self-contained file. Build it on any machine with the .NET 10 SDK; it needs no
-KSA files:
+The server is a single self-contained file. Take `ksamp-server-linux-x64.tar.gz` from the
+[releases](https://github.com/LaurensDeV/KSAMultiplayer/releases), or build it on any machine with the .NET 10 SDK; it needs no KSA files:
 
 ```bash
 ./tools/publish-server.sh              # linux-x64

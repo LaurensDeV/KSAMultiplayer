@@ -15,7 +15,6 @@ on:
       - "global.json"
       - "Directory.Build.props"
       - ".github/workflows/server-image.yml"
-    tags: ["v*"]
   workflow_dispatch:
 
 permissions:

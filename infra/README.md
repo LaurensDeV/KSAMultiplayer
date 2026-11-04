@@ -47,7 +47,8 @@ no token at all beyond SSH to the machine: the image is public.
 ## Releasing
 
 1. Push to `main`. **Server image** builds `deploy/Dockerfile` and pushes to
-   `ghcr.io/<owner>/ksamp-server`.
+   `ghcr.io/<owner>/ksamp-server`. A `v*` tag goes through **Release** instead, which builds the
+   image, the mod's zip and the server's executables and publishes them together.
 2. Take the line from that run's summary into `infra/server/.env`:
    `export TF_VAR_server_image=ghcr.io/<owner>/ksamp-server@sha256:...`
 3. `tofu apply` in `infra/server`.

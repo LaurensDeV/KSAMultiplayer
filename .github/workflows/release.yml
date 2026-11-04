@@ -1,0 +1,191 @@
+# A release is the mod and the server together. A game and a server of different Wire.Versions refuse
+# each other by name, so the zip a player installs and the image a host runs go out under one tag,
+# and the notes say which version they speak.
+#
+#   git tag -a v0.1.0 -m "..." && git push origin v0.1.0
+#
+# The version in the tag must be the <Version> in src/Mod/KSAMultiplayer.csproj: package.sh names the
+# zip from the project, so a tag that disagrees would publish a zip of another name.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  mod:
+    name: The mod a player installs
+    runs-on: ubuntu-latest
+    outputs:
+      ksa_build: ${{ steps.facts.outputs.ksa_build }}
+      protocol: ${{ steps.facts.outputs.protocol }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # CI skips this job without the key; a release must not. A release with no zip in it is the
+      # thing this workflow is for.
+      - uses: actions/checkout@v4
+        with:
+          repository: LaurensDeV/ksa-game-assemblies
+          path: .ksa-assemblies
+          ssh-key: ${{ secrets.KSA_ASSEMBLIES_KEY }}
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: The tag is the version in the project
+        run: |
+          tagged=${GITHUB_REF_NAME#v}
+          project=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' src/Mod/KSAMultiplayer.csproj)
+          if [[ "$tagged" != "$project" ]]; then
+              echo "::error::tag $GITHUB_REF_NAME against <Version>$project</Version> in src/Mod/KSAMultiplayer.csproj"
+              exit 1
+          fi
+
+      - name: Package
+        env:
+          KSA_DLL_DIR: ${{ github.workspace }}/.ksa-assemblies/current/dll
+        run: ./tools/package.sh
+
+      # What a player has to match: the build the mod was compiled against, and the version it speaks.
+      - id: facts
+        name: What it was built against
+        run: |
+          {
+              echo "ksa_build=$(cat .ksa-assemblies/current/KSA_BUILD)"
+              echo "protocol=$(grep -oP 'const ushort Version = \K[0-9]+' src/Protocol/Wire.cs)"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mod
+          path: dist/*.zip
+          if-no-files-found: error
+
+  server:
+    name: The server a host runs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Test
+        run: ./tools/test.sh
+
+      # Both architectures, since a hobby server is as likely to be an ARM box as an x86 one.
+      - name: Publish
+        run: |
+          for rid in linux-x64 linux-arm64; do
+              ./tools/publish-server.sh "$rid"
+              tar czf "dist/ksamp-server-$rid.tar.gz" -C "dist/ksamp-server-$rid" .
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  image:
+    name: The server as an image
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Built here rather than taken from the Server image workflow: that one runs on pushes to main
+      # and only when the server's own files change, so the commit a tag sits on may have no image.
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/ksamp-server
+          tags: |
+            type=ref,event=tag
+            type=sha,format=long
+
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  publish:
+    name: Publish
+    needs: [mod, server, image]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+
+      - name: Write the notes
+        env:
+          PROTOCOL: ${{ needs.mod.outputs.protocol }}
+          KSA_BUILD: ${{ needs.mod.outputs.ksa_build }}
+          DIGEST: ${{ needs.image.outputs.digest }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          cat > notes.md <<NOTES
+          A shared world for Kitten Space Agency: several players, each in their own game, flying in
+          one universe kept by a dedicated server.
+
+          Everyone in a world needs **KSA \`$KSA_BUILD\`** and a mod of this release. A game and a
+          server speaking different versions refuse each other by name rather than misread the
+          bytes, and this one speaks **protocol $PROTOCOL**.
+
+          ## Playing
+
+          Install [StarMap](https://github.com/StarMapLoader/StarMap), unzip \`KSAMultiplayer-*.zip\`
+          into KSA's \`mods\` folder and enable it. Load a world, get into flight, and the
+          **Multiplayer** window is at the top right.
+
+          There is a server at **\`mp.ksarmory.com\`** to try it on.
+
+          ## Hosting
+
+          \`\`\`bash
+          docker run -d --name ksamp -p 50100:50100/udp -v ksamp-world:/data \\
+              -e KSAMP_NAME="My server" ghcr.io/$OWNER/ksamp-server@$DIGEST
+          \`\`\`
+
+          Or \`ksamp-server-linux-x64.tar.gz\` below: one self-contained executable and a systemd
+          unit, needing no .NET and no KSA. The server has no world until a player gives it one.
+
+          ## State
+
+          Two games on one machine have flown in one world through it. What a rocket of many parts
+          does, and what two games across the internet do, is not known yet.
+          NOTES
+          cat notes.md
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md assets/*
