@@ -584,6 +584,9 @@ internal static class Sync
         foreach ((Vehicle v, string key) in Puppets)
         {
             if (!World.IsAlive(v)) continue;
+            // Never this player's own, whatever the bookkeeping says: nobody needs their name over
+            // their own craft, and a craft can be claimed between one frame's pass and the next.
+            if (c.OwnerOf(key) == c.Id || Owned.ContainsKey(key)) continue;
             double range = World.RangeFromCamera(v);
             if (!(range < NametagWithinM)) continue;
             if (World.ScreenOf(v) is not { } at) continue;

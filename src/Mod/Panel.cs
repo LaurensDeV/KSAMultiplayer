@@ -207,6 +207,7 @@ internal static class Panel
             draw.AddText(font, px, new float2(at.X - (nameBox.X / 2f), corner.Y), Tag, who);
             draw.AddText(font, px, new float2(at.X - (underBox.X / 2f), corner.Y + nameBox.Y), TagFaint, under);
             drawn++;
+
         }
         TagReport = $"{drawn} of {tags.Count} drawn at {px:F0}px, first at {tags[0].At.X:F0},{tags[0].At.Y:F0}";
     }
