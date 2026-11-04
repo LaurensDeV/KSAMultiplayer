@@ -148,6 +148,7 @@ internal sealed class Bridge
             ["can"] = Math.Round(Sync.Sustains, 3),
             ["here"] = World.Focused,
             ["achieved"] = Math.Round(World.Achieved, 3),
+            ["analytic"] = World.Analytic,
             ["tag_draw"] = Panel.TagReport,
             // What the nametag pass would draw this frame, so a tag that never appears can be told
             // from one drawn somewhere nobody looks.
@@ -156,6 +157,7 @@ internal sealed class Bridge
                 ["craft"] = t.Craft,
                 ["who"] = t.Who,
                 ["range_m"] = Math.Round(t.Range, 1),
+                ["flying"] = t.Flying,
                 ["x"] = Math.Round(t.At.X, 1),
                 ["y"] = Math.Round(t.At.Y, 1),
             }).ToList(),

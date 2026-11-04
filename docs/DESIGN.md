@@ -98,8 +98,12 @@ carries that player's system; one an operator imports carries whatever its own `
      5 m, drawn there over 0.15 s nearer. Without physics it is placed once a second at most, and only
      if 25 m out: set down on the ground with `TeleportToLocation`, or given its owner's orbit.
      `Track` draws each 0.15 s in the past between the two states either side, since every world keeps
-     the same universe time. Each carries its owner's name over it, within 2,000 km and in front of
-     the camera, so whose craft is whose can be seen rather than looked up.
+     the same universe time. The one a player is in carries their name, within 2,000 km and in front
+     of the camera; the rest of what they own carries a faint `Alice's Lander` within 20 km, which
+     is also why it will not let you aboard. A name over the world says where somebody is, and a
+     player is in one place: ownership is sticky and a player is not, so naming every hull somebody
+     has flown this session states as many falsehoods as it takes to tell one truth. What they are
+     in comes from the roster's own word, the same the scoreboard reads, so the two cannot differ.
    - **Time is kept** (`ClockFollow`): a gap under 3 s is closed at up to a tenth faster or slower, one
      larger by warping up to 10x, and a world well ahead waits. KSA steps a world by no more than its
      33 ms a frame, so the speed asked makes up a slower frame. The warp keys and pause are held to that

@@ -270,6 +270,11 @@ public sealed class GameServer : IDisposable
                 return;
             case Wire.State state when player.Loaded:
                 if (Grant(player, state.Key) is null) return;
+                // A claim says which craft is being flown; a state says which is not. Only the one
+                // they are said to be in may give it up, so a parked craft cannot unseat another.
+                bool atTheControls = (state.Flags & Wire.StateFlags.Controlled) != 0;
+                if (atTheControls && player.Controlling.Length == 0) Flying(player, state.Key);
+                else if (!atTheControls && player.Controlling == state.Key) Flying(player, "");
                 Wire.State relayed = state with { Owner = player.Id };
                 Broadcast(relayed, p => p.Loaded && p != player);
                 return;
@@ -277,13 +282,13 @@ public sealed class GameServer : IDisposable
                 bool had = OwnerOf(claim.Key) == player.Id;
                 // Only once it is theirs: a player refused a craft is not flying it, whatever they asked.
                 if (Grant(player, claim.Key, taking: claim.Controlling, made: claim.Made) is not { } granted) return;
-                if (claim.Controlling) player.Controlling = granted;
+                if (claim.Controlling) Flying(player, granted);
                 if (!had) OwnersChanged();
                 return;
             case Wire.Gone gone when player.Loaded && OwnerOf(gone.Key) == player.Id:
                 _crafts.Remove(gone.Key);
                 _gone[gone.Key] = UniverseClock.Now(_clock());
-                if (player.Controlling == gone.Key) player.Controlling = "";
+                if (player.Controlling == gone.Key) Flying(player, "");
                 Broadcast(gone, p => p.Loaded && p != player);
                 return;
             case Wire.WarpAsk ask when player.Loaded:
@@ -662,6 +667,18 @@ public sealed class GameServer : IDisposable
         Log(next < at
             ? $"the world falls to {next:0.##}x: {(double.IsFinite(room) ? $"the room can fly {room:0.##}x" : $"somebody is {late:0.#} s behind")}"
             : $"the world rises to {next:0.##}x of {_warpWanted:0.##}x");
+    }
+
+    /// <summary>
+    /// What a player is flying, told to everyone the moment it changes rather than at the next
+    /// roster: a name still hanging over the craft its player has just stepped out of is the whole
+    /// of what anybody notices.
+    /// </summary>
+    private void Flying(Player p, string key)
+    {
+        if (p.Controlling == key) return;
+        p.Controlling = key;
+        _rosterNext = 0.0;
     }
 
     private void Remove(Player p, string why)

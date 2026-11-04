@@ -199,7 +199,7 @@ internal static class Panel
     /// </summary>
     public static void DrawTags()
     {
-        List<(float2 At, string Who, string Craft, double Range)> tags = Sync.Nametags();
+        List<(float2 At, string Who, string Craft, double Range, bool Flying)> tags = Sync.Nametags();
         if (tags.Count == 0)
         {
             TagReport = "nothing of another player's to name";
@@ -210,8 +210,25 @@ internal static class Panel
         ImFontPtr font = ImGui.GetFont();
         float px = ImGui.GetFontSize();
         int drawn = 0;
-        foreach ((float2 at, string who, string craft, double range) in tags)
+        int marks = 0;
+        foreach ((float2 at, string who, string craft, double range, bool flying) in tags.OrderBy(t => t.Range))
         {
+            if (!flying)
+            {
+                // Hers, not her: one faint line and no box, so a craft somebody parked is never read
+                // as one they are sitting in. Only the nearest few, or a field of somebody's wreckage
+                // is a wall of their name.
+                if (++marks > MostMarks) continue;
+                string owned = $"{who}'s {craft}";
+                float2 mark = ImGui.CalcTextSize(owned);
+                float2 put = new(at.X - (mark.X / 2f), at.Y - mark.Y - 4f);
+                // Over its own shadow: there is no box behind it to read it against.
+                draw.AddText(font, px, new float2(put.X + 1f, put.Y + 1f), TagShadow, owned);
+                draw.AddText(font, px, put, Claim, owned);
+                drawn++;
+                continue;
+            }
+
             string under = $"{craft} · {Far(range)}";
             float2 nameBox = ImGui.CalcTextSize(who), underBox = ImGui.CalcTextSize(under);
             float wide = Math.Max(nameBox.X, underBox.X), high = nameBox.Y + underBox.Y;
@@ -226,10 +243,12 @@ internal static class Panel
             drawn++;
 
         }
-        TagReport = $"{drawn} of {tags.Count} drawn at {px:F0}px, first at {tags[0].At.X:F0},{tags[0].At.Y:F0}";
+        TagReport = $"{drawn} of {tags.Count} drawn, {tags.Count(t => t.Flying)} flown, at {px:F0}px";
     }
 
-    private static readonly float4 TagText = new(1f, 1f, 1f, 0.95f);
+    private const int MostMarks = 6;
+
+    private static readonly ImColor8 Claim = new(190, 205, 225, 120);
     private static readonly ImColor8 TagShade = new(0, 0, 0, 160);
     private static readonly ImColor8 Tag = new(255, 255, 255, 235);
     private static readonly ImColor8 TagFaint = new(190, 205, 225, 200);
@@ -237,12 +256,6 @@ internal static class Panel
 
     // Centred on the craft and written over its own shadow, so it can be read against the sky as well
     // as against the ground.
-    private static void Write(ImDrawListPtr draw, float2 at, float dy, string text, ImColor8 colour, float line)
-    {
-        float2 where = new(at.X - (text.Length * line * 0.25f), at.Y + dy - (line * 1.6f));
-        draw.AddText(new float2(where.X + 1f, where.Y + 1f), TagShadow, text);
-        draw.AddText(where, colour, text);
-    }
 
     private static string Far(double m) =>
         m < 1_000.0 ? $"{m:F0} m" : m < 100_000.0 ? $"{m / 1000.0:F1} km" : $"{m / 1000.0:F0} km";

@@ -643,6 +643,28 @@ public class ServerTests
     }
 
     [Fact]
+    public void WhatAPlayerIsFlyingFollowsThemAndIsGivenUp()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+
+        a.Claim("Rocket", controlling: true, made: false);
+        rig.Until(() => b.Players.Any(p => p.Id == a.Id && p.Controlling == "Rocket"), what: "Bob to see Alice in the rocket");
+
+        // She moves. Her name belongs on the lander now, and on nothing else -- though the rocket
+        // stays hers, which is what stops Bob taking it.
+        a.Claim("Lander", controlling: true, made: false);
+        rig.Until(() => b.Players.Any(p => p.Id == a.Id && p.Controlling == "Lander"), what: "Bob to see Alice in the lander");
+        Assert.Equal(a.Id, rig.Server.OwnerOf("Rocket"));
+
+        // And a craft sent without the controlled flag is one nobody is in: she is flying nothing.
+        a.SendState(new Wire.State(0, "Lander", 1, 0.0, "Earth", default, default, default, default,
+                                   new Quat(0, 0, 0, 1), default, 0f, Wire.StateFlags.None));
+        rig.Until(() => b.Players.Any(p => p.Id == a.Id && p.Controlling.Length == 0), what: "Bob to see Alice fly nothing");
+    }
+
+    [Fact]
     public void OneNoIsEnoughToStopAWarp()
     {
         using Rig rig = new();

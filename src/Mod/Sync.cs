@@ -646,27 +646,43 @@ internal static class Sync
         foreach (Vehicle v in MadeHere.Where(x => !World.IsAlive(x)).ToArray()) MadeHere.Remove(v);
     }
 
-    // Nothing further off than this is labelled: a tag on a craft half a world away is noise.
-    private const double NametagWithinM = 2_000_000.0;
+    // A player is named this far off; a craft of theirs they are not in is marked only this far.
+    // Who is out there can be worth seeing across a sky; whose parked hull that is matters where you
+    // are standing next to it.
+    private const double NametagWithinM = 2_000_000.0, ClaimWithinM = 20_000.0;
 
     /// <summary>
     /// Where each other player's craft is on the screen and whose it is, for the panel to draw over
     /// the world. Only craft another player owns: this player knows which one is theirs.
     /// </summary>
-    public static List<(float2 At, string Who, string Craft, double Range)> Nametags()
+    public static List<(float2 At, string Who, string Craft, double Range, bool Flying)> Nametags()
     {
-        List<(float2, string, string, double)> tags = [];
+        List<(float2, string, string, double, bool)> tags = [];
         if (_client is not { Joined: true } c) return tags;
+
+        // What each player is flying, by who they are rather than by what they are in: a player is
+        // in one craft, so a field of theirs can name only one, and a name cannot be in two places.
+        // The same word the scoreboard reads, so the tag and that column can never disagree.
+        Dictionary<byte, string> flying = [];
+        foreach (Wire.Player p in c.Players)
+        {
+            if (p.Controlling.Length > 0) flying[p.Id] = p.Controlling;
+        }
+
         foreach ((Vehicle v, string key) in Puppets)
         {
             if (!World.IsAlive(v)) continue;
-            // Never this player's own, whatever the bookkeeping says: nobody needs their name over
-            // their own craft, and a craft can be claimed between one frame's pass and the next.
-            if (c.OwnerOf(key) == c.Id || Owned.ContainsKey(key)) continue;
+            // Nobody's, or this player's own whatever the bookkeeping says: unnamed either way.
+            byte owner = c.OwnerOf(key);
+            if (owner == 0 || owner == c.Id || Owned.ContainsKey(key)) continue;
+
+            // Asked of whoever owns it, so a word gone stale can only fail to match and never put
+            // somebody's name on a craft that was never theirs.
+            bool flown = flying.GetValueOrDefault(owner, "") == key;
             double range = World.RangeFromCamera(v);
-            if (!(range < NametagWithinM)) continue;
+            if (!(range < (flown ? NametagWithinM : ClaimWithinM))) continue;
             if (World.ScreenOf(v) is not { } at) continue;
-            tags.Add((at, c.NameOf(c.OwnerOf(key)), key, range));
+            tags.Add((at, c.NameOf(owner), key, range, flown));
         }
         return tags;
     }
