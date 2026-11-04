@@ -207,6 +207,8 @@ jobs:
 
       # Re-runnable: a release already there is brought up to date rather than refused, so a tag
       # whose run failed halfway can be run again instead of being retired for a tag of its own.
+      # Run the whole thing again, not the failed job: download-artifact sees only the attempt it
+      # runs in, so a job rerun finds nothing from the jobs that passed the first time.
       - name: Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
