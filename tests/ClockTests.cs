@@ -30,6 +30,19 @@ public class ClockTests
         Assert.True(ClockFollow.Speed(5, 1) > 1.0 + ClockFollow.MostNudge);
         Assert.Equal(0, ClockFollow.Speed(-10, 1));
         Assert.Equal(0, ClockFollow.Speed(5, 0));
+
+        // While the world is warped, how late a game is counts in its own seconds. Five seconds of
+        // universe time at 5x is one second late, which is a nudge and not a chase.
+        Assert.Equal(5.0 * (1.0 + ClockFollow.MostNudge), ClockFollow.Speed(5, 5), 9);
+        Assert.Equal(5.0, ClockFollow.Speed(0, 5), 9);
+
+        // Properly late at 5x -- twenty seconds of its own -- and it catches up, from 5x not from 1x.
+        Assert.True(ClockFollow.Speed(100, 5) > 5.0 * (1.0 + ClockFollow.MostNudge));
+        Assert.Equal(5.0 * ClockFollow.MostCatchUp, ClockFollow.Speed(5 * 600, 5), 9);
+
+        // Ahead of a warped world by more than its own three seconds: wait, as at any other speed.
+        Assert.Equal(0, ClockFollow.Speed(-20, 5));
+        Assert.True(ClockFollow.Speed(-10, 5) > 0.0);
     }
 
     [Fact]

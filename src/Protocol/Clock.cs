@@ -60,13 +60,19 @@ public static class ClockFollow
     /// How fast to run a world that is <paramref name="behind"/> seconds behind the server, whose
     /// time runs at <paramref name="serverRate"/>: stopped with it, warped to catch up from far
     /// behind, and held while it is well ahead.
+    ///
+    /// <para>How far behind it is counts in seconds of its own, not in seconds of the world's: a
+    /// world running at 5x is a second late when it is five seconds of universe time behind, and
+    /// reading that as five would have it catch up ten times over, overshoot, stop, and judder
+    /// between the two for as long as the warp lasted.</para>
     /// </summary>
     public static double Speed(double behind, double serverRate)
     {
         if (!(serverRate > 0.0) || !double.IsFinite(behind)) return 0.0;
-        if (behind > CatchUpAboveSeconds) return serverRate * Math.Min(MostCatchUp, 1.0 + (behind / 2.0));
-        if (behind < -CatchUpAboveSeconds) return 0.0;
-        return serverRate * Math.Clamp(1.0 + (behind / CloseOverSeconds), 1.0 - MostNudge, 1.0 + MostNudge);
+        double late = behind / serverRate;
+        if (late > CatchUpAboveSeconds) return serverRate * Math.Min(MostCatchUp, 1.0 + (late / 2.0));
+        if (late < -CatchUpAboveSeconds) return 0.0;
+        return serverRate * Math.Clamp(1.0 + (late / CloseOverSeconds), 1.0 - MostNudge, 1.0 + MostNudge);
     }
 
     /// <summary>
