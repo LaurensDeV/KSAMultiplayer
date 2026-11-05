@@ -54,6 +54,8 @@ internal static class Hooks
                   "the key for normal speed steps from this world's speed rather than the shared one");
             Patch(AccessTools.Method(typeof(Universe), nameof(Universe.DestroyVehicleFromEvent)), nameof(BeforeDestroy),
                   "another player's craft can be wrecked in this world alone");
+            Patch(AccessTools.Method(typeof(Program), nameof(Program.RefreshVehiclesInFrame)), nameof(BeforeRefreshVehicles),
+                  "another player's craft is built while KSA is stepping the world, which fails its physics");
             Patch(AccessTools.PropertySetter(typeof(Program), nameof(Program.ControlledVehicle)), nameof(BeforeControl),
                   "another player's craft can be taken over here");
             Patch(AccessTools.Method(typeof(KittenEva), nameof(KittenEva.BoardVehicle), [typeof(Vehicle), typeof(EVADoor)]), nameof(BeforeBoard),
@@ -116,6 +118,25 @@ internal static class Hooks
         catch (Exception e)
         {
             Complain("showing another player's engines", e);
+        }
+    }
+
+    /// <summary>
+    /// The frame's quiet window: PrepareFrame has waited for last frame's solver jobs and has not
+    /// queued the next, so nothing is walking the world's vehicles and a craft may be added to it.
+    /// Every StarMap hook runs later than this, with the worker running, which is why the session
+    /// asks for a craft there and it is built here.
+    /// </summary>
+    private static void BeforeRefreshVehicles()
+    {
+        try
+        {
+            Sync.Settle();
+        }
+        catch (Exception e)
+        {
+            // Thrown on into KSA's own frame, this would take the game down with it.
+            Log.Error("putting another player's craft into this world", e);
         }
     }
 
@@ -283,7 +304,16 @@ internal static class Hooks
 
     private static double? Held()
     {
-        try { return Sync.HeldSpeed; }
+        try
+        {
+            // Nothing is held while the vehicle editor is open. KSA pauses the world to open it and
+            // runs it again on the way out (Program.OnFrameEditor), with IsEditorOpen already true
+            // for both, and this prefix would turn each into a speed put to the whole room: opening
+            // the VAB asked everybody to stop. Nobody else is in this player's editor, the shared
+            // clock runs on without them, and HoldTheClock brings their world back to it when they
+            // are at a craft again.
+            return Program.IsEditorOpen ? null : Sync.HeldSpeed;
+        }
         catch (Exception e)
         {
             Complain("holding the simulation speed", e);

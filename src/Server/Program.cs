@@ -174,7 +174,7 @@ if (!Console.IsInputRedirected || Environment.GetEnvironmentVariable("KSAMP_STDI
     ("deop <name>", "take that back, playing or not; the token stops working at once"),
     ("admins", "who is an admin"),
     ("clear [name]", "take every craft nobody is flying out of every game; clear Rocket_* narrows it"),
-    ("reload", "hand the world out again, which is the only thing that puts universe time back"),
+    ("reload", "hand the world out again, the only thing that puts universe time back; also reset"),
     ("save", "ask the longest-playing player for a fresh save of the world"),
     ("status", "players, craft, universe time, and what has crossed the wire"),
     ("version", "what this server is, what it speaks, and the KSA build it holds players to"),
@@ -228,7 +228,7 @@ void Command(string line, GameServer.Player? who = null)
                 ? "nobody is an admin; op <name> makes one of somebody who is playing"
                 : $"admins: {string.Join(", ", server.Admins.Names)}");
             break;
-        case "reload":
+        case "reload" or "reset":
             int put = server.ReloadAll("the operator asked");
             Answer(put == 0
                 ? server.HasWorld ? "nobody to hand the world to" : "there is no world to hand out"

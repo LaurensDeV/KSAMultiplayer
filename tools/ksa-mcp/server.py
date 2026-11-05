@@ -208,6 +208,7 @@ TOOLS = {
                "argument it answers as ksa_status does.",
                {"connect": {"type": "string"}, "name": {"type": "string"}, "password": {"type": "string"},
                 "disconnect": {"type": "boolean"}, "chat": {"type": "string"},
+                "editor": {"type": "boolean", "description": "open or close the vehicle editor, which the mod behaves differently in"},
                 "board": _num("show the player list for this many seconds, as holding Tab does"),
                 "warp": _num("ask everyone for the world to run at this speed; 0 pauses"),
                 "vote": {"type": "boolean", "description": "answer the warp somebody asked for"}}, [],

@@ -50,7 +50,10 @@ internal static class Panel
 
     // Enter is read as a press, not as a hold: it both opens a line and sends it, and the key is
     // still down the frame a line is sent.
-    private static bool _enterWas, _escapeWas;
+    private static bool _enterWas, _escapeWas, _tabWas;
+
+    // What Tab could not settle on its own, shown under the line until the next one is typed.
+    private static string _choices = "";
 
     private sealed record Settings(string Name, string Address, string Password, bool Visible);
 
@@ -345,8 +348,14 @@ internal static class Panel
         bool escape = World.KeyDown(GlfwKey.Escape);
         bool quit = escape && !_escapeWas;
         _escapeWas = escape;
+        // The scoreboard takes Tab too, but not while anything is being typed into, so the two never
+        // want it at once.
+        bool tab = World.KeyDown(GlfwKey.Tab);
+        bool completing = tab && !_tabWas;
+        _tabWas = tab;
 
-        if (_typing && quit) Stop();
+        if (_typing && completing) Complete();
+        else if (_typing && quit) Stop();
         else if (struck && !World.InMapView)
         {
             if (_typing) Send();
@@ -372,7 +381,7 @@ internal static class Panel
             ImGui.PushTextWrapPos(0f);
             foreach (Sync.Line line in Sync.Chat.TakeLast(ChatShown))
             {
-                if (line.FromServer) ImGui.TextColored(in ServerSaid, line.Text);
+                if (line.NotAPlayer) ImGui.TextColored(in ServerSaid, line.Text);
                 else ImGui.TextWrapped(line.Text);
             }
             ImGui.PopTextWrapPos();
@@ -386,10 +395,11 @@ internal static class Panel
                 }
                 ImGui.SetNextItemWidth(-1f);
                 ImGui.InputText("##chatline", ChatText);
+                if (_choices.Length > 0) ImGui.TextDisabled(_choices);
             }
             else
             {
-                ImGui.TextDisabled(Sync.Admin ? "Enter to chat, / for a command" : "Enter to chat");
+                ImGui.TextDisabled("Enter to chat, / for a command, Tab for a name");
             }
         }
         ImGui.End();
@@ -404,8 +414,38 @@ internal static class Panel
         Stop();
     }
 
+    /// <summary>
+    /// Tab fills in a player's name from what has been typed of it, which is what every command
+    /// taking a name is for -- /spectate, /op, /kick. The last word of the line is the one being
+    /// finished, so it works wherever in the line the name is. Several matches take it as far as
+    /// they agree and then say what is left to choose from, as a shell does.
+    /// </summary>
+    private static void Complete()
+    {
+        if (Sync.Client is not { Joined: true } c) return;
+        string line = ChatText.ToString();
+        int from = line.LastIndexOf(' ') + 1;
+        string typed = line[from..];
+        string[] fit = [.. c.Players.Select(p => p.Name)
+                                    .Where(n => n.StartsWith(typed, StringComparison.OrdinalIgnoreCase))
+                                    .Order()];
+        if (fit.Length == 0)
+        {
+            _choices = typed.Length > 0 ? $"nobody here starts with '{typed}'" : "";
+            return;
+        }
+        string common = fit[0];
+        foreach (string name in fit)
+        {
+            while (!name.StartsWith(common, StringComparison.OrdinalIgnoreCase)) common = common[..^1];
+        }
+        ChatText.SetValue(line[..from] + common + (fit.Length == 1 ? " " : ""));
+        _choices = fit.Length == 1 ? "" : string.Join("   ", fit);
+    }
+
     private static void Stop()
     {
+        _choices = "";
         ChatText.SetValue("");
         // The box stops being drawn, which is what gives the keyboard back: ImGui drops an active
         // item that is no longer there, and KSA hands the craft its keys again the same frame.

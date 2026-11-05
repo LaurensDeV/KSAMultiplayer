@@ -50,6 +50,11 @@ internal static class Sync
 
     private const int ChatKept = 50, SaidKept = 8;
 
+    // The least time between two descriptions of one craft. Long enough that a rocket coming apart
+    // is described a few times rather than twenty; short enough that a stage dropped on purpose is
+    // in the others' worlds before anybody looks for it.
+    private const double RedescribeEverySeconds = 2.0;
+
     public enum Stage { Off, Joining, Seeding, Waiting, Loading, Playing }
 
     private sealed class Mine(Vehicle craft)
@@ -87,10 +92,34 @@ internal static class Sync
 
     // Craft this game made itself, which are never another player's puppet here, whatever the server says of their name.
     private static readonly HashSet<Vehicle> MadeHere = [];
-    /// <param name="FromServer">Said by the server, which the chat window draws in its own colour.</param>
-    public readonly record struct Line(bool FromServer, string Text);
+    /// <param name="NotAPlayer">Said by the server or by this game rather than by somebody playing,
+    /// which the chat window draws in a colour of its own.</param>
+    public readonly record struct Line(bool NotAPlayer, string Text);
 
     private static readonly List<Line> ChatLines = [];
+
+    /// <summary>What was last said about a craft, when, and what is waiting to be said next.</summary>
+    private sealed class Description
+    {
+        public byte[]? Sent;
+        public double At;
+        public byte[]? Waiting;
+    }
+
+    private static readonly Dictionary<string, Description> Describes = [];
+
+    /// <summary>
+    /// Craft waiting to be put into this world, by the name the shared world calls them.
+    ///
+    /// <para>Building one adds it to its body's <c>Children</c> and to the system's lookup, and every
+    /// mod hook runs while the vehicle worker queued by <c>ExecuteNextVehicleSolvers</c> is still
+    /// running -- walking those very collections. Adding one then is a list modified under an
+    /// enumerator, which KSA reports as "Update task failed for vehicle(s)" and an
+    /// InvalidOperationException out of PhysicsBubble, for every craft in the bubble at once. So the
+    /// building is asked for here and done in <see cref="Settle"/>, inside the frame's one quiet
+    /// window.</para>
+    /// </summary>
+    private static readonly Dictionary<string, (byte[] Definition, string Owner)> ToBuild = [];
     private static readonly List<string> SaidLines = [];
 
     private static Client? _client;
@@ -285,6 +314,8 @@ internal static class Sync
         Renamed.Clear();
         MadeHere.Clear();
         Definitions.Clear();
+        Describes.Clear();
+        ToBuild.Clear();
         PlacedAt.Clear();
         Engines.Clear();
         World.ForgetEngines();
@@ -317,11 +348,67 @@ internal static class Sync
         string said = line.Trim();
         if (said.StartsWith('/'))
         {
-            if (said.Length > 1) Ask(said[1..]);
+            if (said.Length > 1 && !Here(said[1..])) Ask(said[1..]);
             return true;
         }
         if (said.Length > 0) SayChat(said);
         return false;
+    }
+
+    /// <summary>
+    /// A command this game answers itself, rather than one for the server. Pointing a camera is
+    /// nobody else's business and is no admin's privilege either, so it never leaves the machine.
+    /// </summary>
+    private static bool Here(string asked)
+    {
+        string[] parts = asked.Split(' ', 2, StringSplitOptions.TrimEntries);
+        // Said before the server answers, and the line goes on to it all the same: the server's own
+        // list is an admin's, and somebody who is no admin would otherwise never learn this one
+        // exists. Tab fills in a name in any of them.
+        if (parts[0] is "help" or "?")
+        {
+            Told("spectate <name>   put your camera on what somebody is flying; this one is your game's");
+            Told("Tab               fill in a player's name from what you have typed of it");
+            return false;
+        }
+        if (!parts[0].Equals("spectate", StringComparison.OrdinalIgnoreCase)
+            && !parts[0].Equals("watch", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+        Spectate(parts.Length > 1 ? parts[1] : "");
+        return true;
+    }
+
+    /// <summary>Puts the camera on what a player is flying, without taking it over.</summary>
+    private static void Spectate(string name)
+    {
+        if (_client is not { Joined: true } c) return;
+        if (name.Length == 0)
+        {
+            Told("spectate <name>: whose craft to watch");
+            return;
+        }
+        if (c.Players.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)) is not { Id: > 0 } who)
+        {
+            Told($"nobody called '{name}' is playing");
+            return;
+        }
+        if (who.Controlling.Length == 0)
+        {
+            Told($"{who.Name} is not flying anything");
+            return;
+        }
+        // By the name this world knows it under, which is not always the one the server uses: a craft
+        // whose name was already taken here was built under another.
+        if (World.Vehicles().FirstOrDefault(v => KeyOf(v) == who.Controlling) is not { } seen)
+        {
+            Told($"{who.Name} is flying {who.Controlling}, which is not in this world yet");
+            return;
+        }
+        Told(World.Watch(seen)
+            ? $"watching {who.Name}, flying {who.Controlling}"
+            : $"could not put the camera on {who.Controlling}");
     }
 
     /// <summary>Whether this server runs what this game asks of it.</summary>
@@ -540,7 +627,11 @@ internal static class Sync
 
     private static void Play(Client c)
     {
-        Snapshot(c);
+        Settled(c);
+        // Not while a sweep is waiting: it is applied further down this frame, and a save answered
+        // first would be of the world as it was and hand the server back everything it just cleared.
+        // One frame later the world is swept and the save is of that.
+        if (c.Swept.Count == 0) Snapshot(c);
         TakeRenames(c);
 
         // By what the shared world calls each craft. Two of this world's craft can want one name for a
@@ -588,6 +679,7 @@ internal static class Sync
         while (c.Gone.TryDequeue(out string? key))
         {
             Definitions.Remove(key);
+            Describes.Remove(key);
             if (here.TryGetValue(key, out Vehicle? gone) && !Owned.ContainsKey(key) && !MadeHere.Contains(gone))
             {
                 Puppets.Remove(gone);
@@ -618,6 +710,7 @@ internal static class Sync
                 Renamed.Remove(v);
                 Engines.Remove(v);
                 Definitions.Remove(key);
+                Describes.Remove(key);
                 PlacedAt.Remove(key);
                 Seen.Remove(v);
                 if (_claimed == key) _claimed = "";
@@ -730,15 +823,65 @@ internal static class Sync
     private static void Define(Client c, Vehicle v)
     {
         string key = KeyOf(v);
+        byte[] bytes;
         try
         {
-            c.Upload(new Blob(BlobKind.Vehicle, key, c.Id, World.Universe, World.Define(v, key)));
-            Log.Info($"sent the server how {key} is built");
+            bytes = World.Define(v, key);
         }
         catch (Exception e)
         {
             Log.Warn($"{key} could not be written down for the others: {e.GetBaseException().Message}");
+            return;
         }
+        Offer(c, key, bytes);
+    }
+
+    /// <summary>
+    /// A craft described to the others, at most once every <see cref="RedescribeEverySeconds"/> for
+    /// any one name.
+    ///
+    /// <para>A craft is described when this game adopts one it has not seen, and what it has seen is
+    /// a set of Vehicle objects. KSA remakes the remaining stack under the same name every time a
+    /// rocket sheds a part, and each remake is an object this game has never seen, so a breakup
+    /// describes one craft over and over: watched on a real server, 23 times in six seconds, each
+    /// copy relayed to every other game to be rebuilt. Which shape arrives matters far less than
+    /// that the last one does, so the newest is held and sent when the name may speak again.</para>
+    /// </summary>
+    private static void Offer(Client c, string key, byte[] bytes)
+    {
+        if (!Describes.TryGetValue(key, out Description? told)) Describes[key] = told = new Description();
+        // The same bytes are worth sending once, whenever that was: a craft remade unchanged is the
+        // craft they already have.
+        if (told.Sent is { } last && last.AsSpan().SequenceEqual(bytes))
+        {
+            told.Waiting = null;
+            return;
+        }
+        double now = Wall();
+        if (told.At > 0.0 && now - told.At < RedescribeEverySeconds)
+        {
+            told.Waiting = bytes;
+            return;
+        }
+        Describe(c, key, bytes, told, now);
+    }
+
+    /// <summary>What a craft settled into while it was coming apart, sent once its name may speak again.</summary>
+    private static void Settled(Client c)
+    {
+        double now = Wall();
+        foreach ((string key, Description told) in Describes)
+        {
+            if (told.Waiting is not { } bytes || now - told.At < RedescribeEverySeconds) continue;
+            Describe(c, key, bytes, told, now);
+        }
+    }
+
+    private static void Describe(Client c, string key, byte[] bytes, Description told, double now)
+    {
+        c.Upload(new Blob(BlobKind.Vehicle, key, c.Id, World.Universe, bytes));
+        (told.Sent, told.At, told.Waiting) = (bytes, now, null);
+        Log.Info($"sent the server how {key} is built, {bytes.Length} bytes");
     }
 
     // Every craft this player owns, sent: often the one flown, seldom the rest; and any that is gone, said so.
@@ -821,23 +964,10 @@ internal static class Sync
                 // One a frame: each is a craft built.
                 if (builtOne || track.Newest is null || !Definitions.TryGetValue(key, out byte[]? definition)) continue;
                 builtOne = true;
-                // This world may already hold a craft of that name -- this player's own kitten out of
-                // the same capsule -- so the one built here is given a name this world has free.
-                string localId = World.Taken(key) ? World.FreeLocalId(key) : key;
-                if (World.Build(definition, localId, out string why) is { } built)
-                {
-                    if (localId != key) Renamed[built] = key;
-                    Seen.Add(built);
-                    Built[key] = built;
-                    here[key] = v = built;
-                    Log.Info($"built {key}, {c.NameOf(owner)}'s{(localId != key ? $", called {localId} here" : "")}");
-                }
-                else
-                {
-                    Say($"{c.NameOf(owner)}'s {key} cannot be built here: {why}");
-                    Definitions.Remove(key);
-                    continue;
-                }
+                // Asked for rather than done: a craft is added to the world where KSA is not
+                // walking its vehicles. It stands here from the next frame, found through Built.
+                ToBuild[key] = (definition, c.NameOf(owner));
+                continue;
             }
             if (universe - track.HeardAt > lost) continue;
             wanted.Add(v);
@@ -986,10 +1116,45 @@ internal static class Sync
         if (SaidLines.Count > SaidKept) SaidLines.RemoveAt(0);
     }
 
-    private static void Chatted(bool fromServer, string line)
+    /// <summary>
+    /// The craft asked for since the last frame, put into the world. Called from a prefix on
+    /// <c>Program.RefreshVehiclesInFrame</c>: inside <c>PrepareFrame</c>, after the solver jobs queued
+    /// last frame have been waited for and before the next are queued, which is the one moment in a
+    /// frame when nothing is walking the world's vehicles.
+    /// </summary>
+    public static void Settle()
+    {
+        if (ToBuild.Count == 0 || Now != Stage.Playing) return;
+        foreach ((string key, (byte[] definition, string owner)) in ToBuild.ToArray())
+        {
+            ToBuild.Remove(key);
+            if (Built.ContainsKey(key)) continue;
+            // This world may already hold a craft of that name -- this player's own kitten out of the
+            // same capsule -- so the one built here is given a name this world has free.
+            string localId = World.Taken(key) ? World.FreeLocalId(key) : key;
+            if (World.Build(definition, localId, out string why) is { } built)
+            {
+                if (localId != key) Renamed[built] = key;
+                Seen.Add(built);
+                Built[key] = built;
+                Log.Info($"built {key}, {owner}'s{(localId != key ? $", called {localId} here" : "")}");
+            }
+            else
+            {
+                Say($"{owner}'s {key} cannot be built here: {why}");
+                Definitions.Remove(key);
+                Describes.Remove(key);
+            }
+        }
+    }
+
+    /// <summary>This game answering in the chat the player typed into, which is where they are looking.</summary>
+    private static void Told(string what) => Chatted(true, $"<game> {what}");
+
+    private static void Chatted(bool notAPlayer, string line)
     {
         Log.Info($"chat: {line}");
-        ChatLines.Add(new Line(fromServer, line));
+        ChatLines.Add(new Line(notAPlayer, line));
         if (ChatLines.Count > ChatKept) ChatLines.RemoveAt(0);
     }
 

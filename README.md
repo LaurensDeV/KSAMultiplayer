@@ -99,7 +99,8 @@ nobody is connected, unless `--keep-time` is given.
 | `--speed` | `KSAMP_SPEED` | `1` | how fast universe time runs |
 
 Commands typed into the server's console: `players`, `say <text>`, `kick <name> [why]`,
-`op <name>`, `deop <name>`, `admins`, `clear [name]`, `reload`, `save`, `status`, `version`, `quit`.
+`op <name>`, `deop <name>`, `admins`, `clear [name]`, `reload` (or `reset`), `save`, `status`,
+`version`, `quit`.
 It shuts down cleanly on Ctrl+C and on SIGTERM.
 
 `version` says what the server is, the protocol it speaks and the KSA build it holds players to --
@@ -112,12 +113,13 @@ out of every game that is in the world; a name narrows it, with `*` and `?` for 
 `clear Rocket_*` -- and a craft somebody is flying is never taken, whatever is asked for. The name
 goes to the games and each sweeps its own world by it, because the server only hears of a craft when
 somebody claims it: the fragments a spent stage breaks into belong to nobody, and they are most of
-what there is to sweep. The world on disk still holds them, so a fresh save is asked for, and once
-it arrives everybody is put back on *that* world: the cleared one, rather than the one they are
-standing in.
+what there is to sweep. The world on disk still holds them, so a fresh save is asked for -- from a game
+that has already swept, so what lands on disk is clean. Nobody is moved: everybody is standing in a
+world they swept themselves, so clearing costs no loading screen and leaves the clock alone.
 
-`reload` does that last step on its own, with the world as it stands. Each game loads it and comes
-back in a few seconds. Nobody reconnects for either, and nobody loses what they are flying.
+`reload`, or `reset`, is the other half and is asked for on its own: the world as it stands goes out
+to everybody again, and each game loads it and comes back in a few seconds. Nobody reconnects, and
+nobody loses what they are flying.
 
 ### Admins
 
@@ -143,7 +145,8 @@ to take an admin away, not enough to become one. A player has to be connected to
 is said once, to a game, and never stored anywhere it could be said again -- and the name it is
 remembered under follows whoever last joined with it, so `deop` names the player you can see.
 
-Putting everybody back on the world is also the only way universe time is ever put back. A game's own
+`reload` is also the only way universe time is ever put back, which is why it is a command of its
+own rather than something `clear` does on the way past. A game's own
 time comes down by loading a world and by no other means -- a game more than three seconds ahead of
 the server stops dead until the server catches up -- and while they are all loading there is nobody
 in the world, so the server's clock returns to the world's own time at the same moment theirs do.

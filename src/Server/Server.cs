@@ -152,9 +152,6 @@ public sealed class GameServer : IDisposable
     // the clock cannot be put back to a time nobody knows.
     private bool _worldTimeKnown;
 
-    // Whether the next save to arrive goes straight back out to everybody: set by a sweep, because
-    // the world the players are in still holds what was swept out of the server's tables.
-    private bool _handOutWhenSaved;
     private string[] _worldMods = [];
     private double _rosterNext, _ownersNext, _clockNext, _snapshotNext, _snapshotAskedAt = double.NegativeInfinity;
     private double _craftCountNext;
@@ -543,14 +540,6 @@ public sealed class GameServer : IDisposable
                 SetWorld(blob, p.KsaBuild, p.Mods, p.System);
                 Log($"{p.Name} saved the world: {blob.Data.Length / 1024} KB at universe time {blob.Universe:F0} s");
                 if (p.Seeding) OnLoaded(p, blob.Universe);
-                // The save a sweep asked for: the one world that does not hold what was cleared, so
-                // it is what everybody goes back on, the player who just saved it included -- a game
-                // left where it was would be those few seconds ahead of the rest and stand still.
-                if (_handOutWhenSaved)
-                {
-                    _handOutWhenSaved = false;
-                    ReloadAll("the world was cleared");
-                }
                 return;
             case BlobKind.Vehicle when p.Loaded && blob.Key.Length > 0:
                 // A definition under a name this player was refused is dropped; the claim that goes with
@@ -1039,10 +1028,11 @@ public sealed class GameServer : IDisposable
             + $"{(swept.Count > 0 ? $"; {swept.Count} of them were known here: {Named(swept)}" : "")}");
         Broadcast(new Wire.Chat(0, "the world is being cleared of craft nobody is flying"), p => p.Loaded);
         // The world on disk still holds them, so the next player to join would be handed them all
-        // back. This is the one moment the world is worth saving afresh -- and once that save is
-        // here, everybody is put back on it, which is the only way the craft leave the world rather
-        // than only the games, and the only way the clock is ever put back.
-        _handOutWhenSaved = AskSnapshot("the world was cleared of craft nobody was flying");
+        // back: this is the one moment it is worth saving afresh. The save comes from a game that
+        // has already swept, so it is clean, and nobody has to be put back on it -- everybody is
+        // standing in a world they swept themselves. Clearing therefore costs nobody a reload and
+        // does not touch the clock; reload is there for an operator who wants that, and says so.
+        AskSnapshot("the world was cleared of craft nobody was flying");
         return swept;
     }
 

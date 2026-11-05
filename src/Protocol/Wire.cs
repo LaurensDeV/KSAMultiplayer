@@ -56,8 +56,18 @@ public readonly record struct Quat(double X, double Y, double Z, double W)
 /// </summary>
 public static class Wire
 {
-    /// <summary>Changed whenever what a datagram means changes: a game speaking another version is refused by name.</summary>
-    public const ushort Version = 12;
+    /// <summary>
+    /// Changed whenever what a datagram means changes: a game speaking another version is refused by
+    /// name.
+    ///
+    /// <para>It is also the only way to say "everybody moves together", and 13 was that rather than a
+    /// change to the wire: 12 and 13 carry identical datagrams. What moved was the mod, and two of
+    /// its fixes are no good unless every game has them -- one old mod asks the whole room to pause
+    /// every time its player opens the vehicle editor, and describes a craft coming apart twenty
+    /// times over for everybody else to rebuild. A fix that one straggler can undo for the room is
+    /// not a fix until the room is refused without it.</para>
+    /// </summary>
+    public const ushort Version = 13;
 
     public const int BufferBytes = 8192;
     public const int NameChars = 24;
