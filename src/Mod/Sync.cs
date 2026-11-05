@@ -735,7 +735,7 @@ internal static class Sync
                 builtOne = true;
                 // This world may already hold a craft of that name -- this player's own kitten out of
                 // the same capsule -- so the one built here is given a name this world has free.
-                string localId = World.Vehicles().Any(x => x.Id == key) ? World.FreeLocalId(key) : key;
+                string localId = World.Taken(key) ? World.FreeLocalId(key) : key;
                 if (World.Build(definition, localId, out string why) is { } built)
                 {
                     if (localId != key) Renamed[built] = key;

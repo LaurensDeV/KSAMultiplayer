@@ -311,14 +311,32 @@ internal static class World
         return Blob.Gzip(stream.ToArray());
     }
 
-    /// <summary>A name no craft in this world has, like the one asked for.</summary>
+    /// <summary>
+    /// Whether this world already has something of this name: a craft, a body, anything of KSA's.
+    ///
+    /// <para>One lookup holds all of them, under a hash of the name, and nothing else in the game
+    /// goes near two of one name -- so this asks that lookup rather than only the craft.</para>
+    /// </summary>
+    public static bool Taken(string id)
+    {
+        try
+        {
+            return KSA.Universe.CurrentSystem is not { } system || system.All.TryGet(id, out _);
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"could not look {id} up in this world: {e.GetBaseException().Message}");
+            return true;
+        }
+    }
+
+    /// <summary>A name nothing in this world answers to, like the one asked for.</summary>
     public static string FreeLocalId(string root)
     {
-        List<Vehicle> all = Vehicles();
         for (int n = 2; n < 1000; n++)
         {
             string tried = $"{root} ({n})";
-            if (!all.Any(v => v.Id == tried)) return tried;
+            if (!Taken(tried)) return tried;
         }
         return $"{root} ({Guid.NewGuid():N})";
     }
@@ -362,9 +380,23 @@ internal static class World
                 why = $"its body {data.ParentBody.Id} is not in this world";
                 return null;
             }
+            // KSA's lookup refuses a second thing under one hash with a line in its own log and
+            // nothing else: no throw, and a craft back from here that is in no lookup. Nothing would
+            // ever list it, nothing would step it, nothing would sweep it -- another player's craft
+            // standing in this world for ever, which the mod would go on treating as their puppet.
+            if (Taken(data.Id))
+            {
+                why = $"this world already has something called {data.Id}";
+                return null;
+            }
             Vehicle built = string.IsNullOrEmpty(data.Character)
                 ? Vehicle.CreateVehicleFromSaveGameData(system, data)
                 : KittenEva.CreateKittenFromSaveData(system, data);
+            if (system.All.Get(data.Id) is not { } registered || !ReferenceEquals(registered, built))
+            {
+                why = $"KSA did not take {data.Id} into this world";
+                return null;
+            }
             parent.Children.Add(built);
             return built;
         }

@@ -120,7 +120,11 @@ shared one.
      world asked whether it holds one says no for a frame or two and would otherwise be told to build
      it again. A definition whose bytes are the ones already held is ignored rather than acted on, for
      the same reason: tearing the craft down to build it back is how a world comes to hold two of it,
-     and KSA throws when a physics step meets one craft twice. With physics here it is pulled to its owner's state in `Vehicle.PrepareWorker`, the
+     and KSA throws when a physics step meets one craft twice. The name it is built under has to be
+     one nothing in this world answers to, craft or body alike: KSA keeps everything in one lookup
+     under a hash of its name and refuses a second thing under one hash with a line in its own log
+     and nothing else, handing back a craft that is in no lookup -- never listed, never stepped,
+     never swept, and another player's puppet standing here for ever. With physics here it is pulled to its owner's state in `Vehicle.PrepareWorker`, the
      one window where a write to a craft's state survives the frame: put there outright from more than
      5 m, drawn there over 0.15 s nearer. Without physics it is placed once a second at most, and only
      if 25 m out: set down on the ground with `TeleportToLocation`, or given its owner's orbit.
