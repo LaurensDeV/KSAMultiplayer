@@ -166,10 +166,9 @@ against the wrong origin. Still happening on 0.6.1, by 0.26-0.38 s, a whole bubb
 once; it was 2.7 s on 0.5.0, which is likelier to be the clock being further out that session than
 anything the fix did.
 
-The second one is not understood yet. What is known: the craft's origin comes from the epoch it was
-last placed at, that epoch is this mod's choice, and nothing yet makes it agree with the bubble a
-craft will later join. Guessing at it has already moved one failure rather than removing it, so the
-next step is to work out what origin a bubble will use before choosing one, not another epoch.
+The second one is the catch-up warp, which the log below works out: the bubble's origin falls
+behind the universe clock because the mod is running the clock at up to ten times speed, so a craft
+placed at the clock's time is in the bubble's future. Nothing is wrong with the epoch.
 
 ## 2026-11-05 -- everybody crashed at once on 0.7.0
 
@@ -190,3 +189,74 @@ server shows two players naming the same fragments, which is that loop seen from
 Rate limits bound how fast it runs and do not stop it. What has to change is which craft a game is
 allowed to call its own, and that wants a reproduction here -- two games, a many-part rocket, a
 deliberate breakup -- rather than another guess against a live server.
+
+## 2026-11-05 -- the 20-second origin gaps are the mod warping the clock to catch up
+
+A fourth log, Beik's, on 0.7.0 at `mp.ksarmory.com`: 331 errors, no exception anywhere, and the
+line that explains the other three.
+
+```
+ERROR Called SnapToLeader with body time 169992,129844643 but origin time 169969,068541585
+```
+
+Body time is the world's universe time; origin time is the bubble's. The bubble is **23 seconds
+behind the world it is in**. Measured across the session, the refused origins are not a drift that
+grows -- they are a spike that comes and goes with the breakups:
+
+| minute | refusals | median gap | worst |
+| --- | --- | --- | --- |
+| 22:23 | 16 | 2.5 s | 2.8 s |
+| 22:25 | 242 | 8.2 s | 19.9 s |
+| 22:26 | 22 | 0.4 s | 2.5 s |
+| 22:34 | 41 | 21.0 s | 24.9 s |
+| 22:35 | 6 | 0.7 s | 2.4 s |
+
+Quiet minutes sit under a second. The two minutes with a hundred-odd fragments in the air sit at
+eight and twenty-one.
+
+**It is the catch-up warp.** `ClockFollow.Speed` runs a world that is more than
+`CatchUpAboveSeconds` (3 s) behind the server at up to `MostCatchUp` (10) times speed, and
+`Sync.cs` applies that whenever anything of this game's own is in physics. A breakup makes frames
+long, long frames fall behind the server, and the mod answers by running the world ten times
+faster. Universe time then advances ten times a second while a bubble can step at most
+`World.StepCap` of it a frame, so the bubble's origin falls tens of seconds behind the clock, and
+every craft placed at the clock's time is refused by `TryUpdateKinematicOrigin` as being in the
+future. That is the whole of the "joining a bubble" fault left open above: nothing is wrong with
+the epoch the mod chooses, the clock it chooses it against has been warped out from under the
+bubbles.
+
+And it closes a loop. The breakup slows the game; the slow game falls behind; the mod warps to
+catch up; the warp breaks the bubbles' origins so craft are read against the wrong frame, put in
+the wrong place, and collide; the collisions make more breakup. Catching up by running faster can
+only work where there is headroom, and the one moment it is reached for is the moment there is
+none.
+
+The same log confirms the rebuild loop from the outside, in KSA's own words:
+
+```
+22:34:52.738  WARN Vehicle 'superheavystock' destroyed - 138 parts exceeded their crash tolerance at once
+22:34:53.098  WARN Vehicle 'superheavystock' destroyed - 127 parts exceeded their crash tolerance at once
+22:34:53.260  WARN Vehicle 'superheavystock' destroyed - 123 parts exceeded their crash tolerance at once
+22:34:53.431  WARN Vehicle 'superheavystock' destroyed - 135 parts exceeded their crash tolerance at once
+```
+
+One name, four destructions in 0.7 s, a different part count each time: built, exploded, built
+again from the owner's next word, exploded again. `Octo Smoke Monster` did it twice at 741 and 681
+parts. `NewRocket_3_13` was destroyed 17 times. 88 destructions of 36 distinct craft. The build
+limit that counts every build rather than only rebuilds is not in 0.7.0, and this is what it is for.
+
+KSA also has a ceiling of its own, which a shared world reaches far sooner than one player can:
+
+```
+WARN ExplosionSystem: more than 32 destruction requests this frame, keeping the strongest
+WARN Freed only 27 of 33 slots - 'NewRocket_1' is breaking up past 30 vehicles
+```
+
+Thirty vehicles a breakup and thirty-two destructions a frame. One player's rocket coming apart
+does not reach that; four players' copies of four players' rockets do, and past it the engine
+starts dropping pieces -- so the two games stop agreeing on what exists even before the mod does
+anything wrong.
+
+The log ends as the others do: `started loading save game 'Multiplayer'` at 22:35:56, nothing
+after it, and the crash-dump monitor gone with exit code 143 thirty seconds later. No exception.
+The game did not throw; it stopped, mid world load, while being handed a world.
