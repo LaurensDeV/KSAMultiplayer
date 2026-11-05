@@ -23,6 +23,7 @@ dedicated server (`ksamp-server`) that runs on Linux with no game installed.
 ./tools/package.sh                  # the mod's zip
 ./tools/deploy.sh                   # the mod into this machine's KSA, with the bridge on
 ./tools/two-games.sh --test         # two games and a server on this machine, in one world
+./tools/breakup.sh                  # fly one game's rocket apart, and count both worlds
 ```
 
 The mod has been run in a game, through `src/Mod/Bridge.cs` and `tools/ksa-mcp`. `two-games.sh` runs

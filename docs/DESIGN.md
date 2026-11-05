@@ -218,6 +218,13 @@ against KSA `2026.10.25.5707`:
   built in the first from its definition and stood where its owner put it.
 - **Adopting a new craft.** That kitten appeared as a new craft, was taken as its player's and
   described to the other game, unprompted.
+- **One game's rocket coming apart, and what the other is left holding.** `tools/breakup.sh` stages
+  it and reads both worlds. A staged the 89-part `Rocket` to pieces; B, which only watched, came out
+  of it holding fifteen craft A had never heard of and twenty-eight of its thirty-seven craft
+  neither its own nor anybody else's, while A had none. Nothing exploded, and the made-up craft
+  accumulate per build rather than per impact: a definition is of a craft whose staging has already
+  happened, and KSA leaves its jettisoned pieces standing as vehicles of their own. Written up in
+  `errors.md`; the two numbers the rig prints are zero in a world that is working.
 - **Keeping the server's time.** Both the ±10% nudge and the catch-up warp: a game 15 s behind after
   a load was run at 8.4x until it caught up, and both then settled at 1.1x.
 - **Catching up by warp with craft in physics, and what it costs.** Four players on 0.7.0: while

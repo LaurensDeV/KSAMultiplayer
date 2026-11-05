@@ -181,6 +181,7 @@ be reached -- `tmux` or `screen` is the way to keep one for a service.
 | `./tools/run.sh` | deploy and launch the game, showing the mod's log |
 | `./tools/play.sh` | the game with this mod and nothing else, in a profile of its own |
 | `./tools/two-games.sh --test` | two games and a server on this machine, joined to one world |
+| `./tools/breakup.sh` | fly one game's rocket apart and count what it did to both worlds |
 
 | Path | |
 | --- | --- |
