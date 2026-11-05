@@ -107,6 +107,19 @@ internal static class Sync
     }
 
     private static readonly Dictionary<string, Description> Describes = [];
+
+    /// <summary>
+    /// Craft waiting to be put into this world, by the name the shared world calls them.
+    ///
+    /// <para>Building one adds it to its body's <c>Children</c> and to the system's lookup, and every
+    /// mod hook runs while the vehicle worker queued by <c>ExecuteNextVehicleSolvers</c> is still
+    /// running -- walking those very collections. Adding one then is a list modified under an
+    /// enumerator, which KSA reports as "Update task failed for vehicle(s)" and an
+    /// InvalidOperationException out of PhysicsBubble, for every craft in the bubble at once. So the
+    /// building is asked for here and done in <see cref="Settle"/>, inside the frame's one quiet
+    /// window.</para>
+    /// </summary>
+    private static readonly Dictionary<string, (byte[] Definition, string Owner)> ToBuild = [];
     private static readonly List<string> SaidLines = [];
 
     private static Client? _client;
@@ -302,6 +315,7 @@ internal static class Sync
         MadeHere.Clear();
         Definitions.Clear();
         Describes.Clear();
+        ToBuild.Clear();
         PlacedAt.Clear();
         Engines.Clear();
         World.ForgetEngines();
@@ -697,7 +711,6 @@ internal static class Sync
                 Engines.Remove(v);
                 Definitions.Remove(key);
                 Describes.Remove(key);
-            Describes.Remove(key);
                 PlacedAt.Remove(key);
                 Seen.Remove(v);
                 if (_claimed == key) _claimed = "";
@@ -951,26 +964,10 @@ internal static class Sync
                 // One a frame: each is a craft built.
                 if (builtOne || track.Newest is null || !Definitions.TryGetValue(key, out byte[]? definition)) continue;
                 builtOne = true;
-                // This world may already hold a craft of that name -- this player's own kitten out of
-                // the same capsule -- so the one built here is given a name this world has free.
-                string localId = World.Taken(key) ? World.FreeLocalId(key) : key;
-                if (World.Build(definition, localId, out string why) is { } built)
-                {
-                    if (localId != key) Renamed[built] = key;
-                    Seen.Add(built);
-                    Built[key] = built;
-                    here[key] = v = built;
-                    Log.Info($"built {key}, {c.NameOf(owner)}'s{(localId != key ? $", called {localId} here" : "")}");
-                }
-                else
-                {
-                    Say($"{c.NameOf(owner)}'s {key} cannot be built here: {why}");
-                    Definitions.Remove(key);
-                    Describes.Remove(key);
-                Describes.Remove(key);
-            Describes.Remove(key);
-                    continue;
-                }
+                // Asked for rather than done: a craft is added to the world where KSA is not
+                // walking its vehicles. It stands here from the next frame, found through Built.
+                ToBuild[key] = (definition, c.NameOf(owner));
+                continue;
             }
             if (universe - track.HeardAt > lost) continue;
             wanted.Add(v);
@@ -1117,6 +1114,38 @@ internal static class Sync
         Log.Info($"multiplayer: {what}");
         SaidLines.Add(what);
         if (SaidLines.Count > SaidKept) SaidLines.RemoveAt(0);
+    }
+
+    /// <summary>
+    /// The craft asked for since the last frame, put into the world. Called from a prefix on
+    /// <c>Program.RefreshVehiclesInFrame</c>: inside <c>PrepareFrame</c>, after the solver jobs queued
+    /// last frame have been waited for and before the next are queued, which is the one moment in a
+    /// frame when nothing is walking the world's vehicles.
+    /// </summary>
+    public static void Settle()
+    {
+        if (ToBuild.Count == 0 || Now != Stage.Playing) return;
+        foreach ((string key, (byte[] definition, string owner)) in ToBuild.ToArray())
+        {
+            ToBuild.Remove(key);
+            if (Built.ContainsKey(key)) continue;
+            // This world may already hold a craft of that name -- this player's own kitten out of the
+            // same capsule -- so the one built here is given a name this world has free.
+            string localId = World.Taken(key) ? World.FreeLocalId(key) : key;
+            if (World.Build(definition, localId, out string why) is { } built)
+            {
+                if (localId != key) Renamed[built] = key;
+                Seen.Add(built);
+                Built[key] = built;
+                Log.Info($"built {key}, {owner}'s{(localId != key ? $", called {localId} here" : "")}");
+            }
+            else
+            {
+                Say($"{owner}'s {key} cannot be built here: {why}");
+                Definitions.Remove(key);
+                Describes.Remove(key);
+            }
+        }
     }
 
     /// <summary>This game answering in the chat the player typed into, which is where they are looking.</summary>

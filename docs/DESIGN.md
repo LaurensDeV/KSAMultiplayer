@@ -286,6 +286,10 @@ against KSA `2026.10.25.5707`:
 - **Spectating, and finishing a name with Tab.** Both are the game's own, answered without the
   server hearing of them, and both are driven only by hand so far: no run has watched a camera land
   on another player's craft, nor a half-typed name fill itself in.
+- **Whether building in the quiet window cures the physics failures.** Two games on one machine,
+  one kitten sent out: it was built as the other's puppet from the new window, no patch warning, no
+  `Update task failed` in either game. That shows nothing broken, not the race cured -- the failures
+  were seen with three players and two rockets in pieces, which is a load no rig here can make.
 - **A craft described over and over while it comes apart.** A game adopts a craft it has not seen,
   and `Seen` holds Vehicle objects: when KSA destroys and remakes a stack under the same Id, as it
   does while a rocket breaks up, the new object is unseen and the craft is described again. Watched
