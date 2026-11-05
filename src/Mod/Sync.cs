@@ -50,6 +50,11 @@ internal static class Sync
 
     private const int ChatKept = 50, SaidKept = 8;
 
+    // The least time between two descriptions of one craft. Long enough that a rocket coming apart
+    // is described a few times rather than twenty; short enough that a stage dropped on purpose is
+    // in the others' worlds before anybody looks for it.
+    private const double RedescribeEverySeconds = 2.0;
+
     public enum Stage { Off, Joining, Seeding, Waiting, Loading, Playing }
 
     private sealed class Mine(Vehicle craft)
@@ -92,6 +97,16 @@ internal static class Sync
     public readonly record struct Line(bool NotAPlayer, string Text);
 
     private static readonly List<Line> ChatLines = [];
+
+    /// <summary>What was last said about a craft, when, and what is waiting to be said next.</summary>
+    private sealed class Description
+    {
+        public byte[]? Sent;
+        public double At;
+        public byte[]? Waiting;
+    }
+
+    private static readonly Dictionary<string, Description> Describes = [];
     private static readonly List<string> SaidLines = [];
 
     private static Client? _client;
@@ -286,6 +301,7 @@ internal static class Sync
         Renamed.Clear();
         MadeHere.Clear();
         Definitions.Clear();
+        Describes.Clear();
         PlacedAt.Clear();
         Engines.Clear();
         World.ForgetEngines();
@@ -597,6 +613,7 @@ internal static class Sync
 
     private static void Play(Client c)
     {
+        Settled(c);
         // Not while a sweep is waiting: it is applied further down this frame, and a save answered
         // first would be of the world as it was and hand the server back everything it just cleared.
         // One frame later the world is swept and the save is of that.
@@ -648,6 +665,7 @@ internal static class Sync
         while (c.Gone.TryDequeue(out string? key))
         {
             Definitions.Remove(key);
+            Describes.Remove(key);
             if (here.TryGetValue(key, out Vehicle? gone) && !Owned.ContainsKey(key) && !MadeHere.Contains(gone))
             {
                 Puppets.Remove(gone);
@@ -678,6 +696,8 @@ internal static class Sync
                 Renamed.Remove(v);
                 Engines.Remove(v);
                 Definitions.Remove(key);
+                Describes.Remove(key);
+            Describes.Remove(key);
                 PlacedAt.Remove(key);
                 Seen.Remove(v);
                 if (_claimed == key) _claimed = "";
@@ -790,15 +810,65 @@ internal static class Sync
     private static void Define(Client c, Vehicle v)
     {
         string key = KeyOf(v);
+        byte[] bytes;
         try
         {
-            c.Upload(new Blob(BlobKind.Vehicle, key, c.Id, World.Universe, World.Define(v, key)));
-            Log.Info($"sent the server how {key} is built");
+            bytes = World.Define(v, key);
         }
         catch (Exception e)
         {
             Log.Warn($"{key} could not be written down for the others: {e.GetBaseException().Message}");
+            return;
         }
+        Offer(c, key, bytes);
+    }
+
+    /// <summary>
+    /// A craft described to the others, at most once every <see cref="RedescribeEverySeconds"/> for
+    /// any one name.
+    ///
+    /// <para>A craft is described when this game adopts one it has not seen, and what it has seen is
+    /// a set of Vehicle objects. KSA remakes the remaining stack under the same name every time a
+    /// rocket sheds a part, and each remake is an object this game has never seen, so a breakup
+    /// describes one craft over and over: watched on a real server, 23 times in six seconds, each
+    /// copy relayed to every other game to be rebuilt. Which shape arrives matters far less than
+    /// that the last one does, so the newest is held and sent when the name may speak again.</para>
+    /// </summary>
+    private static void Offer(Client c, string key, byte[] bytes)
+    {
+        if (!Describes.TryGetValue(key, out Description? told)) Describes[key] = told = new Description();
+        // The same bytes are worth sending once, whenever that was: a craft remade unchanged is the
+        // craft they already have.
+        if (told.Sent is { } last && last.AsSpan().SequenceEqual(bytes))
+        {
+            told.Waiting = null;
+            return;
+        }
+        double now = Wall();
+        if (told.At > 0.0 && now - told.At < RedescribeEverySeconds)
+        {
+            told.Waiting = bytes;
+            return;
+        }
+        Describe(c, key, bytes, told, now);
+    }
+
+    /// <summary>What a craft settled into while it was coming apart, sent once its name may speak again.</summary>
+    private static void Settled(Client c)
+    {
+        double now = Wall();
+        foreach ((string key, Description told) in Describes)
+        {
+            if (told.Waiting is not { } bytes || now - told.At < RedescribeEverySeconds) continue;
+            Describe(c, key, bytes, told, now);
+        }
+    }
+
+    private static void Describe(Client c, string key, byte[] bytes, Description told, double now)
+    {
+        c.Upload(new Blob(BlobKind.Vehicle, key, c.Id, World.Universe, bytes));
+        (told.Sent, told.At, told.Waiting) = (bytes, now, null);
+        Log.Info($"sent the server how {key} is built, {bytes.Length} bytes");
     }
 
     // Every craft this player owns, sent: often the one flown, seldom the rest; and any that is gone, said so.
@@ -896,6 +966,9 @@ internal static class Sync
                 {
                     Say($"{c.NameOf(owner)}'s {key} cannot be built here: {why}");
                     Definitions.Remove(key);
+                    Describes.Remove(key);
+                Describes.Remove(key);
+            Describes.Remove(key);
                     continue;
                 }
             }
