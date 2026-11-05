@@ -610,6 +610,87 @@ internal static class World
         }
     }
 
+    // Craft whose engines were last drawn from here rather than out of KSA's own step. What is
+    // written below is gone again by the next step, so a craft that has stopped burning needs
+    // writing dark once; and a craft KSA is burning for real is left to its own numbers.
+    private static readonly HashSet<Vehicle> _shown = [];
+    private static bool _saidNoPlume;
+
+    /// <summary>Forgets which craft were drawn burning, when this game is its own again.</summary>
+    public static void ForgetEngines() => _shown.Clear();
+
+    /// <summary>
+    /// Another player's craft drawn as burning, for the frame about to be drawn.
+    ///
+    /// <para>Setting the engine on is only an input, and out there nothing reads it. What the plume,
+    /// the volumetric exhaust and the exhaust light are every one of them drawn from is
+    /// <c>RocketNozzleState.DutyCycle</c>, and that is accumulated only inside a full physics step:
+    /// a craft of this game's own in freefall or at rest goes down a cheaper path that clears the
+    /// duty cycle every frame and never adds to it, so another player's craft out there is dark
+    /// however hard its owner is burning. This writes what the step it never ran would have left
+    /// behind -- the chamber conditions that engine's own design gives at that throttle, the exhaust
+    /// its nozzles make of them, and a duty cycle -- in a prefix on the calls that read it.</para>
+    ///
+    /// <para>It changes nothing the craft does. KSA works a core's conditions out from its throttle
+    /// and a nozzle's thrust fraction out from those conditions on every step it runs; neither the
+    /// throttle nor the thrust fraction is written here, and the active nozzles that thrust and draw
+    /// propellant are counted from the thrust fraction. What is written is read by this frame's
+    /// renderers and overwritten by the next step from numbers this never touched.</para>
+    /// </summary>
+    public static void ShowEngine(Vehicle v, bool on, float throttle)
+    {
+        if (!on && !_shown.Contains(v)) return;
+        try
+        {
+            if (v.Parts is not { RocketNozzles: { } nozzles, RocketCores: { } cores }) return;
+            if (on && !_shown.Contains(v) && Drawn(nozzles)) return;
+            float ambient = v.PhysicsEnvironment.AtmosphericPressure;
+            // Enough of a throttle to be something: a core at nothing has no conditions and makes no
+            // plume, and a craft said to be burning at nothing is a craft whose throttle was not read.
+            float open = float.IsFinite(throttle) ? Math.Clamp(throttle, 0.05f, 1f) : 1f;
+            Span<RocketNozzle> modules = nozzles.Modules;
+            for (int i = 0; i < modules.Length; i++)
+            {
+                RocketNozzle nozzle = modules[i];
+                if (nozzle.Rocket?.Core is not { } core) continue;
+                ModuleStateful<RocketNozzle, RocketNozzleState, EmptyStruct, RocketNozzleFxState>.StateList.ModuleAndAllMutableStatesRef noz =
+                    nozzles.GetModuleAndAllMutableStatesForInitialization(nozzle);
+                if (!on)
+                {
+                    (noz.State.DutyCycle, noz.State.AverageThrustFraction) = (0f, 0f);
+                    continue;
+                }
+                RocketCoreConditions conditions = core.ComputeConditions(open);
+                ModuleStateful<RocketCore, RocketCoreState, RocketCoreGlobalState, EmptyStruct>.StateList.ModuleAndAllMutableStatesRef hot =
+                    cores.GetModuleAndAllMutableStatesForInitialization(core);
+                hot.State.Conditions = conditions;
+                NozzlePerformance made = nozzle.ComputePerformance(in conditions, ambient);
+                noz.State.Exhaust = made.Exhaust;
+                noz.State.ExhaustVelocity = made.ActualExhaustVelocity;
+                // The whole of the step, and how hard: the other statistic the step would have left,
+                // which is what the engine's own sound is pitched by within earshot.
+                (noz.State.DutyCycle, noz.State.AverageThrustFraction) = (1f, open);
+            }
+            if (on) _shown.Add(v);
+            else _shown.Remove(v);
+        }
+        catch (Exception e)
+        {
+            if (_saidNoPlume) return;
+            _saidNoPlume = true;
+            Log.Warn($"other players' engines cannot be shown firing: {e.GetBaseException().Message}");
+        }
+    }
+
+    // Whether KSA is already drawing this craft's engines, which it does for one it is stepping in
+    // physics: close to this player, or anywhere in an atmosphere. Its own numbers are the better ones.
+    private static bool Drawn(ModuleStateful<RocketNozzle, RocketNozzleState, EmptyStruct, RocketNozzleFxState>.StateList nozzles)
+    {
+        ReadOnlySpan<RocketNozzleState> states = nozzles.States;
+        for (int i = 0; i < states.Length; i++) if (states[i].DutyCycle > 0f) return true;
+        return false;
+    }
+
     /// <summary>
     /// A craft's next sequence fired, which is what the space bar does, and the new active sequence
     /// or null if there was none left. For a test that has to stage a rocket with no hand on the

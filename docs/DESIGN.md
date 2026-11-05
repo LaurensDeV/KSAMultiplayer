@@ -205,8 +205,9 @@ against KSA `2026.10.25.5707`:
 - **Two games across the internet.** Both games and the server were on one machine. WSL in its default
   NAT mode cannot be reached from a Windows game at all, which is why `two-games.sh` publishes a
   Windows server unless WSL is in mirrored mode.
-- **A puppet's engines, at all.** The send side is read off the game's source and the receive side
-  has been reached in a run, but no plume of another player's has been watched appear.
+- **A puppet's engines, at all.** Every call in it is read off the game's own source and the mod
+  compiles against them, but no plume of another player's has been watched appear -- neither the one
+  KSA draws for a craft it is stepping nor the one the mod writes for a craft it is not.
 - **Anything the vehicle editor is open for.** That KSA refuses to save or load then is read off its
   own source; that the mod now waits rather than handing on a stale world has not been watched happen.
 
@@ -257,11 +258,26 @@ against KSA `2026.10.25.5707`:
   `RocketNozzleState.DutyCycle`, and that is accumulated only inside a full physics step, from the
   chamber pressure the rocket model worked out. A craft of this game's own in its own bubble, in
   freefall or sitting still, is stepped down a cheaper path that clears the duty cycle every frame
-  and never accumulates one. So another player's craft is seen to burn when it is in this game's
-  physics -- near this player, or anywhere in an atmosphere -- and is dark when it is not, however
-  hard its owner says it is burning, because it is not firing here at all: there is no propellant
-  drawn, no thrust, and nothing for KSA to draw a plume from. Showing one would mean writing KSA's
-  own simulation output for a craft it is not simulating.
+  and never accumulates one. So another player's craft is burning *here* only when it is in this
+  game's physics -- near this player, or anywhere in an atmosphere -- and out there it draws no
+  propellant, makes no thrust and leaves nothing to draw a plume from, however hard its owner says
+  it is burning.
+
+  So out there the mod writes what the step that never ran would have left: the chamber conditions
+  that engine's own design gives at the throttle its owner reports (`RocketCore.ComputeConditions`),
+  the exhaust its nozzles make of those (`RocketNozzle.ComputePerformance`, which is what KSA's own
+  engine window calls from the main thread), and a full duty cycle. It goes in through
+  `GetModuleAndAllMutableStatesForInitialization`, in a prefix on the two passes that read it, which
+  is the one place after the last physics step and before the frame is drawn -- `[StarMapAfterOnFrame]`
+  is after the render, and anything written there for this frame is a frame late and cleared by the
+  next step first. A craft KSA is burning for real is left alone, since its own numbers are the
+  better ones, and a craft that stops burning is written dark once.
+
+  None of it changes what the craft does. KSA works a core's conditions out from its throttle and a
+  nozzle's thrust fraction out from those conditions on every step it runs, and the nozzles that
+  thrust and draw propellant are counted from that thrust fraction: neither the throttle nor the
+  thrust fraction is written here. What is written is read by one frame's renderers and overwritten
+  by the next step from numbers the mod never touched.
 - **A craft is let go of ten seconds after its owner walks away from it.** Sticky ownership is
   what stops two games pulling one hull in two directions, but sticky for ever meant the first
   player to touch a thing held it until they left: in a session here one player came to own every

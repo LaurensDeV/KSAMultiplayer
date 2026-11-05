@@ -64,6 +64,10 @@ internal static class Sync
     private static readonly Dictionary<string, Mine> Owned = [];
     private static readonly Dictionary<Vehicle, string> Puppets = [];
     private static readonly Dictionary<string, double> PlacedAt = [];
+    // What each puppet's owner last said its engines were doing. Kept because the frame hook and the
+    // frame KSA draws are not the same moment: the plume is drawn from the render, after this mod has
+    // run and from state a physics step would have left behind, so it is written there and read here.
+    private static readonly Dictionary<Vehicle, (bool On, float Throttle)> Engines = [];
     // Another player's craft built here, by what the shared world calls it. World.Vehicles() does not
     // list a craft the moment it is made, so asking the world whether a craft is here answers no for
     // a frame or two after it was built, and the answer is taken as leave to build it again. This is
@@ -279,6 +283,8 @@ internal static class Sync
         MadeHere.Clear();
         Definitions.Clear();
         PlacedAt.Clear();
+        Engines.Clear();
+        World.ForgetEngines();
         (_worldToLoad, _notLoading, _notSaving) = (null, "", "");
         (_claimed, _address, _watching, Behind, Now) = ("", "", "", null, Stage.Off);
         (_askedSpeed, _askWarpNext) = (1.0, 0.0);
@@ -765,8 +771,12 @@ internal static class Sync
             wanted.Add(v);
             Puppets[v] = key;
             if (track.At(universe) is not { } s) continue;
+            bool lit = (s.Flags & Wire.StateFlags.EngineOn) != 0;
             World.SetLights(v, (s.Flags & Wire.StateFlags.Lights) != 0);
-            World.SetEngine(v, (s.Flags & Wire.StateFlags.EngineOn) != 0, s.Throttle);
+            // The input, which lights the engine for real in a craft this game is stepping, and the
+            // word for the renderer, which is all there is for one it is not.
+            World.SetEngine(v, lit, s.Throttle);
+            Engines[v] = (lit, s.Throttle);
             if (!v.HasPhysicsBubble && now >= PlacedAt.GetValueOrDefault(key))
             {
                 PlacedAt[key] = now + PlaceEverySeconds;
@@ -774,6 +784,7 @@ internal static class Sync
             }
         }
         foreach (Vehicle v in Puppets.Keys.Where(p => !wanted.Contains(p)).ToArray()) Puppets.Remove(v);
+        foreach (Vehicle v in Engines.Keys.Where(p => !Puppets.ContainsKey(p)).ToArray()) Engines.Remove(v);
         foreach (string k in Built.Where(p => !World.IsAlive(p.Value)).Select(p => p.Key).ToArray()) Built.Remove(k);
         foreach (Vehicle v in Renamed.Keys.Where(x => !World.IsAlive(x)).ToArray()) Renamed.Remove(v);
         foreach (Vehicle v in Seen.Where(x => !World.IsAlive(x)).ToArray()) Seen.Remove(v);
@@ -819,6 +830,16 @@ internal static class Sync
             tags.Add((at, c.NameOf(owner), key, range, flown));
         }
         return tags;
+    }
+
+    /// <summary>
+    /// A puppet's engines as its owner last said, written from the render for the frame about to be
+    /// drawn. Anything else is written dark, which costs nothing unless it was lit from here.
+    /// </summary>
+    public static void ShowEngines(Vehicle v)
+    {
+        (bool on, float throttle) = Engines.TryGetValue(v, out (bool On, float Throttle) said) ? said : (false, 0f);
+        World.ShowEngine(v, on, throttle);
     }
 
     /// <summary>A puppet pulled to its owner's state, from the physics window.</summary>
