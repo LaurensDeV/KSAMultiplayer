@@ -46,12 +46,34 @@ no token at all beyond SSH to the machine: the image is public.
 
 ## Releasing
 
-1. Push to `main`. **Server image** builds `deploy/Dockerfile` and pushes to
-   `ghcr.io/<owner>/ksamp-server`. A `v*` tag goes through **Release** instead, which builds the
-   image, the mod's zip and the server's executables and publishes them together.
-2. Take the line from that run's summary into `infra/server/.env`:
+A `v*` tag goes through **Release**, which builds the image, the mod's zip and the server's
+executables, publishes them together, and then applies this layer with the digest it just built. So
+a release puts itself on the machine: nothing is copied by hand and no digest is pasted anywhere.
+
+It needs five repository secrets, and without them the deploy is skipped with a notice rather than
+failing -- the release itself still happens, and `tofu apply` by hand still works:
+
+| Secret | What |
+| --- | --- |
+| `DEPLOY_SSH_KEY` | a private key authorised for `ssh_user` on the machine; the provider tunnels the Docker API over it |
+| `TF_STATE_BUCKET` | as in `backend.hcl` |
+| `TF_STATE_ENDPOINT` | as in `backend.hcl` |
+| `TF_STATE_ACCESS_KEY` | as in `backend.hcl` |
+| `TF_STATE_SECRET_KEY` | as in `backend.hcl` |
+
+An apply replaces the container, so anybody playing is dropped for the few seconds it takes to come
+back. The world is in the `ksamp-world` volume and is not touched. A release that changes
+`Wire.Version` locks every player out until they install that release's mod, which is the point of
+the version and not a fault of the deploy.
+
+A push to `main` that touches the server still builds an image through **Server image**, but
+deploys nothing: what the machine runs is a release.
+
+To deploy by hand anyway -- an image from `main`, or a release whose deploy failed:
+
+1. Take the digest from the run's summary into `infra/server/.env`:
    `export TF_VAR_server_image=ghcr.io/<owner>/ksamp-server@sha256:...`
-3. `tofu apply` in `infra/server`.
+2. `tofu apply` in `infra/server`.
 
 By digest rather than by tag, so the machine runs the image that was built. A run whose summary has
 scrolled away can be asked of the registry instead, by the commit that built it:
