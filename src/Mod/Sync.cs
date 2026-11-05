@@ -87,8 +87,9 @@ internal static class Sync
 
     // Craft this game made itself, which are never another player's puppet here, whatever the server says of their name.
     private static readonly HashSet<Vehicle> MadeHere = [];
-    /// <param name="FromServer">Said by the server, which the chat window draws in its own colour.</param>
-    public readonly record struct Line(bool FromServer, string Text);
+    /// <param name="NotAPlayer">Said by the server or by this game rather than by somebody playing,
+    /// which the chat window draws in a colour of its own.</param>
+    public readonly record struct Line(bool NotAPlayer, string Text);
 
     private static readonly List<Line> ChatLines = [];
     private static readonly List<string> SaidLines = [];
@@ -317,11 +318,67 @@ internal static class Sync
         string said = line.Trim();
         if (said.StartsWith('/'))
         {
-            if (said.Length > 1) Ask(said[1..]);
+            if (said.Length > 1 && !Here(said[1..])) Ask(said[1..]);
             return true;
         }
         if (said.Length > 0) SayChat(said);
         return false;
+    }
+
+    /// <summary>
+    /// A command this game answers itself, rather than one for the server. Pointing a camera is
+    /// nobody else's business and is no admin's privilege either, so it never leaves the machine.
+    /// </summary>
+    private static bool Here(string asked)
+    {
+        string[] parts = asked.Split(' ', 2, StringSplitOptions.TrimEntries);
+        // Said before the server answers, and the line goes on to it all the same: the server's own
+        // list is an admin's, and somebody who is no admin would otherwise never learn this one
+        // exists. Tab fills in a name in any of them.
+        if (parts[0] is "help" or "?")
+        {
+            Told("spectate <name>   put your camera on what somebody is flying; this one is your game's");
+            Told("Tab               fill in a player's name from what you have typed of it");
+            return false;
+        }
+        if (!parts[0].Equals("spectate", StringComparison.OrdinalIgnoreCase)
+            && !parts[0].Equals("watch", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+        Spectate(parts.Length > 1 ? parts[1] : "");
+        return true;
+    }
+
+    /// <summary>Puts the camera on what a player is flying, without taking it over.</summary>
+    private static void Spectate(string name)
+    {
+        if (_client is not { Joined: true } c) return;
+        if (name.Length == 0)
+        {
+            Told("spectate <name>: whose craft to watch");
+            return;
+        }
+        if (c.Players.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)) is not { Id: > 0 } who)
+        {
+            Told($"nobody called '{name}' is playing");
+            return;
+        }
+        if (who.Controlling.Length == 0)
+        {
+            Told($"{who.Name} is not flying anything");
+            return;
+        }
+        // By the name this world knows it under, which is not always the one the server uses: a craft
+        // whose name was already taken here was built under another.
+        if (World.Vehicles().FirstOrDefault(v => KeyOf(v) == who.Controlling) is not { } seen)
+        {
+            Told($"{who.Name} is flying {who.Controlling}, which is not in this world yet");
+            return;
+        }
+        Told(World.Watch(seen)
+            ? $"watching {who.Name}, flying {who.Controlling}"
+            : $"could not put the camera on {who.Controlling}");
     }
 
     /// <summary>Whether this server runs what this game asks of it.</summary>
@@ -989,10 +1046,13 @@ internal static class Sync
         if (SaidLines.Count > SaidKept) SaidLines.RemoveAt(0);
     }
 
-    private static void Chatted(bool fromServer, string line)
+    /// <summary>This game answering in the chat the player typed into, which is where they are looking.</summary>
+    private static void Told(string what) => Chatted(true, $"<game> {what}");
+
+    private static void Chatted(bool notAPlayer, string line)
     {
         Log.Info($"chat: {line}");
-        ChatLines.Add(new Line(fromServer, line));
+        ChatLines.Add(new Line(notAPlayer, line));
         if (ChatLines.Count > ChatKept) ChatLines.RemoveAt(0);
     }
 

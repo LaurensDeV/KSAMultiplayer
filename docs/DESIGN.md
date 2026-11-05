@@ -283,6 +283,15 @@ against KSA `2026.10.25.5707`:
   own physics has not, so the rule that hands that case back to KSA is read off the source alone.
 - **An engine lit by a flight computer rather than by a hand.** What is sent is the nozzles' own duty
   cycle, which is what a node burn leaves behind, but no node burn has been watched from another game.
+- **Spectating, and finishing a name with Tab.** Both are the game's own, answered without the
+  server hearing of them, and both are driven only by hand so far: no run has watched a camera land
+  on another player's craft, nor a half-typed name fill itself in.
+- **A craft described over and over while it comes apart.** A game adopts a craft it has not seen,
+  and `Seen` holds Vehicle objects: when KSA destroys and remakes a stack under the same Id, as it
+  does while a rocket breaks up, the new object is unseen and the craft is described again. Watched
+  on `mp.ksarmory.com`: `NewRocket_3` described 23 times in six seconds, each definition smaller
+  than the last as parts fell off, every one of them relayed to both other players to rebuild. What
+  that costs the games receiving it has not been measured, and no fix is in yet.
 - **Anything the vehicle editor is open for.** That KSA refuses to save or load then is read off its
   own source; that the mod now waits rather than handing on a stale world has not been watched happen.
 
