@@ -60,14 +60,21 @@ public static class Wire
     /// Changed whenever what a datagram means changes: a game speaking another version is refused by
     /// name.
     ///
-    /// <para>It is also the only way to say "everybody moves together", and 13 was that rather than a
-    /// change to the wire: 12 and 13 carry identical datagrams. What moved was the mod, and two of
-    /// its fixes are no good unless every game has them -- one old mod asks the whole room to pause
-    /// every time its player opens the vehicle editor, and describes a craft coming apart twenty
-    /// times over for everybody else to rebuild. A fix that one straggler can undo for the room is
-    /// not a fix until the room is refused without it.</para>
+    /// <para>It is also the only way to say "everybody moves together", and 13 and 14 were both that
+    /// rather than a change to the wire: 12, 13 and 14 carry identical datagrams.</para>
+    ///
+    /// <para>13 was for fixes one straggler could undo for the room -- an old mod asks everybody to
+    /// pause each time its player opens the vehicle editor, and describes a craft coming apart
+    /// twenty times over for the rest to rebuild.</para>
+    ///
+    /// <para>14 is for the launchpads, which are the other way round: they are laid out by each game
+    /// from its own content, so a game without them has no landmark where another game just launched.
+    /// KSA gives a craft within a pad's footprint <c>GroundOffset + SurfaceHeight</c> and everything
+    /// else nothing, so the same craft stands on concrete in one world and sunk in the grass in the
+    /// next, with no pad under it and nothing for its physics to rest on. The shape of the shared
+    /// world changed without a byte of the wire changing, which is the case this number is for.</para>
     /// </summary>
-    public const ushort Version = 13;
+    public const ushort Version = 14;
 
     public const int BufferBytes = 8192;
     public const int NameChars = 24;
