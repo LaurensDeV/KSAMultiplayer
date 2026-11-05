@@ -62,13 +62,12 @@ public sealed class MultiplayerMod
         try
         {
             // Not InFlight: an observer flies nothing, and the window, the nametags, the scoreboard
-            // and the chat are exactly what it has instead.
-            if (World.AtACraft)
-            {
-                Panel.Draw();
-                // Last, over everything the mod has drawn.
-                Panel.DrawTags();
-            }
+            // and the chat are exactly what it has instead. The window itself is drawn wherever the
+            // player is, the main menu included: a server is joined before there is a craft, and a
+            // player who has to find flight before they can find the mod does not find the mod.
+            Panel.Draw(World.AtACraft);
+            // Last, over everything the mod has drawn.
+            if (World.AtACraft) Panel.DrawTags();
         }
         catch (Exception e)
         {

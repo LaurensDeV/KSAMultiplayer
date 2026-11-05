@@ -248,6 +248,21 @@ against KSA `2026.10.25.5707`:
   `reload` on its own then put universe time back, which is the only way it ever moves: 72783.5 s
   in the game before, 72747.8 s after, with the server's own clock going to the world's time while
   nobody was in it -- "universe time waits at 72740 s, 44 s back".
+- **Joining from the main menu, and being made an admin.** One game, opened on nothing -- the
+  sandbox view, no world, no craft -- with the Multiplayer window drawn over it, which is where a
+  player starts and where the window was not drawn before. Connect from there and the server handed
+  over its 31 KB world, the game loaded it and was flying `Niric` half a minute later, having never
+  opened a save by hand.
+
+  Then `op Alpha` at the server's console. The game wrote
+  `{"127.0.0.1:50100": "Tc9kzx..."}` into its `tokens.json` and the server kept
+  `f777349e...`, which is that token's SHA-256 and nothing else; `/status`, `/players` and
+  `/admins` typed into the chat were answered in the same chat -- `1 Alpha playing, admin, flying
+  Niric` -- and `/quit` was refused as the console's alone. `/reload` put universe time back from
+  72688 s to 72630 s from inside the game, as it does from the console, with the player still
+  flying and still an admin. `deop Alpha` left `tokens.json` holding `{}` and `admins.json` holding
+  `[]`, the game knew within the second, and the next `/status` was refused. The one line asked for
+  before any of it, as a nobody, had been refused too.
 - **Two games making one name.** A kitten sent out of the same capsule in both: the second was named
   `Nasley 2` by the server, each game kept flying its own, and each built the other's and stood it
   where its owner put it. The second game holds the other player's under a name of its own
@@ -268,8 +283,6 @@ against KSA `2026.10.25.5707`:
   own physics has not, so the rule that hands that case back to KSA is read off the source alone.
 - **An engine lit by a flight computer rather than by a hand.** What is sent is the nozzles' own duty
   cycle, which is what a node burn leaves behind, but no node burn has been watched from another game.
-- **Commands typed in a game.** `/op`, `/clear` and the rest are driven over loopback by the tests,
-  both ways, but no admin has yet typed one into a running game's chat.
 - **Anything the vehicle editor is open for.** That KSA refuses to save or load then is read off its
   own source; that the mod now waits rather than handing on a stale world has not been watched happen.
 

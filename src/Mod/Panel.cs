@@ -59,12 +59,22 @@ internal static class Panel
 
     private static string SettingsPath => Path.Combine(KSA.Constants.DocumentsFolderPath, "KSAMultiplayer", "settings.json");
 
-    public static void Draw()
+    /// <param name="atACraft">
+    /// Whether the player is at a craft. The Multiplayer window is drawn either way, since a server
+    /// is joined before there is anything to fly and a window nobody can find is a mod nobody can
+    /// use; so is a warp being asked for, which is answered wherever the player is. The scoreboard
+    /// and the chat are about the craft around you, and the chat takes the keyboard, so those wait
+    /// until there is one.
+    /// </param>
+    public static void Draw(bool atACraft)
     {
         if (!_loaded) Load();
         WarpWindow();
-        Scoreboard();
-        ChatWindow();
+        if (atACraft)
+        {
+            Scoreboard();
+            ChatWindow();
+        }
 
         ImGuiViewportPtr screen = ImGui.GetMainViewport();
         // Clear of KSA's own instruments down the right edge, which are drawn over this window.

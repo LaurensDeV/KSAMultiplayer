@@ -20,13 +20,14 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
    enable it, as with any StarMap mod.
 2. Everyone needs **the same KSA build** and **every mod the server's world uses**. The server refuses
    anyone who differs and says what is missing.
-3. Load any world and get into flight. The **Multiplayer** window is at the top right: enter the server's
-   address (`host:port`, or just `host` for port 50100), your name and the password if there is one, then
-   press **Connect**. There is a server at **`mp.ksarmory.com`** to try it on.
+3. The **Multiplayer** window is there from the moment the game opens, before any world is loaded.
+   Enter the server's address (`host:port`, or just `host` for port 50100), your name and the
+   password if there is one, and press **Connect**. There is a server at **`mp.ksarmory.com`** to
+   try it on.
 4. Connecting **replaces your open world with the server's**: save first. If the server has no world
    yet, yours becomes the server's world instead, and nothing is replaced.
 5. Hold **Tab** for who is playing and what their ping is. **Enter** opens a chat line, **Enter** sends
-   it. Another player's craft carries their name, and is theirs: you can watch it, not fly it.
+   it; a line behind a `/` goes to the server as a command instead, and is said to nobody. Another player's craft carries their name, and is theirs: you can watch it, not fly it.
 
 Once you're in:
 

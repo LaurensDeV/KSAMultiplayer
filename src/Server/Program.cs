@@ -198,7 +198,10 @@ void Command(string line, GameServer.Player? who = null)
             break;
         case "deop":
             if (rest.Length == 0) Answer("deop <name>, playing or not");
-            else Answer(server.Deop(rest) ? $"{rest} is no longer an admin" : $"{rest} was not an admin");
+            // Not the sentence the server logs for itself, or the console says it twice.
+            else Answer(server.Deop(rest)
+                ? $"{rest} is no admin now, and the token their game kept is no good"
+                : $"{rest} was not an admin");
             break;
         case "admins":
             Answer(server.Admins.Names.Count == 0
