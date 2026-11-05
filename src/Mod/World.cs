@@ -519,7 +519,15 @@ internal static class World
         // see. Carried forward along its own velocity instead, which over a tenth of a second is the
         // same place.
         double epoch = s.Universe;
-        double ahead = Math.Max(0.0, v.GetPhysicsStatesMutable().Origin.Time.Seconds() - epoch);
+        // Forward as far as the craft's own origin, so KSA does not refuse the placement -- but never
+        // past this world's own clock. Taking the origin alone was a ratchet: it only ever moved
+        // forward, so a craft that got ahead of the simulation stayed ahead for good, and every
+        // physics bubble it joined afterwards refused to rebase it. Watched on the real server, a
+        // craft 2.7 s ahead of the bubble it was joining, which is kilometres out of place in orbit
+        // and the pull dragging it back every frame -- a player jittering about. Clamped, a craft
+        // that gets ahead is overtaken by the clock and comes right on its own.
+        double origin = v.GetPhysicsStatesMutable().Origin.Time.Seconds();
+        double ahead = Math.Max(0.0, Math.Min(origin, Universe) - epoch);
         double3 positionCci = D(s.PositionCci) + (D(s.VelocityCci) * ahead);
         Orbit orbit = Orbit.CreateFromStateCci(body, new UniverseTime(epoch + ahead), positionCci, D(s.VelocityCci), v.OrbitColor);
         v.SetFlightPlan(new FlightPlan(orbit, KeyHash.Make(v.Id.AsSpan())));

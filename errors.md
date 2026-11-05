@@ -147,3 +147,26 @@ same call stack as the other six.
 So: one bug, not four. 0.5.1 moves the removals into the frame's quiet window alongside the
 additions, which is the fix these point at -- still to be confirmed by a session that would
 otherwise have produced them.
+
+## 2026-11-05 -- "Attempted to update vehicle ... with origin at time" is two faults, not one
+
+`PhysicsStates.TryUpdateKinematicOrigin` refuses any origin that moves backwards in time, logs this
+line, and leaves the craft where it was. Two different things reach it.
+
+**Placing a craft.** `PlaceAnalytic` built the orbit at the state's own time, and a state is
+interpolated `ClockFollow.DelaySeconds` (0.15 s) behind this game's clock, so the epoch was always
+in the past. A craft whose origin had been carried forward -- by a bubble it had just left -- then
+stood still for about nine frames and jumped when the delay was made up. That is the jitter, and
+0.5.1 fixed it by carrying the state forward to the craft's own origin time.
+
+**Joining a bubble.** `Vehicle.AddToBubble` hands the craft the bubble's origin, and
+`BubbleOrigin.Time` is simply the state time it was made from. A craft whose own origin is ahead of
+the bubble's is refused, so it is never rebased into the bubble's frame and its position is read
+against the wrong origin. Still happening on 0.6.1, by 0.26-0.38 s, a whole bubble of fragments at
+once; it was 2.7 s on 0.5.0, which is likelier to be the clock being further out that session than
+anything the fix did.
+
+The second one is not understood yet. What is known: the craft's origin comes from the epoch it was
+last placed at, that epoch is this mod's choice, and nothing yet makes it agree with the bubble a
+craft will later join. Guessing at it has already moved one failure rather than removing it, so the
+next step is to work out what origin a bubble will use before choosing one, not another epoch.
