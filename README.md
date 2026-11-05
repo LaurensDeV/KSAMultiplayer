@@ -97,8 +97,18 @@ nobody is connected, unless `--keep-time` is given.
 | `--lapse-within` | `KSAMP_LAPSE_WITHIN` | `10` | seconds a craft stays its owner's once another player is watching it and they are neither in it nor looking at it |
 | `--speed` | `KSAMP_SPEED` | `1` | how fast universe time runs |
 
-Commands typed into the server's console: `players`, `say <text>`, `kick <name> [why]`, `save`,
-`status`, `quit`. It shuts down cleanly on Ctrl+C and on SIGTERM.
+Commands typed into the server's console: `players`, `say <text>`, `kick <name> [why]`,
+`clear [name]`, `save`, `status`, `quit`. It shuts down cleanly on Ctrl+C and on SIGTERM.
+
+`clear` is the broom for a world filling up with spent stages: every craft nobody is flying is taken
+out of every game that is in the world and out of the world the server hands out, and a fresh save is
+asked for so a player joining later does not get them all back. A name narrows it, with `*` and `?`
+for wildcards -- `clear Rocket_*` -- and a craft somebody is flying is never taken, whatever is
+asked for. Nobody has to reconnect; what the players see is the debris disappear.
+
+It does not move the clock. A world cannot be put back in time while it is being played: every game
+holds its own universe time, a game more than three seconds ahead of the server stops dead until the
+server catches up, and the only thing that brings a game's time down is loading a world.
 
 ### As a service
 

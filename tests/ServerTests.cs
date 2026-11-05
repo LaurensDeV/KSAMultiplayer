@@ -860,6 +860,43 @@ public class ServerTests
     }
 
     [Fact]
+    public void TheOperatorsBroomTakesACraftOutOfEveryGameIncludingItsOwners()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+
+        // Alice is flying one and has left two behind, which is what a world fills up with.
+        a.Claim("Lander", controlling: true, made: true);
+        a.Claim("Stage 1", controlling: false, made: true);
+        a.Claim("Stage 2", controlling: false, made: true);
+        a.SendState(Rig.State("Lander", 5000));
+        rig.Until(() => b.OwnerOf("Stage 2") == a.Id && a.Owns("Stage 1"), what: "the owners table");
+
+        Assert.Equal(2, rig.Server.Sweep("Stage *").Count);
+        rig.Until(() => a.Swept.Count == 2 && b.Swept.Count == 2, what: "both games to be told");
+        Assert.Equal(["Stage 1", "Stage 2"], a.Swept.OrderBy(k => k).ToArray());
+
+        // Gone from the server too, and what is being flown is left alone.
+        Assert.Equal(0, rig.Server.OwnerOf("Stage 1"));
+        Assert.Equal(a.Id, rig.Server.OwnerOf("Lander"));
+        Assert.Empty(rig.Server.Sweep("Stage *"));
+    }
+
+    [Fact]
+    public void ACraftSomebodyIsFlyingIsNotSweptAway()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        a.Claim("Lander", controlling: true, made: true);
+        a.SendState(Rig.State("Lander", 5000));
+        rig.Until(() => rig.Server.Players.Any(p => p.Controlling == "Lander"), what: "the server to see what Alice flies");
+
+        Assert.Empty(rig.Server.Sweep());
+        Assert.Equal(a.Id, rig.Server.OwnerOf("Lander"));
+    }
+
+    [Fact]
     public void AWorldNobodyAskedForIsNotTheServersWorld()
     {
         using Rig rig = new();

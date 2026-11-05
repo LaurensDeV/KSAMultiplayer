@@ -32,7 +32,11 @@ const string Usage = """
     With no world, the first player to join gives the server theirs.
 
     Console commands, on standard input: players, say <text>, kick <name> [why],
-    save, status, help, quit.
+    clear [name], save, status, help, quit.
+
+    clear takes every craft nobody is flying out of every game and out of the world the server
+    hands out -- the broom for a world filling with spent stages. A name narrows it, with * and ?
+    for wildcards: clear Rocket_*
     """;
 
 Dictionary<string, string> opts = [];
@@ -169,6 +173,12 @@ void Command(string line)
             string[] k = rest.Split(' ', 2, StringSplitOptions.TrimEntries);
             if (k[0].Length == 0 || !server.Kick(k[0], k.Length > 1 ? k[1] : "")) Say($"nobody called '{k[0]}'");
             break;
+        case "clear" or "sweep":
+            List<string> swept = server.Sweep(rest);
+            Say(swept.Count == 0
+                ? rest.Length > 0 ? $"no craft nobody is flying matches '{rest}'" : "nothing to clear: every craft the server knows is being flown"
+                : $"cleared {swept.Count} craft out of every game: {string.Join(", ", swept.Take(8))}{(swept.Count > 8 ? $" and {swept.Count - 8} more" : "")}");
+            break;
         case "save" or "snapshot":
             server.SnapshotNow();
             Say(server.Players.Any(p => p.Loaded) ? "asked the longest-playing player for a save" : "nobody is in the world to save it");
@@ -180,7 +190,8 @@ void Command(string line)
                 + $", {server.Socket.Received} datagrams in, {server.Socket.Sent} out");
             break;
         case "help" or "?":
-            Say("players, say <text>, kick <name> [why], save, status, quit");
+            Say("players, say <text>, kick <name> [why], clear [name], save, status, quit");
+            Say("  clear takes every craft nobody is flying out of every game; a name with * narrows it");
             break;
         case "quit" or "exit" or "stop":
             stop.Cancel();

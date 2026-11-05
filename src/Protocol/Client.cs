@@ -95,6 +95,9 @@ public sealed class Client : IDisposable
     public Queue<Blob> Blobs { get; } = new();
     public Queue<string> Gone { get; } = new();
 
+    /// <summary>Craft the operator has swept out of the world, which this game takes away whether or not they are its own.</summary>
+    public Queue<string> Swept { get; } = new();
+
     /// <summary>Craft of this game the server has given another name, because a player already had that one.</summary>
     public Queue<(string Was, string Now)> Renamed { get; } = new();
 
@@ -313,6 +316,11 @@ public sealed class Client : IDisposable
                 _owners.Remove(g.Key);
                 _tracks.Remove(g.Key);
                 Gone.Enqueue(g.Key);
+                return;
+            case Wire.Swept sw when Joined:
+                _owners.Remove(sw.Key);
+                _tracks.Remove(sw.Key);
+                Swept.Enqueue(sw.Key);
                 return;
             case Wire.Chat c when Joined:
                 Chat.Enqueue((c.From == 0 ? "server" : NameOf(c.From), c.Text));

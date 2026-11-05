@@ -57,7 +57,7 @@ public readonly record struct Quat(double X, double Y, double Z, double W)
 public static class Wire
 {
     /// <summary>Changed whenever what a datagram means changes: a game speaking another version is refused by name.</summary>
-    public const ushort Version = 10;
+    public const ushort Version = 11;
 
     public const int BufferBytes = 8192;
     public const int NameChars = 24;
@@ -96,6 +96,7 @@ public static class Wire
         WarpVote = 20,
         Warp = 21,
         NoWorld = 22,
+        Swept = 23,
     }
 
     /// <summary>Where a warp has got to: nobody has asked, somebody has and is waiting, or it is running.</summary>
@@ -218,6 +219,17 @@ public static class Wire
 
     /// <summary>A craft its owner's game no longer has: destroyed, recovered or boarded.</summary>
     public sealed record Gone(string Key) : Message(Kind.Gone);
+
+    /// <summary>
+    /// A craft the operator has swept out of the world, which every game takes away whether or not it
+    /// is theirs.
+    ///
+    /// <para>Not a <see cref="Gone"/>: that is one game saying what became of a craft of its own, and
+    /// a game that owns the craft is right to ignore it. This is the server saying the craft is not
+    /// in the world any more, which is nobody's to disagree with -- otherwise the one game that holds
+    /// the debris keeps it, goes on sending it, and it comes back to everybody within the second.</para>
+    /// </summary>
+    public sealed record Swept(string Key) : Message(Kind.Swept);
 
     public sealed record Chat(byte From, string Text) : Message(Kind.Chat);
 
@@ -353,6 +365,9 @@ public static class Wire
             case Gone g:
                 w.Text(g.Key, KeyChars);
                 break;
+            case Swept s2:
+                w.Text(s2.Key, KeyChars);
+                break;
             case Chat c:
                 w.U8(c.From);
                 w.Text(c.Text, ChatChars);
@@ -402,6 +417,7 @@ public static class Wire
                 Kind.Warp => ReadWarp(ref r),
                 Kind.Owners => ReadOwners(ref r),
                 Kind.Gone => new Gone(r.Text(KeyChars)),
+                Kind.Swept => new Swept(r.Text(KeyChars)),
                 Kind.Chat => new Chat(r.U8(), r.Text(ChatChars)),
                 Kind.Snapshot => new Snapshot(r.Text(200)),
             Kind.NoWorld => new NoWorld(r.Text(200)),

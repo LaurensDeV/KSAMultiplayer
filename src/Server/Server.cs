@@ -895,6 +895,67 @@ public sealed class GameServer : IDisposable
     /// <summary>Asks for a fresh save of the world now, from the console.</summary>
     public void SnapshotNow() => AskSnapshot("the operator asked for a save");
 
+    /// <summary>
+    /// Craft swept out of the world by the operator: every one nobody is flying, or only those whose
+    /// name matches, taken away in every game and forgotten here. The names swept, for the console.
+    ///
+    /// <para>A craft somebody is flying is left where it is whatever was asked for: a world that
+    /// pulls the hull out from under a player is worse than a world with debris in it. What is
+    /// watched is not spared -- a camera is how an operator finds the debris in the first place.</para>
+    /// </summary>
+    public List<string> Sweep(string like = "")
+    {
+        HashSet<string> flown = [.. _players.Values.Where(p => p.Controlling.Length > 0).Select(p => p.Controlling)];
+        List<string> swept = [];
+        double universe = UniverseClock.Now(_clock());
+        foreach ((string key, Craft _) in _crafts.ToArray())
+        {
+            if (flown.Contains(key) || !Matches(key, like)) continue;
+            _crafts.Remove(key);
+            _gone[key] = universe;
+            swept.Add(key);
+            Broadcast(new Wire.Swept(key), p => p.Loaded);
+        }
+        if (swept.Count == 0) return swept;
+        OwnersChanged();
+        Log($"the operator swept {swept.Count} craft out of the world: {Named(swept)}");
+        Broadcast(new Wire.Chat(0, $"{swept.Count} craft cleared out of the world"), p => p.Loaded);
+        // The world on disk still holds them, so the next player to join would be handed them all
+        // back. This is the one moment the world is worth saving afresh.
+        AskSnapshot("the world was cleared of craft nobody was flying");
+        return swept;
+    }
+
+    private static string Named(List<string> keys) =>
+        string.Join(", ", keys.Take(6)) + (keys.Count > 6 ? $" and {keys.Count - 6} more" : "");
+
+    // A name to match debris by: "*" or empty for all, otherwise a plain glob of * and ?, since an
+    // operator looking at a wall of Rocket_1 .. Rocket_40 wants to name them that way.
+    private static bool Matches(string key, string like)
+    {
+        if (like.Length == 0 || like == "*") return true;
+        return Glob(key.AsSpan(), like.AsSpan());
+    }
+
+    private static bool Glob(ReadOnlySpan<char> text, ReadOnlySpan<char> pattern)
+    {
+        while (pattern.Length > 0)
+        {
+            if (pattern[0] == '*')
+            {
+                pattern = pattern[1..];
+                if (pattern.Length == 0) return true;
+                for (int i = 0; i <= text.Length; i++) if (Glob(text[i..], pattern)) return true;
+                return false;
+            }
+            if (text.Length == 0) return false;
+            if (pattern[0] != '?' && char.ToLowerInvariant(pattern[0]) != char.ToLowerInvariant(text[0])) return false;
+            text = text[1..];
+            pattern = pattern[1..];
+        }
+        return text.Length == 0;
+    }
+
     // Craft defined and gone before this were saved with the world, and need not be handed out again.
     private void Prune(double universe)
     {

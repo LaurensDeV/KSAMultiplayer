@@ -557,6 +557,32 @@ internal static class Sync
                 here.Remove(key);
             }
         }
+        // Swept by the operator, which is not the same as gone. A gone is one game's word about a
+        // craft of its own and the game that owns it is right to keep its own; this is the world
+        // being told what is no longer in it, so it goes whosever it is -- otherwise the one game
+        // holding the debris would keep it, go on sending it, and hand it back to everybody.
+        while (c.Swept.TryDequeue(out string? key))
+        {
+            Definitions.Remove(key);
+            PlacedAt.Remove(key);
+            if (Owned.Remove(key, out Mine? mine) && _claimed == key) _claimed = "";
+            if (!here.TryGetValue(key, out Vehicle? swept)) swept = mine?.Craft;
+            if (swept is null || !World.IsAlive(swept)) continue;
+            if (ReferenceEquals(swept, flown))
+            {
+                // The server does not sweep what somebody is flying, so this is a craft taken up in
+                // the moment between. It stays, and the claim for it goes again.
+                Say($"{key} was cleared from the world, but it is the craft being flown: it stays here");
+                continue;
+            }
+            Puppets.Remove(swept);
+            Built.Remove(key);
+            MadeHere.Remove(swept);
+            Renamed.Remove(swept);
+            Engines.Remove(swept);
+            World.Destroy(swept);
+            here.Remove(key);
+        }
 
         ClaimFlown(c, flown);
         Adopt(c, here, flown);

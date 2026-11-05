@@ -303,6 +303,18 @@ against KSA `2026.10.25.5707`:
   else is waiting on changes hands: a world is mostly parked craft nobody is looking at, and letting
   those go lapsed ownership 873 times in 70 minutes, each one moving the camera of whoever was
   watching a craft when it came free.
+- **The operator's broom sweeps a craft out of every game, its owner's included.** A world fills up
+  with spent stages, and a `Gone` cannot clear them: that datagram is one game's word about a craft
+  of its own, which the game that owns it is right to ignore, so the one game holding the debris
+  keeps it, goes on sending it, and hands it back to everybody within the second. `clear` on the
+  console sends `Swept` instead, which is the world being told what is no longer in it: every game
+  takes the craft away whosever it is. A craft somebody is flying is never swept -- a world that
+  pulls the hull out from under a player is worse than a world with debris in it -- and a fresh save
+  is asked for straight after, since the world on disk still holds them.
+- **The clock is not the operator's to put back.** Universe time cannot be moved backwards while
+  anyone is in the world: each game keeps its own, a game more than three seconds ahead of the server
+  holds at a standstill until the server catches up (`ClockFollow.Speed`), and the only thing that
+  brings a game's own time down is loading a world. So there is no command for it.
 - **Ownership is not kept across a server restart**: it starts afresh, and the first to take control of a craft has it.
 - **A hatch is claimed before it opens.** A craft another player holds refuses to let its crew out,
   but a craft nobody holds was nobody's to refuse: two games looking at the same capsule each sent
