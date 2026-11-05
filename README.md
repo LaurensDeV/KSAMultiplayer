@@ -99,8 +99,13 @@ nobody is connected, unless `--keep-time` is given.
 | `--speed` | `KSAMP_SPEED` | `1` | how fast universe time runs |
 
 Commands typed into the server's console: `players`, `say <text>`, `kick <name> [why]`,
-`op <name>`, `deop <name>`, `admins`, `clear [name]`, `reload`, `save`, `status`, `quit`. It shuts
-down cleanly on Ctrl+C and on SIGTERM.
+`op <name>`, `deop <name>`, `admins`, `clear [name]`, `reload`, `save`, `status`, `version`, `quit`.
+It shuts down cleanly on Ctrl+C and on SIGTERM.
+
+`version` says what the server is, the protocol it speaks and the KSA build it holds players to --
+the protocol being the number that decides who can join, and the one to ask for when somebody is
+refused by name. It is said at the top of the log too, so reading `docker logs` answers it without
+attaching to anything.
 
 `clear` is the broom for a world filling up with spent stages. Every craft nobody is flying is taken
 out of every game that is in the world; a name narrows it, with `*` and `?` for wildcards --

@@ -32,7 +32,7 @@ const string Usage = """
     With no world, the first player to join gives the server theirs.
 
     Console commands, on standard input: players, say <text>, kick <name> [why],
-    op <name>, deop <name>, admins, clear [name], reload, save, status, help, quit.
+    op <name>, deop <name>, admins, clear [name], reload, save, status, version, help, quit.
 
     An admin can type those same commands into a game's chat with a / in front. op hands the player
     a token their game keeps and offers at every join after, so they stay an admin without a
@@ -127,7 +127,10 @@ catch (Exception e) when (e is IOException or InvalidDataException or Unauthoriz
     return 1;
 }
 
+string Version = typeof(GameServer).Assembly.GetName().Version?.ToString(3) ?? "unknown";
+
 while (server.Said.TryDequeue(out string? early)) Say(early);
+Say($"ksamp-server {Version}, speaking protocol {Wire.Version}");
 Say($"{options.Name}: listening on UDP {(bind?.ToString() ?? "*")}:{server.Port}, up to {options.MaxPlayers} players{(options.Password.Length > 0 ? ", with a password" : "")}");
 Say(server.HasWorld ? "a world is ready to hand out" : "no world yet: the first player to join gives the server theirs");
 
@@ -174,6 +177,7 @@ if (!Console.IsInputRedirected || Environment.GetEnvironmentVariable("KSAMP_STDI
     ("reload", "hand the world out again, which is the only thing that puts universe time back"),
     ("save", "ask the longest-playing player for a fresh save of the world"),
     ("status", "players, craft, universe time, and what has crossed the wire"),
+    ("version", "what this server is, what it speaks, and the KSA build it holds players to"),
 ];
 
 // who is null for the console, and the player who typed it in a game otherwise: an admin asks for
@@ -242,6 +246,12 @@ void Command(string line, GameServer.Player? who = null)
         case "save" or "snapshot":
             server.SnapshotNow();
             Answer(server.Players.Any(p => p.Loaded) ? "asked the longest-playing player for a save" : "nobody is in the world to save it");
+            break;
+        case "version":
+            // The protocol, not just the release: it is the number that decides who can join, and the
+            // one an operator needs when a player says they were refused by name.
+            Answer($"ksamp-server {Version}, protocol {Wire.Version}, "
+                + (server.RequiredBuild.Length > 0 ? $"for KSA {server.RequiredBuild}" : "any KSA build until a world says otherwise"));
             break;
         case "status":
             double u = server.UniverseClock.Now(Now());
