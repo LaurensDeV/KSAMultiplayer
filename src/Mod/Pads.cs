@@ -1,3 +1,4 @@
+using HarmonyLib;
 using KSA;
 
 namespace KSAMultiplayer;
@@ -27,10 +28,15 @@ internal static class Pads
     private const int Columns = 4;
 
     /// <summary>
-    /// How far apart their centres sit, as a multiple of the pad's own footprint. Room for the flame
-    /// trench and for a rocket to fall over without taking its neighbour with it.
+    /// How far apart their centres sit, as a multiple of the pad's own footprint.
+    ///
+    /// <para>Just over one. The footprint is the clearance KSA keeps around a pad, not the concrete:
+    /// measured off a picture of the eight, the apron is about 118 m across against a footprint
+    /// radius of 108 m. So a little more than one footprint between centres leaves the aprons nearly
+    /// touching, and keeps all eight on the flat ground by the site -- at 2.5 they were spread over
+    /// 800 m and the far ones stood half buried in the hillside.</para>
     /// </summary>
-    private const double Spacing = 2.5;
+    private const double Spacing = 1.2;
 
     /// <summary>What this mod's pads are called: the site's own id and a number, from 2 up.</summary>
     public const string Suffix = " MP";
@@ -38,6 +44,13 @@ internal static class Pads
     private static readonly HashSet<string> Added = [];
 
     private static object? _laidOutFor;
+
+    // KSA resolves a location's static object once, as the celestial loads, through a method of its
+    // own that nothing outside the assembly can reach. A pad added after that has a name for its
+    // concrete and no concrete: no model, no collider, and no ground for a craft to stand on, while
+    // the ground marker IsLaunchPad asks for is drawn all the same. So it is called here by hand.
+    private static readonly System.Reflection.MethodInfo? Resolve =
+        AccessTools.Method(typeof(LocationReference), "ResolveStaticObject");
 
     public static bool Ours(LocationReference location) =>
         location.Id.Contains(Suffix, StringComparison.Ordinal);
@@ -116,7 +129,7 @@ internal static class Pads
                 // and behind it, east along a row and north between them.
                 double east = i % Columns * step;
                 double north = i / Columns * step;
-                template.Locations.Add(new LandmarkReference
+                LandmarkReference made = new()
                 {
                     Id = $"{site.Id}{Suffix}{i + 1}",
                     IsLaunchPad = true,
@@ -125,7 +138,18 @@ internal static class Pads
                     // further the site is from the equator.
                     Latitude = new RadianReference(site.Latitude.GetRadians() + north),
                     Longitude = new RadianReference(site.Longitude.GetRadians() + (east / Math.Max(0.01, Math.Cos(site.Latitude.GetRadians())))),
-                });
+                };
+                // Without this a landmark has no ForwardCcf, and a pad is a direction before it is
+                // anything else: KSA divides by it the moment it draws the ground marker that
+                // IsLaunchPad asks for, and the game goes down on the first frame after a load.
+                made.OnDataLoad(Mod.Empty);
+                Resolve?.Invoke(made, null);
+                if (made.GetStaticObject() is null)
+                {
+                    Log.Warn($"{made.Id} has no concrete under it, so it is no pad: not adding it");
+                    continue;
+                }
+                template.Locations.Add(made);
             }
             Log.Info($"laid out {PerSite - 1} more launchpads at {site.Id}, {pad.FootprintRadius * Spacing:F0} m apart");
         }
