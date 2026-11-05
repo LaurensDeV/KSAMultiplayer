@@ -555,20 +555,20 @@ internal static class World
     }
 
     /// <summary>
-    /// Whether a craft's engine is lit, and how far its throttle is open.
+    /// Whether a craft's engine is burning, and how far its throttle is open.
     ///
-    /// <para>Lit is taken from the nozzles themselves and not only from the player's hand on the key:
-    /// KSA sets EngineOn false every frame while the flight computer is running the burn, so a craft
-    /// burning a manoeuvre node reported its engines cold to everyone else. What the nozzles say is
-    /// the duty cycle the game's own renderer draws a plume from.</para>
+    /// <para>From the nozzles and not from the player's hand on the key. EngineOn is wrong both ways:
+    /// KSA sets it false every frame while the flight computer runs the burn, so a craft burning a
+    /// manoeuvre node said its engines were cold; and it stays true on a craft whose ignition is on
+    /// with nothing behind it -- no propellant, nothing staged -- which said it was burning when it
+    /// was not, and was seen to, once the others could draw it. What the nozzles say is what this
+    /// game's own renderer draws a plume from, so it is what the others are told.</para>
     /// </summary>
     public static (bool On, float Throttle) EngineOf(Vehicle v)
     {
         try
         {
-            float throttle = v.GetManualThrottle();
-            if (EngineInputs is { } inputs && inputs(v).EngineOn) return (true, inputs(v).EngineThrottle);
-            float firing = Firing(v);
+            float throttle = v.GetManualThrottle(), firing = Firing(v);
             return firing > 0f ? (true, throttle > 0f ? throttle : Math.Min(1f, firing)) : (false, throttle);
         }
         catch (Exception)
@@ -618,6 +618,26 @@ internal static class World
 
     /// <summary>Forgets which craft were drawn burning, when this game is its own again.</summary>
     public static void ForgetEngines() => _shown.Clear();
+
+    /// <summary>Whether this craft's engines were last drawn from the mod rather than out of KSA's own step.</summary>
+    public static bool IsShown(Vehicle v) => _shown.Contains(v);
+
+    /// <summary>The duty cycle this craft's engines would be drawn from now: what every engine visual reads.</summary>
+    public static double DutyOf(Vehicle v)
+    {
+        try
+        {
+            if (v.Parts?.RocketNozzles is not { } nozzles) return 0.0;
+            ReadOnlySpan<RocketNozzleState> states = nozzles.States;
+            double most = 0.0;
+            for (int i = 0; i < states.Length; i++) most = Math.Max(most, states[i].DutyCycle);
+            return most;
+        }
+        catch (Exception)
+        {
+            return 0.0;
+        }
+    }
 
     /// <summary>
     /// Another player's craft drawn as burning, for the frame about to be drawn.

@@ -230,6 +230,10 @@ TOOLS = {
                   "flown one. The way to drop a stage while another game is watching.",
                   {"craft": {"type": "string"}}, [],
                   lambda a: _dump(send("stage", **a))),
+    "ksa_engine": ("Light or shut a craft's engine, which is the ignition key and the throttle: the named "
+                   "craft, or the flown one. For making a craft burn while another game watches it.",
+                   {"craft": {"type": "string"}, "on": {"type": "boolean"}, "throttle": _num("0 to 1")}, [],
+                   lambda a: _dump(send("engine", **a))),
     "ksa_launch": ("Start KSA with this tree's deployed build if it is not running, and optionally load a "
                    "save. Uses a running game rather than starting a second.",
                    {"save": {"type": "string"}}, [], lambda a: [_text(launch(a.get("save")))]),

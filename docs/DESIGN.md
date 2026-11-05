@@ -190,6 +190,20 @@ against KSA `2026.10.25.5707`:
   refused by the player who did not start it, ended by the one who did; and a pause voted through,
   with both worlds stopped at the same universe time and still there five seconds later. Coming out
   of a warp overshoots by about two seconds and is nudged off at 0.9x.
+- **Another player's engines, burning.** Alpha lit an 89-part rocket in orbit, 7,576 km from the
+  craft Bravo was standing by. Bravo's game was not stepping it in physics and KSA gave it no duty
+  cycle at all, so the mod wrote one: Bravo's bridge reported `engine_duty 1` with
+  `engine_drawn_here true`, and the picture from Bravo's camera has the plume, the exhaust and the
+  light on a craft it is not simulating. Shut the engine in Alpha and the same craft in the same
+  camera was dark within the second, `engine_duty 0`. Alpha's own copy of it read `engine_duty 1`
+  with `engine_drawn_here false` throughout -- the mod leaving a craft KSA is stepping to KSA's own
+  numbers, which is the other half of the rule.
+
+  It also corrected the mod. A craft whose ignition was on with nothing behind it -- no propellant,
+  nothing staged -- was reported to the others as burning, because what was sent was the ignition
+  and not the burn. It is the nozzles' own duty cycle now: that craft reports its engines cold, and
+  one that is really firing reports them lit whoever opened the valve, which is what a flight
+  computer running a manoeuvre node does without ever setting the flag.
 - **Two games making one name.** A kitten sent out of the same capsule in both: the second was named
   `Nasley 2` by the server, each game kept flying its own, and each built the other's and stood it
   where its owner put it. The second game holds the other player's under a name of its own
@@ -205,9 +219,11 @@ against KSA `2026.10.25.5707`:
 - **Two games across the internet.** Both games and the server were on one machine. WSL in its default
   NAT mode cannot be reached from a Windows game at all, which is why `two-games.sh` publishes a
   Windows server unless WSL is in mirrored mode.
-- **A puppet's engines, at all.** Every call in it is read off the game's own source and the mod
-  compiles against them, but no plume of another player's has been watched appear -- neither the one
-  KSA draws for a craft it is stepping nor the one the mod writes for a craft it is not.
+- **A puppet's engines where this game is stepping the craft.** The plume the mod writes for a craft
+  out of physics has been watched; the one KSA draws for a puppet close enough to be in this game's
+  own physics has not, so the rule that hands that case back to KSA is read off the source alone.
+- **An engine lit by a flight computer rather than by a hand.** What is sent is the nozzles' own duty
+  cycle, which is what a node burn leaves behind, but no node burn has been watched from another game.
 - **Anything the vehicle editor is open for.** That KSA refuses to save or load then is read off its
   own source; that the mod now waits rather than handing on a stale world has not been watched happen.
 

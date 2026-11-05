@@ -96,6 +96,7 @@ internal sealed class Bridge
             "watch" => Watch(command),
             "eva" => Eva(command),
             "stage" => Stage(command),
+            "engine" => Engine(command),
             "pause" => Paused(true),
             "resume" => Paused(false),
             "speed" => Speed(command),
@@ -237,6 +238,10 @@ internal sealed class Bridge
                 ["puppet"] = Sync.IsPuppet(v),
                 ["owned"] = Sync.OwnedCraft.Contains(key),
                 ["from_flown_m"] = flown is null || ReferenceEquals(v, flown) ? null : Math.Round(World.Between(flown, v), 1),
+                // What this game would draw this craft's engines from, and whether that number is
+                // KSA's own or the mod's: the whole of whether another player is seen to burn.
+                ["engine_duty"] = Math.Round(World.DutyOf(v), 3),
+                ["engine_drawn_here"] = World.IsShown(v),
             });
         }
         return Done(new() { ["craft"] = all });
@@ -357,6 +362,21 @@ internal sealed class Bridge
         if (craft is null) return Failed(id.Length > 0 ? $"no craft '{id}' in this world" : "no craft is being flown");
         if (World.Stage(craft) is not { } sequence) return Failed($"{craft.Id} has no sequence left to fire");
         return Done(new() { ["craft"] = craft.Id, ["sequence"] = sequence, ["parts"] = craft.Parts.Count });
+    }
+
+    // A craft's engine lit or shut, which is the ignition key and the throttle: for a test that has
+    // to make a craft burn with no hand on the keyboard. What this writes is what a player's own key
+    // writes, so the craft burns here for real and is said to be burning to everyone else.
+    private static Reply Engine(BridgeCommand command)
+    {
+        string id = command.String("craft");
+        Vehicle? craft = id.Length > 0 ? World.Vehicles().FirstOrDefault(v => v.Id == id) : World.Controlled;
+        if (craft is null) return Failed(id.Length > 0 ? $"no craft '{id}' in this world" : "no craft is being flown");
+        bool on = command.Flag("on", true);
+        float throttle = (float)command.Number("throttle", 1.0);
+        World.SetEngine(craft, on, on ? Math.Clamp(throttle, 0f, 1f) : 0f);
+        (bool lit, float open) = World.EngineOf(craft);
+        return Done(new() { ["craft"] = craft.Id, ["on"] = lit, ["throttle"] = Math.Round(open, 3), ["duty"] = Math.Round(World.DutyOf(craft), 3) });
     }
 
     // ---- the clock -------------------------------------------------------------------------
