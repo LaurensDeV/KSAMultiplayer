@@ -124,3 +124,26 @@ The modifier count is read in at least three places at three different times -- 
 render data, the planet renderer's buffer, and the ground clutter renderer -- and there is no window
 that is before all of them. Reverted. The extra pads stand on the ground as they find it, and the
 far ones have their aprons cut where it is not flat. That is the cost of not crashing.
+
+## 2026-11-05 -- three players' crash logs from mp.ksarmory.com on 0.5.0
+
+Seven unhandled exceptions across three logs, every one of them inside
+`VehicleUpdateTask.ContactIsland.Execute` -> `PhysicsBubble`:
+
+- six `InvalidOperationException: Collection was modified` out of
+  `PopulateBepuStatesFromKinematic` and `FullPhysicsConstrainedStep`
+- one `ArgumentOutOfRangeException: Leaf index must be a valid index in the tree's leaf array`
+  out of `BepuPhysics.Trees.Tree.RemoveAt`, reached through `ConstraintSim.RemoveTerrain` ->
+  `Statics.Remove`
+
+Nothing else: no other exception type, no error or warning of any other kind, and only `Core` and
+`KSAMultiplayer` loaded in all three.
+
+The leaf-index one is new as a signature but reads as the same fault one step downstream: a
+vehicle taken out from under a bubble mid-step leaves its terrain statics holding handles that no
+longer point anywhere, and the next `RemoveTerrain` walks off the end of Bepu's tree. It is in the
+same call stack as the other six.
+
+So: one bug, not four. 0.5.1 moves the removals into the frame's quiet window alongside the
+additions, which is the fix these point at -- still to be confirmed by a session that would
+otherwise have produced them.
