@@ -915,7 +915,7 @@ public class ServerTests
     }
 
     [Fact]
-    public void TheWorldEverybodyIsPutBackOnIsTheClearedOne()
+    public void ClearingTheWorldKeepsTheClearedSaveAndCostsNobodyAReload()
     {
         using Rig rig = new();
         Client a = Seed(rig);
@@ -926,17 +926,20 @@ public class ServerTests
         b.Blobs.Clear();
 
         // A sweep asks whoever has been in longest for a save, since the world on disk still holds
-        // what was swept. Nobody goes back on the world until that save is the one they would get.
+        // what was swept. That save comes from a game that has already swept, so it is clean.
         Assert.Single(rig.Server.Sweep());
         rig.Until(() => a.SnapshotWanted is not null, what: "Alice to be asked for a save of the cleared world");
-        Assert.DoesNotContain(rig.Server.Players, p => !p.Loaded);
 
         a.SnapshotWanted = null;
         a.Upload(new Blob(BlobKind.World, "", a.Id, 6000, Rig.FakeWorld(20)));
-        rig.Until(() => a.Blobs.Any(x => x.Kind == BlobKind.World) && b.Blobs.Any(x => x.Kind == BlobKind.World),
-                  seconds: 20, what: "both to be put back on the cleared world");
-        Assert.Equal(6000, rig.Server.World!.Universe);
-        Assert.Equal(rig.Server.World.Data, b.Blobs.Last(x => x.Kind == BlobKind.World).Data);
+        rig.Until(() => rig.Server.World!.Universe == 6000, seconds: 20, what: "the cleared world to be kept");
+
+        // And nobody is put back on it: everybody is standing in a world they swept themselves, so a
+        // clear costs no reload and leaves the clock alone. Only reload moves anybody.
+        rig.For(1.0);
+        Assert.DoesNotContain(a.Blobs, x => x.Kind == BlobKind.World);
+        Assert.DoesNotContain(b.Blobs, x => x.Kind == BlobKind.World);
+        Assert.DoesNotContain(rig.Server.Players, p => !p.Loaded);
     }
 
     [Fact]

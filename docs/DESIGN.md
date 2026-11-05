@@ -374,7 +374,11 @@ against KSA `2026.10.25.5707`:
   world of 27 craft, of which the server knew 3. So each game matches the name against its own
   world and takes away what it finds, bar what anybody is flying -- a world that pulls the hull out
   from under a player is worse than a world with debris in it. A fresh save is asked for straight
-  after, since the world on disk still holds them all, and everybody is put back on that save.
+  after, since the world on disk still holds them all. It comes from a game that has already swept
+  -- a game with a sweep still queued does not answer a save that frame, or it would hand back the
+  very thing it is about to take away -- so what lands on disk is clean and nobody is moved. A
+  clear therefore costs no loading screen and leaves universe time where it is; `reload` is the
+  command for that, and is asked for on its own.
 - **The world is handed out again rather than the clock put back.** Universe time cannot be moved
   backwards by telling anyone: each game keeps its own, one more than three seconds ahead of the
   server holds at a standstill until the server catches up (`ClockFollow.Speed`), and the only thing

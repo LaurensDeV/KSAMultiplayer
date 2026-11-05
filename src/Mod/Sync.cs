@@ -540,7 +540,10 @@ internal static class Sync
 
     private static void Play(Client c)
     {
-        Snapshot(c);
+        // Not while a sweep is waiting: it is applied further down this frame, and a save answered
+        // first would be of the world as it was and hand the server back everything it just cleared.
+        // One frame later the world is swept and the save is of that.
+        if (c.Swept.Count == 0) Snapshot(c);
         TakeRenames(c);
 
         // By what the shared world calls each craft. Two of this world's craft can want one name for a
