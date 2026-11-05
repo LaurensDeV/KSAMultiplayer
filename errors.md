@@ -99,3 +99,28 @@ twice) and `error registering duplicate 'Astronomical' id 'Keworth'`.
 
 Not proven, and KSA catches these rather than dying of them -- but a physics step failing for
 thirty craft a second is not a session anybody can fly in.
+
+## 2026-11-05 -- adding terrain modifiers at runtime: don't
+
+Giving the extra launchpads the same terrain decal the real site has -- which is the only way to
+stop the hillside cutting their aprons -- was tried by appending a `DecalModifierReference` to
+`BodyTemplate.TerrainReference.ProceduralModifiers.Modifiers` and rebuilding the sorted list with
+the public `ProcessModifiers()`. It was done from a prefix on `Astronomical.SetupModifierRenderData`,
+before a celestial's modifier data is made and before `PlanetRenderer` sizes its buffer from
+`TerrainModifiersRenderData.NumModifiers` -- which looked like the one safe window.
+
+It is not. A second consumer sizes itself from the same count:
+
+```
+System.ArgumentOutOfRangeException: Index was out of range ... (Parameter 'index')
+   at System.Collections.Generic.List`1.get_Item(Int32 index)
+   at KSA.GroundClutterRenderer.GenerateBatch(..., Int32 numModifiers, ...)
+   at KSA.PlanetRenderer.OnPreRender(...)
+```
+
+The game died on the first rendered frame after a world load, every time.
+
+The modifier count is read in at least three places at three different times -- the per-celestial
+render data, the planet renderer's buffer, and the ground clutter renderer -- and there is no window
+that is before all of them. Reverted. The extra pads stand on the ground as they find it, and the
+far ones have their aprons cut where it is not flat. That is the cost of not crashing.
