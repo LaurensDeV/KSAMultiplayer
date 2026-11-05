@@ -170,3 +170,23 @@ The second one is not understood yet. What is known: the craft's origin comes fr
 last placed at, that epoch is this mod's choice, and nothing yet makes it agree with the bubble a
 craft will later join. Guessing at it has already moved one failure rather than removing it, so the
 next step is to work out what origin a bubble will use before choosing one, not another epoch.
+
+## 2026-11-05 -- everybody crashed at once on 0.7.0
+
+The server's side, in order: a debris storm with Laurens and Onyx each describing the *same*
+fragments of a third player's rocket (`NewRocket_2_10_2_3_1`, `NewRocket_2_12_1_1_1_1`); a sweep
+that took 96 craft; then `reload` handing a 16 KB world to four players at once; then
+`averageksp 2` and `MrJeranimo 2` joining, the " 2" meaning the server had not yet let go of the
+sessions they had just lost.
+
+One player's log: 117 destructions of 62 distinct craft, one of them 27 times; 113 refused origin
+updates; four world loads, and the log stops in the middle of the fourth with no exception.
+
+So the cascade is not one machine. The engine of it is that a game treats the wreckage of another
+player's craft as craft of its own: the copy explodes locally, `Adopt` finds fragments nothing has
+seen, claims them, and describes them to everybody, who build them and explode them in turn. The
+server shows two players naming the same fragments, which is that loop seen from outside.
+
+Rate limits bound how fast it runs and do not stop it. What has to change is which craft a game is
+allowed to call its own, and that wants a reproduction here -- two games, a many-part rocket, a
+deliberate breakup -- rather than another guess against a live server.
