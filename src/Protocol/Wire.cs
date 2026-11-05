@@ -73,8 +73,15 @@ public static class Wire
     /// else nothing, so the same craft stands on concrete in one world and sunk in the grass in the
     /// next, with no pad under it and nothing for its physics to rest on. The shape of the shared
     /// world changed without a byte of the wire changing, which is the case this number is for.</para>
+    ///
+    /// <para>15 is the same test again. A game of 14 launching from the launch menu puts its craft
+    /// on a site's own pad however many are standing there, so two craft overlap and everybody
+    /// watches them go up; and a game of 14 tears another player's craft down and builds it again
+    /// every time it changes shape, which drops exploding copies into its world whose pieces it
+    /// then adopts and sends to everyone as craft of its own. Both are one game making a mess the
+    /// rest have to look at.</para>
     /// </summary>
-    public const ushort Version = 14;
+    public const ushort Version = 15;
 
     public const int BufferBytes = 8192;
     public const int NameChars = 24;
