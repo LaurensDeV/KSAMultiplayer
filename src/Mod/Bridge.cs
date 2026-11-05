@@ -198,7 +198,7 @@ internal sealed class Bridge
             }).ToList();
             data["owned_here"] = Sync.OwnedCraft.Order(StringComparer.Ordinal).ToList();
             data["puppets_here"] = Sync.PuppetCraft.Order(StringComparer.Ordinal).ToList();
-            data["conflicts"] = Sync.ConflictingCraft.Order(StringComparer.Ordinal).ToList();
+            data["renamed"] = Sync.RenamedCraft.Order(StringComparer.Ordinal).ToList();
             data["arriving"] = c.Arriving;
             data["warp"] = c.Warp is { } w
                 ? new Dictionary<string, object?>

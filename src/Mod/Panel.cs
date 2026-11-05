@@ -427,10 +427,9 @@ internal static class Panel
                 if (p.Id == c.Id) ImGui.Text($"{p.Name} (you){flying}");
                 else ImGui.Text($"{p.Name}{state}{flying}");
             }
-            if (Sync.ConflictingCraft.Count > 0)
+            if (Sync.RenamedCraft is { Count: > 0 } renamed)
             {
-                float4 warn = new(1.0f, 0.5f, 0.3f, 1.0f);
-                ImGui.TextColored(in warn, $"Rename for others to see: {string.Join(", ", Sync.ConflictingCraft)}");
+                ImGui.TextDisabled($"known to the others as: {string.Join(", ", renamed)}");
             }
         }
         if (ImGui.Button("Disconnect", null)) Sync.Disconnect();

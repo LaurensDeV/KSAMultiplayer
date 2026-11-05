@@ -73,7 +73,6 @@ internal static class Sync
     // belong to two craft here at once -- this player's kitten and the one another player sent out of
     // the same capsule -- and what matters is which object was already here, not what it is called.
     private static readonly HashSet<Vehicle> Seen = [];
-    private static readonly HashSet<string> Conflicts = [];
 
     // What the shared world calls a craft, when that is not what this world calls it: two games that
     // each send a kitten out of the same capsule both call it what KSA calls it, and the server gives
@@ -111,7 +110,15 @@ internal static class Sync
     public static Client? Client => _client;
     public static IReadOnlyList<string> Chat => ChatLines;
     public static IReadOnlyList<string> Said => SaidLines;
-    public static IReadOnlyCollection<string> ConflictingCraft => Conflicts;
+
+    /// <summary>
+    /// The craft standing here that the others know by another name, as "here: there". Two games each
+    /// send a kitten out of the same capsule and both call it what KSA calls it, so the server gives
+    /// the second a name of its own; and a craft built here for another player takes a name this world
+    /// has free when this world already has one of that name.
+    /// </summary>
+    public static IReadOnlyCollection<string> RenamedCraft =>
+        [.. Renamed.Where(r => World.IsAlive(r.Key)).Select(r => $"{r.Key.Id}: {r.Value}")];
 
     /// <summary>The craft this player owns and sends, by Id.</summary>
     public static IReadOnlyCollection<string> OwnedCraft => Owned.Keys;
@@ -268,7 +275,6 @@ internal static class Sync
         Built.Clear();
         Owned.Clear();
         Seen.Clear();
-        Conflicts.Clear();
         Renamed.Clear();
         MadeHere.Clear();
         Definitions.Clear();
@@ -561,7 +567,6 @@ internal static class Sync
         {
             // Found before the new name is written down, since that is what it is called until then.
             Vehicle? craft = World.Vehicles().FirstOrDefault(v => KeyOf(v) == r.Was && !Puppets.ContainsKey(v));
-            Conflicts.Remove(r.Was);
             // What is held under the old name is not this craft's: the name was taken because
             // another player already had a craft called that, so the definition filed under it is
             // theirs, and it is the one this game needs to build their craft. Nothing re-requests a
@@ -687,7 +692,6 @@ internal static class Sync
                 {
                     Owned.Remove(key);
                     if (c.Owns(key)) c.SayGone(key);
-                    Conflicts.Remove(key);
                     continue;
                 }
             }
