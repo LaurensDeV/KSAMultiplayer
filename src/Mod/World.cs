@@ -510,7 +510,18 @@ internal static class World
         }
         double3 at = v.Orbit.StateVectors.PositionCci;
         if (ReferenceEquals(v.Parent, body) && Vec(at - D(s.PositionCci)) < nearEnoughM) return false;
-        Orbit orbit = Orbit.CreateFromStateCci(body, new UniverseTime(s.Universe), D(s.PositionCci), D(s.VelocityCci), v.OrbitColor);
+        // Never an epoch behind the craft's own origin. A state is interpolated a fixed delay behind
+        // this game's clock, so its time is always in the past, and KSA refuses an origin that moves
+        // backwards (PhysicsStates.TryUpdateKinematicOrigin logs "with origin at time ... with new
+        // origin at time ..." and leaves the craft exactly where it was). A craft whose origin has
+        // been carried forward -- by a physics bubble it has just left, say -- then stands still for
+        // every frame until the delay is made up and jumps when it is, which is the jitter players
+        // see. Carried forward along its own velocity instead, which over a tenth of a second is the
+        // same place.
+        double epoch = s.Universe;
+        double ahead = Math.Max(0.0, v.GetPhysicsStatesMutable().Origin.Time.Seconds() - epoch);
+        double3 positionCci = D(s.PositionCci) + (D(s.VelocityCci) * ahead);
+        Orbit orbit = Orbit.CreateFromStateCci(body, new UniverseTime(epoch + ahead), positionCci, D(s.VelocityCci), v.OrbitColor);
         v.SetFlightPlan(new FlightPlan(orbit, KeyHash.Make(v.Id.AsSpan())));
         return true;
     }
