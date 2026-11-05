@@ -147,6 +147,10 @@ public sealed class Track
             if (s.Universe < _states[0].Universe - 10.0) _states.Clear();
         }
         int at = _states.FindLastIndex(k => k.Universe < s.Universe) + 1;
+        // Older than everything there is room for. Dropped where it is seen, rather than inserted
+        // at the front and then taken off the front again as the oldest, which is what dropping the
+        // oldest comes to when the newcomer is it.
+        if (at == 0 && _states.Count >= Kept) return;
         _states.Insert(at, s);
         if (_states.Count > Kept) _states.RemoveAt(0);
     }
