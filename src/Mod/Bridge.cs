@@ -177,6 +177,7 @@ internal sealed class Bridge
             data["rtt_ms"] = c.ClockKnown ? Math.Round(c.Rtt * 1000.0, 1) : null;
             data["behind_s"] = Sync.Behind is { } b ? Math.Round(b, 2) : null;
             data["held_speed"] = Sync.HeldSpeed;
+            data["admin"] = c.Admin;
             data["players"] = c.Players.Select(p => (object?)new Dictionary<string, object?>
             {
                 ["id"] = p.Id,
@@ -288,11 +289,11 @@ internal sealed class Bridge
             return Done(new() { ["board_for_s"] = Math.Round(Panel.BoardUntil - Sync.Wall(), 1) });
         }
 
+        // Through the same door as the keyboard, / and all, so what a run drives is what a player does.
         if (command.String("chat") is { Length: > 0 } text)
         {
             if (Sync.Client is null) return Failed("not connected");
-            Sync.SayChat(text);
-            return Done();
+            return Done(new() { ["asked"] = Sync.Typed(text) });
         }
 
         return Status();

@@ -32,7 +32,13 @@ const string Usage = """
     With no world, the first player to join gives the server theirs.
 
     Console commands, on standard input: players, say <text>, kick <name> [why],
-    clear [name], save, status, help, quit.
+    op <name>, deop <name>, admins, clear [name], reload, save, status, help, quit.
+
+    An admin can type those same commands into a game's chat with a / in front. op hands the player
+    a token their game keeps and offers at every join after, so they stay an admin without a
+    password to type or to lose; deop takes it back, from a name whether or not it is playing. The
+    list is admins.json beside the world, and holds only each token's hash. quit is the console's
+    alone: a server nobody can start again is not something to hand out by accident.
 
     clear takes every craft nobody is flying out of every game and out of the world the server
     hands out -- the broom for a world filling with spent stages. A name narrows it, with * and ?
@@ -154,17 +160,26 @@ if (!Console.IsInputRedirected || Environment.GetEnvironmentVariable("KSAMP_STDI
     reader.Start();
 }
 
-void Command(string line)
+// who is null for the console, and the player who typed it in a game otherwise: an admin asks for
+// the same things, and hears the answer in their own chat rather than in a log they cannot see.
+void Command(string line, GameServer.Player? who = null)
 {
+    void Answer(string text)
+    {
+        if (who is null) Say(text);
+        else server.Tell(who, text);
+    }
+
     string[] parts = line.Split(' ', 2, StringSplitOptions.TrimEntries);
     string rest = parts.Length > 1 ? parts[1] : "";
     switch (parts[0].ToLowerInvariant())
     {
         case "players" or "list":
-            if (server.Players.Count == 0) Say("nobody is playing");
+            if (server.Players.Count == 0) Answer("nobody is playing");
             foreach (GameServer.Player p in server.Players.OrderBy(p => p.Id))
             {
-                Say($"  {p.Id,3} {p.Name,-24} {(p.Loaded ? "playing" : p.WaitingForWorld ? "waiting for the world" : "loading")}"
+                Answer($"  {p.Id,3} {p.Name,-24} {(p.Loaded ? "playing" : p.WaitingForWorld ? "waiting for the world" : "loading")}"
+                    + $"{(p.Admin ? ", admin" : "")}"
                     + $"{(p.Controlling.Length > 0 ? $", flying {p.Controlling}" : "")}, from {p.At}, KSA {p.KsaBuild}");
             }
             break;
@@ -174,11 +189,25 @@ void Command(string line)
             break;
         case "kick":
             string[] k = rest.Split(' ', 2, StringSplitOptions.TrimEntries);
-            if (k[0].Length == 0 || !server.Kick(k[0], k.Length > 1 ? k[1] : "")) Say($"nobody called '{k[0]}'");
+            if (k[0].Length == 0 || !server.Kick(k[0], k.Length > 1 ? k[1] : "")) Answer($"nobody called '{k[0]}'");
+            break;
+        case "op":
+            if (rest.Length == 0) Answer("op <name>, of somebody who is playing");
+            else if (server.Op(rest) is not { } opped) Answer($"nobody called '{rest}' is playing: a token has to reach a game, and is said once");
+            else Answer($"{opped} is an admin, and their game keeps the token to stay one");
+            break;
+        case "deop":
+            if (rest.Length == 0) Answer("deop <name>, playing or not");
+            else Answer(server.Deop(rest) ? $"{rest} is no longer an admin" : $"{rest} was not an admin");
+            break;
+        case "admins":
+            Answer(server.Admins.Names.Count == 0
+                ? "nobody is an admin; op <name> makes one of somebody who is playing"
+                : $"admins: {string.Join(", ", server.Admins.Names)}");
             break;
         case "reload":
             int put = server.ReloadAll("the operator asked");
-            Say(put == 0
+            Answer(put == 0
                 ? server.HasWorld ? "nobody to hand the world to" : "there is no world to hand out"
                 : $"handing the world to {put} player{(put == 1 ? "" : "s")} again; their games load it and come back in");
             break;
@@ -188,30 +217,35 @@ void Command(string line)
             // by nobody, so it is the games that find it, each in its own world.
             // What the sweep found here is logged by the server itself, detail and all; this is
             // only the console answering the operator who typed it.
-            Say($"sweeping every game by '{(rest.Length > 0 ? rest : "*")}', bar what is being flown"
+            Answer($"sweeping every game by '{(rest.Length > 0 ? rest : "*")}', bar what is being flown"
                 + $"{(swept.Count > 0 ? $" -- {swept.Count} known here" : "")}");
             break;
         case "save" or "snapshot":
             server.SnapshotNow();
-            Say(server.Players.Any(p => p.Loaded) ? "asked the longest-playing player for a save" : "nobody is in the world to save it");
+            Answer(server.Players.Any(p => p.Loaded) ? "asked the longest-playing player for a save" : "nobody is in the world to save it");
             break;
         case "status":
             double u = server.UniverseClock.Now(Now());
-            Say($"{server.Players.Count} players, {server.CraftCount} craft known, universe time {(server.UniverseClock.Known ? $"{u:F1} s" : "not yet known")}"
+            Answer($"{server.Players.Count} players, {server.CraftCount} craft known, universe time {(server.UniverseClock.Known ? $"{u:F1} s" : "not yet known")}"
                 + $"{(server.UniverseClock.Running ? "" : " (held)")}, world {(server.World is { } w ? $"{w.Data.Length / 1024} KB" : "none")}"
                 + $", {server.Socket.Received} datagrams in, {server.Socket.Sent} out");
             break;
         case "help" or "?":
-            Say("players, say <text>, kick <name> [why], clear [name], reload, save, status, quit");
-            Say("  clear takes every craft nobody is flying out of every game; a name with * narrows it,");
-            Say("    and everybody is put back on the cleared world once it has been saved");
-            Say("  reload puts everybody back on the world as it stands, which is also what puts the clock back");
+            Answer($"players, say <text>, kick <name> [why], op <name>, deop <name>, admins, clear [name],"
+                + $" reload, save, status{(who is null ? ", quit" : "")}");
+            Answer("  clear takes every craft nobody is flying out of every game; a name with * narrows it,");
+            Answer("    and everybody is put back on the cleared world once it has been saved");
+            Answer("  reload puts everybody back on the world as it stands, which is also what puts the clock back");
+            Answer("  op hands a player's game a token it keeps, so they are an admin whenever they join");
             break;
         case "quit" or "exit" or "stop":
-            stop.Cancel();
+            // The console's alone: a server nobody can start again is not something to hand to an admin
+            // who meant to leave the world rather than end it.
+            if (who is not null) Answer("quit is the console's alone");
+            else stop.Cancel();
             break;
         default:
-            Say($"no command '{parts[0]}'; try help");
+            Answer($"no command '{parts[0]}'; try help");
             break;
     }
 }
@@ -223,6 +257,7 @@ while (!stop.IsCancellationRequested)
     try
     {
         while (commands.TryDequeue(out string? c)) Command(c);
+        while (server.Asked.TryDequeue(out (GameServer.Player Who, string Line) a)) Command(a.Line, a.Who);
         server.Tick();
         while (server.Said.TryDequeue(out string? s)) Say(s);
     }

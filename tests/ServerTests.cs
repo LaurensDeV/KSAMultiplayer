@@ -12,17 +12,17 @@ public sealed class Rig : IDisposable
     public readonly List<Client> Clients = [];
     public GameServer Server { get; }
 
-    public Rig(ServerOptions? options = null, WorldStore? store = null)
+    public Rig(ServerOptions? options = null, WorldStore? store = null, Admins? admins = null)
     {
-        Server = new GameServer((options ?? new ServerOptions()) with { Port = 0 }, Now, store, IPAddress.Loopback);
+        Server = new GameServer((options ?? new ServerOptions()) with { Port = 0 }, Now, store, IPAddress.Loopback, admins);
     }
 
     public double Now() => _watch.Elapsed.TotalSeconds;
 
-    public Client Join(string name, string build = "B1", string mods = "Core", string password = "", string system = "SolLite")
+    public Client Join(string name, string build = "B1", string mods = "Core", string password = "", string system = "SolLite", string token = "")
     {
         Client c = new(Now);
-        c.Connect(new IPEndPoint(IPAddress.Loopback, Server.Port), name, build, mods, system, password);
+        c.Connect(new IPEndPoint(IPAddress.Loopback, Server.Port), name, build, mods, system, password, token);
         Clients.Add(c);
         return c;
     }

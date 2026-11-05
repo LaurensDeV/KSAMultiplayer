@@ -43,6 +43,13 @@ another version is refused by name rather than misread.
   is believed: a player in the world claims craft, counts in every warp vote and, on a server whose
   world came off disk, sets the clock the whole room then follows, and none of that is anyone's to do
   from outside the world. A universe time that is not a number is not a time either.
+- **Who may run commands.** `admins.json` in `--data`: a name and the SHA-256 of a token, one line
+  per admin. The token itself exists in two places and neither is that file -- the operator's console
+  for the moment it is said, and the machine it was said to. So the list is enough to take an admin
+  away and not enough to become one, and a server whose data directory leaks has leaked no admin. A
+  name has to be connected to be opped, since a token that reaches nobody is only a row in a file;
+  the name is then kept up to date from whoever last joined with that token, so revoking admin names
+  the player an operator can see rather than the one who was opped months ago.
 - **Every player's ping.** A game measures its own round trip to the server and says it with each
   `Ping`; the server passes them all on in the roster, so each game can show what everyone's line is
   like. Held Tab shows that list in game.
@@ -170,6 +177,31 @@ again. Both give up after two minutes. What it carries says what it is in front:
 the craft's Id, its owner and the universe time. A zip from another machine is unpacked only into its
 own folder: a name that climbs out of it is refused.
 
+## Commands from inside a game
+
+A line typed into the chat behind a `/` goes to the server as a `Command` rather than to everyone as
+a `Chat`, so it is said to nobody whether or not it runs. The server runs it only for a player whose
+`Hello` carried a token on the admin list, and hands it to the console program through `Asked` -- the
+same dispatcher the console's own standard input feeds, so there is one list of commands and one place
+each is implemented. The answer goes back as a `Chat` from the server to that player alone, which their
+game shows in the chat window they typed into.
+
+`quit` is the exception the dispatcher makes for itself: an admin asking for it is told it is the
+console's, because a server nobody can start again is not something to hand out to somebody who meant
+to leave the world rather than end it.
+
+Being an admin is a machine's, not a name's. `op` makes 32 random bytes, keeps their hash and sends the
+token itself once; the game writes it beside that server's address and offers it in every `Hello` after.
+Nothing is asked of the player, and nothing they could be shoulder-surfed typing. Revoking it removes
+the hash, so the token stops working at once even for a game that still has it, and tells a game that is
+connected to throw it away -- which is said by `Op(Admin: false)` and needs nothing else on the wire.
+
+None of it is secret from somebody watching the line. A token goes out in the clear in every `Hello`,
+as the password does, so it is worth what the network between the game and the server is worth: enough
+to keep an admin from being typed in by a stranger who guessed a name, not enough to stand up to
+somebody reading the datagrams. Taking one back is a `deop` away, which is the answer to a token that
+has got out.
+
 ## What has been seen in a game
 
 Two games on one machine, each with a profile of its own, joined to one server: `tools/two-games.sh
@@ -236,6 +268,8 @@ against KSA `2026.10.25.5707`:
   own physics has not, so the rule that hands that case back to KSA is read off the source alone.
 - **An engine lit by a flight computer rather than by a hand.** What is sent is the nozzles' own duty
   cycle, which is what a node burn leaves behind, but no node burn has been watched from another game.
+- **Commands typed in a game.** `/op`, `/clear` and the rest are driven over loopback by the tests,
+  both ways, but no admin has yet typed one into a running game's chat.
 - **Anything the vehicle editor is open for.** That KSA refuses to save or load then is read off its
   own source; that the mod now waits rather than handing on a stale world has not been watched happen.
 

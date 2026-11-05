@@ -16,7 +16,11 @@ public class WireTests
     [Fact]
     public void EveryMessageComesBackAsItWent()
     {
-        Assert.Equal(new Wire.Hello("Jeb", "2026.10.25.5707", "Core,KSAMultiplayer", "SolLite", "pw"), RoundTrip(new Wire.Hello("Jeb", "2026.10.25.5707", "Core,KSAMultiplayer", "SolLite", "pw")));
+        Assert.Equal(new Wire.Hello("Jeb", "2026.10.25.5707", "Core,KSAMultiplayer", "SolLite", "pw", "t0ken"),
+                     RoundTrip(new Wire.Hello("Jeb", "2026.10.25.5707", "Core,KSAMultiplayer", "SolLite", "pw", "t0ken")));
+        Assert.Equal(new Wire.Command("clear Rocket_*"), RoundTrip(new Wire.Command("clear Rocket_*")));
+        Assert.Equal(new Wire.Op(true, "t0ken"), RoundTrip(new Wire.Op(true, "t0ken")));
+        Assert.Equal(new Wire.Op(false, ""), RoundTrip(new Wire.Op(false, "")));
         Assert.Equal(new Wire.Welcome(3, "", "Moon base", true), RoundTrip(new Wire.Welcome(3, "", "Moon base", true)));
         Assert.Equal(new Wire.Bye("kicked"), RoundTrip(new Wire.Bye("kicked")));
         Assert.Equal(new Wire.Ping(12.5, 0.035f, 0f, 1f, true, ""), RoundTrip(new Wire.Ping(12.5, 0.035f, 0f, 1f, true, "")));
@@ -77,7 +81,7 @@ public class WireTests
         Assert.Equal(99, version);
 
         // Cut short anywhere, a datagram is dropped rather than read wrong.
-        n = Wire.Write(new Wire.Hello("Jeb", "b", "m", "s", "p"), buffer);
+        n = Wire.Write(new Wire.Hello("Jeb", "b", "m", "s", "p", "t"), buffer);
         for (int k = 7; k < n; k++) Assert.Null(Wire.Read(buffer.AsSpan(0, k), out _));
     }
 

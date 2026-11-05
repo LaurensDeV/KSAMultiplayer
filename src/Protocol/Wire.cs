@@ -57,12 +57,15 @@ public readonly record struct Quat(double X, double Y, double Z, double W)
 public static class Wire
 {
     /// <summary>Changed whenever what a datagram means changes: a game speaking another version is refused by name.</summary>
-    public const ushort Version = 11;
+    public const ushort Version = 12;
 
     public const int BufferBytes = 8192;
     public const int NameChars = 24;
     public const int KeyChars = 96;
     public const int ChatChars = 200;
+
+    /// <summary>The longest an admin's token is: 32 random bytes in base64url come to 43 characters.</summary>
+    public const int TokenChars = 64;
 
     /// <summary>The most entries one <see cref="Owners"/> carries: 40 keys of 96 characters is under 4 KB.</summary>
     public const int OwnersPerPage = 40;
@@ -97,6 +100,8 @@ public static class Wire
         Warp = 21,
         NoWorld = 22,
         Swept = 23,
+        Command = 24,
+        Op = 25,
     }
 
     /// <summary>Where a warp has got to: nobody has asked, somebody has and is waiting, or it is running.</summary>
@@ -111,7 +116,8 @@ public static class Wire
 
     /// <param name="Mods">Every mod the game has enabled, comma separated: a world holding a part of one it lacks does not load.</param>
     /// <param name="System">The celestial system being played, such as the whole of Sol or Earth and its Moon alone: a world of one is not a world of the other.</param>
-    public sealed record Hello(string Name, string KsaBuild, string Mods, string System, string Password) : Message(Kind.Hello);
+    /// <param name="Token">What an admin was given last time, kept by that game and offered again here; empty from anybody else.</param>
+    public sealed record Hello(string Name, string KsaBuild, string Mods, string System, string Password, string Token) : Message(Kind.Hello);
 
     /// <param name="Id">The number the player is known by from now, or zero with <paramref name="Refused"/> saying why.</param>
     /// <param name="HasWorld">Whether the server has a world to send; without one this player's open world becomes it.</param>
@@ -265,6 +271,15 @@ public static class Wire
 
     public sealed record Chat(byte From, string Text) : Message(Kind.Chat);
 
+    /// <summary>A console line typed into a game's chat, which the server runs only for an admin.</summary>
+    public sealed record Command(string Line) : Message(Kind.Command);
+
+    /// <param name="Admin">What this player is on this server from now. A game told it is no admin
+    /// throws away whatever token it had for that server, so revoking one needs nothing else said.</param>
+    /// <param name="Token">A token to keep and offer at the next join, empty when there is nothing new
+    /// to keep: an admin who was recognised at the join already has one.</param>
+    public sealed record Op(bool Admin, string Token) : Message(Kind.Op);
+
     /// <summary>The server asking a player for a save of its world, to hand players who join after.</summary>
     public sealed record Snapshot(string Why) : Message(Kind.Snapshot);
 
@@ -287,6 +302,7 @@ public static class Wire
                 w.LongText(h.Mods, 4000);
                 w.Text(h.System, NameChars);
                 w.Text(h.Password, 64);
+                w.Text(h.Token, TokenChars);
                 break;
             case Welcome m:
                 w.U8(m.Id);
@@ -404,6 +420,13 @@ public static class Wire
                 w.U8(c.From);
                 w.Text(c.Text, ChatChars);
                 break;
+            case Command c2:
+                w.Text(c2.Line, ChatChars);
+                break;
+            case Op o:
+                w.U8(o.Admin ? (byte)1 : (byte)0);
+                w.Text(o.Token, TokenChars);
+                break;
             case Snapshot s:
                 w.Text(s.Why, 200);
                 break;
@@ -429,7 +452,7 @@ public static class Wire
         {
             Message m = (Kind)data[6] switch
             {
-                Kind.Hello => new Hello(r.Text(NameChars), r.Text(64), r.LongText(4000), r.Text(NameChars), r.Text(64)),
+                Kind.Hello => new Hello(r.Text(NameChars), r.Text(64), r.LongText(4000), r.Text(NameChars), r.Text(64), r.Text(TokenChars)),
                 Kind.Welcome => new Welcome(r.U8(), r.Text(200), r.Text(64), r.U8() != 0),
                 Kind.Roster => ReadRoster(ref r),
                 Kind.Bye => new Bye(r.Text(200)),
@@ -451,6 +474,8 @@ public static class Wire
                 Kind.Gone => new Gone(r.Text(KeyChars)),
                 Kind.Swept => new Swept(r.Text(KeyChars)),
                 Kind.Chat => new Chat(r.U8(), r.Text(ChatChars)),
+                Kind.Command => new Command(r.Text(ChatChars)),
+                Kind.Op => new Op(r.U8() != 0, r.Text(TokenChars)),
                 Kind.Snapshot => new Snapshot(r.Text(200)),
             Kind.NoWorld => new NoWorld(r.Text(200)),
                 _ => throw new FormatException(),

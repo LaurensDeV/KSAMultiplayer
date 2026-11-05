@@ -358,7 +358,7 @@ internal static class Panel
             }
             else
             {
-                ImGui.TextDisabled("Enter to chat");
+                ImGui.TextDisabled(Sync.Admin ? "Enter to chat, / for a command" : "Enter to chat");
             }
         }
         ImGui.End();
@@ -368,8 +368,8 @@ internal static class Panel
     private static void Send()
     {
         string said = ChatText.ToString().Trim();
-        Log.Info($"chat line of {said.Length} characters{(said.Length > 0 ? " sent" : ", nothing to send")}");
-        if (said.Length > 0) Sync.SayChat(said);
+        bool asking = Sync.Typed(said);
+        Log.Info($"{(asking ? "command" : "chat")} line of {said.Length} characters{(said.Length > 0 ? " sent" : ", nothing to send")}");
         Stop();
     }
 

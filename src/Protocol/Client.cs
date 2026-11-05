@@ -107,6 +107,15 @@ public sealed class Client : IDisposable
     /// <summary>Whether this game has been asked to answer a warp and has not yet.</summary>
     public bool WarpWantsAnswer => Warp is { Phase: Wire.WarpPhase.Asking } w && w.Waiting.Contains(Id);
     public Queue<(string Who, string Text)> Chat { get; } = new();
+
+    /// <summary>Whether this server runs what this game asks of it.</summary>
+    public bool Admin { get; private set; }
+
+    /// <summary>
+    /// What to write down for this server: a token to keep and offer at every join after, or empty to
+    /// throw away the one kept, which is how admin is taken back from a machine rather than a name.
+    /// </summary>
+    public Queue<string> Tokens { get; } = new();
     public Queue<string> Said { get; } = new();
 
     /// <summary>Set when the server asks for a save of this world; cleared by whoever answers it.</summary>
@@ -135,10 +144,12 @@ public sealed class Client : IDisposable
 
     public IEnumerable<string> Tracked => _tracks.Keys;
 
-    public void Connect(IPEndPoint server, string name, string ksaBuild, string mods, string system, string password)
+    /// <param name="token">What this server gave this machine when it was opped, to be an admin again without being asked.</param>
+    public void Connect(IPEndPoint server, string name, string ksaBuild, string mods, string system, string password, string token = "")
     {
         (_server, Id, Out, ServerName, ServerHasWorld) = (server, 0, "", "", false);
-        _hello = new Wire.Hello(Wire.Clip(name, Wire.NameChars), ksaBuild, mods, system, password);
+        Admin = false;
+        _hello = new Wire.Hello(Wire.Clip(name, Wire.NameChars), ksaBuild, mods, system, password, Wire.Clip(token, Wire.TokenChars));
         (_helloNext, _joinUntil, _heardAt) = (0.0, _clock() + JoinWithinSeconds, _clock());
         (_bestRtt, _lastRtt, ServerOffset, _serverClock, _serverRate) = (double.PositiveInfinity, double.NaN, 0.0, null, 0.0);
         Warp = null;
@@ -201,6 +212,13 @@ public sealed class Client : IDisposable
     {
         string t = Wire.Clip(text, Wire.ChatChars);
         if (Joined && t.Length > 0) Send(new Wire.Chat(Id, t));
+    }
+
+    /// <summary>A console line for the server to run, which it does only for an admin and answers either way.</summary>
+    public void Ask(string line)
+    {
+        string t = Wire.Clip(line, Wire.ChatChars).Trim();
+        if (Joined && t.Length > 0) Send(new Wire.Command(t));
     }
 
     /// <summary>Handles what has arrived and sends what is due. Once a frame.</summary>
@@ -327,6 +345,13 @@ public sealed class Client : IDisposable
                 return;
             case Wire.Chat c when Joined:
                 Chat.Enqueue((c.From == 0 ? "server" : NameOf(c.From), c.Text));
+                return;
+            case Wire.Op op when Joined:
+                Admin = op.Admin;
+                // Nothing to write down for an admin the server recognised at the join: that token is
+                // already here, and it is the only copy there is.
+                if (!op.Admin) Tokens.Enqueue("");
+                else if (op.Token.Length > 0) Tokens.Enqueue(op.Token);
                 return;
             case Wire.Snapshot s when Joined:
                 SnapshotWanted = s.Why;

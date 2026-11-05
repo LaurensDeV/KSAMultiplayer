@@ -8,7 +8,7 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
 
 > **Status: played, not finished.** Two games on one machine have flown in one world through it,
 > against KSA `2026.10.25.5707`, and the server and the protocol are tested headlessly besides
-> (65 tests, real UDP over loopback, a lossy line included). An 89-part rocket has been flown in a
+> (74 tests, real UDP over loopback, a lossy line included). An 89-part rocket has been flown in a
 > shared world and staged while the other game watched, which rebuilt the dropped stage as its own
 > craft. What two games across the internet do is not known.
 > See [docs/DESIGN.md](docs/DESIGN.md#what-has-not-been-tried).
@@ -98,7 +98,8 @@ nobody is connected, unless `--keep-time` is given.
 | `--speed` | `KSAMP_SPEED` | `1` | how fast universe time runs |
 
 Commands typed into the server's console: `players`, `say <text>`, `kick <name> [why]`,
-`clear [name]`, `reload`, `save`, `status`, `quit`. It shuts down cleanly on Ctrl+C and on SIGTERM.
+`op <name>`, `deop <name>`, `admins`, `clear [name]`, `reload`, `save`, `status`, `quit`. It shuts
+down cleanly on Ctrl+C and on SIGTERM.
 
 `clear` is the broom for a world filling up with spent stages. Every craft nobody is flying is taken
 out of every game that is in the world; a name narrows it, with `*` and `?` for wildcards --
@@ -111,6 +112,30 @@ standing in.
 
 `reload` does that last step on its own, with the world as it stands. Each game loads it and comes
 back in a few seconds. Nobody reconnects for either, and nobody loses what they are flying.
+
+### Admins
+
+An admin types those same commands into the game's chat with a `/` in front -- `/clear Rocket_*`,
+`/reload`, `/players` -- and the answer comes back in their own chat. `quit` is the console's alone.
+A line behind a `/` is said to nobody, so a player who types one where they are no admin has told the
+room nothing and is told so themselves.
+
+Who is one starts at the console, since nobody is one on a server that has just come up:
+
+```bash
+op Jeb
+```
+
+That hands Jeb's game a random token, which it keeps in `Documents/KSAMultiplayer/tokens.json` beside
+the server's address and offers at every join after, so Jeb is an admin whenever he comes back with
+nothing to type and no password to lose. `deop Jeb` takes it back, whether or not he is playing, and
+his game throws the token away when it next hears from the server. `op` on somebody who is already an
+admin replaces their token, which is how one that was lost on a reinstalled machine is replaced.
+
+The list is `admins.json` in `--data`, beside the world, and holds only each token's **hash**: enough
+to take an admin away, not enough to become one. A player has to be connected to be opped -- the token
+is said once, to a game, and never stored anywhere it could be said again -- and the name it is
+remembered under follows whoever last joined with it, so `deop` names the player you can see.
 
 Putting everybody back on the world is also the only way universe time is ever put back. A game's own
 time comes down by loading a world and by no other means -- a game more than three seconds ahead of
