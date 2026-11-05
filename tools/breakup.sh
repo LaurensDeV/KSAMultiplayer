@@ -8,17 +8,24 @@
 #     ./tools/breakup.sh              # fly A's biggest rocket apart; count what it did to both
 #     ./tools/breakup.sh --count      # count the logs again without flying anything
 #
-# The number that matters is the last one: **craft a game described that it had itself been told
-# about**. A game is allowed to describe its own craft and nobody else's, so a name that appears
-# both in `built <name>` (it was built here from somebody else's word) and in `sent the server how
-# <name> is built` (this game told everybody how it is built) is this game claiming another
-# player's wreckage. That is the engine of the cascade, and in a healthy run it is zero. The one
-# honest reason for it to be above zero is a handover -- a game does take over craft whose owner has
-# gone -- so both games stay joined for the whole run and nobody leaves.
+# The two numbers that matter come from the worlds rather than the logs, because the cascade starts
+# before anything is written down:
 #
-# The rest is how bad it got: builds against distinct names, rebuilds, destructions, the origins KSA
-# refused and by how much, and the ceilings KSA itself hit. A reproduction, not a test -- KSA's
-# physics is not deterministic and two runs differ -- so read orders of magnitude, not digits.
+#   * **craft one game holds that the other has never heard of.** Every craft in a shared world
+#     belongs to somebody, and a name only one game knows is a craft that game made up: its copy of
+#     the other player's rocket came apart differently and shed pieces of its own. Zero in a healthy
+#     run. The first run of this measured twenty.
+#   * **craft a game neither owns nor treats as another player's.** Orphans: nothing drives them,
+#     the owner's sweep does not reach them, and they are in physics and will hit things. Zero in a
+#     healthy run; the same run had thirty-five of forty-six.
+#
+# From the logs, then, how bad it got, and whether the orphans were claimed: a game may describe its
+# own craft and nobody else's, so a name in both `built <name>` and `sent the server how <name> is
+# built` is this game telling everybody about wreckage it was told about. The one honest reason for
+# that is a handover, so both games stay joined for the whole run and nobody leaves.
+#
+# A reproduction, not a test -- KSA's physics is not deterministic and two runs differ -- so read
+# orders of magnitude, not digits.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=ksa-user-dir.sh
@@ -42,20 +49,20 @@ if [[ "${1:-}" != "--count" ]]; then
     done
 
     echo "A flies a rocket apart; B only watches."
-    # Whatever A has standing with the most parts: the one worth breaking, and its own rather than a
-    # puppet, since a game may only fly what it owns.
+    # The most parts A can take over: the one worth breaking. Not a puppet, since a game may only
+    # fly what is not somebody else's, and flying it is what claims it.
     flown=$(call A craft '{}' | python3 -I -c '
 import json, sys
 try:
     craft = json.load(sys.stdin).get("craft", [])
 except Exception:
     craft = []
-mine = [c for c in craft if not c.get("puppet") and c.get("situation") == "Landed"]
+mine = [c for c in craft if not c.get("puppet") and (c.get("parts") or 0) > 1]
 best = max(mine, key=lambda c: c.get("parts") or 0, default=None)
 print(best["id"] if best else "")
 ')
     if [[ -z "$flown" ]]; then
-        echo "nothing of A's is standing on the ground; load a save with a rocket on a pad" >&2
+        echo "A has nothing of more than one part to break; load a save with a rocket in it" >&2
         exit 1
     fi
     echo "  A takes $flown"
@@ -72,10 +79,18 @@ print(best["id"] if best else "")
     echo
 fi
 
-python3 -I - "$TEST_ROOT" "$HERE/.two-games-server.log" <<'PY'
-import glob, os, re, statistics, sys
+# Both worlds as each game sees them, while they are still up: the logs cannot show a craft that
+# was never written down, and the ones that matter most never are.
+WORLDS="$(mktemp -d)"
+trap 'rm -rf "$WORLDS"' EXIT
+for name in A B; do
+    call "$name" craft '{}' > "$WORLDS/$name.json" 2>/dev/null || true
+done
 
-root, server_log = sys.argv[1], sys.argv[2]
+python3 -I - "$TEST_ROOT" "$HERE/.two-games-server.log" "$WORLDS" <<'PY'
+import glob, json, os, re, statistics, sys
+
+root, server_log, worlds = sys.argv[1], sys.argv[2], sys.argv[3]
 BUILT = re.compile(r' INFO built (.+?), ')
 REBUILT = re.compile(r' INFO rebuilding (.+?): ')
 DESCRIBED = re.compile(r' INFO sent the server how (.+?) is built')
@@ -97,6 +112,36 @@ def read(path):
     with open(path, encoding='utf-8', errors='replace') as f:
         return f.readlines()
 
+
+def world(name):
+    path = os.path.join(worlds, name + '.json')
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding='utf-8') as f:
+            return {c['id']: c for c in json.load(f).get('craft', [])}
+    except Exception:
+        return None
+
+
+made_up = {}
+seen = {name: world(name) for name in ('A', 'B')}
+if seen['A'] is not None and seen['B'] is not None:
+    print('the worlds, as each game has them')
+    for name, other in (('A', 'B'), ('B', 'A')):
+        mine = seen[name]
+        owned = sum(1 for c in mine.values() if c.get('owned'))
+        puppets = sum(1 for c in mine.values() if c.get('puppet'))
+        orphans = [k for k, c in mine.items() if not c.get('owned') and not c.get('puppet')]
+        alone = sorted(set(mine) - set(seen[other]))
+        made_up[name] = len(alone)
+        print(f'  {name}  {len(mine):4d} craft -- {owned:4d} its own, {puppets:4d} other players\','
+              f' {len(orphans):4d} neither')
+        print(f'      MADE UP, the other game has never heard of them  {len(alone):4d}'
+              + (f'   {", ".join(alone[:6])}{" ..." if len(alone) > 6 else ""}' if alone else '   none'))
+    print()
+else:
+    print('(no live worlds read -- the games are not up, so only the logs below)\n')
 
 verdict = []
 for name in ('A', 'B'):
@@ -153,8 +198,13 @@ if os.path.isfile(server_log):
           f'   of them repeats {sum("times now" in l for l in lines):5d}')
     print()
 
+if made_up:
+    bad = [n for n, c in made_up.items() if c]
+    print('craft a game made up is where the cascade starts: '
+          + (f'{" and ".join(bad)} did, ' + ', '.join(f'{n} by {made_up[n]}' for n in bad)
+             if bad else 'neither did'))
 if verdict:
     bad = [n for n, c in verdict if c]
-    print('either game claiming craft it was told about is the cascade: '
+    print('claiming craft it was told about is where it spreads: '
           + (f'{" and ".join(bad)} did' if bad else 'neither did'))
 PY

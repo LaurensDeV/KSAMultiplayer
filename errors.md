@@ -260,3 +260,42 @@ anything wrong.
 The log ends as the others do: `started loading save game 'Multiplayer'` at 22:35:56, nothing
 after it, and the crash-dump monitor gone with exit code 143 thirty seconds later. No exception.
 The game did not throw; it stopped, mid world load, while being handed a world.
+
+## 2026-11-05 -- the cascade reproduced on this machine, and it is not the explosions
+
+`tools/breakup.sh` stages it: A takes the GOLF save's 89-part `Rocket`, lights it and stages it
+until it comes apart, B only watches, and then both worlds are read as each game has them. The
+first run:
+
+```
+  A    22 craft --   17 its own,    1 other players',    4 neither
+      MADE UP, the other game has never heard of them     0   none
+  B    37 craft --    1 its own,    8 other players',   28 neither
+      MADE UP, the other game has never heard of them    15   Rocket_2_1, Rocket_2_11, ...
+```
+
+B's world holds fifteen to twenty craft **A has never heard of** -- `Rocket_2_5` through
+`Rocket_2_11`, `Rocket_2_3_10` through `Rocket_2_3_15`, `Rocket_3`, `Rocket_4` -- and twenty-eight
+of its thirty-seven craft are orphans: neither its own nor anybody else's, so nothing drives them,
+no owner's sweep reaches them, and they sit in physics waiting to hit something. A, which owns the
+rocket, has no such craft at all. The asymmetry is the whole thing.
+
+**Nothing exploded.** No destruction in either log, no refused origin worth the name, no physics
+step failed. The divergence does not need a breakup: it comes from *rebuilding*. Staged once more
+with nothing else happening, B's builds went from 15 to 18 and its made-up craft from 15 to 16 --
+they accumulate per build, not per impact.
+
+Which says the cause is a build, not `Adopt`. A definition is of a craft whose staging has already
+happened; KSA, handed it, separates the parts whose sequence has fired and leaves the jettisoned
+pieces standing in the world as new vehicles of their own, named locally. Every rebuild of a staged
+puppet leaves another set behind. On `mp.ksarmory.com` a single fragment was rebuilt 89 times.
+
+So the fix has two halves, and the half that was planned is the second one:
+
+1. a build must take away whatever vehicles the build itself leaves behind, rather than letting
+   them stand as orphans;
+2. `Adopt` must never claim a craft that appeared while a build was going on -- which is what
+   turns one game's orphans into everybody's debris.
+
+The rig's two numbers are the before and after: craft a game made up, and craft it neither owns nor
+drives. Both are zero in a world that is working.
