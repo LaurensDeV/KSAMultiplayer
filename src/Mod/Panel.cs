@@ -30,6 +30,18 @@ internal static class Panel
     private const float BoardWidth = 330f;
 
     private static readonly float2 ChatFirstSize = new(420f, 190f);
+
+    // KSA draws the navball at the bottom left at a fixed size and offset, whatever the window's size
+    // (NavBallRenderer: the translation and the scale are both in pixels), so one clearance holds at
+    // every resolution. Measured off a screenshot its top edge is about 150 px up; this leaves the
+    // chat's bottom edge above that with a little air. It sat under the navball before, which is
+    // where a window goes to be unread.
+    private const float NavballClear = 190f;
+
+    // What the server says, told from what a player says at a glance: an answer to a command is not
+    // conversation, and in a room of several players the one voice that is not a person should not
+    // read like one.
+    private static readonly float4 ServerSaid = new(0.56f, 0.80f, 1f, 1f);
     private const float WarpWidth = 340f;
     private const int ChatShown = 14;
 
@@ -342,18 +354,27 @@ internal static class Panel
         }
 
         ImGuiViewportPtr screen = ImGui.GetMainViewport();
-        float2 at = new(screen.WorkPos.X + 24f, screen.WorkPos.Y + screen.WorkSize.Y - (ChatFirstSize.Y + 24f));
+        // Above the navball, and inside the viewport whatever its size: a window placed outside one
+        // is given an OS window of its own by ImGui, and lands on the desktop beside the game.
+        float top = screen.WorkPos.Y + screen.WorkSize.Y - (ChatFirstSize.Y + NavballClear);
+        float lowest = screen.WorkPos.Y + Math.Max(24f, screen.WorkSize.Y - (ChatFirstSize.Y + 24f));
+        float2 at = new(screen.WorkPos.X + 24f, Math.Clamp(top, screen.WorkPos.Y + 24f, lowest));
         ImGui.SetNextWindowPos(in at, ImGuiCond.FirstUseEver, null);
         ImGui.SetNextWindowSize(in ChatFirstSize, ImGuiCond.FirstUseEver);
         // Seen through while it is only being read, solid enough to read against the sky while typed in.
         ImGui.SetNextWindowBgAlpha(_typing ? 0.72f : 0.22f);
 
         const ImGuiWindowFlags chat = ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoNav
-                                      | ImGuiWindowFlags.NoFocusOnAppearing;
+                                      | ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.NoFocusOnAppearing;
         if (ImGui.Begin("###KSAMultiplayerChat", chat))
         {
+            // 0: wrap at the edge of the window, which TextColored honours as TextWrapped does.
             ImGui.PushTextWrapPos(0f);
-            foreach (string line in Sync.Chat.TakeLast(ChatShown)) ImGui.TextWrapped(line);
+            foreach (Sync.Line line in Sync.Chat.TakeLast(ChatShown))
+            {
+                if (line.FromServer) ImGui.TextColored(in ServerSaid, line.Text);
+                else ImGui.TextWrapped(line.Text);
+            }
             ImGui.PopTextWrapPos();
 
             if (_typing)

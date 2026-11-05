@@ -167,7 +167,7 @@ internal sealed class Bridge
             ["universe"] = Math.Round(World.Universe, 2),
             ["stage"] = Sync.Now.ToString(),
             ["said"] = Sync.Said.ToList(),
-            ["chat"] = Sync.Chat.ToList(),
+            ["chat"] = Sync.Chat.Select(l => (object?)l.Text).ToList(),
         };
 
         if (Sync.Client is { } c)

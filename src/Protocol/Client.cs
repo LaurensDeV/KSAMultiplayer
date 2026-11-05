@@ -106,7 +106,11 @@ public sealed class Client : IDisposable
 
     /// <summary>Whether this game has been asked to answer a warp and has not yet.</summary>
     public bool WarpWantsAnswer => Warp is { Phase: Wire.WarpPhase.Asking } w && w.Waiting.Contains(Id);
-    public Queue<(string Who, string Text)> Chat { get; } = new();
+    /// <param name="FromServer">Said by the server itself rather than by a player, so that a game can
+    /// tell an answer to a command from conversation without reading the name.</param>
+    public readonly record struct ChatLine(bool FromServer, string Who, string Text);
+
+    public Queue<ChatLine> Chat { get; } = new();
 
     /// <summary>Whether this server runs what this game asks of it.</summary>
     public bool Admin { get; private set; }
@@ -344,7 +348,7 @@ public sealed class Client : IDisposable
                 Swept.Enqueue(sw.Like);
                 return;
             case Wire.Chat c when Joined:
-                Chat.Enqueue((c.From == 0 ? "server" : NameOf(c.From), c.Text));
+                Chat.Enqueue(new ChatLine(c.From == 0, c.From == 0 ? "server" : NameOf(c.From), c.Text));
                 return;
             case Wire.Op op when Joined:
                 Admin = op.Admin;

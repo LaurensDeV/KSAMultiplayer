@@ -87,7 +87,10 @@ internal static class Sync
 
     // Craft this game made itself, which are never another player's puppet here, whatever the server says of their name.
     private static readonly HashSet<Vehicle> MadeHere = [];
-    private static readonly List<string> ChatLines = [];
+    /// <param name="FromServer">Said by the server, which the chat window draws in its own colour.</param>
+    public readonly record struct Line(bool FromServer, string Text);
+
+    private static readonly List<Line> ChatLines = [];
     private static readonly List<string> SaidLines = [];
 
     private static Client? _client;
@@ -112,7 +115,7 @@ internal static class Sync
     public static double? Behind { get; private set; }
 
     public static Client? Client => _client;
-    public static IReadOnlyList<string> Chat => ChatLines;
+    public static IReadOnlyList<Line> Chat => ChatLines;
     public static IReadOnlyList<string> Said => SaidLines;
 
     /// <summary>
@@ -399,7 +402,7 @@ internal static class Sync
             }
             c.Update();
             while (c.Said.TryDequeue(out string? said)) Say(said);
-            while (c.Chat.TryDequeue(out (string Who, string Text) line)) Chatted($"<{line.Who}> {line.Text}");
+            while (c.Chat.TryDequeue(out Client.ChatLine line)) Chatted(line.FromServer, $"<{line.Who}> {line.Text}");
             while (c.Tokens.TryDequeue(out string? token)) Tokens.Keep(_address, token);
             if (c.Out.Length > 0)
             {
@@ -983,10 +986,10 @@ internal static class Sync
         if (SaidLines.Count > SaidKept) SaidLines.RemoveAt(0);
     }
 
-    private static void Chatted(string line)
+    private static void Chatted(bool fromServer, string line)
     {
         Log.Info($"chat: {line}");
-        ChatLines.Add(line);
+        ChatLines.Add(new Line(fromServer, line));
         if (ChatLines.Count > ChatKept) ChatLines.RemoveAt(0);
     }
 
