@@ -73,6 +73,32 @@ public class ClockTests
         Assert.Equal(10.0, ClockFollow.Asked(10.0, 1.0 / 60, 1.0 / 30), 9);
     }
 
+    [Fact]
+    public void AGameThatCannotKeepUpIsNotWarpedToCatchUp()
+    {
+        const double cap = 1.0 / 30;
+
+        // The ceiling is what the world can actually be stepped at: KSA advances it by at most the
+        // step cap a frame, so 144 frames a second against a thirtieth-second cap is 4.8x and no
+        // more, whatever is asked. The whole ten needs 300 frames a second.
+        Assert.Equal(4.8, ClockFollow.MostCatchUpInHand(1.0 / 144, cap), 9);
+        Assert.Equal(ClockFollow.MostCatchUp, ClockFollow.MostCatchUpInHand(cap / ClockFollow.MostCatchUp, cap), 9);
+
+        // Keeping the step cap exactly, and a little under it: some warp, not ten times.
+        Assert.Equal(1.0, ClockFollow.MostCatchUpInHand(cap, cap), 9);
+        Assert.Equal(2.0, ClockFollow.MostCatchUpInHand(cap / 2.0, cap), 9);
+
+        // Two frames a second with a thirtieth-second cap, which is a breakup: no warp at all.
+        Assert.Equal(1.0, ClockFollow.MostCatchUpInHand(0.5, cap), 9);
+        // A minute behind and drowning: the world runs at the server's own rate and no faster, and
+        // stays a minute behind until the frames come back. The panel says so, and nothing breaks.
+        Assert.Equal(1.0, ClockFollow.Speed(60.0, 1.0, ClockFollow.MostCatchUpInHand(0.5, cap)), 9);
+
+        // Nothing measured yet is no reason to hold a world back.
+        Assert.Equal(ClockFollow.MostCatchUp, ClockFollow.MostCatchUpInHand(0.0, cap), 9);
+        Assert.Equal(ClockFollow.MostCatchUp, ClockFollow.MostCatchUpInHand(0.01, 0.0), 9);
+    }
+
     private static Wire.State At(double t, double x) =>
         new(1, "R", 0, t, "Earth", new Vec3(x, 0, 0), new Vec3(10, 0, 0), new Vec3(x, 0, 0), new Vec3(10, 0, 0), Quat.Identity, Vec3.Zero, 0, 0);
 

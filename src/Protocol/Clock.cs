@@ -68,7 +68,11 @@ public static class ClockFollow
     /// <summary>Further behind than this, s, a world is warped to catch up rather than nudged.</summary>
     public const double CatchUpAboveSeconds = 3.0;
 
-    /// <summary>The most a world is warped to catch up while anything of its own is in physics.</summary>
+    /// <summary>
+    /// The most a world is warped to catch up while anything of its own is in physics, before the
+    /// frame rate has its say: see <see cref="MostCatchUpInHand"/>, which is what is actually used
+    /// and is never more than this.
+    /// </summary>
     public const double MostCatchUp = 10.0;
 
     /// <summary>
@@ -98,6 +102,26 @@ public static class ClockFollow
         if (late > CatchUpAboveSeconds) return serverRate * Math.Min(mostCatchUp, 1.0 + (late / 2.0));
         if (late < -CatchUpAboveSeconds) return 0.0;
         return serverRate * Math.Clamp(1.0 + (late / CloseOverSeconds), 1.0 - MostNudge, 1.0 + MostNudge);
+    }
+
+    /// <summary>
+    /// The most a world may be warped to catch up when a frame took <paramref name="frameSeconds"/>
+    /// and KSA steps at most <paramref name="capSeconds"/> of world time a frame: the share of real
+    /// time the game is managing, and never less than 1 or more than <paramref name="most"/>.
+    ///
+    /// <para>Warping asks the world clock to run ahead of what is being stepped, and a game that is
+    /// already missing its own step cap has nothing left to run ahead with. Asked for it anyway, the
+    /// clock leaves the physics bubbles behind -- 23 s behind, in the session this was written for --
+    /// and every craft placed at the clock's time is refused as being in its bubble's future, read
+    /// against the wrong origin, and put somewhere it collides. The collisions make more breakup, the
+    /// breakup makes longer frames, and the warp that was meant to close a three-second gap is what
+    /// holds the whole loop open. So the ceiling is the headroom there actually is: ten times speed
+    /// while the game is comfortable, and no warp at all while it is drowning.</para>
+    /// </summary>
+    public static double MostCatchUpInHand(double frameSeconds, double capSeconds, double most = MostCatchUp)
+    {
+        if (!(frameSeconds > 0.0) || !(capSeconds > 0.0) || !double.IsFinite(frameSeconds)) return most;
+        return Math.Clamp(capSeconds / frameSeconds, 1.0, most);
     }
 
     /// <summary>

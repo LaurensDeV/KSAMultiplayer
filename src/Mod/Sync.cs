@@ -1125,8 +1125,13 @@ internal static class Sync
         (Behind, c.Late) = (behind, behind);
         // Far more room to catch up when nothing here is being stepped through physics: the gap
         // closes in a moment instead of minutes of everything running fast, which is what makes a
-        // player who was not looking able to come back rather than having to sprint.
-        double most = World.Analytic ? ClockFollow.MostCatchUpOnRails : ClockFollow.MostCatchUp;
+        // player who was not looking able to come back rather than having to sprint. With craft in
+        // physics the ceiling is whatever headroom the frame rate leaves, which in a breakup is
+        // none: warping a game that is already missing its step cap only runs its clock away from
+        // its own bubbles.
+        double most = World.Analytic
+            ? ClockFollow.MostCatchUpOnRails
+            : ClockFollow.MostCatchUpInHand(FrameSeconds, World.StepCap);
         HeldSpeed = ClockFollow.Asked(ClockFollow.Speed(behind, server.Rate, most), FrameSeconds, World.StepCap);
         World.SetSpeed(HeldSpeed.Value);
     }

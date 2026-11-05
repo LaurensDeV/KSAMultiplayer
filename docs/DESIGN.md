@@ -145,8 +145,9 @@ shared one.
      has flown this session states as many falsehoods as it takes to tell one truth. What they are
      in comes from the roster's own word, the same the scoreboard reads, so the two cannot differ.
    - **Time is kept** (`ClockFollow`): a gap under 3 s is closed at up to a tenth faster or slower, one
-     larger by warping up to 10x, and a world well ahead waits. KSA steps a world by no more than its
-     33 ms a frame, so the speed asked makes up a slower frame. The warp keys and pause are held to that
+     larger by warping to whatever the frame rate leaves room for, and a world well ahead waits. KSA
+     steps a world by no more than its 33 ms a frame, so the speed asked makes up a slower frame, and
+     by the same token the most a world can be run at is that 33 ms over what a frame takes. The warp keys and pause are held to that
      speed by prefixes on both `Universe.SetSimulationSpeed`, and a speed asked for that is not that
      one is the player reaching for a warp: it is put to the others instead of taken. Out of flight
      the clock is let go of at real time and not at whatever this world was last run at, or the
@@ -219,6 +220,10 @@ against KSA `2026.10.25.5707`:
   described to the other game, unprompted.
 - **Keeping the server's time.** Both the ±10% nudge and the catch-up warp: a game 15 s behind after
   a load was run at 8.4x until it caught up, and both then settled at 1.1x.
+- **Catching up by warp with craft in physics, and what it costs.** Four players on 0.7.0: while
+  rockets were coming apart the warp ran worlds ahead of their own physics bubbles by up to 23 s,
+  and KSA refused 327 origin updates across 130 craft for being in their bubbles' future. The
+  headroom ceiling that answers it has not been in a game yet.
 - **Warping together.** A vote asked of both games, the other player's prompt, agreement, and two
   worlds running at 5x and keeping within a twentieth of a second of the server's time; a warp
   refused by the player who did not start it, ended by the one who did; and a pause voted through,
@@ -291,7 +296,9 @@ against KSA `2026.10.25.5707`:
   a moving one are reached in a run, but neither has been checked against where the craft should be.
 - **Pulling a puppet in physics.** Two craft were close enough to share a bubble; that the pull holds
   one steady there has not been measured.
-- **Catching up by warp with craft in physics.** The catch-up seen was of craft at rest on a pad.
+- **Holding the catch-up warp to the frame rate's headroom.** The arithmetic is tested and the
+  session that calls for it is written up in `errors.md`; a world that stays behind rather than
+  warping into its own bubbles has not been flown.
 - **Two games across the internet.** Both games and the server were on one machine. WSL in its default
   NAT mode cannot be reached from a Windows game at all, which is why `two-games.sh` publishes a
   Windows server unless WSL is in mirrored mode.
@@ -350,9 +357,19 @@ against KSA `2026.10.25.5707`:
 - **A world with nothing in physics closes a gap in a moment.** KSA works a craft on rails or
   sitting still out in closed form, so a step of an hour costs what a step of a frame costs, while a
   craft being stepped through physics costs an hour of stepping. So how far a world may be warped to
-  catch up is a thousand times its speed when everything here is analytic and ten times when
-  anything is not: a player who was not looking comes back in a moment instead of running fast for
-  minutes, and a player mid-burn is never fast-forwarded through it.
+  catch up is a thousand times its speed when everything here is analytic: a player who was not
+  looking comes back in a moment instead of running fast for minutes.
+- **With craft in physics it may only be warped as fast as it is managing to run.** KSA advances a
+  world by at most its step cap a frame, so a game of 30 frames a second against a 33 ms cap is
+  already at 1x and has nowhere to go; the ceiling is the cap over what a frame takes, capped at ten.
+  Asking for more than that does not make the world run faster, it makes its clock run away from its
+  own physics bubbles: a bubble's origin advances only as the bubble is stepped, and a craft placed
+  at the clock's time is then refused as being in its bubble's future, read against the wrong origin
+  and put somewhere it collides. A session on 0.7.0 showed bubbles 23 s behind the clock while a
+  hundred fragments were in the air, with the warp holding the loop open -- breakup, long frames,
+  warp, broken origins, more breakup. Catching up by running faster needs headroom, and the moment
+  it is reached for is the moment there is none, so a drowning game now runs at the server's rate
+  and simply stays behind until its frames come back.
 - **How long a craft may go unheard is counted at the world's speed.** A state is sent on a real
   clock and its age read on the world's, and the two are the same thing only at normal speed: at ten
   times, half a second of sending is five seconds of world. Letting go at a fixed five dropped every
