@@ -559,7 +559,10 @@ internal static class Sync
             // Found before the new name is written down, since that is what it is called until then.
             Vehicle? craft = World.Vehicles().FirstOrDefault(v => KeyOf(v) == r.Was && !Puppets.ContainsKey(v));
             Conflicts.Remove(r.Was);
-            Definitions.Remove(r.Was);
+            // What is held under the old name is not this craft's: the name was taken because
+            // another player already had a craft called that, so the definition filed under it is
+            // theirs, and it is the one this game needs to build their craft. Nothing re-requests a
+            // definition, so dropping it meant their craft could never be built here at all.
             PlacedAt.Remove(r.Was);
             if (_claimed == r.Was) _claimed = "";
             if (Owned.Remove(r.Was, out Mine? mine)) craft ??= mine.Craft;
