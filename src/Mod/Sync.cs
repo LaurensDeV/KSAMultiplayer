@@ -682,6 +682,10 @@ internal static class Sync
             if (here.TryGetValue(blob.Key, out Vehicle? old) && !Owned.ContainsKey(blob.Key)
                 && !ReferenceEquals(old, flown) && !MadeHere.Contains(old))
             {
+                // Said because one session rebuilt a single fragment of another player's rocket 89
+                // times, and the guard above means each of those definitions really did differ --
+                // or the one before it had been forgotten. Which of the two it is decides the fix.
+                Log.Info($"rebuilding {blob.Key}: {(had is null ? "nothing was known of it" : $"{had.Length} bytes became {blob.Data.Length}")}");
                 Puppets.Remove(old);
                 Built.Remove(blob.Key);
                 Later(old);
