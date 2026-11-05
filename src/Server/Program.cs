@@ -160,6 +160,22 @@ if (!Console.IsInputRedirected || Environment.GetEnvironmentVariable("KSAMP_STDI
     reader.Start();
 }
 
+// What each command is for, in the order they are worth knowing. Beside the dispatcher rather than
+// in it, so a command added without a line here is a command nobody is told about.
+(string What, string Does)[] Commands =
+[
+    ("players", "who is here, what they are flying and where from"),
+    ("say <text>", "a line from the server to everybody"),
+    ("kick <name> [why]", "send a player away; nothing stops them coming back"),
+    ("op <name>", "make a player who is here an admin: their game keeps a token and stays one"),
+    ("deop <name>", "take that back, playing or not; the token stops working at once"),
+    ("admins", "who is an admin"),
+    ("clear [name]", "take every craft nobody is flying out of every game; clear Rocket_* narrows it"),
+    ("reload", "hand the world out again, which is the only thing that puts universe time back"),
+    ("save", "ask the longest-playing player for a fresh save of the world"),
+    ("status", "players, craft, universe time, and what has crossed the wire"),
+];
+
 // who is null for the console, and the player who typed it in a game otherwise: an admin asks for
 // the same things, and hears the answer in their own chat rather than in a log they cannot see.
 void Command(string line, GameServer.Player? who = null)
@@ -233,13 +249,18 @@ void Command(string line, GameServer.Player? who = null)
                 + $"{(server.UniverseClock.Running ? "" : " (held)")}, world {(server.World is { } w ? $"{w.Data.Length / 1024} KB" : "none")}"
                 + $", {server.Socket.Received} datagrams in, {server.Socket.Sent} out");
             break;
+        // One command a line. All of them on one was unreadable, and the three that needed saying
+        // more than their name said it underneath, which left the rest looking like they needed none.
         case "help" or "?":
-            Answer($"players, say <text>, kick <name> [why], op <name>, deop <name>, admins, clear [name],"
-                + $" reload, save, status{(who is null ? ", quit" : "")}");
-            Answer("  clear takes every craft nobody is flying out of every game; a name with * narrows it,");
-            Answer("    and everybody is put back on the cleared world once it has been saved");
-            Answer("  reload puts everybody back on the world as it stands, which is also what puts the clock back");
-            Answer("  op hands a player's game a token it keeps, so they are an admin whenever they join");
+            // Said as it has to be typed: bare at the console, behind a / by an admin in a game.
+            string slash = who is null ? "" : "/";
+            foreach ((string what, string does) in Commands)
+            {
+                Answer($"  {slash}{what.PadRight(18)} {does}");
+            }
+            Answer(who is null
+                ? $"  {"quit".PadRight(18)} stop the server"
+                : "  quit is the console's alone");
             break;
         case "quit" or "exit" or "stop":
             // The console's alone: a server nobody can start again is not something to hand to an admin
