@@ -60,6 +60,8 @@ internal static class Hooks
                   "the editor offers this mod's extra launchpads as places to launch from");
             PatchAfter(AccessTools.Method(typeof(VehicleEditor), "SetLocations"), nameof(AfterSetLocations),
                   "this mod's extra launchpads stay out of the world after the editor has been opened");
+            Patch(AccessTools.Method(typeof(VehicleEditor), nameof(VehicleEditor.RequestExit)), nameof(BeforeRequestExit),
+                  "a craft is launched onto a pad somebody is already standing on");
             Patch(AccessTools.Method(typeof(VehicleEditor), nameof(VehicleEditor.Dispose)), nameof(BeforeEditorDispose),
                   "a craft launched from the editor goes to the pad the site was given, taken or not");
             PatchAfter(AccessTools.Method(typeof(VehicleEditor), nameof(VehicleEditor.Dispose)), nameof(AfterEditorDispose),
@@ -150,6 +152,17 @@ internal static class Hooks
     // to do it. While that is happening -- and only then -- a site's name is answered with whichever
     // of its pads is free, so a player who picked "CCSFS LC-39A" lands on one of the eight there.
     private static bool _launching;
+
+    // Every way out of the editor that launches goes through RequestExit, the crewless confirmation
+    // included, so one refusal here covers the lot. The player is told why by the panel, which draws
+    // over the editor for as long as the site is full.
+    private static bool BeforeRequestExit(VehicleEditor __instance, bool launchNewVehicle)
+    {
+        if (!launchNewVehicle) return true;
+        if (Pads.Room(__instance)) return true;
+        Log.Info("refused a launch: every pad at the chosen site is taken");
+        return false;
+    }
 
     private static void BeforeEditorDispose() => _launching = true;
 

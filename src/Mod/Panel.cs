@@ -84,6 +84,7 @@ internal static class Panel
     public static void Draw(bool atACraft)
     {
         if (!_loaded) Load();
+        PadsWindow();
         WarpWindow();
         if (atACraft)
         {
@@ -126,6 +127,38 @@ internal static class Panel
             Visible = false;
             Save();
         }
+    }
+
+    /// <summary>
+    /// Said over the vehicle editor while every pad at the chosen site has something standing on it,
+    /// which is also while the Launch button does nothing. Drawn for as long as it is true rather
+    /// than after a refused click: a player should see that there is nowhere to go before they
+    /// reach for the button, not after.
+    /// </summary>
+    private static void PadsWindow()
+    {
+        if (!KSA.Program.IsEditorOpen) return;
+        string site = Pads.Full;
+        if (site.Length == 0) return;
+
+        ImGuiViewportPtr screen = ImGui.GetMainViewport();
+        float2 at = new(screen.WorkPos.X + ((screen.WorkSize.X - WarpWidth) * 0.5f), screen.WorkPos.Y + 90f);
+        ImGui.SetNextWindowPos(in at, ImGuiCond.Always, null);
+        ImGui.SetNextWindowSize(new float2(WarpWidth, 0f), ImGuiCond.Always);
+        ImGui.SetNextWindowBgAlpha(0.9f);
+
+        const ImGuiWindowFlags flags = ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize
+                                       | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoSavedSettings
+                                       | ImGuiWindowFlags.NoNav | ImGuiWindowFlags.NoFocusOnAppearing;
+        if (ImGui.Begin("###KSAMultiplayerPads", flags))
+        {
+            ImGui.PushTextWrapPos(0f);
+            float4 warn = new(1.0f, 0.82f, 0.4f, 1.0f);
+            ImGui.TextColored(in warn, $"Every pad at {site} has a craft on it.");
+            ImGui.TextDisabled("Launch is held until one is clear. Move or recover something, or pick another site.");
+            ImGui.PopTextWrapPos();
+        }
+        ImGui.End();
     }
 
     /// <summary>

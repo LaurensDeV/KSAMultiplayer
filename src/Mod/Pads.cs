@@ -139,6 +139,47 @@ internal static class Pads
         return null;
     }
 
+    // The editor's chosen body and site, which it keeps to itself. Read rather than guessed at: the
+    // list it offers is the one this mod filtered, so the name in it is a site's and the pads of
+    // that site are what matter.
+    private static readonly System.Reflection.FieldInfo? ChosenBody = AccessTools.Field(typeof(VehicleEditor), "_selectedCelestial");
+    private static readonly System.Reflection.FieldInfo? ChosenSite = AccessTools.Field(typeof(VehicleEditor), "_selectedLocation");
+
+    /// <summary>Which body and which launch site the editor is pointed at, as far as it will say.</summary>
+    public static (Celestial? Body, string Site) Chosen(VehicleEditor editor)
+    {
+        object? body = ChosenBody?.GetValue(editor);
+        object? site = ChosenSite?.GetValue(editor);
+        Celestial? where = body is null
+            ? null
+            : (AccessTools.Field(body.GetType(), "Celestial")?.GetValue(body)
+               ?? AccessTools.Property(body.GetType(), "Celestial")?.GetValue(body)) as Celestial;
+        string named = site is null ? "" : AccessTools.Method(site.GetType(), "GetKey")?.Invoke(site, null) as string ?? "";
+        return (where, named);
+    }
+
+    /// <summary>
+    /// Whether the site the editor is pointed at has a pad to put a craft on. True whenever it
+    /// cannot be told: a launch is never refused over a question this mod could not answer.
+    /// </summary>
+    public static bool Room(VehicleEditor editor)
+    {
+        try
+        {
+            (Celestial? body, string site) = Chosen(editor);
+            return body is null || site.Length == 0 || Free(body, site) is not null;
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"could not tell whether a pad is free: {e.GetBaseException().Message}");
+            return true;
+        }
+    }
+
+    /// <summary>The site the editor is pointed at, when every one of its pads is taken.</summary>
+    public static string Full =>
+        Program.Editor is { } editor && !Room(editor) ? Chosen(editor).Site : "";
+
     /// <summary>Forgotten when a world goes, since the next one builds its templates afresh.</summary>
     public static void Forget()
     {
