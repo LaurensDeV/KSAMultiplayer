@@ -8,7 +8,7 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
 
 > **Status: played, not finished.** Two games on one machine have flown in one world through it,
 > against KSA `2026.10.25.5707`, and the server and the protocol are tested headlessly besides
-> (53 tests, real UDP over loopback, a lossy line included). An 89-part rocket has been flown in a
+> (65 tests, real UDP over loopback, a lossy line included). An 89-part rocket has been flown in a
 > shared world and staged while the other game watched, which rebuilt the dropped stage as its own
 > craft. What two games across the internet do is not known.
 > See [docs/DESIGN.md](docs/DESIGN.md#what-has-not-been-tried).
@@ -127,8 +127,13 @@ docker build -f deploy/Dockerfile -t ksamp-server .
 ```
 
 ```bash
-docker run -d --name ksamp -p 50100:50100/udp -v ksamp-data:/data -e KSAMP_NAME="Moon base" ksamp-server
+docker run -dit --name ksamp -p 50100:50100/udp -v ksamp-data:/data -e KSAMP_NAME="Moon base" ksamp-server
 ```
+
+The commands above are read from standard input, so a container wants `-it` to have a console at
+all: `docker attach ksamp` then types into it, and Ctrl+P Ctrl+Q leaves it running. Started with
+plain `-d`, or run as a systemd service, the server has no console and `clear` and `reload` cannot
+be reached -- `tmux` or `screen` is the way to keep one for a service.
 
 ## Building
 

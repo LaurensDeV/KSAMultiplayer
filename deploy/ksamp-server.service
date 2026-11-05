@@ -7,6 +7,9 @@
 #   journalctl -u ksamp-server -f
 #
 # Open the UDP port in the firewall: sudo ufw allow 50100/udp
+#
+# A service has no standard input, so it has no console either: clear, reload and the rest are
+# reached only from a terminal the server was started in. Run it under tmux or screen to keep one.
 
 [Unit]
 Description=KSA Multiplayer dedicated server
