@@ -203,6 +203,12 @@ public sealed class GameServer : IDisposable
     public int CraftCount => _crafts.Count;
     public Admins Admins { get; }
 
+    /// <summary>
+    /// The KSA build a player must run: the operator's if they named one, otherwise the build of the
+    /// world being handed out. Empty when neither is known, and then any build is let in.
+    /// </summary>
+    public string RequiredBuild => Options.KsaBuild.Length > 0 ? Options.KsaBuild : _worldBuild;
+
     /// <summary>Console lines typed in a game by an admin, for the console program to run as its own.</summary>
     public Queue<(Player Who, string Line)> Asked { get; } = new();
 
@@ -446,7 +452,7 @@ public sealed class GameServer : IDisposable
     // Why a player cannot be let in: another build of KSA, or a mod the world may hold parts of that it does not have.
     private string? Refusal(Wire.Hello hello)
     {
-        string build = Options.KsaBuild.Length > 0 ? Options.KsaBuild : _worldBuild;
+        string build = RequiredBuild;
         if (build.Length > 0 && hello.KsaBuild.Length > 0 && hello.KsaBuild != build)
         {
             return $"the server's world is KSA {build} and you run {hello.KsaBuild}: you need the same build";
