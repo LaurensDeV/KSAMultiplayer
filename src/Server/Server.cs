@@ -77,6 +77,16 @@ public sealed class GameServer : IDisposable
         /// <summary>Asked for the first save of the world: the server had none when this player joined.</summary>
         public bool Seeding { get; set; }
 
+        /// <summary>
+        /// Asked for a save of the world and has not sent one yet. A world is taken from a player
+        /// only while this is set: one sent unasked would be written to disk along with the build and
+        /// the mods its sender claimed, which everybody else is then held to.
+        /// </summary>
+        public bool WorldAsked { get; set; }
+
+        /// <summary>Whether the world has been handed to this player: nobody is in a world they were never given.</summary>
+        public bool WorldGiven => !Seeding && !WaitingForWorld;
+
         public string Controlling { get; set; } = "";
 
         /// <summary>The player's round trip, s, as that player measured it; negative until it has one.</summary>
@@ -92,10 +102,19 @@ public sealed class GameServer : IDisposable
 
         /// <summary>When its owner was last in it or looking at it, on the server's own clock.</summary>
         public double AttendedAt;
+
+        /// <summary>How many times its owner has said how it is built. Every one of these is the craft
+        /// torn down and built again in every other game, so a craft described over and over is a
+        /// fault worth seeing from here.</summary>
+        public int Described;
     }
 
     private const double SilentSeconds = 10.0, LoadingSilentSeconds = 120.0;
     private const double RosterEverySeconds = 2.0, OwnersEverySeconds = 5.0, ClockEverySeconds = 0.2;
+
+    // A count that climbs while nobody is launching anything is a world filling with craft that
+    // should not be there, which is not visible in any other line here.
+    private const double CraftCountEverySeconds = 30.0;
 
     // How long a player joining waits for a fresh save before it is sent the one there is.
     private const double FreshWithinSeconds = 15.0;
@@ -129,8 +148,14 @@ public sealed class GameServer : IDisposable
     // Whether the world's own universe time is anything: a save copied in by hand does not say, and
     // the clock cannot be put back to a time nobody knows.
     private bool _worldTimeKnown;
+
+    // Whether the next save to arrive goes straight back out to everybody: set by a sweep, because
+    // the world the players are in still holds what was swept out of the server's tables.
+    private bool _handOutWhenSaved;
     private string[] _worldMods = [];
     private double _rosterNext, _ownersNext, _clockNext, _snapshotNext, _snapshotAskedAt = double.NegativeInfinity;
+    private double _craftCountNext;
+    private int _craftCountSaid = -1;
 
     // One world has one time, so nobody changes its speed alone: somebody asks, everybody answers,
     // and it runs only if they all agree. It is then theirs to steer and theirs to stop.
@@ -138,6 +163,12 @@ public sealed class GameServer : IDisposable
     private float _warpSpeed = 1f, _warpWanted = 1f;
     private Wire.WarpPhase _warpPhase;
     private double _warpAskedAt, _warpNext, _warpQuietSince = double.NegativeInfinity, _governNext;
+
+    // The fastest a running warp has been found not to work, and whose machine it was found on.
+    // Nothing climbs back to it, or the world climbs into the same ceiling and falls out of it once a
+    // second for as long as the warp lasts.
+    private double _warpCeiling = double.PositiveInfinity;
+    private byte _warpCeilingWho;
     private readonly Dictionary<byte, bool> _warpVotes = [];
 
     public GameServer(ServerOptions options, Func<double> clock, WorldStore? store = null, IPAddress? bind = null)
@@ -236,6 +267,16 @@ public sealed class GameServer : IDisposable
             Broadcast(Roster(), _ => true);
             _rosterNext = now + RosterEverySeconds;
         }
+        if (now >= _craftCountNext)
+        {
+            _craftCountNext = now + CraftCountEverySeconds;
+            if (_crafts.Count != _craftCountSaid)
+            {
+                int moved = _craftCountSaid < 0 ? 0 : _crafts.Count - _craftCountSaid;
+                Log($"{_crafts.Count} craft known{(moved != 0 ? $", {moved:+#;-#} since" : "")}");
+                _craftCountSaid = _crafts.Count;
+            }
+        }
         if (now >= _ownersNext)
         {
             foreach (Wire.Owners page in OwnerPages()) Broadcast(page, p => p.Loaded);
@@ -280,7 +321,10 @@ public sealed class GameServer : IDisposable
                 player.Watching = ping.Watching;
                 _udp.Send(new Wire.Pong(ping.Sent, _clock()), from);
                 return;
-            case Wire.Loaded loaded:
+            // Only a player the world has been handed to, saying a time that is a time: this is what
+            // sets the universe clock on a server whose world came off disk, and nobody is in a world
+            // they were never given -- one that said so anyway claimed craft and blocked every warp.
+            case Wire.Loaded loaded when player.WorldGiven && double.IsFinite(loaded.Universe):
                 OnLoaded(player, loaded.Universe);
                 return;
             case Wire.State state when player.Loaded:
@@ -307,6 +351,9 @@ public sealed class GameServer : IDisposable
                 _gone[gone.Key] = UniverseClock.Now(_clock());
                 if (player.Controlling == gone.Key) Flying(player, "");
                 Broadcast(gone, p => p.Loaded && p != player);
+                return;
+            case Wire.NoWorld no:
+                OnNoWorld(player, Wire.Clip(no.Why, 200));
                 return;
             case Wire.WarpAsk ask when player.Loaded:
                 OnWarpAsk(player, ask.Speed);
@@ -360,7 +407,7 @@ public sealed class GameServer : IDisposable
         if (seeding)
         {
             p.Seeding = true;
-            _udp.Send(new Wire.Snapshot("the server has no world yet: yours becomes it"), from);
+            AskWorldOf(p, "the server has no world yet: yours becomes it");
             _snapshotAskedAt = UniverseClock.Known ? UniverseClock.Now(now) : double.NegativeInfinity;
             return;
         }
@@ -385,7 +432,17 @@ public sealed class GameServer : IDisposable
         }
         HashSet<string> theirs = [.. hello.Mods.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
         string[] missing = [.. _worldMods.Where(m => !theirs.Contains(m)).Order()];
-        return missing.Length > 0 ? $"the server's world needs mods you do not have enabled: {string.Join(", ", missing)}" : null;
+        if (missing.Length > 0) return $"the server's world needs mods you do not have enabled: {string.Join(", ", missing)}";
+        // And none the others lack. A mod that adds parts makes craft nobody else can put together,
+        // and the first they hear of it is a craft arriving that their game refuses to build, which
+        // reads as the mod being broken rather than as somebody running something extra. Nothing is
+        // asked of the player whose world this is about to become: they are the ones who set it.
+        if (_worldMods.Length == 0) return null;
+        HashSet<string> world = [.. _worldMods];
+        string[] extra = [.. theirs.Where(m => !world.Contains(m)).Order()];
+        return extra.Length > 0
+            ? $"you are running mods this world does not have ({string.Join(", ", extra)}): turn them off to join"
+            : null;
     }
 
     private void SendWorld(Player p)
@@ -440,11 +497,27 @@ public sealed class GameServer : IDisposable
         switch (blob.Kind)
         {
             case BlobKind.World:
-                // Only a world asked for: anyone else's is theirs.
-                if (!p.Seeding && !p.Loaded) return;
+                // Only the world this player was asked for. Anyone else's is theirs: a world taken
+                // from whoever cared to send one is written to disk along with that sender's build
+                // and mods, and every other player is held to those -- so one client could lock the
+                // rest out of the server, and out of every restart of it, by sending a world.
+                if (!p.WorldAsked)
+                {
+                    Log($"{p.Name} sent a world nobody asked for, {blob.Data.Length / 1024} KB: left where it came from");
+                    return;
+                }
+                p.WorldAsked = false;
                 SetWorld(blob, p.KsaBuild, p.Mods, p.System);
                 Log($"{p.Name} saved the world: {blob.Data.Length / 1024} KB at universe time {blob.Universe:F0} s");
                 if (p.Seeding) OnLoaded(p, blob.Universe);
+                // The save a sweep asked for: the one world that does not hold what was cleared, so
+                // it is what everybody goes back on, the player who just saved it included -- a game
+                // left where it was would be those few seconds ahead of the rest and stand still.
+                if (_handOutWhenSaved)
+                {
+                    _handOutWhenSaved = false;
+                    ReloadAll("the world was cleared");
+                }
                 return;
             case BlobKind.Vehicle when p.Loaded && blob.Key.Length > 0:
                 // A definition under a name this player was refused is dropped; the claim that goes with
@@ -453,6 +526,9 @@ public sealed class GameServer : IDisposable
                 Craft craft = _crafts[blob.Key];
                 Blob stamped = blob with { Owner = p.Id, Universe = UniverseClock.Now(_clock()) };
                 craft.Definition = stamped.Encode();
+                craft.Described++;
+                Log($"{p.Name} says how {blob.Key} is built, {blob.Data.Length / 1024} KB"
+                    + (craft.Described > 1 ? $" -- {craft.Described} times now" : ""));
                 craft.Universe = stamped.Universe;
                 _gone.Remove(blob.Key);
                 foreach (Player other in _players.Values.Where(q => q.Loaded && q != p)) other.Link.Send(craft.Definition, _clock());
@@ -529,7 +605,9 @@ public sealed class GameServer : IDisposable
                 return;
             }
             // Asked for, and held to what the room can fly: the governor climbs back towards the rest.
-            _warpWanted = speed;
+            // Their own ask, so whatever ceiling the governor had found is let go of; if the new speed
+            // cannot be flown either it will have found it again within the second.
+            (_warpWanted, _warpCeiling, _warpCeilingWho) = (speed, double.PositiveInfinity, 0);
             RunWarp((float)Flyable(speed), now);
             return;
         }
@@ -553,7 +631,7 @@ public sealed class GameServer : IDisposable
 
         // Put at what the room can fly, not at what was asked: agreeing to a speed somebody's
         // machine cannot manage is agreeing to leave them behind.
-        _warpWanted = speed;
+        (_warpWanted, _warpCeiling, _warpCeilingWho) = (speed, double.PositiveInfinity, 0);
         (_warpWho, _warpSpeed, _warpPhase, _warpAskedAt, _warpNext) = (p.Id, (float)Flyable(speed), Wire.WarpPhase.Asking, now, 0.0);
         _warpVotes.Clear();
         _warpVotes[p.Id] = true;
@@ -599,6 +677,7 @@ public sealed class GameServer : IDisposable
     {
         if (_warpPhase == Wire.WarpPhase.None) return;
         (_warpPhase, _warpSpeed, _warpWanted, _warpQuietSince, _warpNext) = (Wire.WarpPhase.None, 1f, 1f, now, 0.0);
+        (_warpCeiling, _warpCeilingWho) = (double.PositiveInfinity, 0);
         _warpVotes.Clear();
         UniverseClock.SetSpeed(Options.Speed, now);
         Log(why);
@@ -611,12 +690,45 @@ public sealed class GameServer : IDisposable
             ? [.. _players.Values.Where(q => q.Loaded && !_warpVotes.ContainsKey(q.Id)).Select(q => q.Id).Order()]
             : []);
 
-    private void AskSnapshot(string why)
+    private bool AskSnapshot(string why, byte notThisOne = 0)
     {
         // The player in the world longest, whose world has had the most time to settle.
-        if (_players.Values.Where(p => p.Loaded).OrderBy(p => p.LoadedAt).FirstOrDefault() is not { } from) return;
+        if (_players.Values.Where(p => p.Loaded && p.Id != notThisOne).OrderBy(p => p.LoadedAt).FirstOrDefault() is not { } from) return false;
         _snapshotAskedAt = UniverseClock.Now(_clock());
-        _udp.Send(new Wire.Snapshot(why), from.At);
+        AskWorldOf(from, why);
+        return true;
+    }
+
+    // Every ask for a world goes through here, because the asking is what makes the answer the
+    // server's to keep: a world is written only for a player this was called for.
+    private void AskWorldOf(Player p, string why)
+    {
+        p.WorldAsked = true;
+        _udp.Send(new Wire.Snapshot(why), p.At);
+    }
+
+    /// <summary>
+    /// A game that will not hand its world over, because what it holds would not load anywhere.
+    /// Somebody else is asked: a world an hour old is worth more than one nobody can open, and the
+    /// world already here is left alone until a good one comes.
+    /// </summary>
+    private void OnNoWorld(Player p, string why)
+    {
+        Log($"{p.Name} will not hand over a world: {why}");
+        Broadcast(new Wire.Chat(0, $"{p.Name}'s world cannot be handed on: {why}"), q => q.Loaded);
+        if (p.Seeding)
+        {
+            // Not the one whose world this becomes after all, and one of those waiting for a world
+            // instead: a game that cannot hand its own over can still be given somebody else's.
+            (p.Seeding, p.WaitingForWorld, p.WaitingSince) = (false, true, _clock());
+            if (_players.Values.FirstOrDefault(q => q.WaitingForWorld && q.Id != p.Id) is { } next)
+            {
+                (next.Seeding, next.WaitingForWorld) = (true, false);
+                AskWorldOf(next, "the server has no world yet: yours becomes it");
+            }
+            return;
+        }
+        AskSnapshot(why, notThisOne: p.Id);
     }
 
     // How often the room's speed is looked at again, and how far out of step it must be to move.
@@ -626,37 +738,38 @@ public sealed class GameServer : IDisposable
     // it means the same at every speed.
     private const double GovernLateSeconds = 4.0;
 
-    /// <summary>The fastest the room can fly: the slowest machine among those whose players are looking.</summary>
-    private double Room()
+    /// <summary>The fastest the room can fly, and whose machine says so: the slowest among those whose players are looking.</summary>
+    private (double Can, byte Who) Room()
     {
-        double can = double.PositiveInfinity;
+        (double can, byte who) = (double.PositiveInfinity, (byte)0);
         foreach (Player p in _players.Values)
         {
             // Not an unfocused window: Windows throttles it, so what it manages measures nothing but
             // Windows. That player falls behind and is caught up afterwards rather than held to.
             // Nothing said yet is not a slow machine: a game that has not measured itself holds
             // nobody back, and will say so within a couple of seconds of playing.
-            if (p.Loaded && p.Here && p.Can > 0.0 && p.Can < can) can = p.Can;
+            if (p.Loaded && p.Here && p.Can > 0.0 && p.Can < can) (can, who) = (p.Can, p.Id);
         }
-        return double.IsFinite(can) ? Math.Max(1.0, can) : double.PositiveInfinity;
+        return (double.IsFinite(can) ? Math.Max(1.0, can) : double.PositiveInfinity, who);
+    }
+
+    /// <summary>The worst any watching player is behind, in their own seconds, and who, or zero if nobody is.</summary>
+    private (double Late, byte Who) Losing()
+    {
+        double rate = Math.Max(UniverseClock.Rate, 1.0);
+        (double worst, byte who) = (0.0, (byte)0);
+        foreach (Player p in _players.Values)
+        {
+            if (p.Loaded && p.Here && p.Late / rate > worst) (worst, who) = (p.Late / rate, p.Id);
+        }
+        return (worst, who);
     }
 
     /// <summary>
     /// A speed held to what the room can fly. Only upwards: a pause or a world in slow motion asks
     /// nothing of anybody's machine, and is nobody's to refuse on those grounds.
     /// </summary>
-    /// <summary>The worst any watching player is behind, in their own seconds, or zero if nobody is.</summary>
-    private double Losing()
-    {
-        double rate = Math.Max(UniverseClock.Rate, 1.0), worst = 0.0;
-        foreach (Player p in _players.Values)
-        {
-            if (p.Loaded && p.Here && p.Late / rate > worst) worst = p.Late / rate;
-        }
-        return worst;
-    }
-
-    private double Flyable(double speed) => speed <= 1.0 ? speed : Math.Max(1.0, Math.Min(speed, Room()));
+    private double Flyable(double speed) => speed <= 1.0 ? speed : Math.Max(1.0, Math.Min(speed, Room().Can));
 
     /// <summary>
     /// The running warp held to what the room can fly. It falls as soon as a machine says it cannot
@@ -666,20 +779,40 @@ public sealed class GameServer : IDisposable
     private void Govern(double now)
     {
         if (_warpPhase != Wire.WarpPhase.Running || now < _governNext) return;
+        // A pause or a world in slow motion asks nothing of anybody's machine and is nobody's to
+        // refuse on those grounds. Governing one undid it: a pause is a warp at 0, every fall here
+        // has a floor of 1x, and nothing climbs back down to 0 from there -- so a world everyone had
+        // agreed to stop ran on at normal speed a second later, for good.
+        if (_warpWanted <= 1.0) return;
         _governNext = now + GovernEverySeconds;
 
-        double room = Room(), at = _warpSpeed, next = at;
-        double late = Losing();
+        (double room, byte roomWho) = Room();
+        (double late, byte lateWho) = Losing();
+        double at = _warpSpeed, next = at;
+        byte limits = 0;
 
-        if (double.IsFinite(room) && room < at * GovernFall) next = Math.Max(1.0, room);
+        // The machine that set the ceiling saying it can now fly faster than the ceiling is news, and
+        // it is the only news there is: a machine comfortable at the speed it is running at says
+        // nothing at all, so reading everybody's silence as room is what had the world climb into the
+        // same ceiling and fall out of it once a second for as long as the warp lasted. A machine
+        // that has left takes its ceiling with it.
+        if (_warpCeilingWho != 0
+            && (!_players.TryGetValue(_warpCeilingWho, out Player? hit) || (hit.Can > 0.0 && hit.Can > _warpCeiling)))
+        {
+            (_warpCeiling, _warpCeilingWho) = (double.PositiveInfinity, 0);
+        }
+
+        if (double.IsFinite(room) && room < at * GovernFall) (next, limits) = (Math.Max(1.0, room), roomWho);
         // Nobody has hit a ceiling, but somebody is losing ground all the same: back off and watch.
-        else if (late > GovernLateSeconds) next = Math.Max(1.0, at * GovernBackOff);
-        // Room to try: a machine's limit is only found by asking it for a little more.
-        // Never past a ceiling somebody has already hit, or the world climbs into it and falls out
-        // of it once a second for as long as the warp lasts.
-        else if (at < _warpWanted && late < GovernLateSeconds * 0.5) next = Math.Min(Math.Min(_warpWanted, at * GovernStep), room);
+        else if (late > GovernLateSeconds) (next, limits) = (Math.Max(1.0, at * GovernBackOff), lateWho);
+        // Room to try: a machine's limit is only found by asking it for a little more, and never
+        // again for as much as has already been found not to work.
+        else if (at < _warpWanted && late < GovernLateSeconds * 0.5) next = Math.Min(Math.Min(_warpWanted, at * GovernStep), Math.Min(room, _warpCeiling));
         if (Math.Abs(next - at) < 0.01) return;
 
+        // What it fell from is as fast as this warp goes from here, unless the machine it fell for
+        // says otherwise or its asker asks again.
+        if (next < at) (_warpCeiling, _warpCeilingWho) = (Math.Max(1.0, at * GovernFall), limits);
         RunWarp((float)next, now);
         Log(next < at
             ? $"the world falls to {next:0.##}x: {(double.IsFinite(room) ? $"the room can fly {room:0.##}x" : $"somebody is {late:0.#} s behind")}"
@@ -712,10 +845,14 @@ public sealed class GameServer : IDisposable
                 continue;
             }
             if (now - craft.AttendedAt < Options.LapseWithin) continue;
+            // Only a craft somebody else is waiting on. Most of a world is parked craft nobody is
+            // looking at, and letting those go handed them round hundreds of times an hour, each
+            // time moving the camera of whoever happened to be watching one.
+            if (_players.Values.FirstOrDefault(q => q.Id != owner.Id && q.Loaded && q.Watching == key) is not { } waiting) continue;
 
             craft.Owner = 0;
             any = true;
-            Log($"{key} is anybody's again: {owner.Name} has not been near it for {Options.LapseWithin:0} s");
+            Log($"{key} is {waiting.Name}'s to take: {owner.Name} has not been near it for {Options.LapseWithin:0} s");
         }
         if (any) OwnersChanged();
     }
@@ -753,7 +890,7 @@ public sealed class GameServer : IDisposable
         if (p.Seeding && _world is null && _players.Values.FirstOrDefault(q => q.WaitingForWorld) is { } next)
         {
             (next.Seeding, next.WaitingForWorld) = (true, false);
-            _udp.Send(new Wire.Snapshot("the server has no world yet: yours becomes it"), next.At);
+            AskWorldOf(next, "the server has no world yet: yours becomes it");
         }
     }
 
@@ -770,6 +907,74 @@ public sealed class GameServer : IDisposable
 
     /// <summary>Asks for a fresh save of the world now, from the console.</summary>
     public void SnapshotNow() => AskSnapshot("the operator asked for a save");
+
+    /// <summary>
+    /// Every player put back on the world the server holds, without anybody reconnecting: each game
+    /// loads it again and says when it is in. The number of players it went to.
+    ///
+    /// <para>This is also the only way universe time is ever put back. A game's own time comes down
+    /// by loading a world and by nothing else, and while they all load there is nobody in the world,
+    /// so the server's clock goes back to the world's own time the same moment theirs do -- see
+    /// <see cref="HoldTimeAtTheWorld"/>. Setting the clock back any other way would leave every game
+    /// ahead of the server and standing still until it caught up.</para>
+    /// </summary>
+    public int ReloadAll(string why)
+    {
+        if (_world is null) return 0;
+        Player[] back = [.. _players.Values.Where(p => p.Loaded || p.WaitingForWorld)];
+        foreach (Player p in back)
+        {
+            p.Loaded = false;
+            SendWorld(p);
+        }
+        if (back.Length > 0)
+        {
+            Log($"the world goes out to {back.Length} player{(back.Length == 1 ? "" : "s")} again: {why}");
+            Broadcast(new Wire.Chat(0, $"the world is being handed out again: {why}"), _ => true);
+            _rosterNext = 0.0;
+        }
+        return back.Length;
+    }
+
+    /// <summary>
+    /// Craft swept out of the world by the operator: every one nobody is flying, or only those whose
+    /// name matches, taken away in every game and forgotten here. The names swept, for the console.
+    ///
+    /// <para>A craft somebody is flying is left where it is whatever was asked for: a world that
+    /// pulls the hull out from under a player is worse than a world with debris in it. What is
+    /// watched is not spared -- a camera is how an operator finds the debris in the first place.</para>
+    /// </summary>
+    public List<string> Sweep(string like = "")
+    {
+        HashSet<string> flown = [.. _players.Values.Where(p => p.Controlling.Length > 0).Select(p => p.Controlling)];
+        List<string> swept = [];
+        double universe = UniverseClock.Now(_clock());
+        foreach ((string key, Craft _) in _crafts.ToArray())
+        {
+            if (flown.Contains(key) || !Wire.Matches(key, like)) continue;
+            _crafts.Remove(key);
+            _gone[key] = universe;
+            swept.Add(key);
+        }
+        // The name, not the list: most of what is out there was never claimed by anybody, so the
+        // server has never heard of it and a list drawn up here would miss the whole of the debris.
+        // Each game matches the name against its own world, and what the server knew of them is
+        // dropped above so that nothing hands them back.
+        Broadcast(new Wire.Swept(like), p => p.Loaded);
+        OwnersChanged();
+        Log($"the operator is sweeping the world by '{(like.Length > 0 ? like : "*")}'"
+            + $"{(swept.Count > 0 ? $"; {swept.Count} of them were known here: {Named(swept)}" : "")}");
+        Broadcast(new Wire.Chat(0, "the world is being cleared of craft nobody is flying"), p => p.Loaded);
+        // The world on disk still holds them, so the next player to join would be handed them all
+        // back. This is the one moment the world is worth saving afresh -- and once that save is
+        // here, everybody is put back on it, which is the only way the craft leave the world rather
+        // than only the games, and the only way the clock is ever put back.
+        _handOutWhenSaved = AskSnapshot("the world was cleared of craft nobody was flying");
+        return swept;
+    }
+
+    private static string Named(List<string> keys) =>
+        string.Join(", ", keys.Take(6)) + (keys.Count > 6 ? $" and {keys.Count - 6} more" : "");
 
     // Craft defined and gone before this were saved with the world, and need not be handed out again.
     private void Prune(double universe)

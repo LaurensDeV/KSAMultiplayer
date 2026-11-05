@@ -35,7 +35,14 @@ another version is refused by name rather than misread.
 - **The world.** The latest save, zipped, kept on disk in `--data`. It comes from an operator
   (`--world`), from the first player to join an empty server, or as a fresh save asked of the player
   who has been in longest: every `--snapshot-every` seconds, and whenever a player joins a world more
-  than 30 s old, the joiner waiting up to 15 s for it.
+  than 30 s old, the joiner waiting up to 15 s for it. Only ever from the player it was asked of: one
+  arriving unasked is left where it came from, since the world is written to disk with its sender's
+  build and mods and everybody else is then held to those, so a single client could otherwise lock
+  every other player out of the server and out of each restart of it.
+- **Who is in the world.** A game says so once it has loaded, and only a game the world was handed to
+  is believed: a player in the world claims craft, counts in every warp vote and, on a server whose
+  world came off disk, sets the clock the whole room then follows, and none of that is anyone's to do
+  from outside the world. A universe time that is not a number is not a time either.
 - **Every player's ping.** A game measures its own round trip to the server and says it with each
   `Ping`; the server passes them all on in the roster, so each game can show what everyone's line is
   like. Held Tab shows that list in game.
@@ -64,8 +71,10 @@ another version is refused by name rather than misread.
 
 It passes every state on to every other game in the world, checks a state comes from the craft's
 owner, and passes chat on. It refuses a player with another KSA build, one playing a different celestial system (a world of Sol
-entire is not a world of Earth and its Moon alone), or one without a mod the world's giver had
-enabled, since a save holding a part of a missing mod does not load. A world given by a player
+entire is not a world of Earth and its Moon alone), or one whose mods are not the world's
+exactly. Without one the world's giver had enabled, a save holding a part of it does not load; with
+one they had not, that player builds craft nobody else can put together, and all the others see is
+a craft arriving that their game refuses, which reads as the mod being broken. A world given by a player
 carries that player's system; one an operator imports carries whatever its own `meta.toml` says.
 
 ## What a game does
@@ -74,10 +83,21 @@ carries that player's system; one an operator imports carries whatever its own `
 
 1. **Joining.** A hello, until welcomed or refused.
 2. **Seeding**, if the server has no world: when it asks, this world is saved (`GameSaves.MakeUncompressedSave`)
-   and sent, and the game plays on in it.
+   and sent, and the game plays on in it. One whose world is not fit to hand over says so and waits
+   for somebody else's instead.
 3. **Waiting** for the world, then **Loading** it: written into `saves/Multiplayer` and loaded with
    `GameSaves.LoadSaveGame`, as Fast & Purrious's online race already does. After 30 frames in flight
-   it says it has loaded, with its universe time.
+   it says it has loaded, with its universe time. A world that arrives while the game is already
+   playing puts it back here: that is the operator handing everybody the world again, and a game
+   that carried on would be alone in the one the others have left.
+
+KSA saves and loads nothing at all while the vehicle editor is open: both calls begin by asking, and
+the answer is a line in its own log and a return, with nothing said to whoever called. So the ask for
+a save is held until it can be answered and the world that has come is held until it can be loaded --
+the server sends it once -- and the save folder is emptied before a save and read only if something
+was written. Otherwise the handover save left there from last time is zipped and handed on as the
+world now, and a game counts its thirty frames over a world it never loaded and says it is in the
+shared one.
 4. **Playing**, each frame:
    - **The flown craft is claimed**, when it changes and every two seconds, unless another player
      holds it: then this player is watching it, is told so once, and claims nothing. A game that
@@ -90,10 +110,23 @@ carries that player's system; one an operator imports carries whatever its own `
    - **Owned craft are sent**: the flown one 20 times a second, the rest twice. A state is where the
      craft is in its body's fixed frame, off the physics state (`PhysicsStates.GetStatesCcf`), and in
      its inertial frame, off the ecliptic, with its attitude, spin and whether it is on rails or on the
-     ground. A craft whose parts change, as one that stages does, is described again.
+     ground. A craft nearer the middle of its body than half its radius is not sent at all and not
+     placed from one that arrives: KSA has lost such a craft, no orbit can be made from where it
+     says it is, and a game handed a world holding one aborts on its first physics step with
+     "cannot construct a UniverseTime from NaN". Finite is not enough -- the centre of the Earth is
+     a finite place to be. Nor is such a world handed over: the game asked for it says no and names
+     the craft, and the server asks somebody else rather than keeping a world nobody can open. A craft whose parts change, as one that stages does, is described again.
    - **Every other player's craft is a puppet.** Built from its definition if this world has none
      (`Vehicle.CreateVehicleFromSaveGameData`, or `KittenEva.CreateKittenFromSaveData` for a kitten),
-     one a frame. With physics here it is pulled to its owner's state in `Vehicle.PrepareWorker`, the
+     one a frame, and then remembered by name: KSA does not list a craft the moment it is made, so a
+     world asked whether it holds one says no for a frame or two and would otherwise be told to build
+     it again. A definition whose bytes are the ones already held is ignored rather than acted on, for
+     the same reason: tearing the craft down to build it back is how a world comes to hold two of it,
+     and KSA throws when a physics step meets one craft twice. The name it is built under has to be
+     one nothing in this world answers to, craft or body alike: KSA keeps everything in one lookup
+     under a hash of its name and refuses a second thing under one hash with a line in its own log
+     and nothing else, handing back a craft that is in no lookup -- never listed, never stepped,
+     never swept, and another player's puppet standing here for ever. With physics here it is pulled to its owner's state in `Vehicle.PrepareWorker`, the
      one window where a write to a craft's state survives the frame: put there outright from more than
      5 m, drawn there over 0.15 s nearer. Without physics it is placed once a second at most, and only
      if 25 m out: set down on the ground with `TeleportToLocation`, or given its owner's orbit.
@@ -108,7 +141,10 @@ carries that player's system; one an operator imports carries whatever its own `
      larger by warping up to 10x, and a world well ahead waits. KSA steps a world by no more than its
      33 ms a frame, so the speed asked makes up a slower frame. The warp keys and pause are held to that
      speed by prefixes on both `Universe.SetSimulationSpeed`, and a speed asked for that is not that
-     one is the player reaching for a warp: it is put to the others instead of taken.
+     one is the player reaching for a warp: it is put to the others instead of taken. Out of flight
+     the clock is let go of at real time and not at whatever this world was last run at, or the
+     catch-up warp from a join goes on running in the editor and the tracking station with nothing
+     holding it to the server, and the world comes back further ahead than it went.
 
 What nobody owns is left to each world: a craft on rails goes the same way in every one, and a craft
 in physics that nobody flies drifts apart from world to world.
@@ -156,6 +192,30 @@ against KSA `2026.10.25.5707`:
   refused by the player who did not start it, ended by the one who did; and a pause voted through,
   with both worlds stopped at the same universe time and still there five seconds later. Coming out
   of a warp overshoots by about two seconds and is nudged off at 0.9x.
+- **Another player's engines, burning.** Alpha lit an 89-part rocket in orbit, 7,576 km from the
+  craft Bravo was standing by. Bravo's game was not stepping it in physics and KSA gave it no duty
+  cycle at all, so the mod wrote one: Bravo's bridge reported `engine_duty 1` with
+  `engine_drawn_here true`, and the picture from Bravo's camera has the plume, the exhaust and the
+  light on a craft it is not simulating. Shut the engine in Alpha and the same craft in the same
+  camera was dark within the second, `engine_duty 0`. Alpha's own copy of it read `engine_duty 1`
+  with `engine_drawn_here false` throughout -- the mod leaving a craft KSA is stepping to KSA's own
+  numbers, which is the other half of the rule.
+
+  It also corrected the mod. A craft whose ignition was on with nothing behind it -- no propellant,
+  nothing staged -- was reported to the others as burning, because what was sent was the ignition
+  and not the burn. It is the nozzles' own duty cycle now: that craft reports its engines cold, and
+  one that is really firing reports them lit whoever opened the valve, which is what a flight
+  computer running a manoeuvre node does without ever setting the flag.
+- **The broom, and the world handed out again.** One game, a server and a rocket staged twice: the
+  spent stages broke into fragments on their own, and `clear Rocket_*` took the game from 11 craft
+  to 7 with none of the debris left, while the craft being flown stayed. The server swept the four
+  it knew of, asked for a save, was handed a 33 KB world without them and gave it straight back;
+  the game said "the world has been handed out again: loading it" and was in the shared world a
+  fifth of a second later. Nobody reconnected and nothing was logged by either side.
+
+  `reload` on its own then put universe time back, which is the only way it ever moves: 72783.5 s
+  in the game before, 72747.8 s after, with the server's own clock going to the world's time while
+  nobody was in it -- "universe time waits at 72740 s, 44 s back".
 - **Two games making one name.** A kitten sent out of the same capsule in both: the second was named
   `Nasley 2` by the server, each game kept flying its own, and each built the other's and stood it
   where its owner put it. The second game holds the other player's under a name of its own
@@ -171,6 +231,13 @@ against KSA `2026.10.25.5707`:
 - **Two games across the internet.** Both games and the server were on one machine. WSL in its default
   NAT mode cannot be reached from a Windows game at all, which is why `two-games.sh` publishes a
   Windows server unless WSL is in mirrored mode.
+- **A puppet's engines where this game is stepping the craft.** The plume the mod writes for a craft
+  out of physics has been watched; the one KSA draws for a puppet close enough to be in this game's
+  own physics has not, so the rule that hands that case back to KSA is read off the source alone.
+- **An engine lit by a flight computer rather than by a hand.** What is sent is the nozzles' own duty
+  cycle, which is what a node burn leaves behind, but no node burn has been watched from another game.
+- **Anything the vehicle editor is open for.** That KSA refuses to save or load then is read off its
+  own source; that the mod now waits rather than handing on a stale world has not been watched happen.
 
 ## What it does not do
 
@@ -182,7 +249,11 @@ against KSA `2026.10.25.5707`:
   is managing -- universe seconds a real second, over a couple of seconds so a hitch does not speak
   for it, floored by what KSA says it achieved of what it asked -- and tells the server with each
   ping. A warp is put to the room at that floor rather than at what was asked, falls to it within a
-  second of a machine giving out, and climbs back a step at a time while everyone is clear of it.
+  second of a machine giving out, and climbs back a step at a time while everyone is clear of it --
+  but never again to a speed a machine has been found not to fly. A game comfortable at the speed it
+  is running at says nothing at all, so reading everybody's silence as room had the world climb into
+  the same ceiling and fall out of it once a second for as long as the warp lasted. The ceiling is
+  that one machine's, and lifts when that machine says it can fly past it or leaves.
   Lateness is a consequence; what a machine can do is the cause, and it can be known before the gap
   opens rather than after. A window nobody is looking at is left out of the floor: Windows throttles
   it, so what it manages measures Windows and not the machine, and that player is an absent one
@@ -202,17 +273,71 @@ against KSA `2026.10.25.5707`:
   speed out from the speed the world is running at, which while connected is the server's warp
   nudged off a round number to hold its clock; the mod takes the key by which way it points and
   steps the game's own ladder from what the server says instead.
-- **Engines are shown firing.** Whether a craft's engine is lit and how far its throttle is open
-  live in a private field of a public type, read through Harmony: the throttle alone can be read
-  without it and neither can be written. A puppet's engines are set from its owner's state, which
-  changes nothing that lasts, since the craft is pulled back to where its owner says it is every
-  frame regardless. A build that moves that field leaves engines dark and says so in the log.
+- **Engines are shown firing, and only where this game is stepping the craft.** Whether a craft's
+  engine is lit and how far its throttle is open live in a private field of a public type, read
+  through Harmony: the throttle alone can be read without it and neither can be written. A build that
+  moves that field leaves engines dark and says so in the log. What is sent is not that field alone,
+  because KSA sets it false every frame while the flight computer is running the burn, so a craft
+  burning a manoeuvre node said its engines were cold: the nozzles' own duty cycle counts as lit too.
+  A puppet's engines are set from its owner's state, which changes nothing that lasts, since the
+  craft is pulled back to where its owner says it is every frame regardless.
+
+  What the plume, the exhaust light and the volumetric exhaust are all drawn from is
+  `RocketNozzleState.DutyCycle`, and that is accumulated only inside a full physics step, from the
+  chamber pressure the rocket model worked out. A craft of this game's own in its own bubble, in
+  freefall or sitting still, is stepped down a cheaper path that clears the duty cycle every frame
+  and never accumulates one. So another player's craft is burning *here* only when it is in this
+  game's physics -- near this player, or anywhere in an atmosphere -- and out there it draws no
+  propellant, makes no thrust and leaves nothing to draw a plume from, however hard its owner says
+  it is burning.
+
+  So out there the mod writes what the step that never ran would have left: the chamber conditions
+  that engine's own design gives at the throttle its owner reports (`RocketCore.ComputeConditions`),
+  the exhaust its nozzles make of those (`RocketNozzle.ComputePerformance`, which is what KSA's own
+  engine window calls from the main thread), and a full duty cycle. It goes in through
+  `GetModuleAndAllMutableStatesForInitialization`, in a prefix on the two passes that read it, which
+  is the one place after the last physics step and before the frame is drawn -- `[StarMapAfterOnFrame]`
+  is after the render, and anything written there for this frame is a frame late and cleared by the
+  next step first. A craft KSA is burning for real is left alone, since its own numbers are the
+  better ones, and a craft that stops burning is written dark once.
+
+  None of it changes what the craft does. KSA works a core's conditions out from its throttle and a
+  nozzle's thrust fraction out from those conditions on every step it runs, and the nozzles that
+  thrust and draw propellant are counted from that thrust fraction: neither the throttle nor the
+  thrust fraction is written here. What is written is read by one frame's renderers and overwritten
+  by the next step from numbers the mod never touched.
 - **A craft is let go of ten seconds after its owner walks away from it.** Sticky ownership is
   what stops two games pulling one hull in two directions, but sticky for ever meant the first
   player to touch a thing held it until they left: in a session here one player came to own every
   craft in the world and the other could fly none of them. A craft its owner is neither in nor
-  looking at goes back to being anybody's after ten seconds, `--lapse-within`, and a player's camera counts as being
-  near it so stepping out to watch something is not walking away from it.
+  looking at goes to a player who is watching it after ten seconds, `--lapse-within`, and a player's camera counts as
+  being near it so stepping out to watch something is not walking away from it. Only a craft somebody
+  else is waiting on changes hands: a world is mostly parked craft nobody is looking at, and letting
+  those go lapsed ownership 873 times in 70 minutes, each one moving the camera of whoever was
+  watching a craft when it came free.
+- **The operator's broom sweeps by name, and every game sweeps its own world.** A world fills up
+  with spent stages, and a `Gone` cannot clear them: that datagram is one game's word about a craft
+  of its own, which the game that owns it is right to ignore, so the one game holding the debris
+  keeps it, goes on sending it, and hands it back to everybody within the second. `clear` on the
+  console sends `Swept` instead, which is the world being told what is no longer in it.
+
+  It carries a name with `*` and `?` in it rather than a list of craft, because the server cannot
+  name most of what is out there: it hears of a craft when somebody claims it or says how it is
+  built, and the fragments a spent stage breaks into are claimed by nobody. Measured in a game: a
+  world of 27 craft, of which the server knew 3. So each game matches the name against its own
+  world and takes away what it finds, bar what anybody is flying -- a world that pulls the hull out
+  from under a player is worse than a world with debris in it. A fresh save is asked for straight
+  after, since the world on disk still holds them all, and everybody is put back on that save.
+- **The world is handed out again rather than the clock put back.** Universe time cannot be moved
+  backwards by telling anyone: each game keeps its own, one more than three seconds ahead of the
+  server holds at a standstill until the server catches up (`ClockFollow.Speed`), and the only thing
+  that brings a game's own time down is loading a world. So `reload` hands the stored world to every
+  player again -- the same datagrams a player joining gets, and the mod takes a world while it is
+  playing by going round its own loading once more. While they all load, nobody is in the world, so
+  the server's clock goes back to the world's own time by the rule that was already there for an
+  empty server, and every game comes back on that time. A sweep arms the same thing for the save it
+  asks for, since the world the players are standing in still holds what was swept out of the
+  server's tables. Nobody reconnects, and nobody loses the craft they are flying.
 - **Ownership is not kept across a server restart**: it starts afresh, and the first to take control of a craft has it.
 - **A hatch is claimed before it opens.** A craft another player holds refuses to let its crew out,
   but a craft nobody holds was nobody's to refuse: two games looking at the same capsule each sent

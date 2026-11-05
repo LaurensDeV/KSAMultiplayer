@@ -64,11 +64,19 @@ internal static class Sync
     private static readonly Dictionary<string, Mine> Owned = [];
     private static readonly Dictionary<Vehicle, string> Puppets = [];
     private static readonly Dictionary<string, double> PlacedAt = [];
+    // What each puppet's owner last said its engines were doing. Kept because the frame hook and the
+    // frame KSA draws are not the same moment: the plume is drawn from the render, after this mod has
+    // run and from state a physics step would have left behind, so it is written there and read here.
+    private static readonly Dictionary<Vehicle, (bool On, float Throttle)> Engines = [];
+    // Another player's craft built here, by what the shared world calls it. World.Vehicles() does not
+    // list a craft the moment it is made, so asking the world whether a craft is here answers no for
+    // a frame or two after it was built, and the answer is taken as leave to build it again. This is
+    // what was built, and it is believed over the world until the craft is gone.
+    private static readonly Dictionary<string, Vehicle> Built = [];
     // Every craft this world has had since it was loaded, by craft rather than by name: one name can
     // belong to two craft here at once -- this player's kitten and the one another player sent out of
     // the same capsule -- and what matters is which object was already here, not what it is called.
     private static readonly HashSet<Vehicle> Seen = [];
-    private static readonly HashSet<string> Conflicts = [];
 
     // What the shared world calls a craft, when that is not what this world calls it: two games that
     // each send a kitten out of the same capsule both call it what KSA calls it, and the server gives
@@ -85,6 +93,10 @@ internal static class Sync
     private static Client? _client;
     private static Task<IPEndPoint?>? _finding;
     private static (string Name, string Password)? _asking;
+    // A world that has come and cannot be loaded yet, held rather than dropped: the server sends it
+    // once, and KSA loads nothing while the vehicle editor is open.
+    private static Blob? _worldToLoad;
+    private static string _notLoading = "", _notSaving = "";
     private static double _frameAt, _loadingSince, _claimNext;
     private static string _claimed = "", _address = "", _watching = "";
     private static double _askedSpeed = 1.0, _askWarpNext;
@@ -102,7 +114,15 @@ internal static class Sync
     public static Client? Client => _client;
     public static IReadOnlyList<string> Chat => ChatLines;
     public static IReadOnlyList<string> Said => SaidLines;
-    public static IReadOnlyCollection<string> ConflictingCraft => Conflicts;
+
+    /// <summary>
+    /// The craft standing here that the others know by another name, as "here: there". Two games each
+    /// send a kitten out of the same capsule and both call it what KSA calls it, so the server gives
+    /// the second a name of its own; and a craft built here for another player takes a name this world
+    /// has free when this world already has one of that name.
+    /// </summary>
+    public static IReadOnlyCollection<string> RenamedCraft =>
+        [.. Renamed.Where(r => World.IsAlive(r.Key)).Select(r => $"{r.Key.Id}: {r.Value}")];
 
     /// <summary>The craft this player owns and sends, by Id.</summary>
     public static IReadOnlyCollection<string> OwnedCraft => Owned.Keys;
@@ -256,19 +276,25 @@ internal static class Sync
         _finding = null;
         foreach (Vehicle v in Puppets.Keys) Log.Info($"let go of {v.Id}");
         Puppets.Clear();
+        Built.Clear();
         Owned.Clear();
         Seen.Clear();
-        Conflicts.Clear();
         Renamed.Clear();
         MadeHere.Clear();
         Definitions.Clear();
         PlacedAt.Clear();
+        Engines.Clear();
+        World.ForgetEngines();
+        (_worldToLoad, _notLoading, _notSaving) = (null, "", "");
         (_claimed, _address, _watching, Behind, Now) = ("", "", "", null, Stage.Off);
         (_askedSpeed, _askWarpNext) = (1.0, 0.0);
         if (HeldSpeed is not null)
         {
+            // Wherever the player is, not only at a craft: a speed held for the shared world is
+            // nobody's once this game is its own again, and one left standing is a world running at
+            // ten times speed in front of a player who has disconnected.
             HeldSpeed = null;
-            if (World.AtACraft) World.SetSpeed(1.0);
+            World.SetSpeed(1.0);
         }
         if (was) Say("disconnected");
     }
@@ -365,9 +391,14 @@ internal static class Sync
                     if (Now == Stage.Seeding) Say("the server has no world yet: yours becomes it");
                     break;
                 case Stage.Seeding when c.SnapshotWanted is not null && World.AtACraft:
-                    c.SnapshotWanted = null;
-                    SendWorld(c);
-                    StartPlaying(c);
+                    // In the shared world only once this world has become it. A game whose world was
+                    // not handed over is in no world the server has, and waits for one from whoever
+                    // the server asks next; null is an ask that cannot be answered yet.
+                    switch (Snapshot(c))
+                    {
+                        case true: StartPlaying(c); break;
+                        case false: Now = Stage.Waiting; break;
+                    }
                     break;
                 case Stage.Waiting:
                     TakeWorld(c);
@@ -397,16 +428,30 @@ internal static class Sync
 
     private static void TakeWorld(Client c)
     {
-        while (c.Blobs.TryDequeue(out Blob? blob))
+        while (_worldToLoad is null && c.Blobs.TryDequeue(out Blob? blob))
         {
             if (blob.Kind == BlobKind.Vehicle) Definitions[blob.Key] = blob.Data;
-            if (blob.Kind != BlobKind.World) continue;
-            Say($"the world has come, {blob.Data.Length / 1024} KB: loading it");
-            (_loadingSince, _settle, Now) = (Wall(), 0, Stage.Loading);
-            Puppets.Clear();
-            MadeHere.Clear();
-            World.LoadWorld(blob.Data);
+            if (blob.Kind == BlobKind.World) _worldToLoad = blob;
+        }
+        if (_worldToLoad is not { } world) return;
+        if (World.Refuses() is { Length: > 0 } not)
+        {
+            if (_notLoading != not) Say($"the world has come, but it cannot be loaded: {not}");
+            _notLoading = not;
             return;
+        }
+        (_notLoading, _worldToLoad) = ("", null);
+        Say($"the world has come, {world.Data.Length / 1024} KB: loading it");
+        (_loadingSince, _settle, Now) = (Wall(), 0, Stage.Loading);
+        Puppets.Clear();
+        Built.Clear();
+        MadeHere.Clear();
+        Engines.Clear();
+        World.ForgetEngines();
+        if (!World.LoadWorld(world.Data, out string why))
+        {
+            Say($"the world could not be loaded: {why}");
+            Disconnect();
         }
     }
 
@@ -421,22 +466,54 @@ internal static class Sync
         Say("in the shared world");
     }
 
-    private static void SendWorld(Client c)
+    // The server has asked this game for a save of the world: sent, refused, or null while the ask
+    // cannot be answered at all. KSA writes no save while the vehicle editor is open, and a player who
+    // closes it a second later is still the one whose world this is -- so the ask is kept rather than
+    // answered with a world that was never written.
+    private static bool? Snapshot(Client c)
     {
-        (byte[] zip, double universe) = World.SaveWorld();
-        c.Upload(new Blob(BlobKind.World, "", c.Id, universe, zip));
-        Log.Info($"sent the server a save of this world, {zip.Length / 1024} KB at {universe:F1} s");
+        if (c.SnapshotWanted is not { } why) return null;
+        if (World.Refuses() is { Length: > 0 } not)
+        {
+            if (_notSaving != not) Say($"the server wants a save of this world: {not}");
+            _notSaving = not;
+            return null;
+        }
+        _notSaving = "";
+        c.SnapshotWanted = null;
+        Log.Info($"the server asks for a save: {why}");
+        return SendWorld(c);
+    }
+
+    private static bool SendWorld(Client c)
+    {
+        // A world holding a craft KSA has lost inside a body kills every game that loads it, on
+        // every join, for as long as the server keeps it. The server is told no and asks somebody
+        // else; what it already has is older but can be opened.
+        if (World.LostCraft() is { Count: > 0 } lost)
+        {
+            string names = string.Join(", ", lost.Take(3)) + (lost.Count > 3 ? $" and {lost.Count - 3} more" : "");
+            string why = $"{names} {(lost.Count == 1 ? "is" : "are")} inside the body {(lost.Count == 1 ? "it belongs" : "they belong")} to";
+            c.SayNoWorld(why);
+            Say($"this world is not fit to hand over: {why}");
+            Log.Warn($"did not hand this world over: {why}");
+            return false;
+        }
+        if (World.SaveWorld(out string not) is not { } save)
+        {
+            c.SayNoWorld(not);
+            Say($"this world could not be saved for the others: {not}");
+            Log.Warn($"did not hand this world over: {not}");
+            return false;
+        }
+        c.Upload(new Blob(BlobKind.World, "", c.Id, save.Universe, save.Zip));
+        Log.Info($"sent the server a save of this world, {save.Zip.Length / 1024} KB at {save.Universe:F1} s");
+        return true;
     }
 
     private static void Play(Client c)
     {
-        if (c.SnapshotWanted is { } why)
-        {
-            c.SnapshotWanted = null;
-            Log.Info($"the server asks for a save: {why}");
-            SendWorld(c);
-        }
-
+        Snapshot(c);
         TakeRenames(c);
 
         // By what the shared world calls each craft. Two of this world's craft can want one name for a
@@ -452,7 +529,21 @@ internal static class Sync
 
         while (c.Blobs.TryDequeue(out Blob? blob))
         {
+            // The world again: the operator has put everybody back on it. This game goes round the
+            // loading once more rather than playing on in a world the others have left behind, and
+            // its universe time comes back with the world's, which is the only way it ever can.
+            if (blob.Kind == BlobKind.World)
+            {
+                _worldToLoad = blob;
+                Now = Stage.Waiting;
+                Say("the world has been handed out again: loading it");
+                return;
+            }
             if (blob.Kind != BlobKind.Vehicle || blob.Key.Length == 0) continue;
+            // The same craft again, which its owner sends whenever KSA reshapes it. The craft standing
+            // here is already that one, and destroying it to build it back is how a world comes to
+            // hold two of it.
+            if (Definitions.TryGetValue(blob.Key, out byte[]? had) && had.AsSpan().SequenceEqual(blob.Data)) continue;
             Definitions[blob.Key] = blob.Data;
             // A craft rebuilt by its owner, as one that drops a stage is: the old one here goes, and the
             // new one is built below. Never one this game made: another player's kitten out of the same
@@ -461,6 +552,7 @@ internal static class Sync
                 && !ReferenceEquals(old, flown) && !MadeHere.Contains(old))
             {
                 Puppets.Remove(old);
+                Built.Remove(blob.Key);
                 World.Destroy(old);
                 here.Remove(blob.Key);
             }
@@ -472,9 +564,43 @@ internal static class Sync
             if (here.TryGetValue(key, out Vehicle? gone) && !Owned.ContainsKey(key) && !MadeHere.Contains(gone))
             {
                 Puppets.Remove(gone);
+                Built.Remove(key);
                 World.Destroy(gone);
                 here.Remove(key);
             }
+        }
+        // Swept by the operator, which is not the same as gone. A gone is one game's word about a
+        // craft of its own, and the game that owns it is right to keep its own; this is the world
+        // being told what is no longer in it, so it goes whosever it is. The server sends a name
+        // rather than a list because most of what is out there was claimed by nobody and it has
+        // never heard of it: this world is the one that knows what is in it.
+        while (c.Swept.TryDequeue(out string? like))
+        {
+            int gone = 0;
+            foreach (Vehicle v in World.Vehicles())
+            {
+                string key = KeyOf(v);
+                if (!Wire.Matches(key, like) || ReferenceEquals(v, flown)) continue;
+                // Nor anything anybody else is flying: a player's hull is not debris, and a sweep
+                // that took one out from under them would be worse than the debris.
+                if (c.Players.Any(p => p.Controlling == key)) continue;
+                Owned.Remove(key);
+                Puppets.Remove(v);
+                Built.Remove(key);
+                MadeHere.Remove(v);
+                Renamed.Remove(v);
+                Engines.Remove(v);
+                Definitions.Remove(key);
+                PlacedAt.Remove(key);
+                Seen.Remove(v);
+                if (_claimed == key) _claimed = "";
+                here.Remove(key);
+                World.Destroy(v);
+                gone++;
+            }
+            Say(gone > 0
+                ? $"the world was cleared of {gone} craft nobody is flying"
+                : "the world was cleared, and this game had nothing matching to take away");
         }
 
         ClaimFlown(c, flown);
@@ -492,8 +618,10 @@ internal static class Sync
         {
             // Found before the new name is written down, since that is what it is called until then.
             Vehicle? craft = World.Vehicles().FirstOrDefault(v => KeyOf(v) == r.Was && !Puppets.ContainsKey(v));
-            Conflicts.Remove(r.Was);
-            Definitions.Remove(r.Was);
+            // What is held under the old name is not this craft's: the name was taken because
+            // another player already had a craft called that, so the definition filed under it is
+            // theirs, and it is the one this game needs to build their craft. Nothing re-requests a
+            // definition, so dropping it meant their craft could never be built here at all.
             PlacedAt.Remove(r.Was);
             if (_claimed == r.Was) _claimed = "";
             if (Owned.Remove(r.Was, out Mine? mine)) craft ??= mine.Craft;
@@ -615,7 +743,6 @@ internal static class Sync
                 {
                     Owned.Remove(key);
                     if (c.Owns(key)) c.SayGone(key);
-                    Conflicts.Remove(key);
                     continue;
                 }
             }
@@ -660,18 +787,21 @@ internal static class Sync
             if (owner == c.Id || Owned.ContainsKey(key)) continue;
             if (here.TryGetValue(key, out Vehicle? ours) && MadeHere.Contains(ours)) continue;
             Track track = c.TrackOf(key);
-            if (!here.TryGetValue(key, out Vehicle? v))
+            here.TryGetValue(key, out Vehicle? v);
+            if (v is null && Built.TryGetValue(key, out Vehicle? standing) && World.IsAlive(standing)) here[key] = v = standing;
+            if (v is null)
             {
                 // One a frame: each is a craft built.
                 if (builtOne || track.Newest is null || !Definitions.TryGetValue(key, out byte[]? definition)) continue;
                 builtOne = true;
                 // This world may already hold a craft of that name -- this player's own kitten out of
                 // the same capsule -- so the one built here is given a name this world has free.
-                string localId = World.Vehicles().Any(x => x.Id == key) ? World.FreeLocalId(key) : key;
+                string localId = World.Taken(key) ? World.FreeLocalId(key) : key;
                 if (World.Build(definition, localId, out string why) is { } built)
                 {
                     if (localId != key) Renamed[built] = key;
                     Seen.Add(built);
+                    Built[key] = built;
                     here[key] = v = built;
                     Log.Info($"built {key}, {c.NameOf(owner)}'s{(localId != key ? $", called {localId} here" : "")}");
                 }
@@ -686,8 +816,12 @@ internal static class Sync
             wanted.Add(v);
             Puppets[v] = key;
             if (track.At(universe) is not { } s) continue;
+            bool lit = (s.Flags & Wire.StateFlags.EngineOn) != 0;
             World.SetLights(v, (s.Flags & Wire.StateFlags.Lights) != 0);
-            World.SetEngine(v, (s.Flags & Wire.StateFlags.EngineOn) != 0, s.Throttle);
+            // The input, which lights the engine for real in a craft this game is stepping, and the
+            // word for the renderer, which is all there is for one it is not.
+            World.SetEngine(v, lit, s.Throttle);
+            Engines[v] = (lit, s.Throttle);
             if (!v.HasPhysicsBubble && now >= PlacedAt.GetValueOrDefault(key))
             {
                 PlacedAt[key] = now + PlaceEverySeconds;
@@ -695,6 +829,8 @@ internal static class Sync
             }
         }
         foreach (Vehicle v in Puppets.Keys.Where(p => !wanted.Contains(p)).ToArray()) Puppets.Remove(v);
+        foreach (Vehicle v in Engines.Keys.Where(p => !Puppets.ContainsKey(p)).ToArray()) Engines.Remove(v);
+        foreach (string k in Built.Where(p => !World.IsAlive(p.Value)).Select(p => p.Key).ToArray()) Built.Remove(k);
         foreach (Vehicle v in Renamed.Keys.Where(x => !World.IsAlive(x)).ToArray()) Renamed.Remove(v);
         foreach (Vehicle v in Seen.Where(x => !World.IsAlive(x)).ToArray()) Seen.Remove(v);
         foreach (Vehicle v in MadeHere.Where(x => !World.IsAlive(x)).ToArray()) MadeHere.Remove(v);
@@ -741,6 +877,16 @@ internal static class Sync
         return tags;
     }
 
+    /// <summary>
+    /// A puppet's engines as its owner last said, written from the render for the frame about to be
+    /// drawn. Anything else is written dark, which costs nothing unless it was lit from here.
+    /// </summary>
+    public static void ShowEngines(Vehicle v)
+    {
+        (bool on, float throttle) = Engines.TryGetValue(v, out (bool On, float Throttle) said) ? said : (false, 0f);
+        World.ShowEngine(v, on, throttle);
+    }
+
     /// <summary>A puppet pulled to its owner's state, from the physics window.</summary>
     public static void Physics(Vehicle v, double dt)
     {
@@ -756,8 +902,15 @@ internal static class Sync
         // runs away from the world it is watching and every state it is sent arrives stale.
         if (Now is Stage.Loading or Stage.Joining || !World.AtACraft)
         {
-            // KSA's own load is left to run as it does.
+            // Let go of, and at real time rather than at whatever this world was last run at: out of
+            // flight the catch-up warp from a join kept running, so the editor and the tracking
+            // station ran at ten times speed with nothing holding them to the server, and the world
+            // came back further ahead than it went. KSA's own load is the one left to run as it does.
+            if (HeldSpeed is not null && Now is not (Stage.Loading or Stage.Joining)) World.SetSpeed(1.0);
             HeldSpeed = null;
+            // And nothing measured is nothing to report: a number left standing here is one the
+            // server holds the whole room's speed down to.
+            c.Late = 0.0;
             return;
         }
         if (Now != Stage.Playing || c.ServerUniverse is not { } server)

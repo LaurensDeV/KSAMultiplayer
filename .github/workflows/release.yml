@@ -154,13 +154,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Named, not all of them: the image build uploads a record of itself as an artifact too, and
-      # downloading everything meant the release fell over fetching a file nobody asked for.
+      # One step each, named: the image build uploads a record of itself as an artifact too, and
+      # downloading everything meant the release fell over fetching a file nobody asked for. Named
+      # outright rather than matched, so this does not rest on which glob dialect the action speaks.
       - uses: actions/download-artifact@v4
         with:
+          name: mod
           path: assets
-          pattern: "{mod,server}"
-          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: server
+          path: assets
 
       - name: Write the notes
         env:
@@ -192,7 +196,7 @@ jobs:
           ## Hosting
 
           \`\`\`bash
-          docker run -d --name ksamp -p 50100:50100/udp -v ksamp-world:/data \\
+          docker run -dit --name ksamp -p 50100:50100/udp -v ksamp-world:/data \\
               -e KSAMP_NAME="My server" ghcr.io/$OWNER/ksamp-server@$DIGEST
           \`\`\`
 
@@ -200,11 +204,20 @@ jobs:
           unit, needing no .NET and no KSA. The server has no world until a player gives it one, and
           hands that world to everyone who joins after.
 
+          Its commands are typed into its console, which is standard input -- hence \`-it\` above, and
+          \`docker attach ksamp\` to reach it, Ctrl+P Ctrl+Q to leave it running. \`clear\` is the broom
+          for a world filling up with spent stages: every craft nobody is flying goes, out of every
+          game and not just out of the server, and \`clear Rocket_*\` narrows it. \`reload\` hands the
+          world out again, which takes a few seconds and no reconnection, and is the only thing that
+          ever puts universe time back.
+
           ## State
 
-          Two games on one machine have flown in one world through it: launching, EVA, staging
-          between games, chat, the scoreboard, nametags, and a voted time warp. What a rocket of many
-          parts does, and what two games across the internet do, is not known yet.
+          Two games on one machine have flown in one world through it: launching, EVA, chat, the
+          scoreboard, nametags, a voted time warp, and an 89-part rocket staged while the other game
+          watched and rebuilt the stage it dropped. Another player's engines are seen to burn even on
+          a craft this game is not simulating, 7,576 km away. What two games across the internet do
+          is not known yet.
           NOTES
           cat notes.md
 

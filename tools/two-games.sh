@@ -7,6 +7,9 @@
 #     ./tools/two-games.sh --dir A    # print a profile's folder
 #     ./tools/two-games.sh --stop     # close both games and the server
 #
+# KSAMP_TWO_GAMES_PLUMES=1 turns the plume trails on, for watching another player's engine burn.
+# They are off by default because two games with them on have run this card out of memory.
+#
 # StarMap gives KSA a profile of its own with -InstancePath, so each copy has its own log, saves,
 # mods and bridge. Then drive either through its bridge:
 #
@@ -82,7 +85,7 @@ for name in A B; do
     # save holding another mod's parts would not load in a profile without it.
     printf '[[mods]]\nid = "Core"\nenabled = true\n\n[[mods]]\nid = "KSAMultiplayer"\nenabled = true\n' > "$dir/manifest.toml"
     python3 - "$USER_DIR/settings.toml" "$dir/settings.toml" "$name" <<'PY'
-import re, sys
+import os, re, sys
 source, target, name = sys.argv[1:]
 s = open(source).read()
 light = {
@@ -97,7 +100,12 @@ light = {
     "celestialTextureCap": "1024", "vesselTextureCap": "1024", "kittenFurQuality": '"Low"',
     "explosionQuality": '"Low"', "exhaustUpscale": '"Low"', "reflections": "false",
     "terrainTessellation": "false", "stars": "false", "lensFlare": "false", "globalBloom": "false",
-    "thresholdBloom": "false", "plumeTrails": "false", "plumeTrailShadows": "false",
+    "thresholdBloom": "false", "plumeTrailShadows": "false",
+    # Off unless asked for: drawing the trails costs memory this card has barely enough of for two
+    # games, and a run with them on died on "Vma Failed to create image ... ErrorOutOfDeviceMemory"
+    # in the second game. The near plume at the nozzle is drawn either way, so this is only wanted
+    # when the long trail itself is what is being looked at.
+    "plumeTrails": os.environ.get("KSAMP_TWO_GAMES_PLUMES", "") and "true" or "false",
     "particleCountQuality": '"Low"', "vesselDeformation": "false", "terrainShadows": "false",
     "skyboxShadows": "false", "milkyWayQuality": '"Low"', "vesselCascadeShadows": "false",
     "thinFilmInterference": "false", "specularAntiAliasing": "false", "showDistantGlints": "false",

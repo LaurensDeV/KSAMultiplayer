@@ -8,7 +8,7 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
 
 > **Status: played, not finished.** Two games on one machine have flown in one world through it,
 > against KSA `2026.10.25.5707`, and the server and the protocol are tested headlessly besides
-> (53 tests, real UDP over loopback, a lossy line included). An 89-part rocket has been flown in a
+> (65 tests, real UDP over loopback, a lossy line included). An 89-part rocket has been flown in a
 > shared world and staged while the other game watched, which rebuilt the dropped stage as its own
 > craft. What two games across the internet do is not known.
 > See [docs/DESIGN.md](docs/DESIGN.md#what-has-not-been-tried).
@@ -94,11 +94,28 @@ nobody is connected, unless `--keep-time` is given.
 | `--snapshot-every` | `KSAMP_SNAPSHOT_EVERY` | `300` | seconds between fresh saves |
 | `--keep-time` | `KSAMP_KEEP_TIME` | off | let time run with nobody connected |
 | `--warp-answer` | `KSAMP_WARP_ANSWER` | `30` | seconds everyone has to answer a warp |
-| `--lapse-within` | `KSAMP_LAPSE_WITHIN` | `10` | seconds a craft stays its owner's while they are neither in it nor looking at it |
+| `--lapse-within` | `KSAMP_LAPSE_WITHIN` | `10` | seconds a craft stays its owner's once another player is watching it and they are neither in it nor looking at it |
 | `--speed` | `KSAMP_SPEED` | `1` | how fast universe time runs |
 
-Commands typed into the server's console: `players`, `say <text>`, `kick <name> [why]`, `save`,
-`status`, `quit`. It shuts down cleanly on Ctrl+C and on SIGTERM.
+Commands typed into the server's console: `players`, `say <text>`, `kick <name> [why]`,
+`clear [name]`, `reload`, `save`, `status`, `quit`. It shuts down cleanly on Ctrl+C and on SIGTERM.
+
+`clear` is the broom for a world filling up with spent stages. Every craft nobody is flying is taken
+out of every game that is in the world; a name narrows it, with `*` and `?` for wildcards --
+`clear Rocket_*` -- and a craft somebody is flying is never taken, whatever is asked for. The name
+goes to the games and each sweeps its own world by it, because the server only hears of a craft when
+somebody claims it: the fragments a spent stage breaks into belong to nobody, and they are most of
+what there is to sweep. The world on disk still holds them, so a fresh save is asked for, and once
+it arrives everybody is put back on *that* world: the cleared one, rather than the one they are
+standing in.
+
+`reload` does that last step on its own, with the world as it stands. Each game loads it and comes
+back in a few seconds. Nobody reconnects for either, and nobody loses what they are flying.
+
+Putting everybody back on the world is also the only way universe time is ever put back. A game's own
+time comes down by loading a world and by no other means -- a game more than three seconds ahead of
+the server stops dead until the server catches up -- and while they are all loading there is nobody
+in the world, so the server's clock returns to the world's own time at the same moment theirs do.
 
 ### As a service
 
@@ -110,8 +127,13 @@ docker build -f deploy/Dockerfile -t ksamp-server .
 ```
 
 ```bash
-docker run -d --name ksamp -p 50100:50100/udp -v ksamp-data:/data -e KSAMP_NAME="Moon base" ksamp-server
+docker run -dit --name ksamp -p 50100:50100/udp -v ksamp-data:/data -e KSAMP_NAME="Moon base" ksamp-server
 ```
+
+The commands above are read from standard input, so a container wants `-it` to have a console at
+all: `docker attach ksamp` then types into it, and Ctrl+P Ctrl+Q leaves it running. Started with
+plain `-d`, or run as a systemd service, the server has no console and `clear` and `reload` cannot
+be reached -- `tmux` or `screen` is the way to keep one for a service.
 
 ## Building
 

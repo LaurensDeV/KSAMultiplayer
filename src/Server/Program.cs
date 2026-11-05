@@ -32,7 +32,14 @@ const string Usage = """
     With no world, the first player to join gives the server theirs.
 
     Console commands, on standard input: players, say <text>, kick <name> [why],
-    save, status, help, quit.
+    clear [name], save, status, help, quit.
+
+    clear takes every craft nobody is flying out of every game and out of the world the server
+    hands out -- the broom for a world filling with spent stages. A name narrows it, with * and ?
+    for wildcards: clear Rocket_*. Once the cleared world has been saved, everybody is put back on
+    it. reload does that on its own, with the world as it stands; it is also the only thing that
+    puts universe time back, since a game's own time comes down by loading a world and no other way.
+    Nobody reconnects for either.
     """;
 
 Dictionary<string, string> opts = [];
@@ -169,6 +176,21 @@ void Command(string line)
             string[] k = rest.Split(' ', 2, StringSplitOptions.TrimEntries);
             if (k[0].Length == 0 || !server.Kick(k[0], k.Length > 1 ? k[1] : "")) Say($"nobody called '{k[0]}'");
             break;
+        case "reload":
+            int put = server.ReloadAll("the operator asked");
+            Say(put == 0
+                ? server.HasWorld ? "nobody to hand the world to" : "there is no world to hand out"
+                : $"handing the world to {put} player{(put == 1 ? "" : "s")} again; their games load it and come back in");
+            break;
+        case "clear" or "sweep":
+            List<string> swept = server.Sweep(rest);
+            // What the server knew of is only ever part of it: most of a world's debris was claimed
+            // by nobody, so it is the games that find it, each in its own world.
+            // What the sweep found here is logged by the server itself, detail and all; this is
+            // only the console answering the operator who typed it.
+            Say($"sweeping every game by '{(rest.Length > 0 ? rest : "*")}', bar what is being flown"
+                + $"{(swept.Count > 0 ? $" -- {swept.Count} known here" : "")}");
+            break;
         case "save" or "snapshot":
             server.SnapshotNow();
             Say(server.Players.Any(p => p.Loaded) ? "asked the longest-playing player for a save" : "nobody is in the world to save it");
@@ -180,7 +202,10 @@ void Command(string line)
                 + $", {server.Socket.Received} datagrams in, {server.Socket.Sent} out");
             break;
         case "help" or "?":
-            Say("players, say <text>, kick <name> [why], save, status, quit");
+            Say("players, say <text>, kick <name> [why], clear [name], reload, save, status, quit");
+            Say("  clear takes every craft nobody is flying out of every game; a name with * narrows it,");
+            Say("    and everybody is put back on the cleared world once it has been saved");
+            Say("  reload puts everybody back on the world as it stands, which is also what puts the clock back");
             break;
         case "quit" or "exit" or "stop":
             stop.Cancel();

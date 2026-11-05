@@ -105,4 +105,19 @@ public class ClockTests
         Assert.Equal("Moon", track.At(10.05 + Track.DelaySeconds)!.Body);
         Assert.Equal(5, track.At(10.05 + Track.DelaySeconds)!.PositionCcf.X, 6);
     }
+
+    [Fact]
+    public void AStateOlderThanEverythingKeptTakesNothingElsesPlace()
+    {
+        Track track = new();
+        for (int i = 0; i < 40; i++) track.Add(At(10.0 + (i * 0.05), i));
+        double newest = track.Newest!.Universe, oldest = track.At(0.0)!.Universe;
+
+        // There is nothing to put it between and no room for it: what it must not do is go in at the
+        // front and then come off the front again as the oldest, which is what dropping the oldest
+        // comes to when the newcomer is it.
+        track.Add(At(oldest - 0.5, -1.0));
+        Assert.Equal(newest, track.Newest!.Universe, 6);
+        Assert.Equal(oldest, track.At(0.0)!.Universe, 6);
+    }
 }

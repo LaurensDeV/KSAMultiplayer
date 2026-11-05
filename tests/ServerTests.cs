@@ -252,6 +252,7 @@ public class ServerTests
     [InlineData("wrong", "B1", "Core", "wrong password")]
     [InlineData("pw", "B2", "Core", "you need the same build")]
     [InlineData("pw", "B1", "", "mods you do not have enabled: Core")]
+    [InlineData("pw", "B1", "Core,Shiny,Louder", "mods this world does not have (Louder, Shiny)")]
     public void APlayerWhoCannotLoadTheWorldIsToldWhy(string password, string build, string mods, string why)
     {
         using Rig rig = new(new ServerOptions { Password = "pw" });
@@ -665,7 +666,7 @@ public class ServerTests
     }
 
     [Fact]
-    public void ACraftItsOwnerWalksAwayFromGoesBackToBeingAnybodys()
+    public void ACraftItsOwnerWalkedAwayFromGoesToWhoeverIsWaitingOnIt()
     {
         using Rig rig = new(new ServerOptions { LapseWithin = 1.0 });
         Client a = Seed(rig);
@@ -676,7 +677,13 @@ public class ServerTests
         rig.Until(() => rig.Server.OwnerOf("Rocket") == a.Id && rig.Server.OwnerOf("Lander") == a.Id,
                   what: "Alice to hold both");
 
-        // She is in the lander and not looking at the rocket. It is not hers to hold for ever.
+        // She is in the lander and not looking at the rocket, but nobody else wants it, so it stays
+        // hers: a parked craft changing hands for nobody is churn and nothing else.
+        rig.For(3.0);
+        Assert.Equal(a.Id, rig.Server.OwnerOf("Rocket"));
+
+        // Bob looks at it, and now it is not hers to hold.
+        b.Watching = "Rocket";
         rig.Until(() => rig.Server.OwnerOf("Rocket") == 0, seconds: 15.0, what: "the rocket to be let go of");
         Assert.Equal(a.Id, rig.Server.OwnerOf("Lander"));
 
@@ -700,6 +707,25 @@ public class ServerTests
         a.Watching = "Rocket";
         rig.For(3.0);
         Assert.Equal(a.Id, rig.Server.OwnerOf("Rocket"));
+    }
+
+    [Fact]
+    public void AGameThatWillNotHandOverItsWorldHasSomebodyElseAskedInstead()
+    {
+        using Rig rig = new();
+        Client a = rig.Join("Alice");
+        rig.Until(() => a.Joined && a.SnapshotWanted is not null, what: "Alice to be asked for a world");
+        a.SnapshotWanted = null;
+        Client b = rig.Join("Bob");
+        rig.Until(() => b.Joined, what: "Bob to join");
+
+        // Hers holds a craft KSA has lost inside a body: a world nobody could open is worse than none.
+        a.SayNoWorld("Rocket is inside the body it belongs to");
+        rig.Until(() => b.SnapshotWanted is not null, what: "Bob to be asked instead");
+
+        b.SnapshotWanted = null;
+        b.Upload(new Blob(BlobKind.World, "", b.Id, 5000, Rig.FakeWorld()));
+        rig.Until(() => rig.Server.HasWorld, what: "Bob's world");
     }
 
     [Fact]
@@ -831,5 +857,202 @@ public class ServerTests
         Wire.Player bob = a.Players.First(p => p.Name == "Bob");
         Assert.InRange(bob.Rtt, 0f, 1f);
         Assert.True(double.IsFinite(b.Ping));
+    }
+
+    [Fact]
+    public void TheOperatorsBroomTakesACraftOutOfEveryGameIncludingItsOwners()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+
+        // Alice is flying one and has left two behind, which is what a world fills up with.
+        a.Claim("Lander", controlling: true, made: true);
+        a.Claim("Stage 1", controlling: false, made: true);
+        a.Claim("Stage 2", controlling: false, made: true);
+        a.SendState(Rig.State("Lander", 5000));
+        rig.Until(() => b.OwnerOf("Stage 2") == a.Id && a.Owns("Stage 1"), what: "the owners table");
+
+        Assert.Equal(2, rig.Server.Sweep("Stage *").Count);
+        rig.Until(() => a.Swept.Count == 1 && b.Swept.Count == 1, what: "both games to be told");
+        // The name, not the list: a game sweeps its own world by it, since most of what is out
+        // there was claimed by nobody and the server has never heard of it.
+        Assert.Equal("Stage *", a.Swept.Peek());
+        Assert.True(Wire.Matches("Stage 2", a.Swept.Peek()));
+        Assert.False(Wire.Matches("Lander", a.Swept.Peek()));
+
+        // Gone from the server too, and what is being flown is left alone.
+        Assert.Equal(0, rig.Server.OwnerOf("Stage 1"));
+        Assert.Equal(a.Id, rig.Server.OwnerOf("Lander"));
+        Assert.Empty(rig.Server.Sweep("Stage *"));
+    }
+
+    [Fact]
+    public void EverybodyIsPutBackOnTheWorldWithoutReconnecting()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        a.Blobs.Clear();
+        b.Blobs.Clear();
+        rig.For(1.5);
+
+        Assert.Equal(2, rig.Server.ReloadAll("the operator asked"));
+        rig.Until(() => a.Blobs.Any(x => x.Kind == BlobKind.World) && b.Blobs.Any(x => x.Kind == BlobKind.World),
+                  seconds: 20, what: "both to be handed the world again");
+        Assert.DoesNotContain(rig.Server.Players, p => p.Loaded);
+
+        // Nobody is in the world while they load it, so the clock goes back to the world's own time:
+        // the one thing that moves everybody's time at once, and why this is the way to put it back.
+        rig.Until(() => Math.Abs(rig.Server.UniverseClock.Now(rig.Now()) - rig.Server.World!.Universe) < 0.1,
+                  what: "the clock to go back to the world's time");
+
+        // And back in when their games say so, with no hello of any kind in between.
+        a.SayLoaded(rig.Server.World!.Universe);
+        b.SayLoaded(rig.Server.World!.Universe);
+        rig.Until(() => rig.Server.Players.All(p => p.Loaded), what: "both back in the world");
+        Assert.Equal(2, rig.Server.Players.Count);
+    }
+
+    [Fact]
+    public void TheWorldEverybodyIsPutBackOnIsTheClearedOne()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        a.Claim("Stage 1", controlling: false, made: true);
+        rig.Until(() => b.OwnerOf("Stage 1") == a.Id, what: "the owners table");
+        a.Blobs.Clear();
+        b.Blobs.Clear();
+
+        // A sweep asks whoever has been in longest for a save, since the world on disk still holds
+        // what was swept. Nobody goes back on the world until that save is the one they would get.
+        Assert.Single(rig.Server.Sweep());
+        rig.Until(() => a.SnapshotWanted is not null, what: "Alice to be asked for a save of the cleared world");
+        Assert.DoesNotContain(rig.Server.Players, p => !p.Loaded);
+
+        a.SnapshotWanted = null;
+        a.Upload(new Blob(BlobKind.World, "", a.Id, 6000, Rig.FakeWorld(20)));
+        rig.Until(() => a.Blobs.Any(x => x.Kind == BlobKind.World) && b.Blobs.Any(x => x.Kind == BlobKind.World),
+                  seconds: 20, what: "both to be put back on the cleared world");
+        Assert.Equal(6000, rig.Server.World!.Universe);
+        Assert.Equal(rig.Server.World.Data, b.Blobs.Last(x => x.Kind == BlobKind.World).Data);
+    }
+
+    [Fact]
+    public void ACraftSomebodyIsFlyingIsNotSweptAway()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        a.Claim("Lander", controlling: true, made: true);
+        a.SendState(Rig.State("Lander", 5000));
+        rig.Until(() => rig.Server.Players.Any(p => p.Controlling == "Lander"), what: "the server to see what Alice flies");
+
+        Assert.Empty(rig.Server.Sweep());
+        Assert.Equal(a.Id, rig.Server.OwnerOf("Lander"));
+        // Swept by name all the same, so a game can take away what the server never knew of: what
+        // is being flown is spared at both ends.
+        rig.Until(() => a.Swept.Count > 0, what: "the game to be told to sweep");
+    }
+
+    [Fact]
+    public void AWorldNobodyAskedForIsNotTheServersWorld()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        byte[] was = rig.Server.World!.Data;
+
+        // Alice is in the world and has been asked for nothing since she gave it. A world taken from
+        // whoever cares to send one is written to disk along with that sender's build and mods, and
+        // everybody else is then held to those: one client could lock the rest out of the server.
+        a.Upload(new Blob(BlobKind.World, "", a.Id, 9000.0, Rig.FakeWorld(60)));
+        rig.Until(() => rig.Server.Said.Any(said => said.Contains("nobody asked for")), seconds: 20, what: "the server to leave it where it came from");
+        Assert.Equal(was, rig.Server.World!.Data);
+        Assert.Equal(5000.0, rig.Server.World!.Universe, 1);
+    }
+
+    [Fact]
+    public void NobodyIsInAWorldTheyWereNeverGiven()
+    {
+        using Rig rig = new();
+        Client a = rig.Join("Alice");
+        rig.Until(() => a.Joined && a.SnapshotWanted is not null, what: "Alice to be asked for a world");
+        Client b = rig.Join("Bob");
+        rig.Until(() => b.Joined, what: "Bob to join");
+
+        // Bob has been handed nothing: there is no world yet, and Alice's has not come. A game that
+        // said it was in the shared world anyway claimed craft and blocked every warp.
+        b.SayLoaded(4321.0);
+        rig.For(2.0);
+        Assert.DoesNotContain(rig.Server.Players, p => p.Id == b.Id && p.Loaded);
+        Assert.False(rig.Server.UniverseClock.Known);
+    }
+
+    [Fact]
+    public void AWorldSaidToBeLoadedAtATimeThatIsNoTimeIsNotTheClock()
+    {
+        using Rig rig = new();
+        // A world copied in by hand, whose universe time the server cannot read: the first player to
+        // load it says what it is, and from then on the whole room follows that one number.
+        rig.Server.SetWorld(new Blob(BlobKind.World, "", 0, 0.0, Rig.FakeWorld()), "B1", ["Core"], "SolLite", timeKnown: false);
+        Client a = rig.Join("Alice");
+        rig.Until(() => a.Blobs.Any(x => x.Kind == BlobKind.World), seconds: 20, what: "Alice to be sent the world");
+
+        a.SayLoaded(double.NaN);
+        rig.For(1.0);
+        Assert.False(rig.Server.UniverseClock.Known);
+        Assert.DoesNotContain(rig.Server.Players, p => p.Loaded);
+
+        a.SayLoaded(5000.0);
+        rig.Until(() => rig.Server.UniverseClock.Known, what: "the clock to start from Alice's world");
+        Assert.InRange(rig.Server.UniverseClock.Now(rig.Now()), 5000, 5010);
+    }
+
+    [Fact]
+    public void APauseIsNotUndoneByTheGovernor()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+
+        a.AskWarp(0.0);
+        rig.Until(() => b.WarpWantsAnswer, what: "Bob to be asked");
+        b.VoteWarp(true);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Running, what: "the pause to take");
+
+        // Bob's world is a long way behind the server's, which is what moves the governor. It has
+        // nothing to say about a world that is stopped: a pause asks nothing of anybody's machine,
+        // and nothing here climbs back down to 0 once it has decided the floor is 1x.
+        b.Late = 30.0;
+        rig.Until(() => rig.Server.Players.Any(p => p.Id == b.Id && p.Late > 20.0), seconds: 10.0, what: "the server to hear how far behind Bob is");
+        rig.For(4.0);
+        Assert.Equal(Wire.WarpPhase.Running, rig.Server.Warp.Phase);
+        Assert.Equal(0.0, rig.Server.UniverseClock.Speed);
+    }
+
+    [Fact]
+    public void AWarpDoesNotClimbBackIntoACeilingAMachineHasHit()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        (a.Can, b.Can) = (20.0, 20.0);
+        rig.Until(() => rig.Server.Players.All(p => p.Can > 10.0), seconds: 10.0, what: "both to say what they can fly");
+
+        a.AskWarp(10.0);
+        rig.Until(() => b.WarpWantsAnswer, what: "Bob to be asked");
+        b.VoteWarp(true);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Running, what: "the warp to run");
+
+        b.Can = 4.0;
+        rig.Until(() => rig.Server.UniverseClock.Speed < 6.0, seconds: 10.0, what: "the world to slow to Bob");
+
+        // And now Bob says nothing at all, which is what a game says once it is comfortable: it has
+        // found no ceiling at the speed it is running at. The ten it could not fly is not tried
+        // again on his silence, or the world climbs into it and falls out of it once a second.
+        b.Can = 0.0;
+        rig.For(12.0);
+        Assert.Equal(Wire.WarpPhase.Running, rig.Server.Warp.Phase);
+        Assert.InRange(rig.Server.UniverseClock.Speed, 1.0, 8.5);
     }
 }

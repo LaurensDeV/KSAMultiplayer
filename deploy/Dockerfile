@@ -1,8 +1,11 @@
 # The dedicated server in a container. From the repository root:
 #
 #   docker build -f deploy/Dockerfile -t ksamp-server .
-#   docker run -d --name ksamp -p 50100:50100/udp -v ksamp-data:/data \
+#   docker run -dit --name ksamp -p 50100:50100/udp -v ksamp-data:/data \
 #       -e KSAMP_NAME="My server" -e KSAMP_PASSWORD=secret ksamp-server
+#
+# -it, because the server's commands are read from standard input and a container started without a
+# terminal has none: docker attach ksamp types into it, Ctrl+P Ctrl+Q leaves it running.
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src

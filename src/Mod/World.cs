@@ -197,21 +197,91 @@ internal static class World
 
     // ------------------------------------------------------------------ saves
 
-    /// <summary>This world saved as the handover save and zipped, with the universe time it was saved at.</summary>
-    public static (byte[] Zip, double Universe) SaveWorld()
+    /// <summary>
+    /// The craft in this world that are inside the body they belong to, by name.
+    ///
+    /// <para>KSA loses a craft into a body by itself, and once it is there no orbit can be made from
+    /// where it says it is: a game handed a world holding one aborts on its first physics step. A
+    /// world with any of these in it is not fit to give to anybody.</para>
+    /// </summary>
+    public static List<string> LostCraft()
     {
-        double universe = Universe;
-        GameSaves.MakeUncompressedSave(HandoverSave);
-        string folder = Path.Combine(GameSaves.SaveFolderPath, HandoverSave);
-        return (Blob.ZipFolder(folder), universe);
+        List<string> lost = [];
+        try
+        {
+            foreach (Vehicle v in Vehicles())
+            {
+                if (!IsAlive(v) || v.Parent is not Astronomical body || v.Parent is not IPosition at || body.MeanRadius <= 0.0) continue;
+                if (Vec(v.GetPositionEcl() - at.GetPositionEcl()) < body.MeanRadius * HalfWayIn) lost.Add(v.Id);
+            }
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"could not look over this world: {e.GetBaseException().Message}");
+        }
+        return lost;
     }
 
-    /// <summary>A world from the server written as the handover save and loaded in place of this one.</summary>
-    public static void LoadWorld(byte[] zip)
+    /// <summary>
+    /// Why this world can be neither saved nor loaded at the moment, or empty when it can be.
+    ///
+    /// <para>KSA refuses both while the vehicle editor is open: every save and load it has begins by
+    /// asking, and the answer is a line in its own log and a return. Both calls are void, so a mod
+    /// that did not ask the same question hands on whatever save was last written as the world now,
+    /// or counts its frames over a world it never loaded and says it is in the shared one.</para>
+    /// </summary>
+    public static string Refuses() => Program.IsEditorOpen ? "the vehicle editor is open, and KSA saves and loads nothing while it is" : "";
+
+    /// <summary>
+    /// This world saved as the handover save and zipped, with the universe time it was saved at, or
+    /// null and why not.
+    ///
+    /// <para>The folder is emptied first and the save is whatever is found in it afterwards, because
+    /// KSA's save writes nothing while the editor is open and nothing again if the folder cannot be
+    /// replaced: the handover save left there from last time would be zipped and handed on as the
+    /// world now, and every other game corrected to a world minutes out of date.</para>
+    /// </summary>
+    public static (byte[] Zip, double Universe)? SaveWorld(out string why)
     {
-        Blob.UnzipInto(zip, Path.Combine(GameSaves.SaveFolderPath, HandoverSave));
-        GameSaves.Refresh();
-        GameSaves.LoadSaveGame(HandoverSave);
+        why = Refuses();
+        if (why.Length > 0) return null;
+        try
+        {
+            string folder = Path.Combine(GameSaves.SaveFolderPath, HandoverSave);
+            if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
+            double universe = Universe;
+            GameSaves.MakeUncompressedSave(HandoverSave);
+            if (!Directory.Exists(folder) || !Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories).Any())
+            {
+                why = "KSA wrote no save of this world";
+                return null;
+            }
+            return (Blob.ZipFolder(folder), universe);
+        }
+        catch (Exception e)
+        {
+            why = e.GetBaseException().Message;
+            return null;
+        }
+    }
+
+    /// <summary>A world from the server written as the handover save and loaded in place of this one, or false and why not.</summary>
+    public static bool LoadWorld(byte[] zip, out string why)
+    {
+        why = Refuses();
+        if (why.Length > 0) return false;
+        try
+        {
+            Blob.UnzipInto(zip, Path.Combine(GameSaves.SaveFolderPath, HandoverSave));
+            GameSaves.Refresh();
+            GameSaves.LoadSaveGame(HandoverSave);
+            return true;
+        }
+        catch (Exception e)
+        {
+            why = e.GetBaseException().Message;
+            return false;
+        }
     }
 
     // ------------------------------------------------------------------ craft definitions
@@ -241,14 +311,32 @@ internal static class World
         return Blob.Gzip(stream.ToArray());
     }
 
-    /// <summary>A name no craft in this world has, like the one asked for.</summary>
+    /// <summary>
+    /// Whether this world already has something of this name: a craft, a body, anything of KSA's.
+    ///
+    /// <para>One lookup holds all of them, under a hash of the name, and nothing else in the game
+    /// goes near two of one name -- so this asks that lookup rather than only the craft.</para>
+    /// </summary>
+    public static bool Taken(string id)
+    {
+        try
+        {
+            return KSA.Universe.CurrentSystem is not { } system || system.All.TryGet(id, out _);
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"could not look {id} up in this world: {e.GetBaseException().Message}");
+            return true;
+        }
+    }
+
+    /// <summary>A name nothing in this world answers to, like the one asked for.</summary>
     public static string FreeLocalId(string root)
     {
-        List<Vehicle> all = Vehicles();
         for (int n = 2; n < 1000; n++)
         {
             string tried = $"{root} ({n})";
-            if (!all.Any(v => v.Id == tried)) return tried;
+            if (!Taken(tried)) return tried;
         }
         return $"{root} ({Guid.NewGuid():N})";
     }
@@ -292,9 +380,23 @@ internal static class World
                 why = $"its body {data.ParentBody.Id} is not in this world";
                 return null;
             }
+            // KSA's lookup refuses a second thing under one hash with a line in its own log and
+            // nothing else: no throw, and a craft back from here that is in no lookup. Nothing would
+            // ever list it, nothing would step it, nothing would sweep it -- another player's craft
+            // standing in this world for ever, which the mod would go on treating as their puppet.
+            if (Taken(data.Id))
+            {
+                why = $"this world already has something called {data.Id}";
+                return null;
+            }
             Vehicle built = string.IsNullOrEmpty(data.Character)
                 ? Vehicle.CreateVehicleFromSaveGameData(system, data)
                 : KittenEva.CreateKittenFromSaveData(system, data);
+            if (system.All.Get(data.Id) is not { } registered || !ReferenceEquals(registered, built))
+            {
+                why = $"KSA did not take {data.Id} into this world";
+                return null;
+            }
             parent.Children.Add(built);
             return built;
         }
@@ -319,6 +421,13 @@ internal static class World
 
     // ------------------------------------------------------------------ states
 
+    // Nearer the middle of a body than this and a craft is not somewhere, it is broken: a landed
+    // craft stands at the body's own radius and one in orbit is further out again.
+    private const double HalfWayIn = 0.5;
+
+    // Said once a craft, not once a frame.
+    private static readonly HashSet<string> _lost = [];
+
     /// <summary>Where a craft is now, in its body's fixed frame off the physics state and in its inertial frame off the ecliptic.</summary>
     /// <param name="key">What the world knows this craft by, which is not this game's own name for it when the server has renamed it.</param>
     public static Wire.State? StateOf(Vehicle v, string key, bool controlled)
@@ -340,6 +449,17 @@ internal static class World
         if (v.LightsOn) flags |= Wire.StateFlags.Lights;
         if (controlled) flags |= Wire.StateFlags.Controlled;
 
+        // A craft inside its own body is one KSA has lost: near the centre its own gravity maths
+        // runs away, no orbit can be made from the state at all, and the game that is handed it dies
+        // on the first physics step with "cannot construct a UniverseTime from NaN". It stays here.
+        // Finite is not enough: the centre of the Earth is a perfectly finite place to be.
+        if (parent.MeanRadius > 0.0 && Vec(positionCcf) < parent.MeanRadius * HalfWayIn)
+        {
+            if (_lost.Add(key)) Log.Warn($"{key} is inside {parent.Id}: the others are not told where it is");
+            return null;
+        }
+        _lost.Remove(key);
+
         Wire.State s = new(0, key, 0, Universe, parent.Id, V(positionCcf), V(velocityCcf), V(positionCci), V(velocityCci),
                            new Quat(body2Ccf.X, body2Ccf.Y, body2Ccf.Z, body2Ccf.W), V(spin),
                            float.IsFinite(throttle) ? Math.Clamp(throttle, 0f, 1f) : 0f, flags);
@@ -354,6 +474,9 @@ internal static class World
     {
         if (v.HasPhysicsBubble) return false;
         if (KSA.Universe.CurrentSystem?.Get(s.Body) is not Celestial body) return false;
+        // Sent by a game old enough not to hold this back, or lost on the way: a craft put inside a
+        // body here is a world this game cannot save and nobody else can load.
+        if (body.MeanRadius > 0.0 && Vec(D(s.PositionCcf)) < body.MeanRadius * HalfWayIn) return false;
         if ((s.Flags & Wire.StateFlags.Landed) != 0)
         {
             PhysicsStates states = v.GetPhysicsStatesMutable();
@@ -431,18 +554,40 @@ internal static class World
         }
     }
 
-    /// <summary>Whether a craft's engine is lit, and how far its throttle is open.</summary>
+    /// <summary>
+    /// Whether a craft's engine is burning, and how far its throttle is open.
+    ///
+    /// <para>From the nozzles and not from the player's hand on the key. EngineOn is wrong both ways:
+    /// KSA sets it false every frame while the flight computer runs the burn, so a craft burning a
+    /// manoeuvre node said its engines were cold; and it stays true on a craft whose ignition is on
+    /// with nothing behind it -- no propellant, nothing staged -- which said it was burning when it
+    /// was not, and was seen to, once the others could draw it. What the nozzles say is what this
+    /// game's own renderer draws a plume from, so it is what the others are told.</para>
+    /// </summary>
     public static (bool On, float Throttle) EngineOf(Vehicle v)
     {
         try
         {
-            if (EngineInputs is { } inputs) return (inputs(v).EngineOn, inputs(v).EngineThrottle);
-            return (false, v.GetManualThrottle());
+            float throttle = v.GetManualThrottle(), firing = Firing(v);
+            return firing > 0f ? (true, throttle > 0f ? throttle : Math.Min(1f, firing)) : (false, throttle);
         }
         catch (Exception)
         {
             return (false, 0f);
         }
+    }
+
+    // How hard this craft's engines are actually running: the fraction of full chamber pressure each
+    // nozzle reached, and how much of the last step it ran for. Both are worked out in the physics
+    // step, so they are nothing at all for a craft that is not being stepped -- which is why another
+    // player's craft out of this game's own physics cannot be shown burning whatever it says.
+    private static float Firing(Vehicle v)
+    {
+        if (v.Parts?.RocketNozzles is not { } nozzles) return 0f;
+        ReadOnlySpan<RocketNozzleState> states = nozzles.States;
+        float most = 0f;
+        for (int i = 0; i < states.Length; i++) most = Math.Max(most, Math.Max(states[i].DutyCycle, states[i].ThrustFraction));
+        return most;
     }
 
     /// <summary>
@@ -463,6 +608,107 @@ internal static class World
         {
             // An engine that will not light is a plume nobody sees, and nothing worse.
         }
+    }
+
+    // Craft whose engines were last drawn from here rather than out of KSA's own step. What is
+    // written below is gone again by the next step, so a craft that has stopped burning needs
+    // writing dark once; and a craft KSA is burning for real is left to its own numbers.
+    private static readonly HashSet<Vehicle> _shown = [];
+    private static bool _saidNoPlume;
+
+    /// <summary>Forgets which craft were drawn burning, when this game is its own again.</summary>
+    public static void ForgetEngines() => _shown.Clear();
+
+    /// <summary>Whether this craft's engines were last drawn from the mod rather than out of KSA's own step.</summary>
+    public static bool IsShown(Vehicle v) => _shown.Contains(v);
+
+    /// <summary>The duty cycle this craft's engines would be drawn from now: what every engine visual reads.</summary>
+    public static double DutyOf(Vehicle v)
+    {
+        try
+        {
+            if (v.Parts?.RocketNozzles is not { } nozzles) return 0.0;
+            ReadOnlySpan<RocketNozzleState> states = nozzles.States;
+            double most = 0.0;
+            for (int i = 0; i < states.Length; i++) most = Math.Max(most, states[i].DutyCycle);
+            return most;
+        }
+        catch (Exception)
+        {
+            return 0.0;
+        }
+    }
+
+    /// <summary>
+    /// Another player's craft drawn as burning, for the frame about to be drawn.
+    ///
+    /// <para>Setting the engine on is only an input, and out there nothing reads it. What the plume,
+    /// the volumetric exhaust and the exhaust light are every one of them drawn from is
+    /// <c>RocketNozzleState.DutyCycle</c>, and that is accumulated only inside a full physics step:
+    /// a craft of this game's own in freefall or at rest goes down a cheaper path that clears the
+    /// duty cycle every frame and never adds to it, so another player's craft out there is dark
+    /// however hard its owner is burning. This writes what the step it never ran would have left
+    /// behind -- the chamber conditions that engine's own design gives at that throttle, the exhaust
+    /// its nozzles make of them, and a duty cycle -- in a prefix on the calls that read it.</para>
+    ///
+    /// <para>It changes nothing the craft does. KSA works a core's conditions out from its throttle
+    /// and a nozzle's thrust fraction out from those conditions on every step it runs; neither the
+    /// throttle nor the thrust fraction is written here, and the active nozzles that thrust and draw
+    /// propellant are counted from the thrust fraction. What is written is read by this frame's
+    /// renderers and overwritten by the next step from numbers this never touched.</para>
+    /// </summary>
+    public static void ShowEngine(Vehicle v, bool on, float throttle)
+    {
+        if (!on && !_shown.Contains(v)) return;
+        try
+        {
+            if (v.Parts is not { RocketNozzles: { } nozzles, RocketCores: { } cores }) return;
+            if (on && !_shown.Contains(v) && Drawn(nozzles)) return;
+            float ambient = v.PhysicsEnvironment.AtmosphericPressure;
+            // Enough of a throttle to be something: a core at nothing has no conditions and makes no
+            // plume, and a craft said to be burning at nothing is a craft whose throttle was not read.
+            float open = float.IsFinite(throttle) ? Math.Clamp(throttle, 0.05f, 1f) : 1f;
+            Span<RocketNozzle> modules = nozzles.Modules;
+            for (int i = 0; i < modules.Length; i++)
+            {
+                RocketNozzle nozzle = modules[i];
+                if (nozzle.Rocket?.Core is not { } core) continue;
+                ModuleStateful<RocketNozzle, RocketNozzleState, EmptyStruct, RocketNozzleFxState>.StateList.ModuleAndAllMutableStatesRef noz =
+                    nozzles.GetModuleAndAllMutableStatesForInitialization(nozzle);
+                if (!on)
+                {
+                    (noz.State.DutyCycle, noz.State.AverageThrustFraction) = (0f, 0f);
+                    continue;
+                }
+                RocketCoreConditions conditions = core.ComputeConditions(open);
+                ModuleStateful<RocketCore, RocketCoreState, RocketCoreGlobalState, EmptyStruct>.StateList.ModuleAndAllMutableStatesRef hot =
+                    cores.GetModuleAndAllMutableStatesForInitialization(core);
+                hot.State.Conditions = conditions;
+                NozzlePerformance made = nozzle.ComputePerformance(in conditions, ambient);
+                noz.State.Exhaust = made.Exhaust;
+                noz.State.ExhaustVelocity = made.ActualExhaustVelocity;
+                // The whole of the step, and how hard: the other statistic the step would have left,
+                // which is what the engine's own sound is pitched by within earshot.
+                (noz.State.DutyCycle, noz.State.AverageThrustFraction) = (1f, open);
+            }
+            if (on) _shown.Add(v);
+            else _shown.Remove(v);
+        }
+        catch (Exception e)
+        {
+            if (_saidNoPlume) return;
+            _saidNoPlume = true;
+            Log.Warn($"other players' engines cannot be shown firing: {e.GetBaseException().Message}");
+        }
+    }
+
+    // Whether KSA is already drawing this craft's engines, which it does for one it is stepping in
+    // physics: close to this player, or anywhere in an atmosphere. Its own numbers are the better ones.
+    private static bool Drawn(ModuleStateful<RocketNozzle, RocketNozzleState, EmptyStruct, RocketNozzleFxState>.StateList nozzles)
+    {
+        ReadOnlySpan<RocketNozzleState> states = nozzles.States;
+        for (int i = 0; i < states.Length; i++) if (states[i].DutyCycle > 0f) return true;
+        return false;
     }
 
     /// <summary>

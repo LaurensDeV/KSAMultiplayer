@@ -15,6 +15,11 @@ namespace KSAMultiplayer;
 /// and the pause go through: while connected, the speed is the one that keeps the server's time.</item>
 /// <item><see cref="Universe.DestroyVehicleFromEvent"/>: another player's craft is never destroyed
 /// here by a crash this world sees, only when its owner's game says it is gone.</item>
+/// <item><see cref="Vehicle.AddVolumetricExhaustInstances"/> and
+/// <see cref="Vehicle.UpdatePlumeTrailEmitters"/>, where the game turns a craft's engines into a
+/// plume, an exhaust and a light: all three off a number only a physics step leaves behind, so
+/// another player's craft is given that number here, in the one place that is read after the last
+/// step and before the frame is drawn.</item>
 /// <item>The setter of <see cref="Program.ControlledVehicle"/>, which clicking a craft, the map and
 /// boarding all go through; <see cref="KittenEva.BoardVehicle"/>, since by the time control is handed
 /// over the kitten is already inside; and <see cref="EVADoor.PerformEvaForSeat"/>: a craft another
@@ -64,6 +69,14 @@ internal static class Hooks
             Patch(AccessTools.Method(typeof(EVADoor), nameof(EVADoor.SpawnEva),
                                      [typeof(Vehicle), typeof(IVASeat), typeof(KittenRosterEntryData), typeof(Camera)]), nameof(BeforeSpawnEva),
                   "a kitten can be let out of another player's craft by its hatch");
+            // Two of the three passes the engine visuals are drawn in, since nothing between them
+            // touches the state again and either one alone leaves the others with nothing to draw.
+            Patch(AccessTools.Method(typeof(Vehicle), nameof(Vehicle.AddVolumetricExhaustInstances),
+                                     [typeof(Camera), typeof(VolumetricExhaustRenderer), typeof(double)]), nameof(BeforeExhaust),
+                  "other players' engines are not seen firing");
+            Patch(AccessTools.Method(typeof(Vehicle), nameof(Vehicle.UpdatePlumeTrailEmitters),
+                                     [typeof(VolumetricTrailRenderer)]), nameof(BeforePlumeTrail),
+                  "other players' engine plumes are not seen");
         }
         catch (Exception e)
         {
@@ -86,6 +99,24 @@ internal static class Hooks
         try { _harmony?.UnpatchAll(HarmonyId); }
         catch (Exception e) { Log.Warn($"could not remove the patches: {e.Message}"); }
         _harmony = null;
+    }
+
+    // Read, not written, in the same frame: this is the last word before the plume, the exhaust and
+    // the light are all three drawn from it.
+    private static void BeforeExhaust(Vehicle __instance) => ShowEngines(__instance);
+
+    private static void BeforePlumeTrail(Vehicle __instance) => ShowEngines(__instance);
+
+    private static void ShowEngines(Vehicle v)
+    {
+        try
+        {
+            Sync.ShowEngines(v);
+        }
+        catch (Exception e)
+        {
+            Complain("showing another player's engines", e);
+        }
     }
 
     private static void BeforePrepareWorker(Vehicle __instance, SimStep simStep)
@@ -269,9 +300,12 @@ internal static class Hooks
 
     // Never called: puts the patched methods in this assembly's metadata, so a KSA change to one is a build error.
     private static void PinTheSignatures(Vehicle v, SimStep step, SimSpeed named, VehicleDestructionEvent e,
-                                        KittenEva kitten, EVADoor door, IVASeat seat)
+                                        KittenEva kitten, EVADoor door, IVASeat seat,
+                                        Camera camera, VolumetricExhaustRenderer exhaust, VolumetricTrailRenderer trails)
     {
         v.PrepareWorker(step);
+        v.AddVolumetricExhaustInstances(camera, exhaust, 0.0);
+        v.UpdatePlumeTrailEmitters(trails);
         Universe.SetSimulationSpeed(1.0, true);
         Universe.SetSimulationSpeed(named);
         Universe.DestroyVehicleFromEvent(v, e);

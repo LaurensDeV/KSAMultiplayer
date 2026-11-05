@@ -95,6 +95,9 @@ public sealed class Client : IDisposable
     public Queue<Blob> Blobs { get; } = new();
     public Queue<string> Gone { get; } = new();
 
+    /// <summary>Names the operator has swept the world by: this game takes away every craft of its own that matches.</summary>
+    public Queue<string> Swept { get; } = new();
+
     /// <summary>Craft of this game the server has given another name, because a player already had that one.</summary>
     public Queue<(string Was, string Now)> Renamed { get; } = new();
 
@@ -180,6 +183,12 @@ public sealed class Client : IDisposable
     public void AskWarp(double speed)
     {
         if (Joined) Send(new Wire.WarpAsk((float)speed));
+    }
+
+    /// <summary>Tell the server this game's world is not fit to hand out, so it asks somebody else.</summary>
+    public void SayNoWorld(string why)
+    {
+        if (Joined) Send(new Wire.NoWorld(why));
     }
 
     /// <summary>Answers what somebody asked for.</summary>
@@ -307,6 +316,14 @@ public sealed class Client : IDisposable
                 _owners.Remove(g.Key);
                 _tracks.Remove(g.Key);
                 Gone.Enqueue(g.Key);
+                return;
+            case Wire.Swept sw when Joined:
+                foreach (string key in _owners.Keys.Where(k => Wire.Matches(k, sw.Like)).ToArray())
+                {
+                    _owners.Remove(key);
+                    _tracks.Remove(key);
+                }
+                Swept.Enqueue(sw.Like);
                 return;
             case Wire.Chat c when Joined:
                 Chat.Enqueue((c.From == 0 ? "server" : NameOf(c.From), c.Text));
