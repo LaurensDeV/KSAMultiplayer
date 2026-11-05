@@ -393,17 +393,25 @@ internal static class Hooks
         }
     }
 
+    /// <summary>Whether KSA has stopped this player's world for a menu of its own.</summary>
+    private static bool Paused() =>
+        Program.IsEditorOpen || EscMenu.Open || GameSettings.Show || GameSaves.IsOpen || VehicleSaves.IsOpen;
+
     private static double? Held()
     {
         try
         {
-            // Nothing is held while the vehicle editor is open. KSA pauses the world to open it and
-            // runs it again on the way out (Program.OnFrameEditor), with IsEditorOpen already true
-            // for both, and this prefix would turn each into a speed put to the whole room: opening
-            // the VAB asked everybody to stop. Nobody else is in this player's editor, the shared
+            // Nothing is held while this player is in a menu. KSA stops the world for its own
+            // reasons -- the vehicle editor (Program.OnFrameEditor), and Escape, the settings and
+            // the save and vehicle lists (Program.UpdateMenuPause) -- and runs it again on the way
+            // out, and this prefix would turn every one of those into a speed put to the whole
+            // room. Pressing Escape asked everybody else to stop.
+            //
+            // None of it is anybody else's business: nobody is in this player's menu, the shared
             // clock runs on without them, and HoldTheClock brings their world back to it when they
-            // are at a craft again.
-            return Program.IsEditorOpen ? null : Sync.HeldSpeed;
+            // come out. A player who means to change the speed does it from the world, not from a
+            // menu that has stopped it.
+            return Paused() ? null : Sync.HeldSpeed;
         }
         catch (Exception e)
         {

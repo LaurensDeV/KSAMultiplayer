@@ -263,6 +263,11 @@ against KSA `2026.10.25.5707`:
   flying and still an admin. `deop Alpha` left `tokens.json` holding `{}` and `admins.json` holding
   `[]`, the game knew within the second, and the next `/status` was refused. The one line asked for
   before any of it, as a nobody, had been refused too.
+- **Menus, which ask nobody to stop.** KSA stops the world for Escape, the settings, and the save
+  and vehicle lists as well as for the editor (`Program.UpdateMenuPause`), and the mod's speed
+  prefix turned each into a speed put to the whole room -- pressing Escape asked everybody else to
+  pause. Nothing is held while any of them is up. Watched for the editor; the rest are the same
+  code path and the same flag.
 - **The vehicle editor, which asks nobody to stop.** KSA pauses the world to open the editor and
   runs it again on the way out, and the mod's speed prefix turned each into a speed put to the
   whole room: opening the VAB asked everybody else to pause. Watched working: with the editor open
