@@ -70,6 +70,8 @@ internal static class Hooks
                   "every location lookup after the editor closes is answered with a launchpad");
             Patch(AccessTools.Method(typeof(Celestial), nameof(Celestial.GetLocation), [typeof(string)]), nameof(BeforeGetLocation),
                   "a craft launched from the editor goes to the pad the site was given, taken or not");
+            Patch(AccessTools.Method(typeof(Vehicle), nameof(Vehicle.GetInitialKinematicStateForLocation)), nameof(BeforeInitialState),
+                  "a craft launched from the editor goes to the pad the site was given, taken or not");
             Patch(AccessTools.PropertySetter(typeof(Program), nameof(Program.ControlledVehicle)), nameof(BeforeControl),
                   "another player's craft can be taken over here");
             Patch(AccessTools.Method(typeof(KittenEva), nameof(KittenEva.BoardVehicle), [typeof(Vehicle), typeof(EVADoor)]), nameof(BeforeBoard),
@@ -180,6 +182,28 @@ internal static class Hooks
     private static void BeforeEditorDispose() => _launching = true;
 
     private static void AfterEditorDispose() => _launching = false;
+
+    // Where a launched craft is actually put. Celestial.GetLocation is patched as well, but it is
+    // one line -- return BodyTemplate.GetLocation(id) -- and the JIT inlines it into the editor's
+    // exit, so the prefix on it never ran and every craft landed on the site's own pad. This one
+    // builds orbits and is far too big to inline, and it is handed the very numbers that matter.
+    private static void BeforeInitialState(Celestial celestial, ref double latitude, ref double longitude)
+    {
+        if (!_launching) return;
+        try
+        {
+            if (Pads.FreeFor(celestial, latitude, longitude) is not { } free) return;
+            double lat = free.Latitude.GetRadians() * 180.0 / Math.PI;
+            double lon = free.Longitude.GetRadians() * 180.0 / Math.PI;
+            if (Math.Abs(lat - latitude) < 1e-12 && Math.Abs(lon - longitude) < 1e-12) return;
+            Log.Info($"launching from {free.Id} instead: the site's own pad is taken");
+            (latitude, longitude) = (lat, lon);
+        }
+        catch (Exception e)
+        {
+            Complain("choosing a launchpad", e);
+        }
+    }
 
     private static bool BeforeGetLocation(Celestial __instance, string id, ref LocationReference? __result)
     {

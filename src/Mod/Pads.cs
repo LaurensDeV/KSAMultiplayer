@@ -43,6 +43,9 @@ internal static class Pads
 
     private static object? _laidOutFor;
 
+    // The last pad named in the log for each site, so a steady answer is said once.
+    private static readonly Dictionary<string, string> _said = [];
+
     // KSA resolves a location's static object once, as the celestial loads, through a method of its
     // own that nothing outside the assembly can reach. A pad added after that has a name for its
     // concrete and no concrete: no model, no collider, and no ground for a craft to stand on, while
@@ -115,6 +118,27 @@ internal static class Pads
                     .ThenBy(l => l.Id, StringComparer.Ordinal)];
 
     /// <summary>
+    /// A free pad of whichever site sits at these coordinates, given in degrees as KSA hands them to
+    /// the code that places a launched craft. Null when the coordinates are nobody's pad, or when
+    /// every pad of that site is taken.
+    /// </summary>
+    public static LandmarkReference? FreeFor(Celestial celestial, double latitudeDeg, double longitudeDeg)
+    {
+        if (celestial.BodyTemplate is not { } template) return null;
+        double lat = latitudeDeg * Math.PI / 180.0;
+        double lon = longitudeDeg * Math.PI / 180.0;
+        LandmarkReference? asked = template.Locations.OfType<LandmarkReference>()
+            .Where(l => l.IsLaunchPad)
+            .FirstOrDefault(l => Math.Abs(l.Latitude.GetRadians() - lat) < 1e-9
+                                 && Math.Abs(l.Longitude.GetRadians() - lon) < 1e-9);
+        if (asked is null) return null;
+        // One of this mod's own would mean the editor was given one to offer, which it is not; the
+        // site's name is the part before the suffix either way.
+        int cut = asked.Id.IndexOf(Suffix, StringComparison.Ordinal);
+        return Free(celestial, cut < 0 ? asked.Id : asked.Id[..cut]);
+    }
+
+    /// <summary>
     /// The first pad of a site with nothing standing on it, or null when every one is taken.
     ///
     /// <para>Taken is KSA's own test for whether a craft is on a pad: within the pad's footprint of
@@ -133,7 +157,13 @@ internal static class Pads
             if (pad.GetStaticObject() is not { } concrete) continue;
             if (!craft.Any(d => (pad.ForwardCcf - d).Length() * celestial.MeanRadius < concrete.FootprintRadius))
             {
-                Log.Info($"{pad.Id} is free, of {At(template, siteId).Count} pads at {siteId}, with {craft.Length} craft on {celestial.Id}");
+                // Only when the answer changes. The editor asks this every frame it is open to know
+                // whether to warn, and logging each one put two thousand lines in a session.
+                if (!_said.TryGetValue(siteId, out string? was) || was != pad.Id)
+                {
+                    _said[siteId] = pad.Id;
+                    Log.Info($"{pad.Id} is the free pad at {siteId}, with {craft.Length} craft on {celestial.Id}");
+                }
                 return pad;
             }
         }

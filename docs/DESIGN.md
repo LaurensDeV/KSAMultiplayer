@@ -268,6 +268,13 @@ against KSA `2026.10.25.5707`:
   prefix turned each into a speed put to the whole room -- pressing Escape asked everybody else to
   pause. Nothing is held while any of them is up. Watched for the editor; the rest are the same
   code path and the same flag.
+- **A launch landing on a free pad.** Two craft launched one after the other from CCSFS LC-39A
+  went to `MP2` and then, with one more craft on the ground, to `MP3`, each time because the pad
+  before it was taken. The pad is chosen inside
+  `Vehicle.GetInitialKinematicStateForLocation`, not at the `Celestial.GetLocation` that reads the
+  site: that one is a single line forwarding to the body template, the JIT inlines it into the
+  editor's exit, and a prefix on it never ran -- which is why every craft landed on the middle pad
+  while the picker was choosing the right one and being ignored.
 - **The vehicle editor, which asks nobody to stop.** KSA pauses the world to open the editor and
   runs it again on the way out, and the mod's speed prefix turned each into a speed put to the
   whole room: opening the VAB asked everybody else to pause. Watched working: with the editor open
@@ -300,11 +307,9 @@ against KSA `2026.10.25.5707`:
   one kitten sent out: it was built as the other's puppet from the new window, no patch warning, no
   `Update task failed` in either game. That shows nothing broken, not the race cured -- the failures
   were seen with three players and two rockets in pieces, which is a load no rig here can make.
-- **A launch actually landing on a free pad, and a full site refusing one.** The editor opens with
-  the eight pads laid out, the warning rightly absent while they are free, and nothing refused that
-  should not be: that much has been watched. Nobody has yet pressed Launch with this build, nor
-  filled all eight pads to see the refusal and the line over the editor, since neither can be driven
-  from the bridge.
+- **A full site refusing a launch.** Nobody has filled all eight pads to see the refusal and the
+  line drawn over the editor. What has been watched is the other side of it: the warning rightly
+  absent and nothing refused while pads are free.
 - **Flat ground under the extra launchpads.** KSA levels a launch site with a terrain decal about
   100 m across, and only the pad it shipped stands inside one, so the seven added around it have
   their aprons cut by whatever the planet makes of the ground. Adding decals of their own is how
