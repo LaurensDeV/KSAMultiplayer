@@ -159,6 +159,12 @@ public sealed class GameServer : IDisposable
     private float _warpSpeed = 1f, _warpWanted = 1f;
     private Wire.WarpPhase _warpPhase;
     private double _warpAskedAt, _warpNext, _warpQuietSince = double.NegativeInfinity, _governNext;
+
+    // The fastest a running warp has been found not to work, and whose machine it was found on.
+    // Nothing climbs back to it, or the world climbs into the same ceiling and falls out of it once a
+    // second for as long as the warp lasts.
+    private double _warpCeiling = double.PositiveInfinity;
+    private byte _warpCeilingWho;
     private readonly Dictionary<byte, bool> _warpVotes = [];
 
     public GameServer(ServerOptions options, Func<double> clock, WorldStore? store = null, IPAddress? bind = null)
@@ -587,7 +593,9 @@ public sealed class GameServer : IDisposable
                 return;
             }
             // Asked for, and held to what the room can fly: the governor climbs back towards the rest.
-            _warpWanted = speed;
+            // Their own ask, so whatever ceiling the governor had found is let go of; if the new speed
+            // cannot be flown either it will have found it again within the second.
+            (_warpWanted, _warpCeiling, _warpCeilingWho) = (speed, double.PositiveInfinity, 0);
             RunWarp((float)Flyable(speed), now);
             return;
         }
@@ -611,7 +619,7 @@ public sealed class GameServer : IDisposable
 
         // Put at what the room can fly, not at what was asked: agreeing to a speed somebody's
         // machine cannot manage is agreeing to leave them behind.
-        _warpWanted = speed;
+        (_warpWanted, _warpCeiling, _warpCeilingWho) = (speed, double.PositiveInfinity, 0);
         (_warpWho, _warpSpeed, _warpPhase, _warpAskedAt, _warpNext) = (p.Id, (float)Flyable(speed), Wire.WarpPhase.Asking, now, 0.0);
         _warpVotes.Clear();
         _warpVotes[p.Id] = true;
@@ -657,6 +665,7 @@ public sealed class GameServer : IDisposable
     {
         if (_warpPhase == Wire.WarpPhase.None) return;
         (_warpPhase, _warpSpeed, _warpWanted, _warpQuietSince, _warpNext) = (Wire.WarpPhase.None, 1f, 1f, now, 0.0);
+        (_warpCeiling, _warpCeilingWho) = (double.PositiveInfinity, 0);
         _warpVotes.Clear();
         UniverseClock.SetSpeed(Options.Speed, now);
         Log(why);
@@ -716,37 +725,38 @@ public sealed class GameServer : IDisposable
     // it means the same at every speed.
     private const double GovernLateSeconds = 4.0;
 
-    /// <summary>The fastest the room can fly: the slowest machine among those whose players are looking.</summary>
-    private double Room()
+    /// <summary>The fastest the room can fly, and whose machine says so: the slowest among those whose players are looking.</summary>
+    private (double Can, byte Who) Room()
     {
-        double can = double.PositiveInfinity;
+        (double can, byte who) = (double.PositiveInfinity, (byte)0);
         foreach (Player p in _players.Values)
         {
             // Not an unfocused window: Windows throttles it, so what it manages measures nothing but
             // Windows. That player falls behind and is caught up afterwards rather than held to.
             // Nothing said yet is not a slow machine: a game that has not measured itself holds
             // nobody back, and will say so within a couple of seconds of playing.
-            if (p.Loaded && p.Here && p.Can > 0.0 && p.Can < can) can = p.Can;
+            if (p.Loaded && p.Here && p.Can > 0.0 && p.Can < can) (can, who) = (p.Can, p.Id);
         }
-        return double.IsFinite(can) ? Math.Max(1.0, can) : double.PositiveInfinity;
+        return (double.IsFinite(can) ? Math.Max(1.0, can) : double.PositiveInfinity, who);
+    }
+
+    /// <summary>The worst any watching player is behind, in their own seconds, and who, or zero if nobody is.</summary>
+    private (double Late, byte Who) Losing()
+    {
+        double rate = Math.Max(UniverseClock.Rate, 1.0);
+        (double worst, byte who) = (0.0, (byte)0);
+        foreach (Player p in _players.Values)
+        {
+            if (p.Loaded && p.Here && p.Late / rate > worst) (worst, who) = (p.Late / rate, p.Id);
+        }
+        return (worst, who);
     }
 
     /// <summary>
     /// A speed held to what the room can fly. Only upwards: a pause or a world in slow motion asks
     /// nothing of anybody's machine, and is nobody's to refuse on those grounds.
     /// </summary>
-    /// <summary>The worst any watching player is behind, in their own seconds, or zero if nobody is.</summary>
-    private double Losing()
-    {
-        double rate = Math.Max(UniverseClock.Rate, 1.0), worst = 0.0;
-        foreach (Player p in _players.Values)
-        {
-            if (p.Loaded && p.Here && p.Late / rate > worst) worst = p.Late / rate;
-        }
-        return worst;
-    }
-
-    private double Flyable(double speed) => speed <= 1.0 ? speed : Math.Max(1.0, Math.Min(speed, Room()));
+    private double Flyable(double speed) => speed <= 1.0 ? speed : Math.Max(1.0, Math.Min(speed, Room().Can));
 
     /// <summary>
     /// The running warp held to what the room can fly. It falls as soon as a machine says it cannot
@@ -763,18 +773,33 @@ public sealed class GameServer : IDisposable
         if (_warpWanted <= 1.0) return;
         _governNext = now + GovernEverySeconds;
 
-        double room = Room(), at = _warpSpeed, next = at;
-        double late = Losing();
+        (double room, byte roomWho) = Room();
+        (double late, byte lateWho) = Losing();
+        double at = _warpSpeed, next = at;
+        byte limits = 0;
 
-        if (double.IsFinite(room) && room < at * GovernFall) next = Math.Max(1.0, room);
+        // The machine that set the ceiling saying it can now fly faster than the ceiling is news, and
+        // it is the only news there is: a machine comfortable at the speed it is running at says
+        // nothing at all, so reading everybody's silence as room is what had the world climb into the
+        // same ceiling and fall out of it once a second for as long as the warp lasted. A machine
+        // that has left takes its ceiling with it.
+        if (_warpCeilingWho != 0
+            && (!_players.TryGetValue(_warpCeilingWho, out Player? hit) || (hit.Can > 0.0 && hit.Can > _warpCeiling)))
+        {
+            (_warpCeiling, _warpCeilingWho) = (double.PositiveInfinity, 0);
+        }
+
+        if (double.IsFinite(room) && room < at * GovernFall) (next, limits) = (Math.Max(1.0, room), roomWho);
         // Nobody has hit a ceiling, but somebody is losing ground all the same: back off and watch.
-        else if (late > GovernLateSeconds) next = Math.Max(1.0, at * GovernBackOff);
-        // Room to try: a machine's limit is only found by asking it for a little more.
-        // Never past a ceiling somebody has already hit, or the world climbs into it and falls out
-        // of it once a second for as long as the warp lasts.
-        else if (at < _warpWanted && late < GovernLateSeconds * 0.5) next = Math.Min(Math.Min(_warpWanted, at * GovernStep), room);
+        else if (late > GovernLateSeconds) (next, limits) = (Math.Max(1.0, at * GovernBackOff), lateWho);
+        // Room to try: a machine's limit is only found by asking it for a little more, and never
+        // again for as much as has already been found not to work.
+        else if (at < _warpWanted && late < GovernLateSeconds * 0.5) next = Math.Min(Math.Min(_warpWanted, at * GovernStep), Math.Min(room, _warpCeiling));
         if (Math.Abs(next - at) < 0.01) return;
 
+        // What it fell from is as fast as this warp goes from here, unless the machine it fell for
+        // says otherwise or its asker asks again.
+        if (next < at) (_warpCeiling, _warpCeilingWho) = (Math.Max(1.0, at * GovernFall), limits);
         RunWarp((float)next, now);
         Log(next < at
             ? $"the world falls to {next:0.##}x: {(double.IsFinite(room) ? $"the room can fly {room:0.##}x" : $"somebody is {late:0.#} s behind")}"

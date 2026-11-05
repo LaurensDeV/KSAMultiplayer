@@ -200,7 +200,11 @@ against KSA `2026.10.25.5707`:
   is managing -- universe seconds a real second, over a couple of seconds so a hitch does not speak
   for it, floored by what KSA says it achieved of what it asked -- and tells the server with each
   ping. A warp is put to the room at that floor rather than at what was asked, falls to it within a
-  second of a machine giving out, and climbs back a step at a time while everyone is clear of it.
+  second of a machine giving out, and climbs back a step at a time while everyone is clear of it --
+  but never again to a speed a machine has been found not to fly. A game comfortable at the speed it
+  is running at says nothing at all, so reading everybody's silence as room had the world climb into
+  the same ceiling and fall out of it once a second for as long as the warp lasted. The ceiling is
+  that one machine's, and lifts when that machine says it can fly past it or leaves.
   Lateness is a consequence; what a machine can do is the cause, and it can be known before the gap
   opens rather than after. A window nobody is looking at is left out of the floor: Windows throttles
   it, so what it manages measures Windows and not the machine, and that player is an absent one

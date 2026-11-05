@@ -933,4 +933,30 @@ public class ServerTests
         Assert.Equal(Wire.WarpPhase.Running, rig.Server.Warp.Phase);
         Assert.Equal(0.0, rig.Server.UniverseClock.Speed);
     }
+
+    [Fact]
+    public void AWarpDoesNotClimbBackIntoACeilingAMachineHasHit()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        (a.Can, b.Can) = (20.0, 20.0);
+        rig.Until(() => rig.Server.Players.All(p => p.Can > 10.0), seconds: 10.0, what: "both to say what they can fly");
+
+        a.AskWarp(10.0);
+        rig.Until(() => b.WarpWantsAnswer, what: "Bob to be asked");
+        b.VoteWarp(true);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Running, what: "the warp to run");
+
+        b.Can = 4.0;
+        rig.Until(() => rig.Server.UniverseClock.Speed < 6.0, seconds: 10.0, what: "the world to slow to Bob");
+
+        // And now Bob says nothing at all, which is what a game says once it is comfortable: it has
+        // found no ceiling at the speed it is running at. The ten it could not fly is not tried
+        // again on his silence, or the world climbs into it and falls out of it once a second.
+        b.Can = 0.0;
+        rig.For(12.0);
+        Assert.Equal(Wire.WarpPhase.Running, rig.Server.Warp.Phase);
+        Assert.InRange(rig.Server.UniverseClock.Speed, 1.0, 8.5);
+    }
 }
