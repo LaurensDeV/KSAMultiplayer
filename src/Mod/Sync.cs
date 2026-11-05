@@ -90,6 +90,10 @@ internal static class Sync
     private static Client? _client;
     private static Task<IPEndPoint?>? _finding;
     private static (string Name, string Password)? _asking;
+    // A world that has come and cannot be loaded yet, held rather than dropped: the server sends it
+    // once, and KSA loads nothing while the vehicle editor is open.
+    private static Blob? _worldToLoad;
+    private static string _notLoading = "", _notSaving = "";
     private static double _frameAt, _loadingSince, _claimNext;
     private static string _claimed = "", _address = "", _watching = "";
     private static double _askedSpeed = 1.0, _askWarpNext;
@@ -269,6 +273,7 @@ internal static class Sync
         MadeHere.Clear();
         Definitions.Clear();
         PlacedAt.Clear();
+        (_worldToLoad, _notLoading, _notSaving) = (null, "", "");
         (_claimed, _address, _watching, Behind, Now) = ("", "", "", null, Stage.Off);
         (_askedSpeed, _askWarpNext) = (1.0, 0.0);
         if (HeldSpeed is not null)
@@ -371,9 +376,14 @@ internal static class Sync
                     if (Now == Stage.Seeding) Say("the server has no world yet: yours becomes it");
                     break;
                 case Stage.Seeding when c.SnapshotWanted is not null && World.AtACraft:
-                    c.SnapshotWanted = null;
-                    SendWorld(c);
-                    StartPlaying(c);
+                    // In the shared world only once this world has become it. A game whose world was
+                    // not handed over is in no world the server has, and waits for one from whoever
+                    // the server asks next; null is an ask that cannot be answered yet.
+                    switch (Snapshot(c))
+                    {
+                        case true: StartPlaying(c); break;
+                        case false: Now = Stage.Waiting; break;
+                    }
                     break;
                 case Stage.Waiting:
                     TakeWorld(c);
@@ -403,17 +413,28 @@ internal static class Sync
 
     private static void TakeWorld(Client c)
     {
-        while (c.Blobs.TryDequeue(out Blob? blob))
+        while (_worldToLoad is null && c.Blobs.TryDequeue(out Blob? blob))
         {
             if (blob.Kind == BlobKind.Vehicle) Definitions[blob.Key] = blob.Data;
-            if (blob.Kind != BlobKind.World) continue;
-            Say($"the world has come, {blob.Data.Length / 1024} KB: loading it");
-            (_loadingSince, _settle, Now) = (Wall(), 0, Stage.Loading);
-            Puppets.Clear();
-            Built.Clear();
-            MadeHere.Clear();
-            World.LoadWorld(blob.Data);
+            if (blob.Kind == BlobKind.World) _worldToLoad = blob;
+        }
+        if (_worldToLoad is not { } world) return;
+        if (World.Refuses() is { Length: > 0 } not)
+        {
+            if (_notLoading != not) Say($"the world has come, but it cannot be loaded: {not}");
+            _notLoading = not;
             return;
+        }
+        (_notLoading, _worldToLoad) = ("", null);
+        Say($"the world has come, {world.Data.Length / 1024} KB: loading it");
+        (_loadingSince, _settle, Now) = (Wall(), 0, Stage.Loading);
+        Puppets.Clear();
+        Built.Clear();
+        MadeHere.Clear();
+        if (!World.LoadWorld(world.Data, out string why))
+        {
+            Say($"the world could not be loaded: {why}");
+            Disconnect();
         }
     }
 
@@ -428,7 +449,26 @@ internal static class Sync
         Say("in the shared world");
     }
 
-    private static void SendWorld(Client c)
+    // The server has asked this game for a save of the world: sent, refused, or null while the ask
+    // cannot be answered at all. KSA writes no save while the vehicle editor is open, and a player who
+    // closes it a second later is still the one whose world this is -- so the ask is kept rather than
+    // answered with a world that was never written.
+    private static bool? Snapshot(Client c)
+    {
+        if (c.SnapshotWanted is not { } why) return null;
+        if (World.Refuses() is { Length: > 0 } not)
+        {
+            if (_notSaving != not) Say($"the server wants a save of this world: {not}");
+            _notSaving = not;
+            return null;
+        }
+        _notSaving = "";
+        c.SnapshotWanted = null;
+        Log.Info($"the server asks for a save: {why}");
+        return SendWorld(c);
+    }
+
+    private static bool SendWorld(Client c)
     {
         // A world holding a craft KSA has lost inside a body kills every game that loads it, on
         // every join, for as long as the server keeps it. The server is told no and asks somebody
@@ -440,22 +480,23 @@ internal static class Sync
             c.SayNoWorld(why);
             Say($"this world is not fit to hand over: {why}");
             Log.Warn($"did not hand this world over: {why}");
-            return;
+            return false;
         }
-        (byte[] zip, double universe) = World.SaveWorld();
-        c.Upload(new Blob(BlobKind.World, "", c.Id, universe, zip));
-        Log.Info($"sent the server a save of this world, {zip.Length / 1024} KB at {universe:F1} s");
+        if (World.SaveWorld(out string not) is not { } save)
+        {
+            c.SayNoWorld(not);
+            Say($"this world could not be saved for the others: {not}");
+            Log.Warn($"did not hand this world over: {not}");
+            return false;
+        }
+        c.Upload(new Blob(BlobKind.World, "", c.Id, save.Universe, save.Zip));
+        Log.Info($"sent the server a save of this world, {save.Zip.Length / 1024} KB at {save.Universe:F1} s");
+        return true;
     }
 
     private static void Play(Client c)
     {
-        if (c.SnapshotWanted is { } why)
-        {
-            c.SnapshotWanted = null;
-            Log.Info($"the server asks for a save: {why}");
-            SendWorld(c);
-        }
-
+        Snapshot(c);
         TakeRenames(c);
 
         // By what the shared world calls each craft. Two of this world's craft can want one name for a

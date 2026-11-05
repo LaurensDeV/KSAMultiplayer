@@ -222,21 +222,66 @@ internal static class World
         return lost;
     }
 
-    /// <summary>This world saved as the handover save and zipped, with the universe time it was saved at.</summary>
-    public static (byte[] Zip, double Universe) SaveWorld()
+    /// <summary>
+    /// Why this world can be neither saved nor loaded at the moment, or empty when it can be.
+    ///
+    /// <para>KSA refuses both while the vehicle editor is open: every save and load it has begins by
+    /// asking, and the answer is a line in its own log and a return. Both calls are void, so a mod
+    /// that did not ask the same question hands on whatever save was last written as the world now,
+    /// or counts its frames over a world it never loaded and says it is in the shared one.</para>
+    /// </summary>
+    public static string Refuses() => Program.IsEditorOpen ? "the vehicle editor is open, and KSA saves and loads nothing while it is" : "";
+
+    /// <summary>
+    /// This world saved as the handover save and zipped, with the universe time it was saved at, or
+    /// null and why not.
+    ///
+    /// <para>The folder is emptied first and the save is whatever is found in it afterwards, because
+    /// KSA's save writes nothing while the editor is open and nothing again if the folder cannot be
+    /// replaced: the handover save left there from last time would be zipped and handed on as the
+    /// world now, and every other game corrected to a world minutes out of date.</para>
+    /// </summary>
+    public static (byte[] Zip, double Universe)? SaveWorld(out string why)
     {
-        double universe = Universe;
-        GameSaves.MakeUncompressedSave(HandoverSave);
-        string folder = Path.Combine(GameSaves.SaveFolderPath, HandoverSave);
-        return (Blob.ZipFolder(folder), universe);
+        why = Refuses();
+        if (why.Length > 0) return null;
+        try
+        {
+            string folder = Path.Combine(GameSaves.SaveFolderPath, HandoverSave);
+            if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
+            double universe = Universe;
+            GameSaves.MakeUncompressedSave(HandoverSave);
+            if (!Directory.Exists(folder) || !Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories).Any())
+            {
+                why = "KSA wrote no save of this world";
+                return null;
+            }
+            return (Blob.ZipFolder(folder), universe);
+        }
+        catch (Exception e)
+        {
+            why = e.GetBaseException().Message;
+            return null;
+        }
     }
 
-    /// <summary>A world from the server written as the handover save and loaded in place of this one.</summary>
-    public static void LoadWorld(byte[] zip)
+    /// <summary>A world from the server written as the handover save and loaded in place of this one, or false and why not.</summary>
+    public static bool LoadWorld(byte[] zip, out string why)
     {
-        Blob.UnzipInto(zip, Path.Combine(GameSaves.SaveFolderPath, HandoverSave));
-        GameSaves.Refresh();
-        GameSaves.LoadSaveGame(HandoverSave);
+        why = Refuses();
+        if (why.Length > 0) return false;
+        try
+        {
+            Blob.UnzipInto(zip, Path.Combine(GameSaves.SaveFolderPath, HandoverSave));
+            GameSaves.Refresh();
+            GameSaves.LoadSaveGame(HandoverSave);
+            return true;
+        }
+        catch (Exception e)
+        {
+            why = e.GetBaseException().Message;
+            return false;
+        }
     }
 
     // ------------------------------------------------------------------ craft definitions

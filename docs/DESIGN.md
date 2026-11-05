@@ -83,10 +83,19 @@ carries that player's system; one an operator imports carries whatever its own `
 
 1. **Joining.** A hello, until welcomed or refused.
 2. **Seeding**, if the server has no world: when it asks, this world is saved (`GameSaves.MakeUncompressedSave`)
-   and sent, and the game plays on in it.
+   and sent, and the game plays on in it. One whose world is not fit to hand over says so and waits
+   for somebody else's instead.
 3. **Waiting** for the world, then **Loading** it: written into `saves/Multiplayer` and loaded with
    `GameSaves.LoadSaveGame`, as Fast & Purrious's online race already does. After 30 frames in flight
    it says it has loaded, with its universe time.
+
+KSA saves and loads nothing at all while the vehicle editor is open: both calls begin by asking, and
+the answer is a line in its own log and a return, with nothing said to whoever called. So the ask for
+a save is held until it can be answered and the world that has come is held until it can be loaded --
+the server sends it once -- and the save folder is emptied before a save and read only if something
+was written. Otherwise the handover save left there from last time is zipped and handed on as the
+world now, and a game counts its thirty frames over a world it never loaded and says it is in the
+shared one.
 4. **Playing**, each frame:
    - **The flown craft is claimed**, when it changes and every two seconds, unless another player
      holds it: then this player is watching it, is told so once, and claims nothing. A game that
@@ -189,6 +198,8 @@ against KSA `2026.10.25.5707`:
 - **Two games across the internet.** Both games and the server were on one machine. WSL in its default
   NAT mode cannot be reached from a Windows game at all, which is why `two-games.sh` publishes a
   Windows server unless WSL is in mirrored mode.
+- **Anything the vehicle editor is open for.** That KSA refuses to save or load then is read off its
+  own source; that the mod now waits rather than handing on a stale world has not been watched happen.
 
 ## What it does not do
 
