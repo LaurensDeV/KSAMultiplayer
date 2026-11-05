@@ -80,6 +80,23 @@ made. The rule is there to say it on purpose:
 ufw allow 50100/udp comment 'KSA Multiplayer'
 ```
 
+## The console, and the first admin
+
+The server reads its commands from standard input, so on this machine the console is whatever is
+attached to the container. Over SSH:
+
+```bash
+docker attach ksamp-server
+```
+
+Type `players` to see who is on, then `op <name>` to make one of them an admin. Ctrl+P Ctrl+Q leaves
+the container running; Ctrl+C would stop it, and the restart policy would bring it back up empty of
+anybody attached. Nobody is an admin until somebody is opped here, and an admin needs to be connected
+to be opped, since what makes them one is a token said once to their game.
+
+From then on they type the same commands into the game's chat behind a `/`, so this is a thing done
+once rather than the way the server is run. `admins.json` in the `ksamp-world` volume is the list.
+
 ## The world
 
 The server has no world until a player gives it one, and hands that out to everyone who joins
