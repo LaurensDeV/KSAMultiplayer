@@ -125,7 +125,7 @@ internal static class Pads
     {
         if (celestial.BodyTemplate is not { } template) return null;
         double3[] craft = [.. World.Vehicles().Where(v => ReferenceEquals(v.Parent, celestial))
-                                   .Select(World.DirectionOf)
+                                   .Select(v => World.DirectionOf(v, celestial))
                                    .Where(d => d is not null)
                                    .Select(d => d!.Value)];
         foreach (LandmarkReference pad in At(template, siteId))
@@ -133,6 +133,7 @@ internal static class Pads
             if (pad.GetStaticObject() is not { } concrete) continue;
             if (!craft.Any(d => (pad.ForwardCcf - d).Length() * celestial.MeanRadius < concrete.FootprintRadius))
             {
+                Log.Info($"{pad.Id} is free, of {At(template, siteId).Count} pads at {siteId}, with {craft.Length} craft on {celestial.Id}");
                 return pad;
             }
         }

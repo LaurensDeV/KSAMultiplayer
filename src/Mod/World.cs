@@ -433,13 +433,16 @@ internal static class World
     /// frame. What a landmark is measured against: KSA decides a craft is on a pad by how far this
     /// is from the pad's own direction.
     /// </summary>
-    public static double3? DirectionOf(Vehicle v)
+    public static double3? DirectionOf(Vehicle v, Celestial body)
     {
         try
         {
-            PhysicsStates states = v.GetPhysicsStatesMutable();
-            PhysicsStates.GetStatesCcf(in states.Origin, in states.Kinematic, out double3 positionCcf, out _, out _);
-            return positionCcf.LengthSquared() > 0.0 ? positionCcf.Normalized() : null;
+            // From where the craft is, not from its physics state: a craft outside a physics bubble
+            // -- which is every craft standing on a pad nobody is near -- has nothing in that state,
+            // so reading it found no craft anywhere and every pad looked free.
+            double3 cce = v.GetPositionEcl() - body.GetPositionEcl();
+            double3 ccf = cce.Transform(body.GetCce2Ccf());
+            return ccf.LengthSquared() > 0.0 ? ccf.Normalized() : null;
         }
         catch (Exception)
         {
