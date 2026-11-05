@@ -756,6 +756,11 @@ public sealed class GameServer : IDisposable
     private void Govern(double now)
     {
         if (_warpPhase != Wire.WarpPhase.Running || now < _governNext) return;
+        // A pause or a world in slow motion asks nothing of anybody's machine and is nobody's to
+        // refuse on those grounds. Governing one undid it: a pause is a warp at 0, every fall here
+        // has a floor of 1x, and nothing climbs back down to 0 from there -- so a world everyone had
+        // agreed to stop ran on at normal speed a second later, for good.
+        if (_warpWanted <= 1.0) return;
         _governNext = now + GovernEverySeconds;
 
         double room = Room(), at = _warpSpeed, next = at;

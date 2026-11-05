@@ -911,4 +911,26 @@ public class ServerTests
         rig.Until(() => rig.Server.UniverseClock.Known, what: "the clock to start from Alice's world");
         Assert.InRange(rig.Server.UniverseClock.Now(rig.Now()), 5000, 5010);
     }
+
+    [Fact]
+    public void APauseIsNotUndoneByTheGovernor()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+
+        a.AskWarp(0.0);
+        rig.Until(() => b.WarpWantsAnswer, what: "Bob to be asked");
+        b.VoteWarp(true);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Running, what: "the pause to take");
+
+        // Bob's world is a long way behind the server's, which is what moves the governor. It has
+        // nothing to say about a world that is stopped: a pause asks nothing of anybody's machine,
+        // and nothing here climbs back down to 0 once it has decided the floor is 1x.
+        b.Late = 30.0;
+        rig.Until(() => rig.Server.Players.Any(p => p.Id == b.Id && p.Late > 20.0), seconds: 10.0, what: "the server to hear how far behind Bob is");
+        rig.For(4.0);
+        Assert.Equal(Wire.WarpPhase.Running, rig.Server.Warp.Phase);
+        Assert.Equal(0.0, rig.Server.UniverseClock.Speed);
+    }
 }
