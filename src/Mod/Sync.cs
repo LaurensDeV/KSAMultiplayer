@@ -1001,6 +1001,11 @@ internal static class Sync
             {
                 // One a frame: each is a craft built.
                 if (builtOne || track.Newest is null || !Definitions.TryGetValue(key, out byte[]? definition)) continue;
+                // And one every few seconds per name, however often it goes. The last limit only
+                // caught a craft that was still standing here, and these are not: each copy is
+                // dropped in, explodes at once, and the next definition finds nothing standing and
+                // builds it again. 429 builds of 95 craft in one session, with the limit in.
+                if (Wall() - Rebuilt.GetValueOrDefault(key) < RebuildEverySeconds) continue;
                 builtOne = true;
                 // Asked for rather than done: a craft is added to the world where KSA is not
                 // walking its vehicles. It stands here from the next frame, found through Built.
@@ -1177,6 +1182,7 @@ internal static class Sync
             // This world may already hold a craft of that name -- this player's own kitten out of the
             // same capsule -- so the one built here is given a name this world has free.
             string localId = World.Taken(key) ? World.FreeLocalId(key) : key;
+            Rebuilt[key] = Wall();
             if (World.Build(definition, localId, out string why) is { } built)
             {
                 if (localId != key) Renamed[built] = key;
