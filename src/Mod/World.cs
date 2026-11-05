@@ -428,6 +428,25 @@ internal static class World
     // Said once a craft, not once a frame.
     private static readonly HashSet<string> _lost = [];
 
+    /// <summary>
+    /// Which way a craft lies from the centre of its body, as a unit vector in the body's fixed
+    /// frame. What a landmark is measured against: KSA decides a craft is on a pad by how far this
+    /// is from the pad's own direction.
+    /// </summary>
+    public static double3? DirectionOf(Vehicle v)
+    {
+        try
+        {
+            PhysicsStates states = v.GetPhysicsStatesMutable();
+            PhysicsStates.GetStatesCcf(in states.Origin, in states.Kinematic, out double3 positionCcf, out _, out _);
+            return positionCcf.LengthSquared() > 0.0 ? positionCcf.Normalized() : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     /// <summary>Where a craft is now, in its body's fixed frame off the physics state and in its inertial frame off the ecliptic.</summary>
     /// <param name="key">What the world knows this craft by, which is not this game's own name for it when the server has renamed it.</param>
     public static Wire.State? StateOf(Vehicle v, string key, bool controlled)

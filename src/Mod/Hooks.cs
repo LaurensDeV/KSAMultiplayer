@@ -60,6 +60,12 @@ internal static class Hooks
                   "the editor offers this mod's extra launchpads as places to launch from");
             PatchAfter(AccessTools.Method(typeof(VehicleEditor), "SetLocations"), nameof(AfterSetLocations),
                   "this mod's extra launchpads stay out of the world after the editor has been opened");
+            Patch(AccessTools.Method(typeof(VehicleEditor), nameof(VehicleEditor.Dispose)), nameof(BeforeEditorDispose),
+                  "a craft launched from the editor goes to the pad the site was given, taken or not");
+            PatchAfter(AccessTools.Method(typeof(VehicleEditor), nameof(VehicleEditor.Dispose)), nameof(AfterEditorDispose),
+                  "every location lookup after the editor closes is answered with a launchpad");
+            Patch(AccessTools.Method(typeof(Celestial), nameof(Celestial.GetLocation), [typeof(string)]), nameof(BeforeGetLocation),
+                  "a craft launched from the editor goes to the pad the site was given, taken or not");
             Patch(AccessTools.PropertySetter(typeof(Program), nameof(Program.ControlledVehicle)), nameof(BeforeControl),
                   "another player's craft can be taken over here");
             Patch(AccessTools.Method(typeof(KittenEva), nameof(KittenEva.BoardVehicle), [typeof(Vehicle), typeof(EVADoor)]), nameof(BeforeBoard),
@@ -139,6 +145,34 @@ internal static class Hooks
     // taken out of the world for the moment that list is built and put straight back: a player picks
     // the site they know, and the mod puts them on whichever pad of that site is free.
     private static List<(CelestialTemplate Template, LocationReference Pad)> _hidden = [];
+
+    // The editor hands a new craft to the world as it closes, and looks its launch site up by name
+    // to do it. While that is happening -- and only then -- a site's name is answered with whichever
+    // of its pads is free, so a player who picked "CCSFS LC-39A" lands on one of the eight there.
+    private static bool _launching;
+
+    private static void BeforeEditorDispose() => _launching = true;
+
+    private static void AfterEditorDispose() => _launching = false;
+
+    private static bool BeforeGetLocation(Celestial __instance, string id, ref LocationReference? __result)
+    {
+        if (!_launching) return true;
+        try
+        {
+            // Nothing free: left to KSA, which puts the craft on the site's own pad as it always
+            // did. Refusing the launch is the editor's job and is not done here.
+            if (Pads.Free(__instance, id) is not { } free) return true;
+            __result = free;
+            if (!string.Equals(free.Id, id, StringComparison.Ordinal)) Log.Info($"launching from {free.Id}: {id} is taken");
+            return false;
+        }
+        catch (Exception e)
+        {
+            Complain("choosing a launchpad", e);
+            return true;
+        }
+    }
 
     private static void BeforeSetLocations()
     {

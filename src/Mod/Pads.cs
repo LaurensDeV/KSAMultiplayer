@@ -1,3 +1,4 @@
+using Brutal.Numerics;
 using HarmonyLib;
 using KSA;
 
@@ -101,6 +102,41 @@ internal static class Pads
     public static void Show(List<(CelestialTemplate Template, LocationReference Pad)> held)
     {
         foreach ((CelestialTemplate template, LocationReference pad) in held) template.Locations.Add(pad);
+    }
+
+    /// <summary>
+    /// The pads of one site, the one the game shipped first and then its ring, so a quiet site is
+    /// launched from exactly where it always was.
+    /// </summary>
+    public static List<LandmarkReference> At(CelestialTemplate template, string siteId) =>
+        [.. template.Locations.OfType<LandmarkReference>()
+                    .Where(l => l.IsLaunchPad && (l.Id == siteId || l.Id.StartsWith(siteId + Suffix, StringComparison.Ordinal)))
+                    .OrderBy(l => l.Id.Length)
+                    .ThenBy(l => l.Id, StringComparer.Ordinal)];
+
+    /// <summary>
+    /// The first pad of a site with nothing standing on it, or null when every one is taken.
+    ///
+    /// <para>Taken is KSA's own test for whether a craft is on a pad: within the pad's footprint of
+    /// its centre, measured as an angle at the body and turned back into metres. The footprint is
+    /// 108 m and the pads are 130 m apart, so no craft can hold two of them at once.</para>
+    /// </summary>
+    public static LandmarkReference? Free(Celestial celestial, string siteId)
+    {
+        if (celestial.BodyTemplate is not { } template) return null;
+        double3[] craft = [.. World.Vehicles().Where(v => ReferenceEquals(v.Parent, celestial))
+                                   .Select(World.DirectionOf)
+                                   .Where(d => d is not null)
+                                   .Select(d => d!.Value)];
+        foreach (LandmarkReference pad in At(template, siteId))
+        {
+            if (pad.GetStaticObject() is not { } concrete) continue;
+            if (!craft.Any(d => (pad.ForwardCcf - d).Length() * celestial.MeanRadius < concrete.FootprintRadius))
+            {
+                return pad;
+            }
+        }
+        return null;
     }
 
     /// <summary>Forgotten when a world goes, since the next one builds its templates afresh.</summary>
