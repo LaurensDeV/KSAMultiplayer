@@ -554,18 +554,40 @@ internal static class World
         }
     }
 
-    /// <summary>Whether a craft's engine is lit, and how far its throttle is open.</summary>
+    /// <summary>
+    /// Whether a craft's engine is lit, and how far its throttle is open.
+    ///
+    /// <para>Lit is taken from the nozzles themselves and not only from the player's hand on the key:
+    /// KSA sets EngineOn false every frame while the flight computer is running the burn, so a craft
+    /// burning a manoeuvre node reported its engines cold to everyone else. What the nozzles say is
+    /// the duty cycle the game's own renderer draws a plume from.</para>
+    /// </summary>
     public static (bool On, float Throttle) EngineOf(Vehicle v)
     {
         try
         {
-            if (EngineInputs is { } inputs) return (inputs(v).EngineOn, inputs(v).EngineThrottle);
-            return (false, v.GetManualThrottle());
+            float throttle = v.GetManualThrottle();
+            if (EngineInputs is { } inputs && inputs(v).EngineOn) return (true, inputs(v).EngineThrottle);
+            float firing = Firing(v);
+            return firing > 0f ? (true, throttle > 0f ? throttle : Math.Min(1f, firing)) : (false, throttle);
         }
         catch (Exception)
         {
             return (false, 0f);
         }
+    }
+
+    // How hard this craft's engines are actually running: the fraction of full chamber pressure each
+    // nozzle reached, and how much of the last step it ran for. Both are worked out in the physics
+    // step, so they are nothing at all for a craft that is not being stepped -- which is why another
+    // player's craft out of this game's own physics cannot be shown burning whatever it says.
+    private static float Firing(Vehicle v)
+    {
+        if (v.Parts?.RocketNozzles is not { } nozzles) return 0f;
+        ReadOnlySpan<RocketNozzleState> states = nozzles.States;
+        float most = 0f;
+        for (int i = 0; i < states.Length; i++) most = Math.Max(most, Math.Max(states[i].DutyCycle, states[i].ThrustFraction));
+        return most;
     }
 
     /// <summary>

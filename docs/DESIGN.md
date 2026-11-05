@@ -205,6 +205,8 @@ against KSA `2026.10.25.5707`:
 - **Two games across the internet.** Both games and the server were on one machine. WSL in its default
   NAT mode cannot be reached from a Windows game at all, which is why `two-games.sh` publishes a
   Windows server unless WSL is in mirrored mode.
+- **A puppet's engines, at all.** The send side is read off the game's source and the receive side
+  has been reached in a run, but no plume of another player's has been watched appear.
 - **Anything the vehicle editor is open for.** That KSA refuses to save or load then is read off its
   own source; that the mod now waits rather than handing on a stale world has not been watched happen.
 
@@ -242,11 +244,24 @@ against KSA `2026.10.25.5707`:
   speed out from the speed the world is running at, which while connected is the server's warp
   nudged off a round number to hold its clock; the mod takes the key by which way it points and
   steps the game's own ladder from what the server says instead.
-- **Engines are shown firing.** Whether a craft's engine is lit and how far its throttle is open
-  live in a private field of a public type, read through Harmony: the throttle alone can be read
-  without it and neither can be written. A puppet's engines are set from its owner's state, which
-  changes nothing that lasts, since the craft is pulled back to where its owner says it is every
-  frame regardless. A build that moves that field leaves engines dark and says so in the log.
+- **Engines are shown firing, and only where this game is stepping the craft.** Whether a craft's
+  engine is lit and how far its throttle is open live in a private field of a public type, read
+  through Harmony: the throttle alone can be read without it and neither can be written. A build that
+  moves that field leaves engines dark and says so in the log. What is sent is not that field alone,
+  because KSA sets it false every frame while the flight computer is running the burn, so a craft
+  burning a manoeuvre node said its engines were cold: the nozzles' own duty cycle counts as lit too.
+  A puppet's engines are set from its owner's state, which changes nothing that lasts, since the
+  craft is pulled back to where its owner says it is every frame regardless.
+
+  What the plume, the exhaust light and the volumetric exhaust are all drawn from is
+  `RocketNozzleState.DutyCycle`, and that is accumulated only inside a full physics step, from the
+  chamber pressure the rocket model worked out. A craft of this game's own in its own bubble, in
+  freefall or sitting still, is stepped down a cheaper path that clears the duty cycle every frame
+  and never accumulates one. So another player's craft is seen to burn when it is in this game's
+  physics -- near this player, or anywhere in an atmosphere -- and is dark when it is not, however
+  hard its owner says it is burning, because it is not firing here at all: there is no propellant
+  drawn, no thrust, and nothing for KSA to draw a plume from. Showing one would mean writing KSA's
+  own simulation output for a craft it is not simulating.
 - **A craft is let go of ten seconds after its owner walks away from it.** Sticky ownership is
   what stops two games pulling one hull in two directions, but sticky for ever meant the first
   player to touch a thing held it until they left: in a session here one player came to own every
