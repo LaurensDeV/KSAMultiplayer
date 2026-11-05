@@ -284,6 +284,16 @@ internal sealed class Bridge
             return Done(new() { ["voted"] = command.Flag("vote", true) });
         }
 
+        // The editor, which only a hand on the keyboard could open before: the mod behaves
+        // differently while it is up -- it holds no speed and hands over no world -- and none of
+        // that could be driven by a run.
+        if (command.Has("editor"))
+        {
+            bool want = command.Flag("editor", true);
+            KSA.Program.EditorFlag = want;
+            return Done(new() { ["editor"] = want, ["open"] = KSA.Program.IsEditorOpen });
+        }
+
         if (command.Has("board"))
         {
             Panel.BoardUntil = Sync.Wall() + Math.Clamp(command.Number("board", 3.0), 0.0, 60.0);

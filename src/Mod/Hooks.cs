@@ -304,7 +304,16 @@ internal static class Hooks
 
     private static double? Held()
     {
-        try { return Sync.HeldSpeed; }
+        try
+        {
+            // Nothing is held while the vehicle editor is open. KSA pauses the world to open it and
+            // runs it again on the way out (Program.OnFrameEditor), with IsEditorOpen already true
+            // for both, and this prefix would turn each into a speed put to the whole room: opening
+            // the VAB asked everybody to stop. Nobody else is in this player's editor, the shared
+            // clock runs on without them, and HoldTheClock brings their world back to it when they
+            // are at a craft again.
+            return Program.IsEditorOpen ? null : Sync.HeldSpeed;
+        }
         catch (Exception e)
         {
             Complain("holding the simulation speed", e);

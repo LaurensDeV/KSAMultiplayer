@@ -263,6 +263,11 @@ against KSA `2026.10.25.5707`:
   flying and still an admin. `deop Alpha` left `tokens.json` holding `{}` and `admins.json` holding
   `[]`, the game knew within the second, and the next `/status` was refused. The one line asked for
   before any of it, as a nobody, had been refused too.
+- **The vehicle editor, which asks nobody to stop.** KSA pauses the world to open the editor and
+  runs it again on the way out, and the mod's speed prefix turned each into a speed put to the
+  whole room: opening the VAB asked everybody else to pause. Watched working: with the editor open
+  the game sat at speed 0 holding nothing, the server heard not one warp ask, and on the way out
+  the game was 1.76 s behind and ran at 1.1x until it caught up.
 - **Two games making one name.** A kitten sent out of the same capsule in both: the second was named
   `Nasley 2` by the server, each game kept flying its own, and each built the other's and stood it
   where its owner put it. The second game holds the other player's under a name of its own
@@ -296,8 +301,9 @@ against KSA `2026.10.25.5707`:
   on `mp.ksarmory.com`: `NewRocket_3` described 23 times in six seconds, each definition smaller
   than the last as parts fell off, every one of them relayed to both other players to rebuild. What
   that costs the games receiving it has not been measured, and no fix is in yet.
-- **Anything the vehicle editor is open for.** That KSA refuses to save or load then is read off its
-  own source; that the mod now waits rather than handing on a stale world has not been watched happen.
+- **A world handed over with the vehicle editor open.** That KSA refuses to save or load then is
+  read off its own source; that the mod waits rather than handing on a stale world has not been
+  watched happen. Opening the editor itself has been, now that `tools/ksa-mcp` can open it.
 
 ## What it does not do
 
