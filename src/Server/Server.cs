@@ -951,16 +951,20 @@ public sealed class GameServer : IDisposable
         double universe = UniverseClock.Now(_clock());
         foreach ((string key, Craft _) in _crafts.ToArray())
         {
-            if (flown.Contains(key) || !Matches(key, like)) continue;
+            if (flown.Contains(key) || !Wire.Matches(key, like)) continue;
             _crafts.Remove(key);
             _gone[key] = universe;
             swept.Add(key);
-            Broadcast(new Wire.Swept(key), p => p.Loaded);
         }
-        if (swept.Count == 0) return swept;
+        // The name, not the list: most of what is out there was never claimed by anybody, so the
+        // server has never heard of it and a list drawn up here would miss the whole of the debris.
+        // Each game matches the name against its own world, and what the server knew of them is
+        // dropped above so that nothing hands them back.
+        Broadcast(new Wire.Swept(like), p => p.Loaded);
         OwnersChanged();
-        Log($"the operator swept {swept.Count} craft out of the world: {Named(swept)}");
-        Broadcast(new Wire.Chat(0, $"{swept.Count} craft cleared out of the world"), p => p.Loaded);
+        Log($"the operator is sweeping the world by '{(like.Length > 0 ? like : "*")}'"
+            + $"{(swept.Count > 0 ? $"; {swept.Count} of them were known here: {Named(swept)}" : "")}");
+        Broadcast(new Wire.Chat(0, "the world is being cleared of craft nobody is flying"), p => p.Loaded);
         // The world on disk still holds them, so the next player to join would be handed them all
         // back. This is the one moment the world is worth saving afresh -- and once that save is
         // here, everybody is put back on it, which is the only way the craft leave the world rather
@@ -971,33 +975,6 @@ public sealed class GameServer : IDisposable
 
     private static string Named(List<string> keys) =>
         string.Join(", ", keys.Take(6)) + (keys.Count > 6 ? $" and {keys.Count - 6} more" : "");
-
-    // A name to match debris by: "*" or empty for all, otherwise a plain glob of * and ?, since an
-    // operator looking at a wall of Rocket_1 .. Rocket_40 wants to name them that way.
-    private static bool Matches(string key, string like)
-    {
-        if (like.Length == 0 || like == "*") return true;
-        return Glob(key.AsSpan(), like.AsSpan());
-    }
-
-    private static bool Glob(ReadOnlySpan<char> text, ReadOnlySpan<char> pattern)
-    {
-        while (pattern.Length > 0)
-        {
-            if (pattern[0] == '*')
-            {
-                pattern = pattern[1..];
-                if (pattern.Length == 0) return true;
-                for (int i = 0; i <= text.Length; i++) if (Glob(text[i..], pattern)) return true;
-                return false;
-            }
-            if (text.Length == 0) return false;
-            if (pattern[0] != '?' && char.ToLowerInvariant(pattern[0]) != char.ToLowerInvariant(text[0])) return false;
-            text = text[1..];
-            pattern = pattern[1..];
-        }
-        return text.Length == 0;
-    }
 
     // Craft defined and gone before this were saved with the world, and need not be handed out again.
     private void Prune(double universe)

@@ -874,8 +874,12 @@ public class ServerTests
         rig.Until(() => b.OwnerOf("Stage 2") == a.Id && a.Owns("Stage 1"), what: "the owners table");
 
         Assert.Equal(2, rig.Server.Sweep("Stage *").Count);
-        rig.Until(() => a.Swept.Count == 2 && b.Swept.Count == 2, what: "both games to be told");
-        Assert.Equal(["Stage 1", "Stage 2"], a.Swept.OrderBy(k => k).ToArray());
+        rig.Until(() => a.Swept.Count == 1 && b.Swept.Count == 1, what: "both games to be told");
+        // The name, not the list: a game sweeps its own world by it, since most of what is out
+        // there was claimed by nobody and the server has never heard of it.
+        Assert.Equal("Stage *", a.Swept.Peek());
+        Assert.True(Wire.Matches("Stage 2", a.Swept.Peek()));
+        Assert.False(Wire.Matches("Lander", a.Swept.Peek()));
 
         // Gone from the server too, and what is being flown is left alone.
         Assert.Equal(0, rig.Server.OwnerOf("Stage 1"));
@@ -946,6 +950,9 @@ public class ServerTests
 
         Assert.Empty(rig.Server.Sweep());
         Assert.Equal(a.Id, rig.Server.OwnerOf("Lander"));
+        // Swept by name all the same, so a game can take away what the server never knew of: what
+        // is being flown is spared at both ends.
+        rig.Until(() => a.Swept.Count > 0, what: "the game to be told to sweep");
     }
 
     [Fact]

@@ -95,7 +95,7 @@ public sealed class Client : IDisposable
     public Queue<Blob> Blobs { get; } = new();
     public Queue<string> Gone { get; } = new();
 
-    /// <summary>Craft the operator has swept out of the world, which this game takes away whether or not they are its own.</summary>
+    /// <summary>Names the operator has swept the world by: this game takes away every craft of its own that matches.</summary>
     public Queue<string> Swept { get; } = new();
 
     /// <summary>Craft of this game the server has given another name, because a player already had that one.</summary>
@@ -318,9 +318,12 @@ public sealed class Client : IDisposable
                 Gone.Enqueue(g.Key);
                 return;
             case Wire.Swept sw when Joined:
-                _owners.Remove(sw.Key);
-                _tracks.Remove(sw.Key);
-                Swept.Enqueue(sw.Key);
+                foreach (string key in _owners.Keys.Where(k => Wire.Matches(k, sw.Like)).ToArray())
+                {
+                    _owners.Remove(key);
+                    _tracks.Remove(key);
+                }
+                Swept.Enqueue(sw.Like);
                 return;
             case Wire.Chat c when Joined:
                 Chat.Enqueue((c.From == 0 ? "server" : NameOf(c.From), c.Text));

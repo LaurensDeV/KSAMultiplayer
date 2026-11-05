@@ -221,15 +221,47 @@ public static class Wire
     public sealed record Gone(string Key) : Message(Kind.Gone);
 
     /// <summary>
-    /// A craft the operator has swept out of the world, which every game takes away whether or not it
-    /// is theirs.
+    /// The operator sweeping craft out of the world: every craft whose name matches, in every game,
+    /// bar the ones being flown.
     ///
-    /// <para>Not a <see cref="Gone"/>: that is one game saying what became of a craft of its own, and
-    /// a game that owns the craft is right to ignore it. This is the server saying the craft is not
-    /// in the world any more, which is nobody's to disagree with -- otherwise the one game that holds
-    /// the debris keeps it, goes on sending it, and it comes back to everybody within the second.</para>
+    /// <para>A name and not a list, because the server cannot name most of what is out there. It
+    /// knows a craft once somebody claims it or says how it is built; the twenty one-part fragments
+    /// a spent stage breaks into are claimed by nobody, so a list drawn up here would miss exactly
+    /// what the operator is trying to sweep. Each game knows its own world and matches the name
+    /// against it.</para>
+    ///
+    /// <para>Not a <see cref="Gone"/> either: that is one game saying what became of a craft of its
+    /// own, and a game that owns the craft is right to ignore it. This is the world being told what
+    /// is no longer in it, which is nobody's to disagree with.</para>
     /// </summary>
-    public sealed record Swept(string Key) : Message(Kind.Swept);
+    public sealed record Swept(string Like) : Message(Kind.Swept);
+
+    /// <summary>
+    /// Whether a craft's name matches what the operator swept by: empty or "*" is everything, and
+    /// * and ? stand for any run and any one character. Both ends match the same way or they sweep
+    /// different craft.
+    /// </summary>
+    public static bool Matches(string key, string like) =>
+        like.Length == 0 || like == "*" || Glob(key.AsSpan(), like.AsSpan());
+
+    private static bool Glob(ReadOnlySpan<char> text, ReadOnlySpan<char> pattern)
+    {
+        while (pattern.Length > 0)
+        {
+            if (pattern[0] == '*')
+            {
+                pattern = pattern[1..];
+                if (pattern.Length == 0) return true;
+                for (int i = 0; i <= text.Length; i++) if (Glob(text[i..], pattern)) return true;
+                return false;
+            }
+            if (text.Length == 0) return false;
+            if (pattern[0] != '?' && char.ToLowerInvariant(pattern[0]) != char.ToLowerInvariant(text[0])) return false;
+            text = text[1..];
+            pattern = pattern[1..];
+        }
+        return text.Length == 0;
+    }
 
     public sealed record Chat(byte From, string Text) : Message(Kind.Chat);
 
@@ -366,7 +398,7 @@ public static class Wire
                 w.Text(g.Key, KeyChars);
                 break;
             case Swept s2:
-                w.Text(s2.Key, KeyChars);
+                w.Text(s2.Like, KeyChars);
                 break;
             case Chat c:
                 w.U8(c.From);

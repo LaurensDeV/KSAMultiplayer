@@ -184,9 +184,12 @@ void Command(string line)
             break;
         case "clear" or "sweep":
             List<string> swept = server.Sweep(rest);
-            Say(swept.Count == 0
-                ? rest.Length > 0 ? $"no craft nobody is flying matches '{rest}'" : "nothing to clear: every craft the server knows is being flown"
-                : $"cleared {swept.Count} craft out of every game: {string.Join(", ", swept.Take(8))}{(swept.Count > 8 ? $" and {swept.Count - 8} more" : "")}");
+            // What the server knew of is only ever part of it: most of a world's debris was claimed
+            // by nobody, so it is the games that find it, each in its own world.
+            // What the sweep found here is logged by the server itself, detail and all; this is
+            // only the console answering the operator who typed it.
+            Say($"sweeping every game by '{(rest.Length > 0 ? rest : "*")}', bar what is being flown"
+                + $"{(swept.Count > 0 ? $" -- {swept.Count} known here" : "")}");
             break;
         case "save" or "snapshot":
             server.SnapshotNow();

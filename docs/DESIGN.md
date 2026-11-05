@@ -206,6 +206,16 @@ against KSA `2026.10.25.5707`:
   and not the burn. It is the nozzles' own duty cycle now: that craft reports its engines cold, and
   one that is really firing reports them lit whoever opened the valve, which is what a flight
   computer running a manoeuvre node does without ever setting the flag.
+- **The broom, and the world handed out again.** One game, a server and a rocket staged twice: the
+  spent stages broke into fragments on their own, and `clear Rocket_*` took the game from 11 craft
+  to 7 with none of the debris left, while the craft being flown stayed. The server swept the four
+  it knew of, asked for a save, was handed a 33 KB world without them and gave it straight back;
+  the game said "the world has been handed out again: loading it" and was in the shared world a
+  fifth of a second later. Nobody reconnected and nothing was logged by either side.
+
+  `reload` on its own then put universe time back, which is the only way it ever moves: 72783.5 s
+  in the game before, 72747.8 s after, with the server's own clock going to the world's time while
+  nobody was in it -- "universe time waits at 72740 s, 44 s back".
 - **Two games making one name.** A kitten sent out of the same capsule in both: the second was named
   `Nasley 2` by the server, each game kept flying its own, and each built the other's and stood it
   where its owner put it. The second game holds the other player's under a name of its own
@@ -305,14 +315,19 @@ against KSA `2026.10.25.5707`:
   else is waiting on changes hands: a world is mostly parked craft nobody is looking at, and letting
   those go lapsed ownership 873 times in 70 minutes, each one moving the camera of whoever was
   watching a craft when it came free.
-- **The operator's broom sweeps a craft out of every game, its owner's included.** A world fills up
+- **The operator's broom sweeps by name, and every game sweeps its own world.** A world fills up
   with spent stages, and a `Gone` cannot clear them: that datagram is one game's word about a craft
   of its own, which the game that owns it is right to ignore, so the one game holding the debris
   keeps it, goes on sending it, and hands it back to everybody within the second. `clear` on the
-  console sends `Swept` instead, which is the world being told what is no longer in it: every game
-  takes the craft away whosever it is. A craft somebody is flying is never swept -- a world that
-  pulls the hull out from under a player is worse than a world with debris in it -- and a fresh save
-  is asked for straight after, since the world on disk still holds them.
+  console sends `Swept` instead, which is the world being told what is no longer in it.
+
+  It carries a name with `*` and `?` in it rather than a list of craft, because the server cannot
+  name most of what is out there: it hears of a craft when somebody claims it or says how it is
+  built, and the fragments a spent stage breaks into are claimed by nobody. Measured in a game: a
+  world of 27 craft, of which the server knew 3. So each game matches the name against its own
+  world and takes away what it finds, bar what anybody is flying -- a world that pulls the hull out
+  from under a player is worse than a world with debris in it. A fresh save is asked for straight
+  after, since the world on disk still holds them all, and everybody is put back on that save.
 - **The world is handed out again rather than the clock put back.** Universe time cannot be moved
   backwards by telling anyone: each game keeps its own, one more than three seconds ahead of the
   server holds at a standstill until the server catches up (`ClockFollow.Speed`), and the only thing

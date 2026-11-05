@@ -570,30 +570,37 @@ internal static class Sync
             }
         }
         // Swept by the operator, which is not the same as gone. A gone is one game's word about a
-        // craft of its own and the game that owns it is right to keep its own; this is the world
-        // being told what is no longer in it, so it goes whosever it is -- otherwise the one game
-        // holding the debris would keep it, go on sending it, and hand it back to everybody.
-        while (c.Swept.TryDequeue(out string? key))
+        // craft of its own, and the game that owns it is right to keep its own; this is the world
+        // being told what is no longer in it, so it goes whosever it is. The server sends a name
+        // rather than a list because most of what is out there was claimed by nobody and it has
+        // never heard of it: this world is the one that knows what is in it.
+        while (c.Swept.TryDequeue(out string? like))
         {
-            Definitions.Remove(key);
-            PlacedAt.Remove(key);
-            if (Owned.Remove(key, out Mine? mine) && _claimed == key) _claimed = "";
-            if (!here.TryGetValue(key, out Vehicle? swept)) swept = mine?.Craft;
-            if (swept is null || !World.IsAlive(swept)) continue;
-            if (ReferenceEquals(swept, flown))
+            int gone = 0;
+            foreach (Vehicle v in World.Vehicles())
             {
-                // The server does not sweep what somebody is flying, so this is a craft taken up in
-                // the moment between. It stays, and the claim for it goes again.
-                Say($"{key} was cleared from the world, but it is the craft being flown: it stays here");
-                continue;
+                string key = KeyOf(v);
+                if (!Wire.Matches(key, like) || ReferenceEquals(v, flown)) continue;
+                // Nor anything anybody else is flying: a player's hull is not debris, and a sweep
+                // that took one out from under them would be worse than the debris.
+                if (c.Players.Any(p => p.Controlling == key)) continue;
+                Owned.Remove(key);
+                Puppets.Remove(v);
+                Built.Remove(key);
+                MadeHere.Remove(v);
+                Renamed.Remove(v);
+                Engines.Remove(v);
+                Definitions.Remove(key);
+                PlacedAt.Remove(key);
+                Seen.Remove(v);
+                if (_claimed == key) _claimed = "";
+                here.Remove(key);
+                World.Destroy(v);
+                gone++;
             }
-            Puppets.Remove(swept);
-            Built.Remove(key);
-            MadeHere.Remove(swept);
-            Renamed.Remove(swept);
-            Engines.Remove(swept);
-            World.Destroy(swept);
-            here.Remove(key);
+            Say(gone > 0
+                ? $"the world was cleared of {gone} craft nobody is flying"
+                : "the world was cleared, and this game had nothing matching to take away");
         }
 
         ClaimFlown(c, flown);
