@@ -56,6 +56,10 @@ internal static class Hooks
                   "another player's craft can be wrecked in this world alone");
             Patch(AccessTools.Method(typeof(Program), nameof(Program.RefreshVehiclesInFrame)), nameof(BeforeRefreshVehicles),
                   "another player's craft is built while KSA is stepping the world, which fails its physics");
+            Patch(AccessTools.Method(typeof(VehicleEditor), "SetLocations"), nameof(BeforeSetLocations),
+                  "the editor offers this mod's extra launchpads as places to launch from");
+            PatchAfter(AccessTools.Method(typeof(VehicleEditor), "SetLocations"), nameof(AfterSetLocations),
+                  "this mod's extra launchpads stay out of the world after the editor has been opened");
             Patch(AccessTools.PropertySetter(typeof(Program), nameof(Program.ControlledVehicle)), nameof(BeforeControl),
                   "another player's craft can be taken over here");
             Patch(AccessTools.Method(typeof(KittenEva), nameof(KittenEva.BoardVehicle), [typeof(Vehicle), typeof(EVADoor)]), nameof(BeforeBoard),
@@ -84,6 +88,16 @@ internal static class Hooks
         {
             Log.Error("could not patch the game", e);
         }
+    }
+
+    private static void PatchAfter(MethodInfo? target, string postfix, string otherwise)
+    {
+        if (target is null)
+        {
+            Log.Warn($"could not patch after a method KSA no longer has: {otherwise}");
+            return;
+        }
+        _harmony!.Patch(target, postfix: new HarmonyMethod(typeof(Hooks).GetMethod(postfix, BindingFlags.NonPublic | BindingFlags.Static)!));
     }
 
     private static void Patch(MethodInfo? target, string prefix, string otherwise)
@@ -119,6 +133,23 @@ internal static class Hooks
         {
             Complain("showing another player's engines", e);
         }
+    }
+
+    // The editor lists every landmark it can find as a place to launch from. This mod's pads are
+    // taken out of the world for the moment that list is built and put straight back: a player picks
+    // the site they know, and the mod puts them on whichever pad of that site is free.
+    private static List<(CelestialTemplate Template, LocationReference Pad)> _hidden = [];
+
+    private static void BeforeSetLocations()
+    {
+        try { _hidden = Pads.Hide(); }
+        catch (Exception e) { Complain("keeping the extra launchpads out of the editor", e); }
+    }
+
+    private static void AfterSetLocations()
+    {
+        try { Pads.Show(_hidden); }
+        finally { _hidden = []; }
     }
 
     /// <summary>
