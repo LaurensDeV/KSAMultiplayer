@@ -22,19 +22,16 @@ namespace KSAMultiplayer;
 /// </summary>
 internal static class Pads
 {
-    /// <summary>Pads per site, counting the one the game already had: two rows of four.</summary>
+    /// <summary>Pads per site, counting the one the game already had.</summary>
     public const int PerSite = 8;
 
-    private const int Columns = 4;
-
     /// <summary>
-    /// How far apart their centres sit, as a multiple of the pad's own footprint.
+    /// How close neighbouring pads sit, as a multiple of the pad's own footprint.
     ///
     /// <para>Just over one. The footprint is the clearance KSA keeps around a pad, not the concrete:
     /// measured off a picture of the eight, the apron is about 118 m across against a footprint
-    /// radius of 108 m. So a little more than one footprint between centres leaves the aprons nearly
-    /// touching, and keeps all eight on the flat ground by the site -- at 2.5 they were spread over
-    /// 800 m and the far ones stood half buried in the hillside.</para>
+    /// radius of 108 m, so a little more than one footprint between centres leaves the aprons
+    /// nearly touching.</para>
     /// </summary>
     private const double Spacing = 1.2;
 
@@ -121,14 +118,21 @@ internal static class Pads
         foreach (LandmarkReference site in sites)
         {
             if (site.GetStaticObject() is not { } pad || pad.FootprintRadius <= 0.0) continue;
-            // Metres to radians at this body: a pad's spacing is a distance, and a landmark is an angle.
-            double step = pad.FootprintRadius * Spacing / celestial.MeanRadius;
+            // A ring around the pad the game shipped, rather than rows running off one side of it.
+            // Only the ground by a site is any good: it is flattened by a terrain decal there and is
+            // whatever the planet makes of it a few hundred metres out, and a pad is a rigid disc
+            // that stands half buried in anything else. Seven in a ring sit 150 m from the site where
+            // two rows of four threw the far one 411 m away.
+            double chord = pad.FootprintRadius * Spacing;
+            double ring = chord / (2.0 * Math.Sin(Math.PI / (PerSite - 1)));
+            double lat = site.Latitude.GetRadians();
+            double lon = site.Longitude.GetRadians();
             for (int i = 1; i < PerSite; i++)
             {
-                // The shipped pad is the first of the first row; the rest fill out the two rows beside
-                // and behind it, east along a row and north between them.
-                double east = i % Columns * step;
-                double north = i / Columns * step;
+                double turn = 2.0 * Math.PI * (i - 1) / (PerSite - 1);
+                // Metres to radians at this body: a ring is a distance and a landmark is an angle.
+                double north = ring * Math.Cos(turn) / celestial.MeanRadius;
+                double east = ring * Math.Sin(turn) / celestial.MeanRadius;
                 LandmarkReference made = new()
                 {
                     Id = $"{site.Id}{Suffix}{i + 1}",
@@ -136,8 +140,8 @@ internal static class Pads
                     StaticObjectId = site.StaticObjectId,
                     // Longitude closes up towards the poles, so a step east is wider in longitude the
                     // further the site is from the equator.
-                    Latitude = new RadianReference(site.Latitude.GetRadians() + north),
-                    Longitude = new RadianReference(site.Longitude.GetRadians() + (east / Math.Max(0.01, Math.Cos(site.Latitude.GetRadians())))),
+                    Latitude = new RadianReference(lat + north),
+                    Longitude = new RadianReference(lon + (east / Math.Max(0.01, Math.Cos(lat)))),
                 };
                 // Without this a landmark has no ForwardCcf, and a pad is a direction before it is
                 // anything else: KSA divides by it the moment it draws the ground marker that
@@ -151,7 +155,7 @@ internal static class Pads
                 }
                 template.Locations.Add(made);
             }
-            Log.Info($"laid out {PerSite - 1} more launchpads at {site.Id}, {pad.FootprintRadius * Spacing:F0} m apart");
+            Log.Info($"laid out {PerSite - 1} more launchpads in a ring at {site.Id}, {ring:F0} m out and {chord:F0} m apart");
         }
     }
 }
