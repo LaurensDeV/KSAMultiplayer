@@ -120,6 +120,18 @@ internal static class Sync
     /// window.</para>
     /// </summary>
     private static readonly Dictionary<string, (byte[] Definition, string Owner)> ToBuild = [];
+
+    /// <summary>
+    /// Craft waiting to be taken out of this world, for the same reason as <see cref="ToBuild"/>.
+    ///
+    /// <para>KSA-FRAME-ORDER.md says a mod may destroy a vehicle from its hooks, and that is about a
+    /// destroyed craft's staged results having nowhere to land. It is not about the list the physics
+    /// bubble walks: taking a vehicle out of that while a worker is mid-step is the same modification
+    /// under the same enumerator as putting one in. Building alone was moved first and the failures
+    /// carried on, with another player's rocket coming apart and its pieces being swept as fast as
+    /// they arrived.</para>
+    /// </summary>
+    private static readonly List<Vehicle> ToRemove = [];
     private static readonly List<string> SaidLines = [];
 
     private static Client? _client;
@@ -316,6 +328,7 @@ internal static class Sync
         Definitions.Clear();
         Describes.Clear();
         ToBuild.Clear();
+        ToRemove.Clear();
         PlacedAt.Clear();
         Engines.Clear();
         World.ForgetEngines();
@@ -671,7 +684,7 @@ internal static class Sync
             {
                 Puppets.Remove(old);
                 Built.Remove(blob.Key);
-                World.Destroy(old);
+                Later(old);
                 here.Remove(blob.Key);
             }
 
@@ -684,7 +697,7 @@ internal static class Sync
             {
                 Puppets.Remove(gone);
                 Built.Remove(key);
-                World.Destroy(gone);
+                Later(gone);
                 here.Remove(key);
             }
         }
@@ -715,7 +728,7 @@ internal static class Sync
                 Seen.Remove(v);
                 if (_claimed == key) _claimed = "";
                 here.Remove(key);
-                World.Destroy(v);
+                Later(v);
                 gone++;
             }
             Say(gone > 0
@@ -802,6 +815,9 @@ internal static class Sync
             // Not by what is in `here`: a craft this game has just made can share its name with one
             // already standing here for another player, and only one of the two is in there.
             if (Seen.Contains(v) || Puppets.ContainsKey(v) || Renamed.ContainsKey(v)) continue;
+            // On its way out: its bookkeeping has gone already, so without this it reads as a craft
+            // this game has just made and would be claimed back the frame before it is destroyed.
+            if (ToRemove.Contains(v)) continue;
             string key = KeyOf(v);
             Seen.Add(v);
             MadeHere.Add(v);
@@ -1124,7 +1140,14 @@ internal static class Sync
     /// </summary>
     public static void Settle()
     {
-        if (ToBuild.Count == 0 || Now != Stage.Playing) return;
+        if (Now != Stage.Playing) return;
+        // Out before in: a name freed this frame is a name the next craft may want.
+        foreach (Vehicle going in ToRemove)
+        {
+            if (World.IsAlive(going)) World.Destroy(going);
+        }
+        ToRemove.Clear();
+        if (ToBuild.Count == 0) return;
         foreach ((string key, (byte[] definition, string owner)) in ToBuild.ToArray())
         {
             ToBuild.Remove(key);
@@ -1146,6 +1169,17 @@ internal static class Sync
                 Describes.Remove(key);
             }
         }
+    }
+
+    /// <summary>
+    /// A craft taken out of this world where KSA is not walking its vehicles. Its bookkeeping goes
+    /// now and the craft itself goes in <see cref="Settle"/>, so for one frame it stands here owned
+    /// by nobody -- which is why <see cref="Adopt"/> steps over anything waiting in here rather than
+    /// taking it for this game's own.
+    /// </summary>
+    private static void Later(Vehicle v)
+    {
+        if (!ToRemove.Contains(v)) ToRemove.Add(v);
     }
 
     /// <summary>This game answering in the chat the player typed into, which is where they are looking.</summary>

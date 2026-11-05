@@ -287,6 +287,42 @@ internal sealed class Bridge
         // The editor, which only a hand on the keyboard could open before: the mod behaves
         // differently while it is up -- it holds no speed and hands over no world -- and none of
         // that could be driven by a run.
+        // Pressing the editor's Launch button, which is the one thing about launching that could not
+        // be driven from here -- and so the one thing about it that kept being shipped unwatched.
+        if (command.Has("launch"))
+        {
+            if (KSA.Program.Editor is not { } editor) return Failed("the vehicle editor is not open");
+            // Past the unsaved-work question, which a run cannot answer: this is what clicking
+            // through it calls. The mod's own refusal sits on this method, so a full site still
+            // stops it.
+            if (HarmonyLib.AccessTools.Method(typeof(KSA.VehicleEditor), "FinalizeExit") is not { } finish)
+            {
+                return Failed("KSA no longer has FinalizeExit");
+            }
+            finish.Invoke(editor, [true]);
+            return Done(new() { ["asked"] = true, ["still_open"] = KSA.Program.IsEditorOpen });
+        }
+
+        // What the pad picker can see: every step of it, so a wrong answer says which step was wrong
+        // rather than leaving it to be inferred from what did or did not end up in the log.
+        if (command.Has("pads"))
+        {
+            Dictionary<string, object?> said = new() { ["editor_open"] = KSA.Program.IsEditorOpen };
+            if (KSA.Program.Editor is { } open)
+            {
+                (KSA.Celestial? body, string site) = Pads.Chosen(open);
+                said["chosen_body"] = body?.Id;
+                said["chosen_site"] = site;
+                said["room"] = Pads.Room(open);
+                if (body?.BodyTemplate is { } t && site.Length > 0)
+                {
+                    said["pads_at_site"] = Pads.At(t, site).Select(p => (object?)p.Id).ToList();
+                    said["free_pad"] = Pads.Free(body, site)?.Id;
+                }
+            }
+            return Done(said);
+        }
+
         if (command.Has("editor"))
         {
             bool want = command.Flag("editor", true);

@@ -263,6 +263,18 @@ against KSA `2026.10.25.5707`:
   flying and still an admin. `deop Alpha` left `tokens.json` holding `{}` and `admins.json` holding
   `[]`, the game knew within the second, and the next `/status` was refused. The one line asked for
   before any of it, as a nobody, had been refused too.
+- **Menus, which ask nobody to stop.** KSA stops the world for Escape, the settings, and the save
+  and vehicle lists as well as for the editor (`Program.UpdateMenuPause`), and the mod's speed
+  prefix turned each into a speed put to the whole room -- pressing Escape asked everybody else to
+  pause. Nothing is held while any of them is up. Watched for the editor; the rest are the same
+  code path and the same flag.
+- **A launch landing on a free pad.** Two craft launched one after the other from CCSFS LC-39A
+  went to `MP2` and then, with one more craft on the ground, to `MP3`, each time because the pad
+  before it was taken. The pad is chosen inside
+  `Vehicle.GetInitialKinematicStateForLocation`, not at the `Celestial.GetLocation` that reads the
+  site: that one is a single line forwarding to the body template, the JIT inlines it into the
+  editor's exit, and a prefix on it never ran -- which is why every craft landed on the middle pad
+  while the picker was choosing the right one and being ignored.
 - **The vehicle editor, which asks nobody to stop.** KSA pauses the world to open the editor and
   runs it again on the way out, and the mod's speed prefix turned each into a speed put to the
   whole room: opening the VAB asked everybody else to pause. Watched working: with the editor open
@@ -295,6 +307,16 @@ against KSA `2026.10.25.5707`:
   one kitten sent out: it was built as the other's puppet from the new window, no patch warning, no
   `Update task failed` in either game. That shows nothing broken, not the race cured -- the failures
   were seen with three players and two rockets in pieces, which is a load no rig here can make.
+- **A full site refusing a launch.** Nobody has filled all eight pads to see the refusal and the
+  line drawn over the editor. What has been watched is the other side of it: the warning rightly
+  absent and nothing refused while pads are free.
+- **Flat ground under the extra launchpads.** KSA levels a launch site with a terrain decal about
+  100 m across, and only the pad it shipped stands inside one, so the seven added around it have
+  their aprons cut by whatever the planet makes of the ground. Adding decals of their own is how
+  the game itself would do it and was tried: the modifier count is read by the per-celestial render
+  data, by the planet renderer's buffer and by the ground clutter renderer, at three different
+  moments, and there is no window before all three. It died on the first rendered frame, in
+  `GroundClutterRenderer.GenerateBatch`. Reverted; the pads stand on the ground as they find it.
 - **A craft described over and over while it comes apart.** A game adopts a craft it has not seen,
   and `Seen` holds Vehicle objects: when KSA destroys and remakes a stack under the same Id, as it
   does while a rocket breaks up, the new object is unseen and the craft is described again. Watched

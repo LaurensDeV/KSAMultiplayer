@@ -56,6 +56,22 @@ internal static class Hooks
                   "another player's craft can be wrecked in this world alone");
             Patch(AccessTools.Method(typeof(Program), nameof(Program.RefreshVehiclesInFrame)), nameof(BeforeRefreshVehicles),
                   "another player's craft is built while KSA is stepping the world, which fails its physics");
+            Patch(AccessTools.Method(typeof(VehicleEditor), "SetLocations"), nameof(BeforeSetLocations),
+                  "the editor offers this mod's extra launchpads as places to launch from");
+            PatchAfter(AccessTools.Method(typeof(VehicleEditor), "SetLocations"), nameof(AfterSetLocations),
+                  "this mod's extra launchpads stay out of the world after the editor has been opened");
+            Patch(AccessTools.Method(typeof(VehicleEditor), nameof(VehicleEditor.RequestExit)), nameof(BeforeRequestExit),
+                  "a launch onto a full site is refused only after the editor has asked about unsaved work");
+            Patch(AccessTools.Method(typeof(VehicleEditor), "FinalizeExit"), nameof(BeforeFinalizeExit),
+                  "a craft is launched onto a pad somebody is already standing on");
+            Patch(AccessTools.Method(typeof(VehicleEditor), nameof(VehicleEditor.Dispose)), nameof(BeforeEditorDispose),
+                  "a craft launched from the editor goes to the pad the site was given, taken or not");
+            PatchAfter(AccessTools.Method(typeof(VehicleEditor), nameof(VehicleEditor.Dispose)), nameof(AfterEditorDispose),
+                  "every location lookup after the editor closes is answered with a launchpad");
+            Patch(AccessTools.Method(typeof(Celestial), nameof(Celestial.GetLocation), [typeof(string)]), nameof(BeforeGetLocation),
+                  "a craft launched from the editor goes to the pad the site was given, taken or not");
+            Patch(AccessTools.Method(typeof(Vehicle), nameof(Vehicle.GetInitialKinematicStateForLocation)), nameof(BeforeInitialState),
+                  "a craft launched from the editor goes to the pad the site was given, taken or not");
             Patch(AccessTools.PropertySetter(typeof(Program), nameof(Program.ControlledVehicle)), nameof(BeforeControl),
                   "another player's craft can be taken over here");
             Patch(AccessTools.Method(typeof(KittenEva), nameof(KittenEva.BoardVehicle), [typeof(Vehicle), typeof(EVADoor)]), nameof(BeforeBoard),
@@ -84,6 +100,16 @@ internal static class Hooks
         {
             Log.Error("could not patch the game", e);
         }
+    }
+
+    private static void PatchAfter(MethodInfo? target, string postfix, string otherwise)
+    {
+        if (target is null)
+        {
+            Log.Warn($"could not patch after a method KSA no longer has: {otherwise}");
+            return;
+        }
+        _harmony!.Patch(target, postfix: new HarmonyMethod(typeof(Hooks).GetMethod(postfix, BindingFlags.NonPublic | BindingFlags.Static)!));
     }
 
     private static void Patch(MethodInfo? target, string prefix, string otherwise)
@@ -119,6 +145,95 @@ internal static class Hooks
         {
             Complain("showing another player's engines", e);
         }
+    }
+
+    // The editor lists every landmark it can find as a place to launch from. This mod's pads are
+    // taken out of the world for the moment that list is built and put straight back: a player picks
+    // the site they know, and the mod puts them on whichever pad of that site is free.
+    private static List<(CelestialTemplate Template, LocationReference Pad)> _hidden = [];
+
+    // The editor hands a new craft to the world as it closes, and looks its launch site up by name
+    // to do it. While that is happening -- and only then -- a site's name is answered with whichever
+    // of its pads is free, so a player who picked "CCSFS LC-39A" lands on one of the eight there.
+    private static bool _launching;
+
+    // Every way out of the editor that launches goes through RequestExit, the crewless confirmation
+    // included, so one refusal here covers the lot. The player is told why by the panel, which draws
+    // over the editor for as long as the site is full.
+    private static bool BeforeRequestExit(VehicleEditor __instance, bool launchNewVehicle)
+    {
+        if (!launchNewVehicle) return true;
+        if (Pads.Room(__instance)) return true;
+        Log.Info("refused a launch: every pad at the chosen site is taken");
+        return false;
+    }
+
+    // The one place a launch is actually settled. RequestExit is refused above so that a player is
+    // told before the editor asks them about unsaved work, but the answer to that question comes
+    // back here on its own, and a refusal that only covered RequestExit would let it straight past.
+    private static bool BeforeFinalizeExit(VehicleEditor __instance, bool launchNewVehicle)
+    {
+        if (!launchNewVehicle) return true;
+        if (Pads.Room(__instance)) return true;
+        Log.Info("refused a launch at the last gate: every pad at the chosen site is taken");
+        return false;
+    }
+
+    private static void BeforeEditorDispose() => _launching = true;
+
+    private static void AfterEditorDispose() => _launching = false;
+
+    // Where a launched craft is actually put. Celestial.GetLocation is patched as well, but it is
+    // one line -- return BodyTemplate.GetLocation(id) -- and the JIT inlines it into the editor's
+    // exit, so the prefix on it never ran and every craft landed on the site's own pad. This one
+    // builds orbits and is far too big to inline, and it is handed the very numbers that matter.
+    private static void BeforeInitialState(Celestial celestial, ref double latitude, ref double longitude)
+    {
+        if (!_launching) return;
+        try
+        {
+            if (Pads.FreeFor(celestial, latitude, longitude) is not { } free) return;
+            double lat = free.Latitude.GetRadians() * 180.0 / Math.PI;
+            double lon = free.Longitude.GetRadians() * 180.0 / Math.PI;
+            if (Math.Abs(lat - latitude) < 1e-12 && Math.Abs(lon - longitude) < 1e-12) return;
+            Log.Info($"launching from {free.Id} instead: the site's own pad is taken");
+            (latitude, longitude) = (lat, lon);
+        }
+        catch (Exception e)
+        {
+            Complain("choosing a launchpad", e);
+        }
+    }
+
+    private static bool BeforeGetLocation(Celestial __instance, string id, ref LocationReference? __result)
+    {
+        if (!_launching) return true;
+        try
+        {
+            // Nothing free: left to KSA, which puts the craft on the site's own pad as it always
+            // did. Refusing the launch is the editor's job and is not done here.
+            if (Pads.Free(__instance, id) is not { } free) return true;
+            __result = free;
+            if (!string.Equals(free.Id, id, StringComparison.Ordinal)) Log.Info($"launching from {free.Id}: {id} is taken");
+            return false;
+        }
+        catch (Exception e)
+        {
+            Complain("choosing a launchpad", e);
+            return true;
+        }
+    }
+
+    private static void BeforeSetLocations()
+    {
+        try { _hidden = Pads.Hide(); }
+        catch (Exception e) { Complain("keeping the extra launchpads out of the editor", e); }
+    }
+
+    private static void AfterSetLocations()
+    {
+        try { Pads.Show(_hidden); }
+        finally { _hidden = []; }
     }
 
     /// <summary>
@@ -302,17 +417,25 @@ internal static class Hooks
         }
     }
 
+    /// <summary>Whether KSA has stopped this player's world for a menu of its own.</summary>
+    private static bool Paused() =>
+        Program.IsEditorOpen || EscMenu.Open || GameSettings.Show || GameSaves.IsOpen || VehicleSaves.IsOpen;
+
     private static double? Held()
     {
         try
         {
-            // Nothing is held while the vehicle editor is open. KSA pauses the world to open it and
-            // runs it again on the way out (Program.OnFrameEditor), with IsEditorOpen already true
-            // for both, and this prefix would turn each into a speed put to the whole room: opening
-            // the VAB asked everybody to stop. Nobody else is in this player's editor, the shared
+            // Nothing is held while this player is in a menu. KSA stops the world for its own
+            // reasons -- the vehicle editor (Program.OnFrameEditor), and Escape, the settings and
+            // the save and vehicle lists (Program.UpdateMenuPause) -- and runs it again on the way
+            // out, and this prefix would turn every one of those into a speed put to the whole
+            // room. Pressing Escape asked everybody else to stop.
+            //
+            // None of it is anybody else's business: nobody is in this player's menu, the shared
             // clock runs on without them, and HoldTheClock brings their world back to it when they
-            // are at a craft again.
-            return Program.IsEditorOpen ? null : Sync.HeldSpeed;
+            // come out. A player who means to change the speed does it from the world, not from a
+            // menu that has stopped it.
+            return Paused() ? null : Sync.HeldSpeed;
         }
         catch (Exception e)
         {
