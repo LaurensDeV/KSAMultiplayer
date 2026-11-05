@@ -98,17 +98,21 @@ nobody is connected, unless `--keep-time` is given.
 | `--speed` | `KSAMP_SPEED` | `1` | how fast universe time runs |
 
 Commands typed into the server's console: `players`, `say <text>`, `kick <name> [why]`,
-`clear [name]`, `save`, `status`, `quit`. It shuts down cleanly on Ctrl+C and on SIGTERM.
+`clear [name]`, `reload`, `save`, `status`, `quit`. It shuts down cleanly on Ctrl+C and on SIGTERM.
 
-`clear` is the broom for a world filling up with spent stages: every craft nobody is flying is taken
-out of every game that is in the world and out of the world the server hands out, and a fresh save is
-asked for so a player joining later does not get them all back. A name narrows it, with `*` and `?`
-for wildcards -- `clear Rocket_*` -- and a craft somebody is flying is never taken, whatever is
-asked for. Nobody has to reconnect; what the players see is the debris disappear.
+`clear` is the broom for a world filling up with spent stages. Every craft nobody is flying is taken
+out of every game that is in the world; a name narrows it, with `*` and `?` for wildcards --
+`clear Rocket_*` -- and a craft somebody is flying is never taken, whatever is asked for. The world
+on disk still holds what was swept, so a fresh save is asked for, and once it arrives everybody is
+put back on *that* world: the cleared one, rather than the one they are standing in.
 
-It does not move the clock. A world cannot be put back in time while it is being played: every game
-holds its own universe time, a game more than three seconds ahead of the server stops dead until the
-server catches up, and the only thing that brings a game's time down is loading a world.
+`reload` does that last step on its own, with the world as it stands. Each game loads it and comes
+back in a few seconds. Nobody reconnects for either, and nobody loses what they are flying.
+
+Putting everybody back on the world is also the only way universe time is ever put back. A game's own
+time comes down by loading a world and by no other means -- a game more than three seconds ahead of
+the server stops dead until the server catches up -- and while they are all loading there is nobody
+in the world, so the server's clock returns to the world's own time at the same moment theirs do.
 
 ### As a service
 

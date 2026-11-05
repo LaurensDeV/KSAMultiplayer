@@ -36,7 +36,10 @@ const string Usage = """
 
     clear takes every craft nobody is flying out of every game and out of the world the server
     hands out -- the broom for a world filling with spent stages. A name narrows it, with * and ?
-    for wildcards: clear Rocket_*
+    for wildcards: clear Rocket_*. Once the cleared world has been saved, everybody is put back on
+    it. reload does that on its own, with the world as it stands; it is also the only thing that
+    puts universe time back, since a game's own time comes down by loading a world and no other way.
+    Nobody reconnects for either.
     """;
 
 Dictionary<string, string> opts = [];
@@ -173,6 +176,12 @@ void Command(string line)
             string[] k = rest.Split(' ', 2, StringSplitOptions.TrimEntries);
             if (k[0].Length == 0 || !server.Kick(k[0], k.Length > 1 ? k[1] : "")) Say($"nobody called '{k[0]}'");
             break;
+        case "reload":
+            int put = server.ReloadAll("the operator asked");
+            Say(put == 0
+                ? server.HasWorld ? "nobody to hand the world to" : "there is no world to hand out"
+                : $"handing the world to {put} player{(put == 1 ? "" : "s")} again; their games load it and come back in");
+            break;
         case "clear" or "sweep":
             List<string> swept = server.Sweep(rest);
             Say(swept.Count == 0
@@ -190,8 +199,10 @@ void Command(string line)
                 + $", {server.Socket.Received} datagrams in, {server.Socket.Sent} out");
             break;
         case "help" or "?":
-            Say("players, say <text>, kick <name> [why], clear [name], save, status, quit");
-            Say("  clear takes every craft nobody is flying out of every game; a name with * narrows it");
+            Say("players, say <text>, kick <name> [why], clear [name], reload, save, status, quit");
+            Say("  clear takes every craft nobody is flying out of every game; a name with * narrows it,");
+            Say("    and everybody is put back on the cleared world once it has been saved");
+            Say("  reload puts everybody back on the world as it stands, which is also what puts the clock back");
             break;
         case "quit" or "exit" or "stop":
             stop.Cancel();

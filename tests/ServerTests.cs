@@ -884,6 +884,58 @@ public class ServerTests
     }
 
     [Fact]
+    public void EverybodyIsPutBackOnTheWorldWithoutReconnecting()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        a.Blobs.Clear();
+        b.Blobs.Clear();
+        rig.For(1.5);
+
+        Assert.Equal(2, rig.Server.ReloadAll("the operator asked"));
+        rig.Until(() => a.Blobs.Any(x => x.Kind == BlobKind.World) && b.Blobs.Any(x => x.Kind == BlobKind.World),
+                  seconds: 20, what: "both to be handed the world again");
+        Assert.DoesNotContain(rig.Server.Players, p => p.Loaded);
+
+        // Nobody is in the world while they load it, so the clock goes back to the world's own time:
+        // the one thing that moves everybody's time at once, and why this is the way to put it back.
+        rig.Until(() => Math.Abs(rig.Server.UniverseClock.Now(rig.Now()) - rig.Server.World!.Universe) < 0.1,
+                  what: "the clock to go back to the world's time");
+
+        // And back in when their games say so, with no hello of any kind in between.
+        a.SayLoaded(rig.Server.World!.Universe);
+        b.SayLoaded(rig.Server.World!.Universe);
+        rig.Until(() => rig.Server.Players.All(p => p.Loaded), what: "both back in the world");
+        Assert.Equal(2, rig.Server.Players.Count);
+    }
+
+    [Fact]
+    public void TheWorldEverybodyIsPutBackOnIsTheClearedOne()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        a.Claim("Stage 1", controlling: false, made: true);
+        rig.Until(() => b.OwnerOf("Stage 1") == a.Id, what: "the owners table");
+        a.Blobs.Clear();
+        b.Blobs.Clear();
+
+        // A sweep asks whoever has been in longest for a save, since the world on disk still holds
+        // what was swept. Nobody goes back on the world until that save is the one they would get.
+        Assert.Single(rig.Server.Sweep());
+        rig.Until(() => a.SnapshotWanted is not null, what: "Alice to be asked for a save of the cleared world");
+        Assert.DoesNotContain(rig.Server.Players, p => !p.Loaded);
+
+        a.SnapshotWanted = null;
+        a.Upload(new Blob(BlobKind.World, "", a.Id, 6000, Rig.FakeWorld(20)));
+        rig.Until(() => a.Blobs.Any(x => x.Kind == BlobKind.World) && b.Blobs.Any(x => x.Kind == BlobKind.World),
+                  seconds: 20, what: "both to be put back on the cleared world");
+        Assert.Equal(6000, rig.Server.World!.Universe);
+        Assert.Equal(rig.Server.World.Data, b.Blobs.Last(x => x.Kind == BlobKind.World).Data);
+    }
+
+    [Fact]
     public void ACraftSomebodyIsFlyingIsNotSweptAway()
     {
         using Rig rig = new();

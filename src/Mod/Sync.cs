@@ -446,6 +446,8 @@ internal static class Sync
         Puppets.Clear();
         Built.Clear();
         MadeHere.Clear();
+        Engines.Clear();
+        World.ForgetEngines();
         if (!World.LoadWorld(world.Data, out string why))
         {
             Say($"the world could not be loaded: {why}");
@@ -527,6 +529,16 @@ internal static class Sync
 
         while (c.Blobs.TryDequeue(out Blob? blob))
         {
+            // The world again: the operator has put everybody back on it. This game goes round the
+            // loading once more rather than playing on in a world the others have left behind, and
+            // its universe time comes back with the world's, which is the only way it ever can.
+            if (blob.Kind == BlobKind.World)
+            {
+                _worldToLoad = blob;
+                Now = Stage.Waiting;
+                Say("the world has been handed out again: loading it");
+                return;
+            }
             if (blob.Kind != BlobKind.Vehicle || blob.Key.Length == 0) continue;
             // The same craft again, which its owner sends whenever KSA reshapes it. The craft standing
             // here is already that one, and destroying it to build it back is how a world comes to

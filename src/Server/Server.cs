@@ -148,6 +148,10 @@ public sealed class GameServer : IDisposable
     // Whether the world's own universe time is anything: a save copied in by hand does not say, and
     // the clock cannot be put back to a time nobody knows.
     private bool _worldTimeKnown;
+
+    // Whether the next save to arrive goes straight back out to everybody: set by a sweep, because
+    // the world the players are in still holds what was swept out of the server's tables.
+    private bool _handOutWhenSaved;
     private string[] _worldMods = [];
     private double _rosterNext, _ownersNext, _clockNext, _snapshotNext, _snapshotAskedAt = double.NegativeInfinity;
     private double _craftCountNext;
@@ -506,6 +510,14 @@ public sealed class GameServer : IDisposable
                 SetWorld(blob, p.KsaBuild, p.Mods, p.System);
                 Log($"{p.Name} saved the world: {blob.Data.Length / 1024} KB at universe time {blob.Universe:F0} s");
                 if (p.Seeding) OnLoaded(p, blob.Universe);
+                // The save a sweep asked for: the one world that does not hold what was cleared, so
+                // it is what everybody goes back on, the player who just saved it included -- a game
+                // left where it was would be those few seconds ahead of the rest and stand still.
+                if (_handOutWhenSaved)
+                {
+                    _handOutWhenSaved = false;
+                    ReloadAll("the world was cleared");
+                }
                 return;
             case BlobKind.Vehicle when p.Loaded && blob.Key.Length > 0:
                 // A definition under a name this player was refused is dropped; the claim that goes with
@@ -678,12 +690,13 @@ public sealed class GameServer : IDisposable
             ? [.. _players.Values.Where(q => q.Loaded && !_warpVotes.ContainsKey(q.Id)).Select(q => q.Id).Order()]
             : []);
 
-    private void AskSnapshot(string why, byte notThisOne = 0)
+    private bool AskSnapshot(string why, byte notThisOne = 0)
     {
         // The player in the world longest, whose world has had the most time to settle.
-        if (_players.Values.Where(p => p.Loaded && p.Id != notThisOne).OrderBy(p => p.LoadedAt).FirstOrDefault() is not { } from) return;
+        if (_players.Values.Where(p => p.Loaded && p.Id != notThisOne).OrderBy(p => p.LoadedAt).FirstOrDefault() is not { } from) return false;
         _snapshotAskedAt = UniverseClock.Now(_clock());
         AskWorldOf(from, why);
+        return true;
     }
 
     // Every ask for a world goes through here, because the asking is what makes the answer the
@@ -896,6 +909,34 @@ public sealed class GameServer : IDisposable
     public void SnapshotNow() => AskSnapshot("the operator asked for a save");
 
     /// <summary>
+    /// Every player put back on the world the server holds, without anybody reconnecting: each game
+    /// loads it again and says when it is in. The number of players it went to.
+    ///
+    /// <para>This is also the only way universe time is ever put back. A game's own time comes down
+    /// by loading a world and by nothing else, and while they all load there is nobody in the world,
+    /// so the server's clock goes back to the world's own time the same moment theirs do -- see
+    /// <see cref="HoldTimeAtTheWorld"/>. Setting the clock back any other way would leave every game
+    /// ahead of the server and standing still until it caught up.</para>
+    /// </summary>
+    public int ReloadAll(string why)
+    {
+        if (_world is null) return 0;
+        Player[] back = [.. _players.Values.Where(p => p.Loaded || p.WaitingForWorld)];
+        foreach (Player p in back)
+        {
+            p.Loaded = false;
+            SendWorld(p);
+        }
+        if (back.Length > 0)
+        {
+            Log($"the world goes out to {back.Length} player{(back.Length == 1 ? "" : "s")} again: {why}");
+            Broadcast(new Wire.Chat(0, $"the world is being handed out again: {why}"), _ => true);
+            _rosterNext = 0.0;
+        }
+        return back.Length;
+    }
+
+    /// <summary>
     /// Craft swept out of the world by the operator: every one nobody is flying, or only those whose
     /// name matches, taken away in every game and forgotten here. The names swept, for the console.
     ///
@@ -921,8 +962,10 @@ public sealed class GameServer : IDisposable
         Log($"the operator swept {swept.Count} craft out of the world: {Named(swept)}");
         Broadcast(new Wire.Chat(0, $"{swept.Count} craft cleared out of the world"), p => p.Loaded);
         // The world on disk still holds them, so the next player to join would be handed them all
-        // back. This is the one moment the world is worth saving afresh.
-        AskSnapshot("the world was cleared of craft nobody was flying");
+        // back. This is the one moment the world is worth saving afresh -- and once that save is
+        // here, everybody is put back on it, which is the only way the craft leave the world rather
+        // than only the games, and the only way the clock is ever put back.
+        _handOutWhenSaved = AskSnapshot("the world was cleared of craft nobody was flying");
         return swept;
     }
 

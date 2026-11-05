@@ -87,7 +87,9 @@ carries that player's system; one an operator imports carries whatever its own `
    for somebody else's instead.
 3. **Waiting** for the world, then **Loading** it: written into `saves/Multiplayer` and loaded with
    `GameSaves.LoadSaveGame`, as Fast & Purrious's online race already does. After 30 frames in flight
-   it says it has loaded, with its universe time.
+   it says it has loaded, with its universe time. A world that arrives while the game is already
+   playing puts it back here: that is the operator handing everybody the world again, and a game
+   that carried on would be alone in the one the others have left.
 
 KSA saves and loads nothing at all while the vehicle editor is open: both calls begin by asking, and
 the answer is a line in its own log and a return, with nothing said to whoever called. So the ask for
@@ -311,10 +313,16 @@ against KSA `2026.10.25.5707`:
   takes the craft away whosever it is. A craft somebody is flying is never swept -- a world that
   pulls the hull out from under a player is worse than a world with debris in it -- and a fresh save
   is asked for straight after, since the world on disk still holds them.
-- **The clock is not the operator's to put back.** Universe time cannot be moved backwards while
-  anyone is in the world: each game keeps its own, a game more than three seconds ahead of the server
-  holds at a standstill until the server catches up (`ClockFollow.Speed`), and the only thing that
-  brings a game's own time down is loading a world. So there is no command for it.
+- **The world is handed out again rather than the clock put back.** Universe time cannot be moved
+  backwards by telling anyone: each game keeps its own, one more than three seconds ahead of the
+  server holds at a standstill until the server catches up (`ClockFollow.Speed`), and the only thing
+  that brings a game's own time down is loading a world. So `reload` hands the stored world to every
+  player again -- the same datagrams a player joining gets, and the mod takes a world while it is
+  playing by going round its own loading once more. While they all load, nobody is in the world, so
+  the server's clock goes back to the world's own time by the rule that was already there for an
+  empty server, and every game comes back on that time. A sweep arms the same thing for the save it
+  asks for, since the world the players are standing in still holds what was swept out of the
+  server's tables. Nobody reconnects, and nobody loses the craft they are flying.
 - **Ownership is not kept across a server restart**: it starts afresh, and the first to take control of a craft has it.
 - **A hatch is claimed before it opens.** A craft another player holds refuses to let its crew out,
   but a craft nobody holds was nobody's to refuse: two games looking at the same capsule each sent
