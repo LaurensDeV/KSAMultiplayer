@@ -84,6 +84,9 @@ public sealed class GameServer : IDisposable
         /// </summary>
         public bool WorldAsked { get; set; }
 
+        /// <summary>Whether the world has been handed to this player: nobody is in a world they were never given.</summary>
+        public bool WorldGiven => !Seeding && !WaitingForWorld;
+
         public string Controlling { get; set; } = "";
 
         /// <summary>The player's round trip, s, as that player measured it; negative until it has one.</summary>
@@ -308,7 +311,10 @@ public sealed class GameServer : IDisposable
                 player.Watching = ping.Watching;
                 _udp.Send(new Wire.Pong(ping.Sent, _clock()), from);
                 return;
-            case Wire.Loaded loaded:
+            // Only a player the world has been handed to, saying a time that is a time: this is what
+            // sets the universe clock on a server whose world came off disk, and nobody is in a world
+            // they were never given -- one that said so anyway claimed craft and blocked every warp.
+            case Wire.Loaded loaded when player.WorldGiven && double.IsFinite(loaded.Universe):
                 OnLoaded(player, loaded.Universe);
                 return;
             case Wire.State state when player.Loaded:

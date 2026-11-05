@@ -39,6 +39,10 @@ another version is refused by name rather than misread.
   arriving unasked is left where it came from, since the world is written to disk with its sender's
   build and mods and everybody else is then held to those, so a single client could otherwise lock
   every other player out of the server and out of each restart of it.
+- **Who is in the world.** A game says so once it has loaded, and only a game the world was handed to
+  is believed: a player in the world claims craft, counts in every warp vote and, on a server whose
+  world came off disk, sets the clock the whole room then follows, and none of that is anyone's to do
+  from outside the world. A universe time that is not a number is not a time either.
 - **Every player's ping.** A game measures its own round trip to the server and says it with each
   `Ping`; the server passes them all on in the roster, so each game can show what everyone's line is
   like. Held Tab shows that list in game.

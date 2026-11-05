@@ -874,4 +874,41 @@ public class ServerTests
         Assert.Equal(was, rig.Server.World!.Data);
         Assert.Equal(5000.0, rig.Server.World!.Universe, 1);
     }
+
+    [Fact]
+    public void NobodyIsInAWorldTheyWereNeverGiven()
+    {
+        using Rig rig = new();
+        Client a = rig.Join("Alice");
+        rig.Until(() => a.Joined && a.SnapshotWanted is not null, what: "Alice to be asked for a world");
+        Client b = rig.Join("Bob");
+        rig.Until(() => b.Joined, what: "Bob to join");
+
+        // Bob has been handed nothing: there is no world yet, and Alice's has not come. A game that
+        // said it was in the shared world anyway claimed craft and blocked every warp.
+        b.SayLoaded(4321.0);
+        rig.For(2.0);
+        Assert.DoesNotContain(rig.Server.Players, p => p.Id == b.Id && p.Loaded);
+        Assert.False(rig.Server.UniverseClock.Known);
+    }
+
+    [Fact]
+    public void AWorldSaidToBeLoadedAtATimeThatIsNoTimeIsNotTheClock()
+    {
+        using Rig rig = new();
+        // A world copied in by hand, whose universe time the server cannot read: the first player to
+        // load it says what it is, and from then on the whole room follows that one number.
+        rig.Server.SetWorld(new Blob(BlobKind.World, "", 0, 0.0, Rig.FakeWorld()), "B1", ["Core"], "SolLite", timeKnown: false);
+        Client a = rig.Join("Alice");
+        rig.Until(() => a.Blobs.Any(x => x.Kind == BlobKind.World), seconds: 20, what: "Alice to be sent the world");
+
+        a.SayLoaded(double.NaN);
+        rig.For(1.0);
+        Assert.False(rig.Server.UniverseClock.Known);
+        Assert.DoesNotContain(rig.Server.Players, p => p.Loaded);
+
+        a.SayLoaded(5000.0);
+        rig.Until(() => rig.Server.UniverseClock.Known, what: "the clock to start from Alice's world");
+        Assert.InRange(rig.Server.UniverseClock.Now(rig.Now()), 5000, 5010);
+    }
 }
