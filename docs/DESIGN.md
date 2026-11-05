@@ -35,7 +35,10 @@ another version is refused by name rather than misread.
 - **The world.** The latest save, zipped, kept on disk in `--data`. It comes from an operator
   (`--world`), from the first player to join an empty server, or as a fresh save asked of the player
   who has been in longest: every `--snapshot-every` seconds, and whenever a player joins a world more
-  than 30 s old, the joiner waiting up to 15 s for it.
+  than 30 s old, the joiner waiting up to 15 s for it. Only ever from the player it was asked of: one
+  arriving unasked is left where it came from, since the world is written to disk with its sender's
+  build and mods and everybody else is then held to those, so a single client could otherwise lock
+  every other player out of the server and out of each restart of it.
 - **Every player's ping.** A game measures its own round trip to the server and says it with each
   `Ping`; the server passes them all on in the roster, so each game can show what everyone's line is
   like. Held Tab shows that list in game.

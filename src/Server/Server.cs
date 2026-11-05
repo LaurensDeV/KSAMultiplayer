@@ -77,6 +77,13 @@ public sealed class GameServer : IDisposable
         /// <summary>Asked for the first save of the world: the server had none when this player joined.</summary>
         public bool Seeding { get; set; }
 
+        /// <summary>
+        /// Asked for a save of the world and has not sent one yet. A world is taken from a player
+        /// only while this is set: one sent unasked would be written to disk along with the build and
+        /// the mods its sender claimed, which everybody else is then held to.
+        /// </summary>
+        public bool WorldAsked { get; set; }
+
         public string Controlling { get; set; } = "";
 
         /// <summary>The player's round trip, s, as that player measured it; negative until it has one.</summary>
@@ -384,7 +391,7 @@ public sealed class GameServer : IDisposable
         if (seeding)
         {
             p.Seeding = true;
-            _udp.Send(new Wire.Snapshot("the server has no world yet: yours becomes it"), from);
+            AskWorldOf(p, "the server has no world yet: yours becomes it");
             _snapshotAskedAt = UniverseClock.Known ? UniverseClock.Now(now) : double.NegativeInfinity;
             return;
         }
@@ -474,8 +481,16 @@ public sealed class GameServer : IDisposable
         switch (blob.Kind)
         {
             case BlobKind.World:
-                // Only a world asked for: anyone else's is theirs.
-                if (!p.Seeding && !p.Loaded) return;
+                // Only the world this player was asked for. Anyone else's is theirs: a world taken
+                // from whoever cared to send one is written to disk along with that sender's build
+                // and mods, and every other player is held to those -- so one client could lock the
+                // rest out of the server, and out of every restart of it, by sending a world.
+                if (!p.WorldAsked)
+                {
+                    Log($"{p.Name} sent a world nobody asked for, {blob.Data.Length / 1024} KB: left where it came from");
+                    return;
+                }
+                p.WorldAsked = false;
                 SetWorld(blob, p.KsaBuild, p.Mods, p.System);
                 Log($"{p.Name} saved the world: {blob.Data.Length / 1024} KB at universe time {blob.Universe:F0} s");
                 if (p.Seeding) OnLoaded(p, blob.Universe);
@@ -653,7 +668,15 @@ public sealed class GameServer : IDisposable
         // The player in the world longest, whose world has had the most time to settle.
         if (_players.Values.Where(p => p.Loaded && p.Id != notThisOne).OrderBy(p => p.LoadedAt).FirstOrDefault() is not { } from) return;
         _snapshotAskedAt = UniverseClock.Now(_clock());
-        _udp.Send(new Wire.Snapshot(why), from.At);
+        AskWorldOf(from, why);
+    }
+
+    // Every ask for a world goes through here, because the asking is what makes the answer the
+    // server's to keep: a world is written only for a player this was called for.
+    private void AskWorldOf(Player p, string why)
+    {
+        p.WorldAsked = true;
+        _udp.Send(new Wire.Snapshot(why), p.At);
     }
 
     /// <summary>
@@ -667,11 +690,13 @@ public sealed class GameServer : IDisposable
         Broadcast(new Wire.Chat(0, $"{p.Name}'s world cannot be handed on: {why}"), q => q.Loaded);
         if (p.Seeding)
         {
-            p.Seeding = false;
+            // Not the one whose world this becomes after all, and one of those waiting for a world
+            // instead: a game that cannot hand its own over can still be given somebody else's.
+            (p.Seeding, p.WaitingForWorld, p.WaitingSince) = (false, true, _clock());
             if (_players.Values.FirstOrDefault(q => q.WaitingForWorld && q.Id != p.Id) is { } next)
             {
                 (next.Seeding, next.WaitingForWorld) = (true, false);
-                _udp.Send(new Wire.Snapshot("the server has no world yet: yours becomes it"), next.At);
+                AskWorldOf(next, "the server has no world yet: yours becomes it");
             }
             return;
         }
@@ -816,7 +841,7 @@ public sealed class GameServer : IDisposable
         if (p.Seeding && _world is null && _players.Values.FirstOrDefault(q => q.WaitingForWorld) is { } next)
         {
             (next.Seeding, next.WaitingForWorld) = (true, false);
-            _udp.Send(new Wire.Snapshot("the server has no world yet: yours becomes it"), next.At);
+            AskWorldOf(next, "the server has no world yet: yours becomes it");
         }
     }
 

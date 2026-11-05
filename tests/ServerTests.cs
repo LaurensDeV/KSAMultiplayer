@@ -858,4 +858,20 @@ public class ServerTests
         Assert.InRange(bob.Rtt, 0f, 1f);
         Assert.True(double.IsFinite(b.Ping));
     }
+
+    [Fact]
+    public void AWorldNobodyAskedForIsNotTheServersWorld()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        byte[] was = rig.Server.World!.Data;
+
+        // Alice is in the world and has been asked for nothing since she gave it. A world taken from
+        // whoever cares to send one is written to disk along with that sender's build and mods, and
+        // everybody else is then held to those: one client could lock the rest out of the server.
+        a.Upload(new Blob(BlobKind.World, "", a.Id, 9000.0, Rig.FakeWorld(60)));
+        rig.Until(() => rig.Server.Said.Any(said => said.Contains("nobody asked for")), seconds: 20, what: "the server to leave it where it came from");
+        Assert.Equal(was, rig.Server.World!.Data);
+        Assert.Equal(5000.0, rig.Server.World!.Universe, 1);
+    }
 }
