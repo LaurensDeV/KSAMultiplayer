@@ -516,8 +516,13 @@ internal static class Panel
     {
         Client? c = Sync.Client;
         ImGui.Text(c is { ServerName.Length: > 0 } ? c.ServerName : "Server");
-        ImGui.SameLine(0f, -1f);
+        // On a line of its own and never wrapped. It changes between "playing" and "catching up:
+        // 12 s behind" as the clock is made up, and sharing a wrapped line with the server's name
+        // meant the longer one took two lines and the shorter one took one: everything below moved
+        // up and down as it changed, which reads as the window shaking.
+        ImGui.PopTextWrapPos();
         ImGui.TextDisabled(Sync.Status);
+        ImGui.PushTextWrapPos(0f);
         if (c is { Joined: true })
         {
             // The round trip as it is now, the same one the player list shows; Rtt is the best since

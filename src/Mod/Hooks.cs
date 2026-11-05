@@ -56,10 +56,12 @@ internal static class Hooks
                   "another player's craft can be wrecked in this world alone");
             Patch(AccessTools.Method(typeof(Program), nameof(Program.RefreshVehiclesInFrame)), nameof(BeforeRefreshVehicles),
                   "another player's craft is built while KSA is stepping the world, which fails its physics");
-            Patch(AccessTools.Method(typeof(VehicleEditor), "SetLocations"), nameof(BeforeSetLocations),
-                  "the editor offers this mod's extra launchpads as places to launch from");
             PatchAfter(AccessTools.Method(typeof(VehicleEditor), "SetLocations"), nameof(AfterSetLocations),
-                  "this mod's extra launchpads stay out of the world after the editor has been opened");
+                  "the editor offers this mod's extra launchpads as places to launch from");
+            PatchAfter(AccessTools.Method(typeof(VehicleLaunchMenu), "SetLocations"), nameof(AfterLaunchMenuLocations),
+                  "launching a vehicle already built offers this mod's extra launchpads");
+            PatchAfter(AccessTools.Method(typeof(ConfigOnStartPopup), "SetLocations"), nameof(AfterStartLocations),
+                  "starting a game offers this mod's extra launchpads");
             Patch(AccessTools.Method(typeof(VehicleEditor), nameof(VehicleEditor.RequestExit)), nameof(BeforeRequestExit),
                   "a launch onto a full site is refused only after the editor has asked about unsaved work");
             Patch(AccessTools.Method(typeof(VehicleEditor), "FinalizeExit"), nameof(BeforeFinalizeExit),
@@ -147,11 +149,6 @@ internal static class Hooks
         }
     }
 
-    // The editor lists every landmark it can find as a place to launch from. This mod's pads are
-    // taken out of the world for the moment that list is built and put straight back: a player picks
-    // the site they know, and the mod puts them on whichever pad of that site is free.
-    private static List<(CelestialTemplate Template, LocationReference Pad)> _hidden = [];
-
     // The editor hands a new craft to the world as it closes, and looks its launch site up by name
     // to do it. While that is happening -- and only then -- a site's name is answered with whichever
     // of its pads is free, so a player who picked "CCSFS LC-39A" lands on one of the eight there.
@@ -224,16 +221,28 @@ internal static class Hooks
         }
     }
 
-    private static void BeforeSetLocations()
-    {
-        try { _hidden = Pads.Hide(); }
-        catch (Exception e) { Complain("keeping the extra launchpads out of the editor", e); }
-    }
+    // The editor lists every landmark it can find as a place to launch from, so this mod's pads are
+    // taken back out of the list it has just built. Out of its list, never out of the world: the
+    // celestial's Locations are walked by ConstraintSim.UpdateLaunchPads on the physics worker, and
+    // taking pads out of that and putting them back as the editor opened was a list modified under
+    // that enumerator -- "Collection was modified", for every craft in the bubble, every time
+    // somebody opened the VAB.
+    private static void AfterSetLocations(VehicleEditor __instance) => Unlist(__instance);
 
-    private static void AfterSetLocations()
+    private static void AfterLaunchMenuLocations(VehicleLaunchMenu __instance) => Unlist(__instance);
+
+    private static void AfterStartLocations(ConfigOnStartPopup __instance) => Unlist(__instance);
+
+    private static void Unlist(object menu)
     {
-        try { Pads.Show(_hidden); }
-        finally { _hidden = []; }
+        try
+        {
+            Pads.HideFromEditor(menu);
+        }
+        catch (Exception e)
+        {
+            Complain("keeping the extra launchpads out of a menu", e);
+        }
     }
 
     /// <summary>

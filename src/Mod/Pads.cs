@@ -81,30 +81,36 @@ internal static class Pads
     }
 
     /// <summary>
-    /// This mod's pads taken out of every celestial's locations and handed back, so that the editor
-    /// builds its list of places to launch from without them: a player picks the site they know by
-    /// name, not one of eight numbered slabs. Only the template's own list is touched, which is
-    /// public; the editor's list of them is private and is left to build itself as it always did.
+    /// This mod's pads taken out of the editor's own list of places to launch from, once it has
+    /// built it: a player picks the site they know by name, not one of eight numbered slabs.
+    ///
+    /// <para>Its list, never the world's. The celestial template's <c>Locations</c> are walked by
+    /// <c>ConstraintSim.UpdateLaunchPads</c> on the physics worker while the hooks run, so taking
+    /// pads out of that list and handing them back as the editor opened was a list modified under
+    /// that enumerator: "Collection was modified", failing the physics of every craft in the bubble,
+    /// every time somebody opened the VAB. The editor's own list is private and is reached by
+    /// reflection, which is the cheaper price.</para>
     /// </summary>
-    public static List<(CelestialTemplate Template, LocationReference Pad)> Hide()
+    /// <param name="menu">
+    /// Whichever of KSA's menus has just built a list of places to launch from. There are three --
+    /// the vehicle editor, the launch menu for a vehicle already built, and the picker when a game
+    /// is started -- and each keeps its list under its own name.
+    /// </param>
+    public static void HideFromEditor(object menu)
     {
-        List<(CelestialTemplate, LocationReference)> held = [];
-        if (Universe.CurrentSystem is not { } system) return held;
-        foreach (Celestial celestial in system.All.OfType<Celestial>())
+        System.Collections.IList? offered =
+            (AccessTools.Field(menu.GetType(), "_locationObjects")?.GetValue(menu)
+             ?? AccessTools.Field(menu.GetType(), "_locations")?.GetValue(menu)) as System.Collections.IList;
+        if (offered is null) return;
+        for (int i = offered.Count - 1; i >= 0; i--)
         {
-            if (celestial.BodyTemplate is not { } template) continue;
-            foreach (LocationReference pad in template.Locations.Where(Ours).ToArray())
+            if (offered[i] is not { } one) continue;
+            if (AccessTools.Method(one.GetType(), "GetKey")?.Invoke(one, null) is string key
+                && key.Contains(Suffix, StringComparison.Ordinal))
             {
-                template.Locations.Remove(pad);
-                held.Add((template, pad));
+                offered.RemoveAt(i);
             }
         }
-        return held;
-    }
-
-    public static void Show(List<(CelestialTemplate Template, LocationReference Pad)> held)
-    {
-        foreach ((CelestialTemplate template, LocationReference pad) in held) template.Locations.Add(pad);
     }
 
     /// <summary>
