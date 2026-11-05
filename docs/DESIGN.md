@@ -295,6 +295,11 @@ against KSA `2026.10.25.5707`:
   one kitten sent out: it was built as the other's puppet from the new window, no patch warning, no
   `Update task failed` in either game. That shows nothing broken, not the race cured -- the failures
   were seen with three players and two rockets in pieces, which is a load no rig here can make.
+- **A launch actually landing on a free pad, and a full site refusing one.** The editor opens with
+  the eight pads laid out, the warning rightly absent while they are free, and nothing refused that
+  should not be: that much has been watched. Nobody has yet pressed Launch with this build, nor
+  filled all eight pads to see the refusal and the line over the editor, since neither can be driven
+  from the bridge.
 - **Flat ground under the extra launchpads.** KSA levels a launch site with a terrain decal about
   100 m across, and only the pad it shipped stands inside one, so the seven added around it have
   their aprons cut by whatever the planet makes of the ground. Adding decals of their own is how
