@@ -55,6 +55,13 @@ internal static class Sync
     // in the others' worlds before anybody looks for it.
     private const double RedescribeEverySeconds = 2.0;
 
+    // The least time between two rebuilds of one craft. A rebuild is not a correction, it is a
+    // destruction and a fresh 119-part rocket dropped into the world, which lands on a pad and
+    // explodes: watched on the real server, one craft built 87 times and destroyed 62 in a single
+    // session, every copy making the fragments that made the next definition that made the next
+    // copy. Longer than the sender's own interval, because it costs far more.
+    private const double RebuildEverySeconds = 5.0;
+
     public enum Stage { Off, Joining, Seeding, Waiting, Loading, Playing }
 
     private sealed class Mine(Vehicle craft)
@@ -107,6 +114,9 @@ internal static class Sync
     }
 
     private static readonly Dictionary<string, Description> Describes = [];
+
+    /// <summary>When each craft standing here was last torn down and built again.</summary>
+    private static readonly Dictionary<string, double> Rebuilt = [];
 
     /// <summary>
     /// Craft waiting to be put into this world, by the name the shared world calls them.
@@ -327,6 +337,7 @@ internal static class Sync
         MadeHere.Clear();
         Definitions.Clear();
         Describes.Clear();
+        Rebuilt.Clear();
         ToBuild.Clear();
         ToRemove.Clear();
         PlacedAt.Clear();
@@ -675,13 +686,20 @@ internal static class Sync
             // here is already that one, and destroying it to build it back is how a world comes to
             // hold two of it.
             if (Definitions.TryGetValue(blob.Key, out byte[]? had) && had.AsSpan().SequenceEqual(blob.Data)) continue;
-            Definitions[blob.Key] = blob.Data;
             // A craft rebuilt by its owner, as one that drops a stage is: the old one here goes, and the
             // new one is built below. Never one this game made: another player's kitten out of the same
             // capsule arrives under the name this game gave its own, and that one is not theirs to take.
-            if (here.TryGetValue(blob.Key, out Vehicle? old) && !Owned.ContainsKey(blob.Key)
-                && !ReferenceEquals(old, flown) && !MadeHere.Contains(old))
+            bool standing = here.TryGetValue(blob.Key, out Vehicle? old) && !Owned.ContainsKey(blob.Key)
+                            && !ReferenceEquals(old, flown) && !MadeHere.Contains(old);
+            // One rebuild in a while per craft. A rocket coming apart changes shape every few frames
+            // and its owner says so; tearing ours down and dropping a fresh one in each time is what
+            // filled a world with exploding copies. The definition is left unrecorded so that this
+            // same shape, or whatever it has become by then, is built once the wait is over.
+            if (standing && Wall() - Rebuilt.GetValueOrDefault(blob.Key) < RebuildEverySeconds) continue;
+            Definitions[blob.Key] = blob.Data;
+            if (standing)
             {
+                Rebuilt[blob.Key] = Wall();
                 // Said because one session rebuilt a single fragment of another player's rocket 89
                 // times, and the guard above means each of those definitions really did differ --
                 // or the one before it had been forgotten. Which of the two it is decides the fix.

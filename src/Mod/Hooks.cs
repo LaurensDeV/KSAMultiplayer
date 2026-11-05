@@ -74,6 +74,10 @@ internal static class Hooks
                   "a craft launched from the editor goes to the pad the site was given, taken or not");
             Patch(AccessTools.Method(typeof(Vehicle), nameof(Vehicle.GetInitialKinematicStateForLocation)), nameof(BeforeInitialState),
                   "a craft launched from the editor goes to the pad the site was given, taken or not");
+            Patch(AccessTools.Method(typeof(VehicleLaunchMenu), "LaunchVehicle"), nameof(BeforeMenuLaunch),
+                  "a vehicle launched from the launch menu goes to the pad the site was given, taken or not");
+            PatchAfter(AccessTools.Method(typeof(VehicleLaunchMenu), "LaunchVehicle"), nameof(AfterMenuLaunch),
+                  "every location lookup after the launch menu is answered with a launchpad");
             Patch(AccessTools.PropertySetter(typeof(Program), nameof(Program.ControlledVehicle)), nameof(BeforeControl),
                   "another player's craft can be taken over here");
             Patch(AccessTools.Method(typeof(KittenEva), nameof(KittenEva.BoardVehicle), [typeof(Vehicle), typeof(EVADoor)]), nameof(BeforeBoard),
@@ -177,6 +181,13 @@ internal static class Hooks
     }
 
     private static void BeforeEditorDispose() => _launching = true;
+
+    // The other way a craft is launched: the menu for one already built, which places it the same
+    // way the editor does and so wants the same pad chosen for it. Without this, everything sent up
+    // from that menu went to the site's own pad however many craft were standing on it.
+    private static void BeforeMenuLaunch() => _launching = true;
+
+    private static void AfterMenuLaunch() => _launching = false;
 
     private static void AfterEditorDispose() => _launching = false;
 
