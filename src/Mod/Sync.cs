@@ -301,6 +301,29 @@ internal static class Sync
 
     public static void SayChat(string text) => _client?.SayChat(text);
 
+    /// <summary>A console line for the server, as an admin types it into the chat behind a /.</summary>
+    public static void Ask(string line) => _client?.Ask(line);
+
+    /// <summary>
+    /// A line typed into the chat, and whether it was a command rather than something said. A line
+    /// behind a / goes to the server to run and is said to nobody, so a player who types one out of
+    /// habit on a server where they are no admin has told the room nothing.
+    /// </summary>
+    public static bool Typed(string line)
+    {
+        string said = line.Trim();
+        if (said.StartsWith('/'))
+        {
+            if (said.Length > 1) Ask(said[1..]);
+            return true;
+        }
+        if (said.Length > 0) SayChat(said);
+        return false;
+    }
+
+    /// <summary>Whether this server runs what this game asks of it.</summary>
+    public static bool Admin => _client is { Admin: true };
+
     /// <summary>Who flies this craft, or empty when it is this game's own or nobody is known to.</summary>
     public static string OwnerOf(Vehicle v)
     {
@@ -364,7 +387,7 @@ internal static class Sync
                 _finding = null;
                 if (finding.IsCompletedSuccessfully && finding.Result is { } at && _asking is { } ask)
                 {
-                    c.Connect(at, ask.Name, World.KsaBuild, World.Mods, World.System, ask.Password);
+                    c.Connect(at, ask.Name, World.KsaBuild, World.Mods, World.System, ask.Password, Tokens.For(_address));
                     Log.Info($"connecting to {at}");
                 }
                 else
@@ -377,6 +400,7 @@ internal static class Sync
             c.Update();
             while (c.Said.TryDequeue(out string? said)) Say(said);
             while (c.Chat.TryDequeue(out (string Who, string Text) line)) Chatted($"<{line.Who}> {line.Text}");
+            while (c.Tokens.TryDequeue(out string? token)) Tokens.Keep(_address, token);
             if (c.Out.Length > 0)
             {
                 Disconnect();

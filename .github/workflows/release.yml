@@ -173,6 +173,8 @@ jobs:
           DIGEST: ${{ needs.image.outputs.digest }}
           OWNER: ${{ github.repository_owner }}
         run: |
+          # Docker refuses a repository name with a capital in it, and this is the line a host copies.
+          OWNER=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
           cat > notes.md <<NOTES
           A shared world for Kitten Space Agency: several players, each in their own game, flying in
           one universe kept by a dedicated server that runs on Linux with no game installed.
@@ -235,3 +237,75 @@ jobs:
           else
               gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md assets/*
           fi
+
+  # Whether the server behind mp.ksarmory.com updates itself. A job of its own because a job's `if`
+  # cannot read secrets, and a release must not fail on a repository that has none of these set: a
+  # fork, or this one before the secrets were added.
+  deployable:
+    name: Whether this deploys itself
+    runs-on: ubuntu-latest
+    outputs:
+      ok: ${{ steps.secrets.outputs.ok }}
+    steps:
+      - id: secrets
+        env:
+          HAVE: ${{ secrets.DEPLOY_SSH_KEY != '' && secrets.TF_STATE_ACCESS_KEY != '' }}
+        run: |
+          echo "ok=$HAVE" >> "$GITHUB_OUTPUT"
+          [[ "$HAVE" == "true" ]] || echo "::notice::DEPLOY_SSH_KEY and the TF_STATE_* secrets are not set, so nothing was deployed. The release itself is complete; apply infra/server by hand to put it on the machine."
+
+  # The machine runs what this release built, by digest, without anybody copying one. OpenTofu owns
+  # the container, so this is the same apply an operator would run, with the same state: deploying
+  # another way would leave that state describing a container that is no longer there.
+  deploy:
+    name: The server behind mp.ksarmory.com
+    needs: [image, publish, deployable]
+    if: needs.deployable.outputs.ok == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: "1.9.0"
+
+      - name: The key, and the state's credentials
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+          TF_STATE_ENDPOINT: ${{ secrets.TF_STATE_ENDPOINT }}
+          TF_STATE_ACCESS_KEY: ${{ secrets.TF_STATE_ACCESS_KEY }}
+          TF_STATE_SECRET_KEY: ${{ secrets.TF_STATE_SECRET_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
+          umask 077
+          cat > infra/server/backend.hcl <<BACKEND
+          bucket     = "$TF_STATE_BUCKET"
+          endpoints  = { s3 = "$TF_STATE_ENDPOINT" }
+          access_key = "$TF_STATE_ACCESS_KEY"
+          secret_key = "$TF_STATE_SECRET_KEY"
+          BACKEND
+
+      # The digest this run built, not a tag: the machine runs the image that was made here, which is
+      # the whole reason the variable takes a digest.
+      - name: Apply
+        working-directory: infra/server
+        env:
+          OWNER: ${{ github.repository_owner }}
+          DIGEST: ${{ needs.image.outputs.digest }}
+          TF_VAR_ssh_private_key: ~/.ssh/deploy
+          TF_IN_AUTOMATION: "1"
+        run: |
+          owner=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
+          export TF_VAR_server_image="ghcr.io/$owner/ksamp-server@$DIGEST"
+          tofu init -backend-config=backend.hcl
+          tofu apply -auto-approve
+          {
+              echo "### Deployed"
+              echo
+              echo "\`$(tofu output -raw address)\` now runs \`$TF_VAR_server_image\`."
+              echo
+              echo "Players need a mod of this release: a game of another version is refused by name."
+          } >> "$GITHUB_STEP_SUMMARY"

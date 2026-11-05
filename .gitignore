@@ -9,9 +9,10 @@ dist/
 .idea/
 .vscode/
 
-# The two-games harness: a scratch world for the test server, and its log.
+# The two-games harness: a scratch world for the test server, and the logs of a run.
 .two-games-data/
 .two-games-server.log
+.two-games-run.log
 
 # Infrastructure: credentials and local working files. The provider lock file is committed, so
 # everyone plans against the same provider versions.

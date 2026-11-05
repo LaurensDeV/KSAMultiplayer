@@ -43,6 +43,13 @@ another version is refused by name rather than misread.
   is believed: a player in the world claims craft, counts in every warp vote and, on a server whose
   world came off disk, sets the clock the whole room then follows, and none of that is anyone's to do
   from outside the world. A universe time that is not a number is not a time either.
+- **Who may run commands.** `admins.json` in `--data`: a name and the SHA-256 of a token, one line
+  per admin. The token itself exists in two places and neither is that file -- the operator's console
+  for the moment it is said, and the machine it was said to. So the list is enough to take an admin
+  away and not enough to become one, and a server whose data directory leaks has leaked no admin. A
+  name has to be connected to be opped, since a token that reaches nobody is only a row in a file;
+  the name is then kept up to date from whoever last joined with that token, so revoking admin names
+  the player an operator can see rather than the one who was opped months ago.
 - **Every player's ping.** A game measures its own round trip to the server and says it with each
   `Ping`; the server passes them all on in the roster, so each game can show what everyone's line is
   like. Held Tab shows that list in game.
@@ -170,6 +177,31 @@ again. Both give up after two minutes. What it carries says what it is in front:
 the craft's Id, its owner and the universe time. A zip from another machine is unpacked only into its
 own folder: a name that climbs out of it is refused.
 
+## Commands from inside a game
+
+A line typed into the chat behind a `/` goes to the server as a `Command` rather than to everyone as
+a `Chat`, so it is said to nobody whether or not it runs. The server runs it only for a player whose
+`Hello` carried a token on the admin list, and hands it to the console program through `Asked` -- the
+same dispatcher the console's own standard input feeds, so there is one list of commands and one place
+each is implemented. The answer goes back as a `Chat` from the server to that player alone, which their
+game shows in the chat window they typed into.
+
+`quit` is the exception the dispatcher makes for itself: an admin asking for it is told it is the
+console's, because a server nobody can start again is not something to hand out to somebody who meant
+to leave the world rather than end it.
+
+Being an admin is a machine's, not a name's. `op` makes 32 random bytes, keeps their hash and sends the
+token itself once; the game writes it beside that server's address and offers it in every `Hello` after.
+Nothing is asked of the player, and nothing they could be shoulder-surfed typing. Revoking it removes
+the hash, so the token stops working at once even for a game that still has it, and tells a game that is
+connected to throw it away -- which is said by `Op(Admin: false)` and needs nothing else on the wire.
+
+None of it is secret from somebody watching the line. A token goes out in the clear in every `Hello`,
+as the password does, so it is worth what the network between the game and the server is worth: enough
+to keep an admin from being typed in by a stranger who guessed a name, not enough to stand up to
+somebody reading the datagrams. Taking one back is a `deop` away, which is the answer to a token that
+has got out.
+
 ## What has been seen in a game
 
 Two games on one machine, each with a profile of its own, joined to one server: `tools/two-games.sh
@@ -216,6 +248,21 @@ against KSA `2026.10.25.5707`:
   `reload` on its own then put universe time back, which is the only way it ever moves: 72783.5 s
   in the game before, 72747.8 s after, with the server's own clock going to the world's time while
   nobody was in it -- "universe time waits at 72740 s, 44 s back".
+- **Joining from the main menu, and being made an admin.** One game, opened on nothing -- the
+  sandbox view, no world, no craft -- with the Multiplayer window drawn over it, which is where a
+  player starts and where the window was not drawn before. Connect from there and the server handed
+  over its 31 KB world, the game loaded it and was flying `Niric` half a minute later, having never
+  opened a save by hand.
+
+  Then `op Alpha` at the server's console. The game wrote
+  `{"127.0.0.1:50100": "Tc9kzx..."}` into its `tokens.json` and the server kept
+  `f777349e...`, which is that token's SHA-256 and nothing else; `/status`, `/players` and
+  `/admins` typed into the chat were answered in the same chat -- `1 Alpha playing, admin, flying
+  Niric` -- and `/quit` was refused as the console's alone. `/reload` put universe time back from
+  72688 s to 72630 s from inside the game, as it does from the console, with the player still
+  flying and still an admin. `deop Alpha` left `tokens.json` holding `{}` and `admins.json` holding
+  `[]`, the game knew within the second, and the next `/status` was refused. The one line asked for
+  before any of it, as a nobody, had been refused too.
 - **Two games making one name.** A kitten sent out of the same capsule in both: the second was named
   `Nasley 2` by the server, each game kept flying its own, and each built the other's and stood it
   where its owner put it. The second game holds the other player's under a name of its own

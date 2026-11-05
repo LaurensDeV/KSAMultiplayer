@@ -54,6 +54,9 @@ public sealed class GameServer : IDisposable
         public string System { get; init; } = "";
         public Link Link { get; } = new();
 
+        /// <summary>Whether this player's commands are run: the token offered at the join was on the admin list.</summary>
+        public bool Admin { get; set; }
+
         /// <summary>Whether it has loaded the world and is playing in it, and since when on the server's clock.</summary>
         public bool Loaded { get; set; }
         public double LoadedAt { get; set; }
@@ -171,9 +174,11 @@ public sealed class GameServer : IDisposable
     private byte _warpCeilingWho;
     private readonly Dictionary<byte, bool> _warpVotes = [];
 
-    public GameServer(ServerOptions options, Func<double> clock, WorldStore? store = null, IPAddress? bind = null)
+    /// <param name="admins">Who may run commands; by default the list beside the world, or none kept at all without one.</param>
+    public GameServer(ServerOptions options, Func<double> clock, WorldStore? store = null, IPAddress? bind = null, Admins? admins = null)
     {
         (Options, _clock, _store) = (options, clock, store);
+        Admins = admins ?? new Admins(store?.Folder ?? "");
         UniverseClock.SetSpeed(options.Speed, clock());
         _udp = new Udp(options.Port, clock, "KSAMultiplayer server", bind);
         if (store?.Load() is { } saved)
@@ -196,6 +201,10 @@ public sealed class GameServer : IDisposable
     public bool HasWorld => _world is not null;
     public Blob? World => _world;
     public int CraftCount => _crafts.Count;
+    public Admins Admins { get; }
+
+    /// <summary>Console lines typed in a game by an admin, for the console program to run as its own.</summary>
+    public Queue<(Player Who, string Line)> Asked { get; } = new();
 
     /// <summary>Whose warp it is, how fast, and whether it is asked for or running.</summary>
     public (byte Who, double Speed, Wire.WarpPhase Phase) Warp => (_warpWho, _warpSpeed, _warpPhase);
@@ -367,6 +376,18 @@ public sealed class GameServer : IDisposable
                 Log($"<{player.Name}> {text}");
                 Broadcast(new Wire.Chat(player.Id, text), _ => true);
                 return;
+            case Wire.Command asked:
+                string line = Wire.Clip(asked.Line, Wire.ChatChars).Trim();
+                if (line.Length == 0) return;
+                if (!player.Admin)
+                {
+                    Tell(player, "you are not an admin here");
+                    Log($"{player.Name} asked for '{line}' and is no admin");
+                    return;
+                }
+                Log($"{player.Name}, an admin, asks for '{line}'");
+                Asked.Enqueue((player, line));
+                return;
             case Wire.Bye:
                 Remove(player, "has left");
                 return;
@@ -395,12 +416,18 @@ public sealed class GameServer : IDisposable
             KsaBuild = hello.KsaBuild,
             Mods = hello.Mods.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
             System = hello.System,
+            Admin = Admins.Check(Wire.Clip(hello.Token, Wire.TokenChars), name),
         };
         _players[id] = p;
 
         bool seeding = _world is null && _players.Values.All(q => !q.Seeding);
         _udp.Send(new Wire.Welcome(id, "", Options.Name, !seeding), from);
-        Log($"{name} has joined from {from}{(seeding ? ", and their world becomes the server's" : "")}");
+        Log($"{name} has joined from {from}{(p.Admin ? " as an admin" : "")}{(seeding ? ", and their world becomes the server's" : "")}");
+        // Said only when there is something to say: that they are an admin, or that the token they
+        // offered is no good, which is how a game deopped while it was away forgets the one it kept.
+        // Nothing at all to a player who offered none, who is no admin and knows it.
+        if (p.Admin || hello.Token.Length > 0) _udp.Send(new Wire.Op(p.Admin, ""), from);
+        if (p.Admin) Tell(p, "you are an admin here; /help in the chat for what you can ask");
         Broadcast(new Wire.Chat(0, $"{name} has joined"), q => q != p);
         _rosterNext = 0.0;
 
@@ -895,9 +922,49 @@ public sealed class GameServer : IDisposable
     }
 
     /// <summary>Puts a player out, as an operator would from the console.</summary>
+    /// <summary>Says something to one player, which their game shows in the chat as the server speaking.</summary>
+    public void Tell(Player p, string text) => _udp.Send(new Wire.Chat(0, Wire.Clip(text, Wire.ChatChars)), p.At);
+
+    /// <summary>
+    /// Makes a player who is here an admin and hands their game the token to keep, returning the name
+    /// it went to. Null for a name nobody is playing under: the token has to reach a game, and it is
+    /// said once and never stored where it could be said again.
+    /// </summary>
+    public string? Op(string name)
+    {
+        if (Find(name) is not { } p) return null;
+        string token = Admins.Add(p.Name);
+        p.Admin = true;
+        _udp.Send(new Wire.Op(true, token), p.At);
+        Tell(p, "you are an admin here; type /help in the chat for what you can ask");
+        Log($"{p.Name} is an admin from now");
+        return p.Name;
+    }
+
+    /// <summary>
+    /// Takes admin away from a name, whether or not they are playing. The token stops working at once,
+    /// and a game that is here is told to throw the one it kept away.
+    /// </summary>
+    public bool Deop(string name)
+    {
+        bool was = Admins.Remove(name) > 0;
+        if (Find(name) is { } p)
+        {
+            was |= p.Admin;
+            p.Admin = false;
+            _udp.Send(new Wire.Op(false, ""), p.At);
+            Tell(p, "you are no longer an admin here");
+        }
+        if (was) Log($"{name} is no longer an admin");
+        return was;
+    }
+
+    private Player? Find(string name) =>
+        _players.Values.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
+
     public bool Kick(string name, string why)
     {
-        if (_players.Values.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)) is not { } p) return false;
+        if (Find(name) is not { } p) return false;
         Remove(p, $"was kicked{(why.Length > 0 ? $": {why}" : "")}");
         return true;
     }

@@ -203,8 +203,9 @@ TOOLS = {
                   "whether this game owns it or holds it as another player's puppet.", {}, [],
                   lambda a: _dump(send("craft"))),
     "ksa_mp": ("Join a server (connect, as host:port or a host for port 50100, with name and password), "
-               "leave it (disconnect=true), or say something to everyone (chat). With no argument it "
-               "answers as ksa_status does.",
+               "leave it (disconnect=true), or type a line into the chat (chat), which goes to the "
+               "server as a command when it starts with a / and to everyone otherwise. With no "
+               "argument it answers as ksa_status does.",
                {"connect": {"type": "string"}, "name": {"type": "string"}, "password": {"type": "string"},
                 "disconnect": {"type": "boolean"}, "chat": {"type": "string"},
                 "board": _num("show the player list for this many seconds, as holding Tab does"),

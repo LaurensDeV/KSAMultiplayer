@@ -34,6 +34,13 @@ resource "docker_container" "server" {
   restart  = "unless-stopped"
   must_run = true
 
+  # The server's commands -- op, clear, reload -- are read from standard input, and a container with
+  # no terminal has none to read: without these there is no way to make anybody an admin on this
+  # machine at all. With them, `docker attach ksamp-server` over SSH is the console, and Ctrl+P
+  # Ctrl+Q leaves it running. Changing either replaces the container; the world is in its volume.
+  stdin_open = true
+  tty        = true
+
   # Published, not host-networked: publishing is a destination rewrite and leaves the sender's
   # address alone, which is the one thing the server needs from the network.
   ports {
