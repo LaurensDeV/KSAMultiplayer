@@ -61,6 +61,8 @@ internal static class Hooks
             PatchAfter(AccessTools.Method(typeof(VehicleEditor), "SetLocations"), nameof(AfterSetLocations),
                   "this mod's extra launchpads stay out of the world after the editor has been opened");
             Patch(AccessTools.Method(typeof(VehicleEditor), nameof(VehicleEditor.RequestExit)), nameof(BeforeRequestExit),
+                  "a launch onto a full site is refused only after the editor has asked about unsaved work");
+            Patch(AccessTools.Method(typeof(VehicleEditor), "FinalizeExit"), nameof(BeforeFinalizeExit),
                   "a craft is launched onto a pad somebody is already standing on");
             Patch(AccessTools.Method(typeof(VehicleEditor), nameof(VehicleEditor.Dispose)), nameof(BeforeEditorDispose),
                   "a craft launched from the editor goes to the pad the site was given, taken or not");
@@ -161,6 +163,17 @@ internal static class Hooks
         if (!launchNewVehicle) return true;
         if (Pads.Room(__instance)) return true;
         Log.Info("refused a launch: every pad at the chosen site is taken");
+        return false;
+    }
+
+    // The one place a launch is actually settled. RequestExit is refused above so that a player is
+    // told before the editor asks them about unsaved work, but the answer to that question comes
+    // back here on its own, and a refusal that only covered RequestExit would let it straight past.
+    private static bool BeforeFinalizeExit(VehicleEditor __instance, bool launchNewVehicle)
+    {
+        if (!launchNewVehicle) return true;
+        if (Pads.Room(__instance)) return true;
+        Log.Info("refused a launch at the last gate: every pad at the chosen site is taken");
         return false;
     }
 

@@ -287,6 +287,22 @@ internal sealed class Bridge
         // The editor, which only a hand on the keyboard could open before: the mod behaves
         // differently while it is up -- it holds no speed and hands over no world -- and none of
         // that could be driven by a run.
+        // Pressing the editor's Launch button, which is the one thing about launching that could not
+        // be driven from here -- and so the one thing about it that kept being shipped unwatched.
+        if (command.Has("launch"))
+        {
+            if (KSA.Program.Editor is not { } editor) return Failed("the vehicle editor is not open");
+            // Past the unsaved-work question, which a run cannot answer: this is what clicking
+            // through it calls. The mod's own refusal sits on this method, so a full site still
+            // stops it.
+            if (HarmonyLib.AccessTools.Method(typeof(KSA.VehicleEditor), "FinalizeExit") is not { } finish)
+            {
+                return Failed("KSA no longer has FinalizeExit");
+            }
+            finish.Invoke(editor, [true]);
+            return Done(new() { ["asked"] = true, ["still_open"] = KSA.Program.IsEditorOpen });
+        }
+
         if (command.Has("editor"))
         {
             bool want = command.Flag("editor", true);
