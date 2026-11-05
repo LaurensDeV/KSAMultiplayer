@@ -278,8 +278,11 @@ internal static class Sync
         (_askedSpeed, _askWarpNext) = (1.0, 0.0);
         if (HeldSpeed is not null)
         {
+            // Wherever the player is, not only at a craft: a speed held for the shared world is
+            // nobody's once this game is its own again, and one left standing is a world running at
+            // ten times speed in front of a player who has disconnected.
             HeldSpeed = null;
-            if (World.AtACraft) World.SetSpeed(1.0);
+            World.SetSpeed(1.0);
         }
         if (was) Say("disconnected");
     }
@@ -829,8 +832,15 @@ internal static class Sync
         // runs away from the world it is watching and every state it is sent arrives stale.
         if (Now is Stage.Loading or Stage.Joining || !World.AtACraft)
         {
-            // KSA's own load is left to run as it does.
+            // Let go of, and at real time rather than at whatever this world was last run at: out of
+            // flight the catch-up warp from a join kept running, so the editor and the tracking
+            // station ran at ten times speed with nothing holding them to the server, and the world
+            // came back further ahead than it went. KSA's own load is the one left to run as it does.
+            if (HeldSpeed is not null && Now is not (Stage.Loading or Stage.Joining)) World.SetSpeed(1.0);
             HeldSpeed = null;
+            // And nothing measured is nothing to report: a number left standing here is one the
+            // server holds the whole room's speed down to.
+            c.Late = 0.0;
             return;
         }
         if (Now != Stage.Playing || c.ServerUniverse is not { } server)

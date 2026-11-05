@@ -139,7 +139,10 @@ shared one.
      larger by warping up to 10x, and a world well ahead waits. KSA steps a world by no more than its
      33 ms a frame, so the speed asked makes up a slower frame. The warp keys and pause are held to that
      speed by prefixes on both `Universe.SetSimulationSpeed`, and a speed asked for that is not that
-     one is the player reaching for a warp: it is put to the others instead of taken.
+     one is the player reaching for a warp: it is put to the others instead of taken. Out of flight
+     the clock is let go of at real time and not at whatever this world was last run at, or the
+     catch-up warp from a join goes on running in the editor and the tracking station with nothing
+     holding it to the server, and the world comes back further ahead than it went.
 
 What nobody owns is left to each world: a craft on rails goes the same way in every one, and a craft
 in physics that nobody flies drifts apart from world to world.
