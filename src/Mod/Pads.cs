@@ -124,6 +124,21 @@ internal static class Pads
                     .ThenBy(l => l.Id, StringComparer.Ordinal)];
 
     /// <summary>
+    /// The site's own pad first, so a quiet site launches from where it always did; the rest in an
+    /// order of this player's own, so that two games picking at the same moment, before either has
+    /// heard of the other's craft, are unlikely to pick the same one.
+    /// </summary>
+    private static List<LandmarkReference> Ordered(List<LandmarkReference> pads)
+    {
+        if (pads.Count < 3 || Sync.Client is not { Joined: true } c) return pads;
+        int ring = pads.Count - 1;
+        int from = c.Id % ring;
+        List<LandmarkReference> mine = [pads[0]];
+        for (int i = 0; i < ring; i++) mine.Add(pads[1 + ((from + i) % ring)]);
+        return mine;
+    }
+
+    /// <summary>
     /// A free pad of whichever site sits at these coordinates, given in degrees as KSA hands them to
     /// the code that places a launched craft. Null when the coordinates are nobody's pad, or when
     /// every pad of that site is taken.
@@ -154,11 +169,26 @@ internal static class Pads
     public static LandmarkReference? Free(Celestial celestial, string siteId)
     {
         if (celestial.BodyTemplate is not { } template) return null;
-        double3[] craft = [.. World.Vehicles().Where(v => ReferenceEquals(v.Parent, celestial))
-                                   .Select(v => World.DirectionOf(v, celestial))
-                                   .Where(d => d is not null)
-                                   .Select(d => d!.Value)];
-        foreach (LandmarkReference pad in At(template, siteId))
+        List<double3> craft = [.. World.Vehicles().Where(v => ReferenceEquals(v.Parent, celestial))
+                                       .Select(v => World.DirectionOf(v, celestial))
+                                       .Where(d => d is not null)
+                                       .Select(d => d!.Value)];
+        // And every craft the others have told us about, whether or not it stands here yet. Two
+        // players launching within a second of each other both saw the same pad free, because a
+        // craft does not exist in the other game until its state has crossed the wire and the
+        // puppet has been built. The state arrives long before the craft does, and a pad with
+        // somebody's state on it is a pad somebody is on.
+        if (Sync.Client is { Joined: true } c)
+        {
+            double now = World.Universe;
+            foreach (string key in c.Tracked)
+            {
+                if (c.TrackOf(key).At(now) is not { } s || s.Body != celestial.Id) continue;
+                double3 where = new(s.PositionCcf.X, s.PositionCcf.Y, s.PositionCcf.Z);
+                if (where.LengthSquared() > 0.0) craft.Add(where.Normalized());
+            }
+        }
+        foreach (LandmarkReference pad in Ordered(At(template, siteId)))
         {
             if (pad.GetStaticObject() is not { } concrete) continue;
             if (!craft.Any(d => (pad.ForwardCcf - d).Length() * celestial.MeanRadius < concrete.FootprintRadius))
@@ -168,7 +198,7 @@ internal static class Pads
                 if (!_said.TryGetValue(siteId, out string? was) || was != pad.Id)
                 {
                     _said[siteId] = pad.Id;
-                    Log.Info($"{pad.Id} is the free pad at {siteId}, with {craft.Length} craft on {celestial.Id}");
+                    Log.Info($"{pad.Id} is the free pad at {siteId}, with {craft.Count} craft on {celestial.Id}");
                 }
                 return pad;
             }
