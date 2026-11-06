@@ -119,8 +119,16 @@ public static class Wire
     /// from. It also follows a review of the whole protocol, and a game of 16 in the room still
     /// takes a roster round it only half received and tells its player that somebody else is flying
     /// their craft.</para>
+    ///
+    /// <para>18 carries the datagrams of 17 unchanged and moves for the usual reason: a game of 17
+    /// makes a mess the rest have to look at. It can ask the whole room to run at ten times speed
+    /// from inside its own pause menu, where it sees none of it and is not running at it itself. And
+    /// every craft it claimed on one frame sends on one frame for ever, so sixty fragments of a
+    /// broken rocket arrive as a burst twice a second whose losses fall together -- which is what
+    /// runs a craft past the end of what the others can carry it on from, in their worlds rather
+    /// than its own.</para>
     /// </summary>
-    public const ushort Version = 17;
+    public const ushort Version = 18;
 
     public const int BufferBytes = 8192;
     public const int NameChars = 24;
