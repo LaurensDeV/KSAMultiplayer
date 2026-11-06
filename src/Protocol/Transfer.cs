@@ -48,7 +48,7 @@ public sealed record Blob(BlobKind Kind, string Key, byte Owner, double Universe
             byte owner = r.ReadByte();
             double universe = r.ReadDouble();
             byte[] data = r.ReadBytes(bytes.Length - (int)r.BaseStream.Position);
-            return double.IsFinite(universe) ? new Blob(kind, key, owner, universe, data) : null;
+            return ClockFollow.SaneUniverse(universe) ? new Blob(kind, key, owner, universe, data) : null;
         }
         catch (Exception e) when (e is EndOfStreamException or DecoderFallbackException)
         {
@@ -144,6 +144,17 @@ public sealed class Link
     // A sender that has sent everything and heard nothing for this long sends it all again, and gives up after so long.
     private const double ResendAfterSeconds = 2.0, GiveUpSeconds = 120.0;
 
+    /// <summary>
+    /// The most things one link may be sending here at once.
+    ///
+    /// <para>A transfer's pieces are held in an array as long as the sender says the transfer is, so
+    /// one datagram of forty bytes claiming 65,535 pieces asked for half a megabyte -- and a fresh
+    /// transfer number in the next one asked for another, with nothing let go of for two minutes. A
+    /// few hundred of them filled a server's whole allowance; it was killed, restarted, and met the
+    /// next few hundred. A link carries a world and a few craft at a time, never four at once.</para>
+    /// </summary>
+    private const int MostIncoming = 4;
+
     private readonly Dictionary<uint, Outgoing> _out = [];
     private readonly Dictionary<uint, Incoming> _in = [];
     private readonly Queue<uint> _finished = new();
@@ -208,7 +219,9 @@ public sealed class Link
                 }
                 if (!_in.TryGetValue(chunk.Transfer, out Incoming? incoming))
                 {
-                    if (chunk.Count == 0) return null;
+                    // Asked of the piece before anything is held for the transfer: a piece that
+                    // could never belong to one buys no room at all.
+                    if (chunk.Count == 0 || !Incoming.Could(chunk) || _in.Count >= MostIncoming) return null;
                     _in[chunk.Transfer] = incoming = new Incoming(chunk.Transfer, chunk.Count, now);
                 }
                 incoming.Add(chunk, now);
@@ -299,6 +312,15 @@ public sealed class Link
         public double LastPieceAt { get; private set; } = now;
         public double NeedNext { get; set; } = now + NeedEverySeconds;
         private int _highest = -1;
+
+        /// <summary>
+        /// Whether a piece could belong to a transfer at all: everything <see cref="Add"/> refuses it
+        /// for that can be seen without one. Asked before a transfer is held open for it.
+        /// </summary>
+        public static bool Could(Wire.Chunk chunk) =>
+            chunk.Index < chunk.Count
+            && chunk.Data.Length <= ChunkBytes
+            && (chunk.Index == chunk.Count - 1 || chunk.Data.Length == ChunkBytes);
 
         public void Add(Wire.Chunk chunk, double now)
         {

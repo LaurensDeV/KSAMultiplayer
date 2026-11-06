@@ -89,8 +89,14 @@ public static class Wire
     /// -- two players at one launch site -- the same pieces were claimed and sent to everybody
     /// instead. A game that does not read a name as saying what it came off cannot tell either
     /// from the launch its own player just made.</para>
+    ///
+    /// <para>17 does change the datagrams: a hello and a welcome each carry a cookie, because a
+    /// server would otherwise hold a place on its roster for any address a datagram claims to come
+    /// from. It also follows a review of the whole protocol, and a game of 16 in the room still
+    /// takes a roster round it only half received and tells its player that somebody else is flying
+    /// their craft.</para>
     /// </summary>
-    public const ushort Version = 16;
+    public const ushort Version = 17;
 
     public const int BufferBytes = 8192;
     public const int NameChars = 24;
@@ -99,6 +105,9 @@ public static class Wire
 
     /// <summary>The longest an admin's token is: 32 random bytes in base64url come to 43 characters.</summary>
     public const int TokenChars = 64;
+
+    /// <summary>The longest a join cookie is: 16 bytes in base64url come to 22 characters.</summary>
+    public const int CookieChars = 32;
 
     /// <summary>The most entries one <see cref="Owners"/> carries.</summary>
     public const int OwnersPerPage = 40;
@@ -166,11 +175,17 @@ public static class Wire
     /// <param name="Mods">Every mod the game has enabled, comma separated: a world holding a part of one it lacks does not load.</param>
     /// <param name="System">The celestial system being played, such as the whole of Sol or Earth and its Moon alone: a world of one is not a world of the other.</param>
     /// <param name="Token">What an admin was given last time, kept by that game and offered again here; empty from anybody else.</param>
-    public sealed record Hello(string Name, string KsaBuild, string Mods, string System, string Password, string Token) : Message(Kind.Hello);
+    /// <param name="Cookie">What the server last answered this game's hello with, or empty on the
+    /// first one. The server will not hold a place for an address until it has said something that
+    /// address has sent back, since nothing else about a datagram says where it really came
+    /// from.</param>
+    public sealed record Hello(string Name, string KsaBuild, string Mods, string System, string Password, string Token, string Cookie = "") : Message(Kind.Hello);
 
     /// <param name="Id">The number the player is known by from now, or zero with <paramref name="Refused"/> saying why.</param>
     /// <param name="HasWorld">Whether the server has a world to send; without one this player's open world becomes it.</param>
-    public sealed record Welcome(byte Id, string Refused, string ServerName, bool HasWorld) : Message(Kind.Welcome);
+    /// <param name="Cookie">A word to say again in the next hello, when the server has not yet heard
+    /// anything from this address that it chose itself. Empty on a welcome that admits or refuses.</param>
+    public sealed record Welcome(byte Id, string Refused, string ServerName, bool HasWorld, string Cookie = "") : Message(Kind.Welcome);
 
     /// <param name="Rtt">The player's round trip to the server, s, as that player last measured it; negative until it has.</param>
     /// <param name="Can">The speed that player's game is managing, as a multiple of real time:
@@ -376,12 +391,14 @@ public static class Wire
                 w.Text(h.System, NameChars);
                 w.Text(h.Password, 64);
                 w.Text(h.Token, TokenChars);
+                w.Text(h.Cookie, CookieChars);
                 break;
             case Welcome m:
                 w.U8(m.Id);
                 w.Text(m.Refused, 200);
                 w.Text(m.ServerName, 64);
                 w.U8(m.HasWorld ? (byte)1 : (byte)0);
+                w.Text(m.Cookie, CookieChars);
                 break;
             case Roster r:
                 w.U8((byte)Math.Min(r.Players.Length, 64));
@@ -525,8 +542,8 @@ public static class Wire
         {
             Message m = (Kind)data[6] switch
             {
-                Kind.Hello => new Hello(r.Text(NameChars), r.Text(64), r.LongText(4000), r.Text(NameChars), r.Text(64), r.Text(TokenChars)),
-                Kind.Welcome => new Welcome(r.U8(), r.Text(200), r.Text(64), r.U8() != 0),
+                Kind.Hello => new Hello(r.Text(NameChars), r.Text(64), r.LongText(4000), r.Text(NameChars), r.Text(64), r.Text(TokenChars), r.Text(CookieChars)),
+                Kind.Welcome => new Welcome(r.U8(), r.Text(200), r.Text(64), r.U8() != 0, r.Text(CookieChars)),
                 Kind.Roster => ReadRoster(ref r),
                 Kind.Bye => new Bye(r.Text(200)),
                 Kind.Ping => new Ping(r.F64(), r.F32(), r.F32(), r.F32(), r.U8() != 0, r.Text(KeyChars)),

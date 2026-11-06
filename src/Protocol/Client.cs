@@ -301,6 +301,15 @@ public sealed class Client : IDisposable
         switch (message)
         {
             case Wire.Welcome w when !Joined:
+                if (w.Id == 0 && w.Refused.Length == 0 && w.Cookie.Length > 0)
+                {
+                    // Not an answer yet: the server has said a word it chose and wants to hear it
+                    // back before it holds a place for this address. Said again at once, so joining
+                    // costs one more datagram each way and no waiting.
+                    if (_hello is not null) _hello = _hello with { Cookie = w.Cookie };
+                    _helloNext = 0.0;
+                    return;
+                }
                 if (w.Id == 0)
                 {
                     Leave($"refused: {w.Refused}");

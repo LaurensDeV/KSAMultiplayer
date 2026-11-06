@@ -1,4 +1,7 @@
+using System.Buffers.Text;
 using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace KSAMultiplayer.Server;
 
@@ -119,6 +122,9 @@ public sealed class GameServer : IDisposable
     /// be that session coming back rather than somebody else. A living game pings once a second.
     /// </summary>
     private const double QuietEnoughToReplaceSeconds = 3.0;
+
+    /// <summary>How long one join cookie stands, s. Two are accepted, so it is good for twice this.</summary>
+    private const double CookieSeconds = 15.0;
     private const double RosterEverySeconds = 2.0, OwnersEverySeconds = 5.0, ClockEverySeconds = 0.2;
 
     // A count that climbs while nobody is launching anything is a world filling with craft that
@@ -146,6 +152,10 @@ public sealed class GameServer : IDisposable
     private const double WarpEverySeconds = 1.0;
 
     private readonly Udp _udp;
+
+    // Made afresh each time the server starts, so cookies from a previous run are not accepted and
+    // nothing has to be kept on disk for them.
+    private readonly byte[] _cookieKey = RandomNumberGenerator.GetBytes(32);
     private readonly Func<double> _clock;
     private readonly WorldStore? _store;
     private readonly Dictionary<byte, Player> _players = [];
@@ -189,7 +199,8 @@ public sealed class GameServer : IDisposable
             _world = saved.World;
             (_worldBuild, _worldMods, _worldSystem) = (saved.KsaBuild, saved.Mods, saved.System);
             _worldTimeKnown = saved.TimeKnown;
-            if (saved.TimeKnown) UniverseClock.Set(saved.World.Universe, clock());
+            // Including one written before that was checked.
+            if (saved.TimeKnown && ClockFollow.SaneUniverse(saved.World.Universe)) UniverseClock.Set(saved.World.Universe, clock());
             Log($"world loaded from {store.Folder}: {saved.World.Data.Length / 1024} KB"
                 + (saved.TimeKnown ? $" at universe time {saved.World.Universe:F0} s" : ", its universe time to come from the first player to load it"));
         }
@@ -227,6 +238,10 @@ public sealed class GameServer : IDisposable
     /// <param name="timeKnown">False for a save copied in by hand, whose universe time the server cannot read: the first player to load it says it.</param>
     public void SetWorld(Blob world, string ksaBuild, string[] mods, string system, bool timeKnown = true)
     {
+        // A world's own time is believed only if it could be a time at all: a snapshot timed
+        // absurdly was written to disk as the server's own and outlived a restart, after which no
+        // world in the room advanced at all.
+        if (timeKnown && !ClockFollow.SaneUniverse(world.Universe)) timeKnown = false;
         _world = world;
         (_worldBuild, _worldMods, _worldSystem, _worldTimeKnown) = (ksaBuild, mods, system, timeKnown);
         if (timeKnown && !UniverseClock.Known) UniverseClock.Set(world.Universe, _clock());
@@ -342,7 +357,7 @@ public sealed class GameServer : IDisposable
             // Only a player the world has been handed to, saying a time that is a time: this is what
             // sets the universe clock on a server whose world came off disk, and nobody is in a world
             // they were never given -- one that said so anyway claimed craft and blocked every warp.
-            case Wire.Loaded loaded when player.WorldGiven && double.IsFinite(loaded.Universe):
+            case Wire.Loaded loaded when player.WorldGiven && ClockFollow.SaneUniverse(loaded.Universe):
                 OnLoaded(player, loaded.Universe);
                 return;
             case Wire.State state when player.Loaded:
@@ -406,8 +421,44 @@ public sealed class GameServer : IDisposable
         }
     }
 
+    /// <summary>
+    /// A word only this server could have made, for this address and this moment. Said in answer to
+    /// a hello that carries none, and expected back in the next one.
+    ///
+    /// <para>Nothing in a datagram says where it really came from, so without this a hello from a
+    /// made-up address was a place held on the roster: sixteen of them filled a server for the two
+    /// minutes it takes to let go of a session that never loads, over and over, with none of the
+    /// real sender's addresses anywhere in the log. Each of those places also waited for a world,
+    /// so the server sent the whole of it to the made-up address and, hearing nothing back, sent it
+    /// again every couple of seconds for the life of the session.</para>
+    ///
+    /// <para>Worked out rather than remembered, so there is no list of half-joined addresses to
+    /// fill. It is a round number of seconds old at most, and the one before it is taken too, so a
+    /// hello that crosses the boundary is not refused.</para>
+    /// </summary>
+    private string Cookie(IPEndPoint from, long slice)
+    {
+        Span<byte> made = stackalloc byte[32];
+        HMACSHA256.HashData(_cookieKey, Encoding.UTF8.GetBytes($"{from}|{slice}"), made);
+        return Base64Url.EncodeToString(made[..12]);
+    }
+
+    private bool CookieHolds(Wire.Hello hello, IPEndPoint from, double now)
+    {
+        if (hello.Cookie.Length == 0) return false;
+        long slice = (long)(now / CookieSeconds);
+        return hello.Cookie == Cookie(from, slice) || hello.Cookie == Cookie(from, slice - 1);
+    }
+
     private void Admit(Wire.Hello hello, IPEndPoint from, double now)
     {
+        // Before anything is held for this address, and before the password is even looked at: an
+        // address that cannot hear the answer cannot join, whatever else it got right.
+        if (!CookieHolds(hello, from, now))
+        {
+            _udp.Send(new Wire.Welcome(0, "", Options.Name, false, Cookie(from, (long)(now / CookieSeconds))), from);
+            return;
+        }
         string? refused = _players.Count >= Options.MaxPlayers ? $"the server is full: {Options.MaxPlayers} players"
             : Options.Password.Length > 0 && hello.Password != Options.Password ? "wrong password"
             : Refusal(hello);

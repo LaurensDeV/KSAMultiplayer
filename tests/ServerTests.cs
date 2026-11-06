@@ -249,6 +249,35 @@ public class ServerTests
     }
 
     [Fact]
+    public void AnAddressThatCannotHearTheAnswerIsGivenNoPlace()
+    {
+        using Rig rig = new();
+        using Udp raw = new(0, rig.Now, "raw", IPAddress.Loopback);
+        IPEndPoint server = new(IPAddress.Loopback, rig.Server.Port);
+        Wire.Hello hello = new("Spoofed", "B1", "Core", "SolLite", "", "");
+
+        // Nothing in a datagram says where it really came from, so a hello that carries no cookie
+        // buys nothing: sixteen made-up addresses used to fill a server for two minutes at a time,
+        // and each place held waited for a world the server then sent to the made-up address.
+        raw.Send(hello, server);
+        double until = rig.Now() + 1.0;
+        rig.Until(() => rig.Now() > until, seconds: 5.0, what: "the server to answer the first hello");
+        Assert.Empty(rig.Server.Players);
+
+        // The answer carries a word to say back, and saying it is what holds a place.
+        string cookie = "";
+        while (raw.TryReceive(out (byte[] Data, IPEndPoint From, double Arrived) d))
+        {
+            if (Wire.Read(d.Data, out _) is Wire.Welcome w) cookie = w.Cookie;
+        }
+        Assert.NotEqual("", cookie);
+
+        raw.Send(hello with { Cookie = cookie }, server);
+        rig.Until(() => rig.Server.Players.Count == 1, what: "the hello that says the word back");
+        Assert.Equal("Spoofed", rig.Server.Players.First().Name);
+    }
+
+    [Fact]
     public void OneNameIsOnARosterHoweverItIsCapitalised()
     {
         using Rig rig = new();

@@ -74,6 +74,27 @@ public class ClockTests
     }
 
     [Fact]
+    public void AUniverseTimeIsBelievedOnlyIfItCouldBeOne()
+    {
+        Assert.True(ClockFollow.SaneUniverse(0.0));
+        Assert.True(ClockFollow.SaneUniverse(170007.0));
+        Assert.True(ClockFollow.SaneUniverse(ClockFollow.MostUniverseSeconds));
+
+        // A game saying it had loaded at 1e12 set the server's clock there, and every world in the
+        // room then chased a time it could never reach. A snapshot timed at -1e308 was written to
+        // disk as the server's own, and after a restart no world advanced at all.
+        Assert.False(ClockFollow.SaneUniverse(1e12));
+        Assert.False(ClockFollow.SaneUniverse(-1e308));
+        Assert.False(ClockFollow.SaneUniverse(-1.0));
+        Assert.False(ClockFollow.SaneUniverse(double.NaN));
+        Assert.False(ClockFollow.SaneUniverse(double.PositiveInfinity));
+
+        // And the two it used to let through do what they did.
+        Assert.Equal(0.0, ClockFollow.Speed(-1e308, 1.0));
+        Assert.Equal(ClockFollow.MostCatchUpOnRails, ClockFollow.Speed(1e12, 1.0, ClockFollow.MostCatchUpOnRails), 9);
+    }
+
+    [Fact]
     public void AGameThatCannotKeepUpIsNotWarpedToCatchUp()
     {
         const double cap = 1.0 / 30;

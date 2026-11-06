@@ -59,6 +59,22 @@ public sealed class UniverseClock
 /// </summary>
 public static class ClockFollow
 {
+    /// <summary>
+    /// The latest universe time anybody is believed about, s: about three thousand years, which no
+    /// world reaches and every real one is far under.
+    ///
+    /// <para>Because a universe time arrives from a game and used to be taken on its word, checked
+    /// only for being a number at all. A game saying it had loaded at 1e12 set the server's clock
+    /// there and every world in the room then chased a time it could never reach; a world snapshot
+    /// timed at -1e308 was written to disk as the server's time, and after a restart no world
+    /// advanced at all, since <see cref="Speed"/> holds a world that is far ahead.</para>
+    /// </summary>
+    public const double MostUniverseSeconds = 1e11;
+
+    /// <summary>Whether a universe time can be believed: a real number, not before the start, not absurd.</summary>
+    public static bool SaneUniverse(double universe) =>
+        double.IsFinite(universe) && universe >= 0.0 && universe <= MostUniverseSeconds;
+
     /// <summary>How long a small gap is taken to close, s.</summary>
     public const double CloseOverSeconds = 5.0;
 
