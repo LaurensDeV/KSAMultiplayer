@@ -1127,7 +1127,12 @@ internal static class Sync
             // word for the renderer, which is all there is for one it is not.
             World.SetEngine(v, lit, s.Throttle);
             Engines[v] = (lit, s.Throttle);
-            if (!v.HasPhysicsBubble && now >= PlacedAt.GetValueOrDefault(key))
+            // Or when this game has it going round another body than its owner says: that is the one
+            // case the pull cannot answer, and it does not fix itself. A craft standing on a pad is
+            // inside the Earth's physics radius, where KSA's own SOI check gives up on its first
+            // line, so the copy can never follow its owner to the Moon by itself.
+            bool elsewhere = World.BodyOf(v) is { } at && at != s.Body;
+            if ((elsewhere || !v.HasPhysicsBubble) && now >= PlacedAt.GetValueOrDefault(key))
             {
                 PlacedAt[key] = now + PlaceEverySeconds;
                 ToPlace[key] = (v, s);
@@ -1295,9 +1300,16 @@ internal static class Sync
         if (Now != Stage.Playing) return;
         foreach ((Vehicle craft, Wire.State state) in ToPlace.Values)
         {
-            // Asked a frame ago, so asked of a craft that may since have been taken away, or been
-            // given a bubble by the solver -- which is the one thing placing must not fight.
-            if (!World.IsAlive(craft) || craft.HasPhysicsBubble || !Puppets.ContainsKey(craft)) continue;
+            // Asked a frame ago, so asked of a craft that may since have been taken away.
+            if (!World.IsAlive(craft) || !Puppets.ContainsKey(craft)) continue;
+            if (World.BodyOf(craft) is { } at && at != state.Body)
+            {
+                if (World.Rebase(craft, state)) Log.Info($"{KeyOf(craft)} is round {state.Body} now, and was round {at}");
+                continue;
+            }
+            // Only where the solver has not given it a bubble since, which is the one thing the
+            // analytic placing must not fight.
+            if (craft.HasPhysicsBubble) continue;
             World.PlaceAnalytic(craft, state, PlaceNearEnoughM);
         }
         ToPlace.Clear();

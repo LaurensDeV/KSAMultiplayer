@@ -245,9 +245,24 @@ row in a save, layout or kitten list, zoom a spline editor, place a terrain deca
 interest, or -- in the universe manifest -- point the camera at a body with
 `camera.SetFollow`, which is watching and needs no refusal.
 
-Teleporting a craft of this player's own is shared like any other way of moving it: this game's
-states are what every other game follows, so it simply arrives somewhere else. Nothing has to relay
-the teleport itself.
+Teleporting a craft of this player's own *within* a body is shared like any other way of moving it:
+this game's states are what every other game follows, so it simply arrives somewhere else.
+
+Teleporting it to **another body** was not, and this is worth knowing because it is the one thing
+nothing else in the mod could follow. The state says which body a craft is going round, and the pull
+stands aside when this game's copy says a different one -- it has no coherent frame to write in --
+while the analytic placing writes a flight plan without rebasing the craft's physics origin, which a
+bubble reverts on its next step or reads as the old body's coordinates against the new one. So the
+copy stayed where it was, for ever: a craft on a launchpad is inside the Earth's physics radius,
+where KSA's own SOI check gives up on its first line, so it could never follow by itself either. A
+change of body is now handed to `Vehicle.Teleport`, which is what KSA uses for the same job: it
+takes the craft out of its bubble, rebases the origin, and leaves it for the solver to pick up round
+the right body.
+
+The same held for an ordinary flight to the Moon, for anyone who joined afterwards. A definition
+carries the body it was written at, and it was only sent again when a craft's part count changed --
+so a late joiner built the craft back at the Earth and nothing moved it. The body is part of what
+counts as a change of shape now.
 
 The one gap left is a frame's worth: a craft this game is controlling before the roster says who
 owns it is not yet a puppet, so a teleport then would move it here alone -- and the pull or the

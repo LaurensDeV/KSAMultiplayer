@@ -193,7 +193,21 @@ internal static class World
     public static bool IsAlive(Vehicle? v) => v is { IsDisposed: false };
 
     // What a craft's parts look like from outside, cheaply: a change means its definition is sent again.
-    public static int Shape(Vehicle v) => (v.Parts.Count * 397) ^ (v.Parts.Root?.Template?.Id?.GetHashCode() ?? 0);
+    /// <summary>
+    /// What a craft is, for deciding whether the others have to be told how it is built again: its
+    /// parts and the body it is going round.
+    ///
+    /// <para>The body because a definition carries one -- <c>VehicleData.ParentBody</c> -- and it
+    /// was only ever sent again when the part count changed. So every game's stored definition of a
+    /// craft stayed pinned to wherever it was when they last heard, and a player who joined after
+    /// somebody flew to the Moon built that craft back at the Earth, where nothing then moved it.
+    /// Only a hash within this process, so what it is made of does not matter.</para>
+    /// </summary>
+    public static int Shape(Vehicle v) =>
+        (v.Parts.Count * 397) ^ (v.Parts.Root?.Template?.Id?.GetHashCode() ?? 0) ^ (BodyOf(v)?.GetHashCode() ?? 0);
+
+    /// <summary>What this game has a craft going round, by its own physics origin, or null.</summary>
+    public static string? BodyOf(Vehicle v) => (v.GetPhysicsStatesMutable().Origin.Parent as Astronomical)?.Id;
 
     // ------------------------------------------------------------------ saves
 
@@ -454,12 +468,16 @@ internal static class World
     /// <param name="key">What the world knows this craft by, which is not this game's own name for it when the server has renamed it.</param>
     public static Wire.State? StateOf(Vehicle v, string key, bool controlled)
     {
-        if (v.Parent is not Astronomical parent || v.Parent is not IPosition parentPos || v.Parent is not IVelocity parentVel) return null;
         PhysicsStates states = v.GetPhysicsStatesMutable();
+        // Both frames and the name of the body from the one place, which is the craft's own physics
+        // origin. Read apart, they disagree for a frame: the ecliptic position of a craft is a cache
+        // refreshed once a frame in ApplyVehicleSolvers, and a teleport lands after that -- so a
+        // craft moved to the Moon went out saying "Luna" with its Ccf frame already there and its
+        // Cci frame still on the pad it left, 384,000 km and a kilometre a second wrong. KSA's own
+        // movers refresh the cache themselves; the debug teleport does not.
+        if (states.Origin.Parent is not Astronomical parent) return null;
         PhysicsStates.GetStatesCcf(in states.Origin, in states.Kinematic, out double3 positionCcf, out double3 velocityCcf, out doubleQuat body2Ccf);
-        doubleQuat cce2Cci = v.Parent.GetCce2Cci();
-        double3 positionCci = cce2Cci * (v.GetPositionEcl() - parentPos.GetPositionEcl());
-        double3 velocityCci = cce2Cci * (v.GetVelocityEcl() - parentVel.GetVelocityEcl());
+        PhysicsStates.GetStatesCci(in states.Origin, in states.Kinematic, out double3 positionCci, out double3 velocityCci, out _);
         double3 spin = states.Kinematic.AngularVelocityPhys.Transform(states.Kinematic.Body2Phys.Inverse());
 
         (bool lit, float throttle) = EngineOf(v);
@@ -626,6 +644,42 @@ internal static class World
         catch (Exception e)
         {
             Log.Warn($"could not clear the smoke: {e.GetBaseException().Message}");
+        }
+    }
+
+    /// <summary>
+    /// Another player's craft moved to the body they say it is going round, by handing it to KSA's
+    /// own mover. True if it is there now.
+    ///
+    /// <para>Nothing else can follow a change of body. <see cref="Pull"/> has no coherent frame to
+    /// write in and stands aside; <see cref="PlaceAnalytic"/> writes a flight plan without rebasing
+    /// the craft's physics origin, so a bubble either reverts it on the next step or reads the old
+    /// body's coordinates against the new one and puts the craft underground. <c>Vehicle.Teleport</c>
+    /// is what KSA uses for the same job: it takes the craft out of its bubble first, rebases the
+    /// origin onto the new body, and leaves it an orphan for the solver to pick up round the right
+    /// one in the same frame.</para>
+    ///
+    /// <para>Asked for from the frame's quiet window, because it moves the craft between two
+    /// celestials' lists of children.</para>
+    /// </summary>
+    public static bool Rebase(Vehicle v, Wire.State s)
+    {
+        try
+        {
+            if (KSA.Universe.CurrentSystem?.Get(s.Body) is not Celestial body) return false;
+            Orbit orbit = Orbit.CreateFromStateCci(body, new UniverseTime(s.Universe), D(s.PositionCci), D(s.VelocityCci), v.OrbitColor);
+            // Refused rather than thrown when the trajectory cannot be worked out, so this is asked
+            // again rather than taken as done.
+            v.Teleport(orbit, null, null);
+            // As KSA does after its own teleports. The distance it would credit is zero across a
+            // change of body, so nothing is awarded for the 384,000 km the craft did not travel.
+            v.UpdatePerFrameData();
+            return ReferenceEquals(v.GetPhysicsStatesMutable().Origin.Parent, body);
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"could not put {s.Key} round {s.Body}: {e.GetBaseException().Message}");
+            return false;
         }
     }
 
