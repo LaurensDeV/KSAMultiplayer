@@ -221,10 +221,13 @@ against KSA `2026.10.25.5707`:
 - **One game's rocket coming apart, and what the other is left holding.** `tools/breakup.sh` stages
   it and reads both worlds. A staged the 89-part `Rocket` to pieces; B, which only watched, came out
   of it holding fifteen craft A had never heard of and twenty-eight of its thirty-seven craft
-  neither its own nor anybody else's, while A had none. Nothing exploded, and the made-up craft
-  accumulate per build rather than per impact: a definition is of a craft whose staging has already
-  happened, and KSA leaves its jettisoned pieces standing as vehicles of their own. Written up in
-  `errors.md`; the two numbers the rig prints are zero in a world that is working.
+  neither its own nor anybody else's, while A had none. Nothing exploded: the pieces are shed as the
+  stack is remade under B, not by any impact.
+- **Reading a name as saying what the craft came off, and taking the other player's pieces away.**
+  The same run with the fix in: B took away 34 pieces its copy of Alpha's rocket had shed and A took
+  away none, and the two worlds came out holding the same 25 craft, nothing made up on either side,
+  with the four the GOLF save itself leaves unowned the only craft neither game claims. Over a
+  second, longer round it held, and no craft thrashed between being taken away and built again.
 - **Keeping the server's time.** Both the ±10% nudge and the catch-up warp: a game 15 s behind after
   a load was run at 8.4x until it caught up, and both then settled at 1.1x.
 - **Catching up by warp with craft in physics, and what it costs.** Four players on 0.7.0: while
@@ -306,6 +309,9 @@ against KSA `2026.10.25.5707`:
 - **Holding the catch-up warp to the frame rate's headroom.** The arithmetic is tested and the
   session that calls for it is written up in `errors.md`; a world that stays behind rather than
   warping into its own bubbles has not been flown.
+- **Two players at one launch site, both shedding pieces.** A name says what a craft came off, so
+  the pieces go to the right player wherever they are standing; what is untested is the case the
+  distance rule used to get wrong, which is the one that put another player's debris on the wire.
 - **Two games across the internet.** Both games and the server were on one machine. WSL in its default
   NAT mode cannot be reached from a Windows game at all, which is why `two-games.sh` publishes a
   Windows server unless WSL is in mirrored mode.

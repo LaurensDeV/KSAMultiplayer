@@ -4,6 +4,30 @@ namespace KSAMultiplayer.Tests;
 
 public class WireTests
 {
+    [Fact]
+    public void ACraftsNameSaysWhatItCameOff()
+    {
+        // The chain a staged rocket leaves, which is how a game tells whose debris it is holding.
+        Assert.Equal(["Rocket_2", "Rocket"], Wire.ShedFrom("Rocket_2_5"));
+        Assert.Equal(["Rocket_2_3", "Rocket_2", "Rocket"], Wire.ShedFrom("Rocket_2_3_15"));
+        Assert.Equal(["NewRocket_2_10_2_3", "NewRocket_2_10_2", "NewRocket_2_10", "NewRocket_2", "NewRocket"],
+            Wire.ShedFrom("NewRocket_2_10_2_3_1"));
+
+        // A piece whose name was taken gets a " 2" instead, which is the same step.
+        Assert.Equal(["NewRocket_3_27", "NewRocket_3", "NewRocket"], Wire.ShedFrom("NewRocket_3_27 2"));
+
+        // A name that was never shed from anything came off nothing.
+        Assert.Empty(Wire.ShedFrom("Rocket"));
+        Assert.Empty(Wire.ShedFrom("Octo Smoke Monster"));
+        Assert.Empty(Wire.ShedFrom(""));
+
+        // Nothing is read off a name that is all separator or all digits: there is no craft left to
+        // have shed it, and walking further would hand back the empty name as an owner to look up.
+        Assert.Empty(Wire.ShedFrom("_1"));
+        Assert.Empty(Wire.ShedFrom("Rocket_"));
+        Assert.Empty(Wire.ShedFrom("Rocket 2b"));
+    }
+
     private static T RoundTrip<T>(T message) where T : Wire.Message
     {
         byte[] buffer = new byte[Wire.BufferBytes];

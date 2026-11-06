@@ -285,17 +285,24 @@ step failed. The divergence does not need a breakup: it comes from *rebuilding*.
 with nothing else happening, B's builds went from 15 to 18 and its made-up craft from 15 to 16 --
 they accumulate per build, not per impact.
 
-Which says the cause is a build, not `Adopt`. A definition is of a craft whose staging has already
-happened; KSA, handed it, separates the parts whose sequence has fired and leaves the jettisoned
-pieces standing in the world as new vehicles of their own, named locally. Every rebuild of a staged
-puppet leaves another set behind. On `mp.ksarmory.com` a single fragment was rebuilt 89 times.
+It was neither a build spawning them nor `Adopt` claiming them. `Adopt` was right: the shed pieces
+are nearer a puppet than to anything of B's own, so it refused to claim them -- and then **left them
+standing**, marked seen and owned by nobody. Nothing drives them, the owner's sweep does not name
+them, and they are in physics. That is the whole of the leak, and it is two lines of omission.
 
-So the fix has two halves, and the half that was planned is the second one:
+The other half is the same rule read the other way. Distance decides whose a new craft is, and where
+it goes the wrong way -- two players at one launch site, which is how everybody plays -- the pieces
+of their rocket *are* nearer this player's craft, so this game claims them and sends them to
+everybody as craft of its own. That is the server log's two players naming the same fragments.
 
-1. a build must take away whatever vehicles the build itself leaves behind, rather than letting
-   them stand as orphans;
-2. `Adopt` must never claim a craft that appeared while a build was going on -- which is what
-   turns one game's orphans into everybody's debris.
+Distance cannot tell the two apart, because both are next to somebody. The name can: KSA names a
+piece after the stack it left, so `Rocket_2_5` came off `Rocket_2`, which came off `Rocket`. Walk
+that up and the first name anybody owns says whose the piece is. `Wire.ShedFrom` does the walking;
+`Adopt` takes away what belongs to somebody else and keeps claiming the rest.
+
+With the fix in, the same run: B took away 34 pieces its copy of Alpha's rocket had shed, A took
+away none, and the two worlds came out holding the same 25 craft with nothing made up on either
+side. The four the GOLF save leaves unowned are the only craft neither game claims, which is right.
 
 The rig's two numbers are the before and after: craft a game made up, and craft it neither owns nor
-drives. Both are zero in a world that is working.
+drives. 15 and 28 before, 0 and 4 after.

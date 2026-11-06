@@ -80,8 +80,17 @@ public static class Wire
     /// every time it changes shape, which drops exploding copies into its world whose pieces it
     /// then adopts and sends to everyone as craft of its own. Both are one game making a mess the
     /// rest have to look at.</para>
+    ///
+    /// <para>16 is the rest of that one, found by staging a rocket apart with two games watching.
+    /// A game of 15 keeps every piece its own copy of another player's rocket sheds: it is right not
+    /// to claim them, since they are nearer that player's craft than its own, but it leaves them
+    /// standing. Nothing drives them, the owner's sweep does not name them, and they are in physics.
+    /// Twenty of a world's thirty-seven craft were that, and where the distance went the other way
+    /// -- two players at one launch site -- the same pieces were claimed and sent to everybody
+    /// instead. A game that does not read a name as saying what it came off cannot tell either
+    /// from the launch its own player just made.</para>
     /// </summary>
-    public const ushort Version = 15;
+    public const ushort Version = 16;
 
     public const int BufferBytes = 8192;
     public const int NameChars = 24;
@@ -273,6 +282,30 @@ public static class Wire
     /// </summary>
     public static bool Matches(string key, string like) =>
         like.Length == 0 || like == "*" || Glob(key.AsSpan(), like.AsSpan());
+
+    /// <summary>
+    /// The craft a name was shed from, nearest first: KSA names a piece that comes off a stack after
+    /// the stack it left, so <c>Rocket_2_5</c> came off <c>Rocket_2</c>, which came off
+    /// <c>Rocket</c>. A piece whose name is already taken gets a <c>" 2"</c> on the end instead,
+    /// which is the same thing said another way.
+    ///
+    /// <para>This is how a game tells whose debris a craft is. A world holds craft nobody asked for
+    /// -- its copy of another player's rocket sheds pieces of its own as the stack is remade under
+    /// it -- and distance cannot tell those from the launch this player just made, because both are
+    /// next to somebody. The name can: a piece of another player's rocket says so in its own name.</para>
+    /// </summary>
+    public static IEnumerable<string> ShedFrom(string key)
+    {
+        // A name is only ever shortened here, so this ends.
+        while (true)
+        {
+            int cut = key.LastIndexOfAny(['_', ' ']);
+            if (cut <= 0 || cut == key.Length - 1) yield break;
+            foreach (char c in key.AsSpan()[(cut + 1)..]) if (!char.IsAsciiDigit(c)) yield break;
+            key = key[..cut];
+            yield return key;
+        }
+    }
 
     private static bool Glob(ReadOnlySpan<char> text, ReadOnlySpan<char> pattern)
     {

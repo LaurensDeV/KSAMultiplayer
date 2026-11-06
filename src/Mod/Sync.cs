@@ -829,7 +829,8 @@ internal static class Sync
     }
 
     // Craft this game has made since it was last looked at: a launch, a dropped stage, a kitten on EVA.
-    // Each is this player's when it is the one flown or nearer to this player's craft than to anyone else's.
+    // Each is this player's when it is the one flown or nearer to this player's craft than to anyone else's
+    // -- unless its name says it came off another player's rocket, in which case it is neither.
     private static void Adopt(Client c, Dictionary<string, Vehicle> here, Vehicle? flown)
     {
         foreach (Vehicle v in World.Vehicles())
@@ -842,12 +843,39 @@ internal static class Sync
             if (ToRemove.Contains(v)) continue;
             string key = KeyOf(v);
             Seen.Add(v);
+            if (Whose(c, key) is { Owner: var owner, From: var from } && owner != c.Id)
+            {
+                // Their rocket shed it in this world, which is this world's business and nobody
+                // else's: their own game sheds its own pieces and says so. Left standing it is an
+                // orphan -- nothing drives it, their sweep does not name it, and it is in physics
+                // and will hit something. Two games watching one rocket come apart filled a server
+                // with these. Logged and not said, because a breakup makes dozens at a time and the
+                // player did not do anything.
+                Later(v);
+                Log.Info($"{from} is {c.NameOf(owner)}'s, so {key} is not this game's to keep: taking it away");
+                continue;
+            }
             MadeHere.Add(v);
             double mine = Owned.Values.Where(m => World.IsAlive(m.Craft)).Select(m => World.Between(m.Craft, v)).DefaultIfEmpty(double.PositiveInfinity).Min();
             double theirs = Puppets.Keys.Where(World.IsAlive).Select(p => World.Between(p, v)).DefaultIfEmpty(double.PositiveInfinity).Min();
             // Made here, so the server gives it a name of its own if another player has that one.
             if (ReferenceEquals(v, flown) || mine < theirs) Own(c, v, define: true, made: true);
         }
+    }
+
+    /// <summary>
+    /// Whose rocket a craft came off and which of its names said so, or null where no name in its
+    /// ancestry is one anybody owns. The nearest answer wins: a piece of a piece belongs to whoever
+    /// owns the piece, not to whoever owned the stack it started as.
+    /// </summary>
+    private static (byte Owner, string From)? Whose(Client c, string key)
+    {
+        foreach (string from in Wire.ShedFrom(key))
+        {
+            if (Owned.ContainsKey(from)) return (c.Id, from);
+            if (c.OwnerOf(from) is var owner && owner != 0) return (owner, from);
+        }
+        return null;
     }
 
     private static void Own(Client c, Vehicle v, bool define, bool made)
