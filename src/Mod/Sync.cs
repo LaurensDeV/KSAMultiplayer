@@ -62,6 +62,19 @@ internal static class Sync
     // copy. Longer than the sender's own interval, because it costs far more.
     private const double RebuildEverySeconds = 5.0;
 
+    /// <summary>
+    /// Definitions the rebuild wait pushed back, the newest for each craft.
+    ///
+    /// <para>They used to be dropped on the floor, on the reasoning that another would be along
+    /// once the wait was over. One is along only if the craft changes shape again, and a craft that
+    /// settles into its final shape during the wait never does -- so a hull that lost its last parts
+    /// inside those five seconds stood here in its old shape for the rest of the session. Two
+    /// players on mp.ksarmory.com saw exactly that: one of them watching a craft with parts the
+    /// other's copy had already shed, and the owner's game had said so twice, two and four seconds
+    /// after a rebuild.</para>
+    /// </summary>
+    private static readonly Dictionary<string, byte[]> Deferred = [];
+
     public enum Stage { Off, Joining, Seeding, Waiting, Loading, Playing }
 
     private sealed class Mine(Vehicle craft)
@@ -373,6 +386,7 @@ internal static class Sync
         Definitions.Clear();
         Describes.Clear();
         Rebuilt.Clear();
+        Deferred.Clear();
         ToBuild.Clear();
         ToPlace.Clear();
         _toClearSmoke = false;
@@ -750,6 +764,27 @@ internal static class Sync
         }
         Vehicle? flown = World.Controlled;
 
+        // What the rebuild wait pushed back, now that it is over: put back at the head of the queue
+        // so it is taken exactly as the word of its owner, and overwritten by a fresher word if one
+        // is behind it.
+        foreach ((string key, byte[] data) in Deferred.ToArray())
+        {
+            if (Wall() - Rebuilt.GetValueOrDefault(key) < RebuildEverySeconds) continue;
+            Deferred.Remove(key);
+            if (!here.TryGetValue(key, out Vehicle? waited) || Owned.ContainsKey(key) || MadeHere.Contains(waited))
+            {
+                // No longer ours to rebuild: swept, taken over, or gone.
+                continue;
+            }
+            Rebuilt[key] = Wall();
+            Definitions[key] = data;
+            Log.Info($"taking up the word about {key} that the rebuild wait held back: {data.Length} bytes");
+            Puppets.Remove(waited);
+            Built.Remove(key);
+            Later(waited);
+            here.Remove(key);
+        }
+
         while (c.Blobs.TryDequeue(out Blob? blob))
         {
             // The world again: the operator has put everybody back on it. This game goes round the
@@ -774,9 +809,15 @@ internal static class Sync
                             && !ReferenceEquals(old, flown) && !MadeHere.Contains(old);
             // One rebuild in a while per craft. A rocket coming apart changes shape every few frames
             // and its owner says so; tearing ours down and dropping a fresh one in each time is what
-            // filled a world with exploding copies. The definition is left unrecorded so that this
-            // same shape, or whatever it has become by then, is built once the wait is over.
-            if (standing && Wall() - Rebuilt.GetValueOrDefault(blob.Key) < RebuildEverySeconds) continue;
+            // filled a world with exploding copies. Kept rather than dropped, and taken up when the
+            // wait is over, because the craft may never change shape again and the last word about
+            // it is the one that matters.
+            if (standing && Wall() - Rebuilt.GetValueOrDefault(blob.Key) < RebuildEverySeconds)
+            {
+                Deferred[blob.Key] = blob.Data;
+                continue;
+            }
+            Deferred.Remove(blob.Key);
             Definitions[blob.Key] = blob.Data;
             if (standing)
             {
@@ -795,6 +836,7 @@ internal static class Sync
         while (c.Gone.TryDequeue(out string? key))
         {
             Definitions.Remove(key);
+            Deferred.Remove(key);
             Describes.Remove(key);
             if (here.TryGetValue(key, out Vehicle? gone) && !Owned.ContainsKey(key) && !MadeHere.Contains(gone))
             {
@@ -826,6 +868,7 @@ internal static class Sync
                 Renamed.Remove(v);
                 Engines.Remove(v);
                 Definitions.Remove(key);
+                Deferred.Remove(key);
                 Describes.Remove(key);
                 PlacedAt.Remove(key);
                 Seen.Remove(v);
@@ -1367,6 +1410,7 @@ internal static class Sync
             {
                 Say($"{owner}'s {key} cannot be built here: {why}");
                 Definitions.Remove(key);
+                Deferred.Remove(key);
                 Describes.Remove(key);
             }
         }
