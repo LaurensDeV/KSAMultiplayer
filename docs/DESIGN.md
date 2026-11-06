@@ -219,6 +219,23 @@ rocket for ten seconds -- or two minutes, when the drop was mid-load.
 Only a hello that says it back holds a place, since a datagram's address is whatever its sender wrote
 there.
 
+**What the debug menus can and cannot do to somebody else's craft.** The universe manifest (F11)
+deletes, recovers and clears debris by putting a craft in `InputEvents.VehicleDestroyBuffer`, and
+that is refused for another player's craft -- a prefix on `VehicleDestroyData.Apply`, beside the one
+on `Universe.DestroyVehicleFromEvent` that spares it from being wrecked. The buffer and not
+`Universe.DestroyVehicle` which it ends in: that call is also how KSA frees breakup slots and expires
+debris, and how this mod takes a craft away, so refusing it wholesale would leave a game unable to
+clean up after a breakup.
+
+A craft of a player's own is theirs to delete, and that *is* shared: the sending round sees the craft
+has gone and says `Gone`, the same as any other way of losing one. Deleting another player's craft
+was not shared and never could be -- the owner's game knows nothing of it -- which is why it is
+refused rather than relayed.
+
+Nothing in KSA teleports a craft from a menu. `Vehicle.TeleportToLocation` and
+`Vehicle.SetFlightPlan` are called only from the game's own code and from this mod, so there is no
+debug move for a shared world to disagree about.
+
 ## What has been seen in a game
 
 Two games on one machine, each with a profile of its own, joined to one server: `tools/two-games.sh

@@ -54,6 +54,9 @@ internal static class Hooks
                   "the key for normal speed steps from this world's speed rather than the shared one");
             Patch(AccessTools.Method(typeof(Universe), nameof(Universe.DestroyVehicleFromEvent)), nameof(BeforeDestroy),
                   "another player's craft can be wrecked in this world alone");
+            Patch(AccessTools.Method(typeof(InputEvents.VehicleDestroyData), nameof(InputEvents.VehicleDestroyData.Apply)),
+                  nameof(BeforeDelete),
+                  "another player's craft can be deleted from the universe manifest in this world alone");
             Patch(AccessTools.Method(typeof(Program), nameof(Program.RefreshVehiclesInFrame)), nameof(BeforeRefreshVehicles),
                   "another player's craft is built while KSA is stepping the world, which fails its physics");
             Patch(AccessTools.Method(typeof(Universe), nameof(Universe.DeserializeSave)), nameof(BeforeDeserializeSave),
@@ -354,6 +357,36 @@ internal static class Hooks
         try
         {
             return !Sync.IsPuppet(vehicle);
+        }
+        catch (Exception e)
+        {
+            Complain("sparing another player's craft", e);
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// False spares the craft. The other half of <see cref="BeforeDestroy"/>: wrecking a craft goes
+    /// through the destruction event, but deleting one does not.
+    ///
+    /// <para>The universe manifest's Delete, its Recover and its Clear Debris all put the craft in
+    /// <c>InputEvents.VehicleDestroyBuffer</c> -- so a player could take another player's craft out
+    /// of their own world from a menu, with the owner still flying it. Nothing went to anybody else,
+    /// so it came back within <c>RebuildEverySeconds</c> looking like a glitch.</para>
+    ///
+    /// <para>The buffer and not <c>Universe.DestroyVehicle</c>, which it ends in: that call is also
+    /// how KSA frees breakup slots and expires debris, and how this mod takes a craft away. Refusing
+    /// it wholesale would leave a game unable to clean up after a breakup, which is the ceiling
+    /// already in the logs.</para>
+    ///
+    /// <para>A craft of this player's own is theirs to delete, and the sending round sees it has
+    /// gone and tells everybody.</para>
+    /// </summary>
+    private static bool BeforeDelete(ref InputEvents.VehicleDestroyData __instance)
+    {
+        try
+        {
+            return __instance.Vehicle is not { } v || !Sync.IsPuppet(v);
         }
         catch (Exception e)
         {
