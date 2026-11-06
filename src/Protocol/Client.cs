@@ -18,6 +18,20 @@ public sealed class Client : IDisposable
     // A pong slower than this says nothing of the clocks: a game loading a world stands still for seconds with one on its way.
     private const double ClockRttSeconds = 0.5;
 
+    /// <summary>
+    /// How long the clocks' difference may go unmeasured, s, before any answer is taken as the best
+    /// there is going to be.
+    ///
+    /// <para>The quickest answer says the difference best, so a slower one is passed over -- but the
+    /// quickest ever seen is not a bar a line that has got slower can clear. One lucky packet used to
+    /// close the window for the rest of the session: on a link whose usual round trip is more than
+    /// half again its quickest, every later answer was refused, and the difference went on driving
+    /// this world's clock while drifting with the two machines' crystals. A line that changes
+    /// mid-session -- moving between access points, a new route, a loaded server -- did the same with
+    /// no way back short of reconnecting.</para>
+    /// </summary>
+    private const double OffsetStaleSeconds = 20.0;
+
     // How much of each new measure of the server's rate is taken.
     private const double RateSmoothing = 0.3;
 
@@ -27,10 +41,15 @@ public sealed class Client : IDisposable
     private readonly Dictionary<string, byte> _owners = [];
     private readonly Dictionary<string, Track> _tracks = [];
     private Dictionary<string, byte> _ownersComing = [];
+
+    // The page of the round being gathered, or -1 for no round: a round whose pages do not arrive in
+    // order is dropped rather than mixed with the one before it.
+    private int _ownersWant = -1;
     private IPEndPoint? _server;
     private Wire.Hello? _hello;
     private double _helloNext, _joinUntil, _pingNext, _heardAt;
     private double _bestRtt = double.PositiveInfinity;
+    private double _offsetAt = double.NegativeInfinity;
 
     // The quickest round trip is what the clock is set by; the latest is what a player is shown,
     // since a scoreboard wants the line as it is now, not at its best since joining.
@@ -156,8 +175,10 @@ public sealed class Client : IDisposable
         _hello = new Wire.Hello(Wire.Clip(name, Wire.NameChars), ksaBuild, mods, system, password, Wire.Clip(token, Wire.TokenChars));
         (_helloNext, _joinUntil, _heardAt) = (0.0, _clock() + JoinWithinSeconds, _clock());
         (_bestRtt, _lastRtt, ServerOffset, _serverClock, _serverRate) = (double.PositiveInfinity, double.NaN, 0.0, null, 0.0);
+        _offsetAt = double.NegativeInfinity;
         Warp = null;
         _owners.Clear();
+        (_ownersComing, _ownersWant) = ([], -1);
         _tracks.Clear();
         Players = [];
     }
@@ -295,12 +316,27 @@ public sealed class Client : IDisposable
                 Players = r.Players;
                 return;
             case Wire.Owners o when Joined:
-                if (o.Page == 0) _ownersComing = [];
+                // Whole rounds only. A round carries every craft anybody owns, so one whose pages
+                // do not all arrive says nothing, and the last whole answer is better than a mixture
+                // of two. Gathering it on top of the round before left a craft owned by whoever held
+                // it last -- so one somebody had just let go of still read as theirs, and this game
+                // would not fly its own craft and said another player was flying it, every frame
+                // until the next round. Dropping the round instead of committing what came is also
+                // why the gathering is emptied here: committing a part of a round would leave the
+                // map missing craft, which is two players on one hull.
+                if (o.Page == 0) (_ownersComing, _ownersWant) = ([], 0);
+                if (o.Page != _ownersWant)
+                {
+                    _ownersWant = -1;
+                    return;
+                }
                 foreach (Wire.Owner e in o.Entries) _ownersComing[e.Key] = e.Id;
+                _ownersWant++;
                 if (o.Page + 1 >= o.Pages)
                 {
                     _owners.Clear();
                     foreach ((string key, byte id) in _ownersComing) if (id != 0) _owners[key] = id;
+                    (_ownersComing, _ownersWant) = ([], -1);
                 }
                 return;
             case Wire.State s when Joined && s.Owner != Id:
@@ -310,10 +346,14 @@ public sealed class Client : IDisposable
                 double rtt = arrived - pong.Echo;
                 if (rtt >= 0.0 && rtt <= ClockRttSeconds) _lastRtt = rtt;
                 // The quickest answer is the one least held up on the way, so it says the clocks' difference best.
-                if (rtt >= 0.0 && rtt <= ClockRttSeconds && rtt <= _bestRtt * 1.5)
+                bool stale = arrived - _offsetAt > OffsetStaleSeconds;
+                if (rtt >= 0.0 && rtt <= ClockRttSeconds && (rtt <= _bestRtt * 1.5 || stale))
                 {
-                    if (rtt < _bestRtt) _bestRtt = rtt;
+                    // Taken as the quickest there is when nothing has been accepted for a while, so
+                    // the bar follows a line that has got slower instead of locking it out.
+                    _bestRtt = stale ? rtt : Math.Min(rtt, _bestRtt);
                     ServerOffset = pong.Answered + (0.5 * rtt) - arrived;
+                    _offsetAt = arrived;
                 }
                 return;
             case Wire.Clock c when Joined:
@@ -336,6 +376,7 @@ public sealed class Client : IDisposable
                 return;
             case Wire.Gone g when Joined:
                 _owners.Remove(g.Key);
+                _ownersComing.Remove(g.Key);
                 _tracks.Remove(g.Key);
                 Gone.Enqueue(g.Key);
                 return;
@@ -344,6 +385,10 @@ public sealed class Client : IDisposable
                 {
                     _owners.Remove(key);
                     _tracks.Remove(key);
+                }
+                foreach (string key in _ownersComing.Keys.Where(k => Wire.Matches(k, sw.Like)).ToArray())
+                {
+                    _ownersComing.Remove(key);
                 }
                 Swept.Enqueue(sw.Like);
                 return;

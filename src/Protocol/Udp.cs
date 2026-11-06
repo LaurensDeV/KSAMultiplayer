@@ -45,14 +45,19 @@ public sealed class Udp : IDisposable
     public void Send(Wire.Message message, IPEndPoint? to)
     {
         if (to is null || _closed) return;
-        int n = Wire.Write(message, _out);
         if (Loss > 0 && _chance.NextDouble() < Loss) return;
         try
         {
+            // Inside the guard, not in front of it: a message that will not fit the buffer throws
+            // here, and thrown on it took the caller's bookkeeping with it -- the server stopped
+            // saying when to send the next roster and threw in the same place on every tick
+            // afterwards. One datagram lost is what the rest of this protocol is built for.
+            int n = Wire.Write(message, _out);
             _socket.SendTo(_out.AsSpan(0, n), SocketFlags.None, to);
             Sent++;
         }
-        catch (Exception e) when (e is SocketException or ObjectDisposedException or ArgumentException)
+        catch (Exception e) when (e is SocketException or ObjectDisposedException or ArgumentException
+                                      or IndexOutOfRangeException or ArgumentOutOfRangeException)
         {
         }
     }

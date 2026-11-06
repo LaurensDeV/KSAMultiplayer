@@ -5,6 +5,29 @@ namespace KSAMultiplayer.Tests;
 public class WireTests
 {
     [Fact]
+    public void AnOwnersPageWithinItsBudgetFitsTheDatagram()
+    {
+        // A key is clipped to a number of characters, and a character is up to three bytes: forty
+        // names of 85 Han characters came to 10 KB in an 8 KB buffer, and the write threw at the
+        // thirty-second entry.
+        string wide = new('\u6f22', 85);
+        Assert.Equal(255, System.Text.Encoding.UTF8.GetByteCount(wide));
+        Assert.True(Wire.OwnerBytes(wide) * Wire.OwnersPerPage > Wire.BufferBytes,
+            "a full page of the widest keys should not fit, which is what the budget is for");
+
+        // However they are filled, a page within the budget fits.
+        byte[] buffer = new byte[Wire.BufferBytes];
+        foreach (string key in new[] { wide, new string('a', Wire.KeyChars), "R" })
+        {
+            int room = Wire.OwnersBudgetBytes / Wire.OwnerBytes(key);
+            int many = Math.Min(room, Wire.OwnersPerPage);
+            Wire.Owner[] entries = [.. Enumerable.Range(0, many).Select(i => new Wire.Owner($"{key}{i}", 1))];
+            int n = Wire.Write(new Wire.Owners(0, 1, entries), buffer);
+            Assert.InRange(n, 1, Wire.BufferBytes);
+        }
+    }
+
+    [Fact]
     public void ACraftsNameSaysWhatItCameOff()
     {
         // The chain a staged rocket leaves, which is how a game tells whose debris it is holding.

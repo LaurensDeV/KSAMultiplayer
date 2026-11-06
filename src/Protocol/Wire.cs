@@ -100,8 +100,24 @@ public static class Wire
     /// <summary>The longest an admin's token is: 32 random bytes in base64url come to 43 characters.</summary>
     public const int TokenChars = 64;
 
-    /// <summary>The most entries one <see cref="Owners"/> carries: 40 keys of 96 characters is under 4 KB.</summary>
+    /// <summary>The most entries one <see cref="Owners"/> carries.</summary>
     public const int OwnersPerPage = 40;
+
+    /// <summary>
+    /// The most of a datagram one <see cref="Owners"/> page may fill, leaving room for its header.
+    ///
+    /// <para>Because a count of entries is not a size. A key is clipped to <see cref="KeyChars"/>
+    /// *characters* and may still be 255 *bytes* -- 85 of most of the world's writing systems -- so
+    /// forty of them came to 10 KB in an 8 KB buffer and the write threw at the thirty-second. It
+    /// threw from outside the socket's own guard, unwinding past the line that says when to send the
+    /// next roster, so every tick after it threw in the same place: a server that went on reading
+    /// datagrams and reaping sessions while never again sending a clock or pumping a transfer.</para>
+    /// </summary>
+    public const int OwnersBudgetBytes = BufferBytes - 512;
+
+    /// <summary>What one owners entry costs in a datagram: a length byte, the key, and the owner.</summary>
+    public static int OwnerBytes(string key) =>
+        2 + Math.Min(255, System.Text.Encoding.UTF8.GetByteCount(key));
 
     /// <summary>The most pieces one <see cref="Need"/> asks for.</summary>
     public const int MostNeeded = 400;

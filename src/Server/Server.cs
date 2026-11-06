@@ -1088,8 +1088,23 @@ public sealed class GameServer : IDisposable
     private IEnumerable<Wire.Owners> OwnerPages()
     {
         Wire.Owner[] all = [.. _crafts.Where(c => c.Value.Owner != 0).Select(c => new Wire.Owner(c.Key, c.Value.Owner))];
-        int pages = Math.Max(1, (all.Length + Wire.OwnersPerPage - 1) / Wire.OwnersPerPage);
-        for (int i = 0; i < pages; i++) yield return new Wire.Owners((ushort)i, (ushort)pages, [.. all.Skip(i * Wire.OwnersPerPage).Take(Wire.OwnersPerPage)]);
+        // Filled by what they come to in bytes and not only by how many they hold: a key is clipped
+        // to a number of characters and a character is up to three bytes, so a full page of names in
+        // most of the world's writing systems did not fit the datagram it was sent in.
+        List<List<Wire.Owner>> pages = [[]];
+        int bytes = 0;
+        foreach (Wire.Owner e in all)
+        {
+            int cost = Wire.OwnerBytes(e.Key);
+            if (pages[^1].Count > 0 && (pages[^1].Count >= Wire.OwnersPerPage || bytes + cost > Wire.OwnersBudgetBytes))
+            {
+                pages.Add([]);
+                bytes = 0;
+            }
+            pages[^1].Add(e);
+            bytes += cost;
+        }
+        for (int i = 0; i < pages.Count; i++) yield return new Wire.Owners((ushort)i, (ushort)pages.Count, [.. pages[i]]);
     }
 
     private void Broadcast(Wire.Message m, Func<Player, bool> to)
