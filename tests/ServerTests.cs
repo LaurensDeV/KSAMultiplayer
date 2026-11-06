@@ -248,6 +248,44 @@ public class ServerTests
         Assert.Equal(rig.Server.World!.Data, b.Blobs.First(x => x.Kind == BlobKind.World).Data);
     }
 
+    [Fact]
+    public void OneNameIsOnARosterHoweverItIsCapitalised()
+    {
+        using Rig rig = new();
+        Client a = rig.Join("laurens");
+        rig.Until(() => a.Joined, what: "laurens joining");
+        Client b = rig.Join("Laurens");
+        rig.Until(() => b.Joined, what: "Laurens joining");
+
+        // Or every operator verb would be a coin toss: they all resolve a name without regard to
+        // case, so two of them on one roster made op hand the token to whoever joined first and
+        // made deop clear the flag on one of the two while taking the other's row away.
+        Assert.Equal("laurens", rig.Server.Players.First(p => p.Id == a.Id).Name);
+        Assert.Equal("Laurens 2", rig.Server.Players.First(p => p.Id == b.Id).Name);
+    }
+
+    [Fact]
+    public void AGameComingBackTakesItsOwnNameBack()
+    {
+        using Rig rig = new();
+        Client a = rig.Join("Bob");
+        rig.Until(() => a.Joined, what: "Bob joining");
+
+        // It stops answering without saying goodbye, which is every ungraceful drop: a crash, a
+        // kill, a lost Bye. Not disposed, because that says goodbye and is the case that already
+        // worked -- this one leaves the server still holding the session.
+        rig.Clients.Remove(a);
+        double quiet = rig.Now() + 4.0;
+        rig.Until(() => rig.Now() > quiet, seconds: 10.0, what: "the session to go quiet");
+        Assert.Single(rig.Server.Players);
+
+        Client back = rig.Join("Bob");
+        rig.Until(() => back.Joined, what: "Bob joining again");
+        // Not "Bob 2", and not beside its own ghost: one session, under the name it asked for.
+        Assert.Single(rig.Server.Players);
+        Assert.Equal("Bob", rig.Server.Players.First().Name);
+    }
+
     [Theory]
     [InlineData("wrong", "B1", "Core", "wrong password")]
     [InlineData("pw", "B2", "Core", "you need the same build")]

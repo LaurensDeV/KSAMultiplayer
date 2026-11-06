@@ -113,6 +113,12 @@ public sealed class GameServer : IDisposable
     }
 
     private const double SilentSeconds = 10.0, LoadingSilentSeconds = 120.0;
+
+    /// <summary>
+    /// How long a session must have been silent, s, before a game joining under its name is taken to
+    /// be that session coming back rather than somebody else. A living game pings once a second.
+    /// </summary>
+    private const double QuietEnoughToReplaceSeconds = 3.0;
     private const double RosterEverySeconds = 2.0, OwnersEverySeconds = 5.0, ClockEverySeconds = 0.2;
 
     // A count that climbs while nobody is launching anything is a world filling with craft that
@@ -411,9 +417,30 @@ public sealed class GameServer : IDisposable
             Log($"refused {Wire.Clip(hello.Name, Wire.NameChars)} from {from}: {refused}");
             return;
         }
+        // The same player coming back, before they are named against the session they just lost. A
+        // game's socket takes a fresh port every time it connects, so a reconnect never matches the
+        // endpoint a session is held under and used to be let in beside its own ghost: named
+        // "Bob 2" for the rest of the evening -- in the roster, in the chat and in admins.json --
+        // refused every claim on its own craft, because the ghost still answered for the owner, and
+        // told that a player of its own name was flying its rocket. Ten seconds of that, or two
+        // minutes if the ghost was lost mid-load, which is what a reload leaves. The logs of the
+        // night everybody crashed have "averageksp 2" and "MrJeranimo 2" in them.
+        //
+        // A living game pings once a second, so a few seconds of silence is a session that has gone
+        // and not a second player who happens to have chosen the same name.
+        string asked = Wire.Clip(hello.Name, Wire.NameChars);
+        foreach (Player ghost in _players.Values
+                     .Where(q => now - q.HeardAt > QuietEnoughToReplaceSeconds
+                                 && string.Equals(q.Name, asked, StringComparison.OrdinalIgnoreCase)
+                                 && !q.At.Equals(from))
+                     .ToArray())
+        {
+            Log($"{ghost.Name} had gone quiet, and is joining again from {from}");
+            Remove(ghost, "has gone quiet");
+        }
         byte id = 1;
         while (_players.ContainsKey(id)) id++;
-        string name = UniqueName(Wire.Clip(hello.Name, Wire.NameChars));
+        string name = UniqueName(asked);
         Player p = new(id, name, from, now)
         {
             KsaBuild = hello.KsaBuild,
@@ -943,7 +970,12 @@ public sealed class GameServer : IDisposable
     public bool Deop(string name)
     {
         bool was = Admins.Remove(name) > 0;
-        if (Find(name) is { } p)
+        // Every player of that name and not the first one found: the stored hash is taken away by
+        // name without regard to case, so clearing the flag on one of two would leave the other
+        // playing as an admin while the console said otherwise.
+        foreach (Player p in _players.Values
+                     .Where(q => string.Equals(q.Name, name, StringComparison.OrdinalIgnoreCase))
+                     .ToArray())
         {
             was |= p.Admin;
             p.Admin = false;
@@ -1065,11 +1097,25 @@ public sealed class GameServer : IDisposable
         foreach (Player p in _players.Values) if (to(p)) _udp.Send(m, p.At);
     }
 
+    /// <summary>
+    /// A name no other player holds. Held case-insensitively, because every operator verb resolves a
+    /// name that way: with "laurens" and "Laurens" both on a roster, op handed the token to whichever
+    /// of them joined first and deleted the other's row, and deop took the stored hash away while
+    /// clearing the admin flag on only one of the two -- so it answered "no longer an admin" to an
+    /// operator whose admin still had every right until they rejoined.
+    ///
+    /// <para>This makes the roster unambiguous. It does not stop a name being taken: whoever joins
+    /// first gets it, and the player who meant to have it becomes "name 2", so op still names
+    /// whoever is holding the name rather than whoever deserves it.</para>
+    /// </summary>
     private string UniqueName(string name)
     {
         string root = name.Length > 0 ? name : "Kitten";
         string unique = root;
-        for (int k = 2; _players.Values.Any(p => p.Name == unique); k++) unique = $"{root} {k}";
+        for (int k = 2; _players.Values.Any(p => string.Equals(p.Name, unique, StringComparison.OrdinalIgnoreCase)); k++)
+        {
+            unique = $"{root} {k}";
+        }
         return unique;
     }
 
