@@ -279,6 +279,49 @@ internal static class World
         }
     }
 
+    // ------------------------------------------------------------------ before there is a universe
+
+    private static readonly System.Reflection.FieldInfo? PopupList = AccessTools.Field(typeof(Popup), "Popups");
+
+    /// <summary>
+    /// KSA's configuration at start, while it is up: the one popup <c>SelectSystem</c> loops on before
+    /// the universe is made. Found in KSA's list of popups rather than through
+    /// <c>SelectSystem.Current</c>, which is set only after its first frame has been drawn.
+    /// </summary>
+    public static ConfigOnStartPopup? Configuration =>
+        !Program.IsLoaded && PopupList?.GetValue(null) is List<Popup> popups
+            ? popups.OfType<ConfigOnStartPopup>().FirstOrDefault(p => p.Active)
+            : null;
+
+    /// <summary>
+    /// KSA started in a system, as its configuration's Start button would, with the rest of that
+    /// configuration left as the player last set it. Empty to keep the system already chosen. False
+    /// and why for a system this game does not have.
+    /// </summary>
+    public static bool StartIn(ConfigOnStartPopup configuration, string system, out string why)
+    {
+        why = "";
+        if (system.Length > 0 && system != GameSettings.Current.System.LastSystemId)
+        {
+            if (SelectSystem.Systems.FirstOrDefault(s => s.Id == system) is not { } chosen)
+            {
+                why = $"the server's world is in {system}, which this game does not have";
+                return false;
+            }
+            // What choosing it from the configuration's own list does: the craft and the place a
+            // game starts at belong to a system, and the ones chosen for another are no good here.
+            Traverse popup = Traverse.Create(configuration);
+            popup.Field("_systemTemplate").SetValue(chosen);
+            SystemLibrary.Default = chosen;
+            GameSettings.Current.System.LastSystemId = chosen.Id;
+            popup.Method("SetVehicles").GetValue();
+            popup.Method("SetStartingVehicleLocation").GetValue();
+            GameSettings.Current.Save();
+        }
+        configuration.Active = false;
+        return true;
+    }
+
     /// <summary>A world from the server written as the handover save and loaded in place of this one, or false and why not.</summary>
     public static bool LoadWorld(byte[] zip, out string why)
     {

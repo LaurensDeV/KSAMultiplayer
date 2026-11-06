@@ -69,6 +69,7 @@ public class WireTests
         Assert.Equal(new Wire.Op(true, "t0ken"), RoundTrip(new Wire.Op(true, "t0ken")));
         Assert.Equal(new Wire.Op(false, ""), RoundTrip(new Wire.Op(false, "")));
         Assert.Equal(new Wire.Welcome(3, "", "Moon base", true), RoundTrip(new Wire.Welcome(3, "", "Moon base", true)));
+        Assert.Equal(new Wire.Welcome(0, "", "Moon base", true, "c00kie", "SolLite"), RoundTrip(new Wire.Welcome(0, "", "Moon base", true, "c00kie", "SolLite")));
         Assert.Equal(new Wire.Bye("kicked"), RoundTrip(new Wire.Bye("kicked")));
         Assert.Equal(new Wire.Ping(12.5, 0.035f, 0f, 1f, true, ""), RoundTrip(new Wire.Ping(12.5, 0.035f, 0f, 1f, true, "")));
         // A game that has not measured a round trip yet says so rather than claiming none.

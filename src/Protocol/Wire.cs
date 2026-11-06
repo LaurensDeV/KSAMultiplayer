@@ -120,6 +120,7 @@ public static class Wire
     /// takes a roster round it only half received and tells its player that somebody else is flying
     /// their craft.</para>
     ///
+<<<<<<< Updated upstream
     /// <para>18 carries the datagrams of 17 unchanged and moves for the usual reason: a game of 17
     /// makes a mess the rest have to look at. It can ask the whole room to run at ten times speed
     /// from inside its own pause menu, where it sees none of it and is not running at it itself. And
@@ -127,6 +128,10 @@ public static class Wire
     /// broken rocket arrive as a burst twice a second whose losses fall together -- which is what
     /// runs a craft past the end of what the others can carry it on from, in their worlds rather
     /// than its own.</para>
+=======
+    /// <para>18 has a welcome say which system the server's world is in, the cookie's included, so a
+    /// game can ask before it has a universe and start in the right one.</para>
+>>>>>>> Stashed changes
     /// </summary>
     public const ushort Version = 18;
 
@@ -217,7 +222,7 @@ public static class Wire
     /// <param name="HasWorld">Whether the server has a world to send; without one this player's open world becomes it.</param>
     /// <param name="Cookie">A word to say again in the next hello, when the server has not yet heard
     /// anything from this address that it chose itself. Empty on a welcome that admits or refuses.</param>
-    public sealed record Welcome(byte Id, string Refused, string ServerName, bool HasWorld, string Cookie = "") : Message(Kind.Welcome);
+    public sealed record Welcome(byte Id, string Refused, string ServerName, bool HasWorld, string Cookie = "", string System = "") : Message(Kind.Welcome);
 
     /// <param name="Rtt">The player's round trip to the server, s, as that player last measured it; negative until it has.</param>
     /// <param name="Can">The speed that player's game is managing, as a multiple of real time:
@@ -431,6 +436,7 @@ public static class Wire
                 w.Text(m.ServerName, 64);
                 w.U8(m.HasWorld ? (byte)1 : (byte)0);
                 w.Text(m.Cookie, CookieChars);
+                w.Text(m.System, NameChars);
                 break;
             case Roster r:
                 w.U8((byte)Math.Min(r.Players.Length, 64));
@@ -575,7 +581,7 @@ public static class Wire
             Message m = (Kind)data[6] switch
             {
                 Kind.Hello => new Hello(r.Text(NameChars), r.Text(64), r.LongText(4000), r.Text(NameChars), r.Text(64), r.Text(TokenChars), r.Text(CookieChars)),
-                Kind.Welcome => new Welcome(r.U8(), r.Text(200), r.Text(64), r.U8() != 0, r.Text(CookieChars)),
+                Kind.Welcome => new Welcome(r.U8(), r.Text(200), r.Text(64), r.U8() != 0, r.Text(CookieChars), r.Text(NameChars)),
                 Kind.Roster => ReadRoster(ref r),
                 Kind.Bye => new Bye(r.Text(200)),
                 Kind.Ping => new Ping(r.F64(), r.F32(), r.F32(), r.F32(), r.U8() != 0, r.Text(KeyChars)),

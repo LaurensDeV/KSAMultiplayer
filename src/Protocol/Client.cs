@@ -71,6 +71,14 @@ public sealed class Client : IDisposable
     /// <summary>Whether the server had a world when this player was let in; without one, this player's world becomes it.</summary>
     public bool ServerHasWorld { get; private set; }
 
+    /// <summary>
+    /// What a server said of itself to <see cref="Probe"/>: its name, the system its world is in
+    /// (empty when it has no world or does not know), and whether it has one.
+    /// </summary>
+    public (string ServerName, string System, bool HasWorld)? Probed { get; private set; }
+
+    private bool _probing;
+
     /// <summary>Why this player is out, once it is: refused, never answered, or the server gone.</summary>
     public string Out { get; private set; } = "";
 
@@ -181,6 +189,17 @@ public sealed class Client : IDisposable
         (_ownersComing, _ownersWant) = ([], -1);
         _tracks.Clear();
         Players = [];
+        (_probing, Probed) = (false, null);
+    }
+
+    /// <summary>
+    /// Asks a server what world it holds without joining it: the hello carries no cookie, so the
+    /// answer is the one the server gives anybody, and no place is held on its roster.
+    /// </summary>
+    public void Probe(IPEndPoint server)
+    {
+        Connect(server, "", "", "", "", "");
+        _probing = true;
     }
 
     public void Send(Wire.Message m) => _udp.Send(m, _server);
@@ -300,6 +319,10 @@ public sealed class Client : IDisposable
         _heardAt = arrived;
         switch (message)
         {
+            case Wire.Welcome w when _probing:
+                Probed = (w.ServerName, w.System, w.HasWorld);
+                (_probing, _server) = (false, null);
+                return;
             case Wire.Welcome w when !Joined:
                 if (w.Id == 0 && w.Refused.Length == 0 && w.Cookie.Length > 0)
                 {
