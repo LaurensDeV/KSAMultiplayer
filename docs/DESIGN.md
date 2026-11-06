@@ -234,10 +234,16 @@ refused rather than relayed.
 
 **The debug teleport cannot move somebody else's craft, and does not need its own refusal.**
 `Vehicle.DrawPhysicsDebugWindow` offers "Teleport To CCSFS LC-39A", a few other fixed places, and a
-"Teleport To..." window with a heightmap of any body that teleports on a double click. It draws
-under `if (Program.ControlledVehicle == this && Program.ShowPhysicsDebug)`, and the prefix on the
+"Teleport To..." window: a pan-and-zoom heightmap of any body, which reads as a map view and
+teleports the craft on a double click. It draws under
+`if (Program.ControlledVehicle == this && Program.ShowPhysicsDebug)`, and the prefix on the
 `Program.ControlledVehicle` setter refuses another player's craft -- so the window never appears for
-one, and its buttons have nothing of theirs to act on.
+one, and neither its buttons nor its map have anything of theirs to act on.
+
+That double click is the only one in the game that moves a craft. Of KSA's eleven, the rest select a
+row in a save, layout or kitten list, zoom a spline editor, place a terrain decal's point of
+interest, or -- in the universe manifest -- point the camera at a body with
+`camera.SetFollow`, which is watching and needs no refusal.
 
 Teleporting a craft of this player's own is shared like any other way of moving it: this game's
 states are what every other game follows, so it simply arrives somewhere else. Nothing has to relay
