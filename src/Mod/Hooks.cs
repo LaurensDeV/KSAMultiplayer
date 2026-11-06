@@ -83,6 +83,9 @@ internal static class Hooks
                   "a vehicle launched from the launch menu goes to the pad the site was given, taken or not");
             PatchAfter(AccessTools.Method(typeof(VehicleLaunchMenu), "LaunchVehicle"), nameof(AfterMenuLaunch),
                   "every location lookup after the launch menu is answered with a launchpad");
+            PatchAfter(AccessTools.Method(typeof(VehicleEditingSpace), nameof(VehicleEditingSpace.GenerateNewVehicleId)),
+                  nameof(AfterNewVehicleId),
+                  "two games in one world launch craft under the same name");
             Patch(AccessTools.PropertySetter(typeof(Program), nameof(Program.ControlledVehicle)), nameof(BeforeControl),
                   "another player's craft can be taken over here");
             Patch(AccessTools.Method(typeof(KittenEva), nameof(KittenEva.BoardVehicle), [typeof(Vehicle), typeof(EVADoor)]), nameof(BeforeBoard),
@@ -185,7 +188,15 @@ internal static class Hooks
         return false;
     }
 
-    private static void BeforeEditorDispose() => _launching = true;
+    // Whether the editor is closing on a launch of something new, which is KSA's own condition for
+    // making the craft: read before, because it is the field the craft is then put in.
+    private static bool _launched;
+
+    private static void BeforeEditorDispose(VehicleEditor __instance)
+    {
+        _launching = true;
+        _launched = __instance.ExistingVehicle is null && __instance.LaunchNewVehicle;
+    }
 
     // The other way a craft is launched: the menu for one already built, which places it the same
     // way the editor does and so wants the same pad chosen for it. Without this, everything sent up
@@ -194,7 +205,52 @@ internal static class Hooks
 
     private static void AfterMenuLaunch() => _launching = false;
 
-    private static void AfterEditorDispose() => _launching = false;
+    private static void AfterEditorDispose(VehicleEditor __instance)
+    {
+        _launching = false;
+        if (!_launched) return;
+        _launched = false;
+        try
+        {
+            // The craft the editor just made, told to the session now rather than guessed at later:
+            // KSA puts it in this field, and the session's own look at the world comes after this.
+            if (__instance.ExistingVehicle is { } made) Sync.Made(made);
+        }
+        catch (Exception e)
+        {
+            Complain("taking the craft just launched as this game's own", e);
+        }
+    }
+
+    /// <summary>
+    /// The name KSA gives a craft launched from the editor, stepped past names other games have
+    /// taken as well as this one's.
+    ///
+    /// <para>KSA steps N while <c>Universe.CurrentSystem</c> holds <c>NewRocket_N</c> -- this world
+    /// only, and worked out when the editor opens rather than when the craft is launched. So two
+    /// players building at once both get <c>NewRocket_1</c>, and a player whose editor was open
+    /// across somebody else's launch gets a name that player already owns. The server does rename a
+    /// craft a game says it made, but by then KSA's own lookup may have refused the duplicate and
+    /// left the craft out of the world entirely, which nothing can repair.</para>
+    /// </summary>
+    private static void AfterNewVehicleId(ref string __result)
+    {
+        try
+        {
+            if (Sync.Now != Sync.Stage.Playing) return;
+            for (int n = 1; n <= 999; n++)
+            {
+                string name = $"NewRocket_{n}";
+                if (World.Taken(name) || Sync.SomebodyOwns(name)) continue;
+                __result = name;
+                return;
+            }
+        }
+        catch (Exception e)
+        {
+            Complain("naming a craft the others have not taken", e);
+        }
+    }
 
     // Where a launched craft is actually put. Celestial.GetLocation is patched as well, but it is
     // one line -- return BodyTemplate.GetLocation(id) -- and the JIT inlines it into the editor's

@@ -283,7 +283,8 @@ public sealed class GameServer : IDisposable
         {
             EndWarp(now, $"{Named(_warpWho)}'s warp: not everyone answered");
         }
-        if (_warpPhase == Wire.WarpPhase.Running && !_players.ContainsKey(_warpWho))
+        // Either phase, not only a running one: an ask whose asker is gone is nobody's to answer.
+        if (_warpPhase != Wire.WarpPhase.None && !_players.ContainsKey(_warpWho))
         {
             EndWarp(now, "the warp ends: whoever started it has gone");
         }
@@ -978,7 +979,19 @@ public sealed class GameServer : IDisposable
         // Gone is not an answer, but it is no longer a vote anybody waits on: a warp waiting only on
         // somebody who has left would otherwise sit there until it ran out.
         _warpVotes.Remove(p.Id);
-        if (_warpPhase == Wire.WarpPhase.Asking) Counted(_clock());
+        // The question goes with whoever asked it, while it is still being answered as well as once
+        // it is running. Left standing it belonged to a player who was not there -- "somebody's
+        // warp" in the log -- and the next answer from anybody ended it in their name. A game that
+        // dropped and came straight back then said no to a warp its own lost session had asked for,
+        // which reads as a player blocking their own warp.
+        if (_warpPhase != Wire.WarpPhase.None && p.Id == _warpWho)
+        {
+            EndWarp(_clock(), $"{p.Name} asked for the warp and has gone");
+        }
+        else if (_warpPhase == Wire.WarpPhase.Asking)
+        {
+            Counted(_clock());
+        }
         _rosterNext = 0.0;
         Log($"{p.Name} {why}");
         Broadcast(new Wire.Chat(0, $"{p.Name} {why}"), _ => true);

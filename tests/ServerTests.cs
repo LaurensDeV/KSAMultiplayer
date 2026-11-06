@@ -534,6 +534,28 @@ public class ServerTests
     }
 
     [Fact]
+    public void AWarpGoesWithWhoeverAskedForIt()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+
+        a.AskWarp(5.0);
+        rig.Until(() => b.WarpWantsAnswer, what: "Bob to be asked");
+        Assert.Equal(Wire.WarpPhase.Asking, rig.Server.Warp.Phase);
+
+        // Whoever asked drops. The question was theirs, so it goes with them rather than standing in
+        // the name of a player who is not there -- which left the next answer from anybody ending
+        // "somebody's warp", and a game that reconnected saying no to a warp its own lost session
+        // had asked for.
+        a.Dispose();
+        rig.Clients.Remove(a);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.None, what: "the ask to go with them");
+        Assert.Equal(1.0, rig.Server.UniverseClock.Speed, 3);
+        Assert.DoesNotContain(rig.Server.Said, l => l.Contains("somebody"));
+    }
+
+    [Fact]
     public void AWarpRunsOnlyWhenEveryoneAgrees()
     {
         using Rig rig = new();

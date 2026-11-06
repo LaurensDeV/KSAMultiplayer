@@ -384,6 +384,26 @@ internal static class Sync
 
     public static void SayChat(string text) => _client?.SayChat(text);
 
+    /// <summary>
+    /// A craft this game has just made, said at the moment it is made.
+    ///
+    /// <para>Worked out after the fact everywhere else, and for a craft launched from the editor
+    /// that is too late: KSA names it <c>NewRocket_N</c> with N stepped only against this world, so
+    /// two games mint the same name and every player's first launch of a session is
+    /// <c>NewRocket_1</c>. A player who launched after somebody else had taken that name was read as
+    /// flying another player's craft -- the only thing standing between a new craft and that reading
+    /// is whether it is known to have been made here, and nothing knew yet. They were told somebody
+    /// else was flying their own rocket, control was taken off them, and no claim was ever sent.</para>
+    /// </summary>
+    public static void Made(Vehicle v)
+    {
+        Seen.Add(v);
+        MadeHere.Add(v);
+    }
+
+    /// <summary>Whether any game in this world has claimed a name.</summary>
+    public static bool SomebodyOwns(string key) => _client is { Joined: true } c && c.OwnerOf(key) != 0;
+
     /// <summary>A console line for the server, as an admin types it into the chat behind a /.</summary>
     public static void Ask(string line) => _client?.Ask(line);
 
