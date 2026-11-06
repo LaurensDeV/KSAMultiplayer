@@ -161,6 +161,9 @@ internal static class Sync
     /// reads them, which needs no change of parent and so happened on every placement.</para>
     /// </summary>
     private static readonly Dictionary<string, (Vehicle Craft, Wire.State State)> ToPlace = [];
+
+    // A sweep asks for the smoke to go with the craft, which the quiet window answers.
+    private static bool _toClearSmoke;
     private static readonly List<string> SaidLines = [];
 
     private static Client? _client;
@@ -359,6 +362,7 @@ internal static class Sync
         Rebuilt.Clear();
         ToBuild.Clear();
         ToPlace.Clear();
+        _toClearSmoke = false;
         // Not ToRemove: what is in it still has to go, and Settle takes it away on the next frame
         // whether this game is in a shared world or its own again.
         PlacedAt.Clear();
@@ -797,6 +801,9 @@ internal static class Sync
                 Later(v);
                 gone++;
             }
+            // Whatever was swept, and even if this game held none of it: what the craft left behind
+            // outlives them, and goes on being stepped and drawn with nothing left to have made it.
+            _toClearSmoke = true;
             Say(gone > 0
                 ? $"the world was cleared of {gone} craft nobody is flying"
                 : "the world was cleared, and this game had nothing matching to take away");
@@ -1280,6 +1287,11 @@ internal static class Sync
             if (World.IsAlive(going)) World.Destroy(going);
         }
         ToRemove.Clear();
+        if (_toClearSmoke)
+        {
+            _toClearSmoke = false;
+            World.ClearSmoke();
+        }
         if (Now != Stage.Playing) return;
         foreach ((Vehicle craft, Wire.State state) in ToPlace.Values)
         {

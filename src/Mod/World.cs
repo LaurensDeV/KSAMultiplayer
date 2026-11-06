@@ -604,6 +604,31 @@ internal static class World
         if (v.Situation.IsOnRails()) v.TakeOffRails();
     }
 
+    /// <summary>
+    /// Every exhaust plume, smoke trail and explosion cloud in this world taken away.
+    ///
+    /// <para>What is left behind after a lot of craft are swept costs more than the craft did: the
+    /// emitters go on being stepped and drawn with nothing left to have made them, and on a server
+    /// where a breakup had just filled the sky it was the slowest thing in the frame. These are the
+    /// three calls KSA itself makes when it loads a world, which is the only other moment a world's
+    /// contents vanish at once.</para>
+    ///
+    /// <para>Asked for from the frame's quiet window, with nothing of KSA's running.</para>
+    /// </summary>
+    public static void ClearSmoke()
+    {
+        try
+        {
+            Program.Instance.ParticleSystem.EmitterPool.ResetAll();
+            Program.Instance.ClearPlumeTrails();
+            Program.Instance.ClearExplosionVolumes();
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"could not clear the smoke: {e.GetBaseException().Message}");
+        }
+    }
+
     public static void SetLights(Vehicle v, bool on)
     {
         if (v.LightsOn != on) v.LightsOn = on;
