@@ -925,12 +925,18 @@ internal static class Sync
     private static void Own(Client c, Vehicle v, bool define, bool made)
     {
         string key = KeyOf(v);
-        Owned[key] = new Mine(v);
+        Mine mine = new(v);
+        Owned[key] = mine;
         c.Claim(key, controlling: ReferenceEquals(v, World.Controlled), made: made);
-        if (define) Define(c, v);
+        // A shape of 0 is one no craft has, so the sending round tries again. Mine records the
+        // craft's shape as it is made, so a definition that failed here would otherwise never be
+        // asked for again: the craft would be claimed, its states sent, its name in everybody's
+        // roster, and no other game able to build it.
+        if (define && !Define(c, v)) mine.Shape = 0;
     }
 
-    private static void Define(Client c, Vehicle v)
+    /// <summary>Whether this craft was written down for the others, or will be asked for again.</summary>
+    private static bool Define(Client c, Vehicle v)
     {
         string key = KeyOf(v);
         byte[] bytes;
@@ -941,10 +947,24 @@ internal static class Sync
         catch (Exception e)
         {
             Log.Warn($"{key} could not be written down for the others: {e.GetBaseException().Message}");
-            return;
+            return false;
         }
         Offer(c, key, bytes);
+        return true;
     }
+
+    /// <summary>
+    /// Whether a craft's name may be said again, asked before it is written down rather than after.
+    ///
+    /// <para>Writing one down is a whole serialization of its part tree and a gzip -- about 4 ms for
+    /// a 138-part stack, 20 ms for a 741-part one -- and <see cref="Offer"/> would only then decide
+    /// it was too soon to send. A rocket shedding parts changes shape most frames, so the work was
+    /// paid every frame and about one result a window was ever used.</para>
+    /// </summary>
+    private static bool MaySayHow(string key) =>
+        !Describes.TryGetValue(key, out Description? told)
+        || told.At <= 0.0
+        || Wall() - told.At >= RedescribeEverySeconds;
 
     /// <summary>
     /// A craft described to the others, at most once every <see cref="RedescribeEverySeconds"/> for
@@ -1022,6 +1042,11 @@ internal static class Sync
                 else
                 {
                     Owned.Remove(key);
+                    // Nothing left waiting to be said about it either: a definition held back for
+                    // the window outlives the craft, since it is kept by name, and the window
+                    // opening after the craft had gone sent everybody how to build something this
+                    // game had just said was gone.
+                    Describes.Remove(key);
                     if (c.Owns(key)) c.SayGone(key);
                     continue;
                 }
@@ -1043,11 +1068,10 @@ internal static class Sync
                 continue;
             }
             int shape = World.Shape(v);
-            if (shape != m.Shape)
-            {
-                m.Shape = shape;
-                Define(c, v);
-            }
+            // The shape is recorded only once the craft has been written down, and only when the
+            // window is open to write it: left unrecorded, this asks again next frame and the craft
+            // goes out with the shape it has then rather than one captured frames earlier.
+            if (shape != m.Shape && MaySayHow(key) && Define(c, v)) m.Shape = shape;
             if (now < m.SendNext) continue;
             bool controlled = ReferenceEquals(v, flown);
             m.SendNext = now + (controlled ? ControlledEverySeconds : OwnedEverySeconds);
