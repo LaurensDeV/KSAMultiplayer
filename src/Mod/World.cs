@@ -683,6 +683,26 @@ internal static class World
         }
     }
 
+    /// <summary>
+    /// A craft of this player's own put into a circular orbit of a body, as the debug menu's Set
+    /// Orbit window does: the one way to make a craft change body without flying there, which is
+    /// what a test of a shared world needs. Null if it could not be done.
+    /// </summary>
+    public static string? SetOrbit(Vehicle v, string bodyId, double altitudeM)
+    {
+        if (KSA.Universe.CurrentSystem?.Get(bodyId) is not Celestial body) return $"no body '{bodyId}' in this world";
+        double radius = body.MeanRadius + altitudeM;
+        if (!(radius > body.MeanRadius)) return $"{altitudeM} m is not above {bodyId}";
+        // Straight from the state, the way the Set Orbit window builds one: a circular orbit needs
+        // only a radius and the speed that holds it there.
+        double speed = Math.Sqrt(body.Mass * KSA.Constants.GRAVITATIONAL_CONSTANT / radius);
+        Orbit orbit = Orbit.CreateFromStateCci(body, new UniverseTime(Universe), new double3(radius, 0.0, 0.0),
+                                               new double3(0.0, speed, 0.0), v.OrbitColor);
+        v.Teleport(orbit, null, null);
+        v.UpdatePerFrameData();
+        return ReferenceEquals(v.GetPhysicsStatesMutable().Origin.Parent, body) ? null : $"KSA would not move {v.Id} to {bodyId}";
+    }
+
     public static void SetLights(Vehicle v, bool on)
     {
         if (v.LightsOn != on) v.LightsOn = on;

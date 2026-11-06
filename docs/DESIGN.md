@@ -145,9 +145,9 @@ shared one.
      has flown this session states as many falsehoods as it takes to tell one truth. What they are
      in comes from the roster's own word, the same the scoreboard reads, so the two cannot differ.
    - **Time is kept** (`ClockFollow`): a gap under 3 s is closed at up to a tenth faster or slower, one
-     larger by warping to whatever the frame rate leaves room for, and a world well ahead waits. KSA
-     steps a world by no more than its 33 ms a frame, so the speed asked makes up a slower frame, and
-     by the same token the most a world can be run at is that 33 ms over what a frame takes. The warp keys and pause are held to that
+     larger by warping up to 10x, and a world well ahead waits. KSA steps a world by no more than its
+     33 ms a frame, so the speed asked makes up a slower frame -- and that make-up is carried by the
+     ceiling, or a game slower than 30 frames a second loses universe time every second it runs. The warp keys and pause are held to that
      speed by prefixes on both `Universe.SetSimulationSpeed`, and a speed asked for that is not that
      one is the player reaching for a warp: it is put to the others instead of taken. Out of flight
      the clock is let go of at real time and not at whatever this world was last run at, or the
@@ -214,6 +214,11 @@ fresh port each time it connects and a session is held under its address. A sess
 heard from for three seconds is let go of when a game joins under its name, which is what makes a
 reconnect get its own name and its own craft back rather than becoming "name 2" and watching its own
 rocket for ten seconds -- or two minutes, when the drop was mid-load.
+
+**What an admin is told is not what the console is told.** `players` names everybody, what they are
+flying and which KSA build they have, but where they are from only in the server's own console: an
+admin is a player like any other, and being trusted to sweep debris is not being trusted with
+everybody's address.
 
 **A hello from an address the server has not heard from is answered with a cookie and nothing else.**
 Only a hello that says it back holds a place, since a datagram's address is whatever its sender wrote
@@ -447,17 +452,11 @@ against KSA `2026.10.25.5707`:
   craft being stepped through physics costs an hour of stepping. So how far a world may be warped to
   catch up is a thousand times its speed when everything here is analytic: a player who was not
   looking comes back in a moment instead of running fast for minutes.
-- **With craft in physics it may only be warped as fast as it is managing to run.** KSA advances a
-  world by at most its step cap a frame, so a game of 30 frames a second against a 33 ms cap is
-  already at 1x and has nowhere to go; the ceiling is the cap over what a frame takes, capped at ten.
-  Asking for more than that does not make the world run faster, it makes its clock run away from its
-  own physics bubbles: a bubble's origin advances only as the bubble is stepped, and a craft placed
-  at the clock's time is then refused as being in its bubble's future, read against the wrong origin
-  and put somewhere it collides. A session on 0.7.0 showed bubbles 23 s behind the clock while a
-  hundred fragments were in the air, with the warp holding the loop open -- breakup, long frames,
-  warp, broken origins, more breakup. Catching up by running faster needs headroom, and the moment
-  it is reached for is the moment there is none, so a drowning game now runs at the server's rate
-  and simply stays behind until its frames come back.
+- **A ceiling worked out from the frame rate was tried and taken out again.** It read a frame's
+  length against the step cap as headroom, which it is not, and its floor of one meant a game at
+  exactly its minimum frame rate could never catch up while a game below it fell behind for ever:
+  two players sat 200 s behind and stayed there. Written up in `errors.md`. What a world may be
+  warped to is the flat ceiling again.
 - **How long a craft may go unheard is counted at the world's speed.** A state is sent on a real
   clock and its age read on the world's, and the two are the same thing only at normal speed: at ten
   times, half a second of sending is five seconds of world. Letting go at a fixed five dropped every

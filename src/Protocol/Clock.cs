@@ -85,9 +85,18 @@ public static class ClockFollow
     public const double CatchUpAboveSeconds = 3.0;
 
     /// <summary>
-    /// The most a world is warped to catch up while anything of its own is in physics, before the
-    /// frame rate has its say: see <see cref="MostCatchUpInHand"/>, which is what is actually used
-    /// and is never more than this.
+    /// The most a world is warped to catch up while anything of its own is in physics.
+    ///
+    /// <para>A ceiling worked out from the frame rate was tried here and taken out again. It read a
+    /// frame's length against KSA's step cap as though that were spare capacity, and the two are not
+    /// the same thing: a game held at 60 Hz by its display measures a frame of 16.7 ms whether it
+    /// spent 2 ms of that working or 16, and KSA's own per-frame ceiling is not the step cap but
+    /// twice the step before it, which ramps. Worse, its floor of one meant a game running at
+    /// exactly its own minimum frame rate was never allowed to catch up at all, and a game below it
+    /// lost universe time every second and fell behind for ever: two players sat 200 s behind a
+    /// server and stayed there. If a ceiling of this kind is wanted again, the signal to use is
+    /// KSA's own <c>_achievedSpeedFraction</c> -- what share of the asked speed the solver is
+    /// actually paying for -- and its floor must be above one.</para>
     /// </summary>
     public const double MostCatchUp = 10.0;
 
@@ -121,26 +130,6 @@ public static class ClockFollow
     }
 
     /// <summary>
-    /// The most a world may be warped to catch up when a frame took <paramref name="frameSeconds"/>
-    /// and KSA steps at most <paramref name="capSeconds"/> of world time a frame: the share of real
-    /// time the game is managing, and never less than 1 or more than <paramref name="most"/>.
-    ///
-    /// <para>Warping asks the world clock to run ahead of what is being stepped, and a game that is
-    /// already missing its own step cap has nothing left to run ahead with. Asked for it anyway, the
-    /// clock leaves the physics bubbles behind -- 23 s behind, in the session this was written for --
-    /// and every craft placed at the clock's time is refused as being in its bubble's future, read
-    /// against the wrong origin, and put somewhere it collides. The collisions make more breakup, the
-    /// breakup makes longer frames, and the warp that was meant to close a three-second gap is what
-    /// holds the whole loop open. So the ceiling is the headroom there actually is: ten times speed
-    /// while the game is comfortable, and no warp at all while it is drowning.</para>
-    /// </summary>
-    public static double MostCatchUpInHand(double frameSeconds, double capSeconds, double most = MostCatchUp)
-    {
-        if (!(frameSeconds > 0.0) || !(capSeconds > 0.0) || !double.IsFinite(frameSeconds)) return most;
-        return Math.Clamp(capSeconds / frameSeconds, 1.0, most);
-    }
-
-    /// <summary>
     /// The speed to ask of KSA to run at <paramref name="speed"/> when a frame took
     /// <paramref name="frameSeconds"/>: KSA steps a world by no more than <paramref name="capSeconds"/>
     /// a frame, and a slower frame loses the rest unless the speed makes it up.
@@ -148,7 +137,12 @@ public static class ClockFollow
     public static double Asked(double speed, double frameSeconds, double capSeconds)
     {
         double lost = capSeconds > 0.0 && frameSeconds > capSeconds ? Math.Min(frameSeconds / capSeconds, 2.0) : 1.0;
-        return Math.Clamp(speed * lost, 0.0, Math.Max(1.0 + MostNudge, speed));
+        // The ceiling carries the make-up with it. Without that, a world asking for about its own
+        // speed had the make-up clamped away again -- so a game at 20 frames a second needed 1.5x
+        // to hold station, was allowed 1.1, and lost sixteen seconds of universe time a minute. It
+        // went unnoticed while any gap over three seconds pushed the asked speed to ten and took the
+        // ceiling up with it.
+        return Math.Clamp(speed * lost, 0.0, Math.Max((1.0 + MostNudge) * lost, speed));
     }
 
     /// <summary>The server's universe time now, from its last word carried on at its rate for as long as has passed on its clock.</summary>

@@ -345,3 +345,40 @@ letting go of a session that has been silent for three seconds when a game joins
 
 The rest of that review, including what was investigated and found not to be true, is in
 `docs/REVIEW-2026-11-06.md`.
+
+
+## 2026-11-06 -- the catch-up ceiling made a slow game fall behind for ever
+
+Two players on 0.9.1: *"I'm constantly like 200s behind, it's really annoying."* Constant is the
+diagnostic word -- a gap from joining is transient by construction, and a gap that sits still or
+grows is a broken controller.
+
+It was the ceiling added earlier the same day. `MostCatchUpInHand` read a frame's length against
+KSA's step cap and called the ratio headroom, with a floor of one. Three things were wrong with it:
+
+- **A frame's length is not spare capacity.** A game held at 60 Hz by its display measures a frame
+  of 16.7 ms whether it spent 2 ms of it working or 16.
+- **KSA's per-frame ceiling is not the step cap.** `Universe.GetJobSimStep` caps the advance at
+  `max(_maxStepSimSeconds, dtPlayer)`, and `_maxStepSimSeconds` is up to twice the step before it --
+  a ramp. `DESIGN.md` records a game running at 8.4x to catch up, which the ceiling said was
+  impossible below 252 frames a second.
+- **The floor of one was the bug.** At exactly the minimum frame rate the ratio is one, so a world
+  ran at precisely the server's rate and the gap was frozen wherever it stood. Below the minimum
+  frame rate it was worse: `Asked`'s own ceiling then clamped away the make-up for a long frame, so
+  a game at 20 fps needed 1.5x to hold station, was allowed 1.1, and lost 16 seconds of universe a
+  minute. A gap of 200 s is twelve minutes of that.
+
+Reverted to the flat ceiling. The `Asked` clamp is fixed as well -- it carries the make-up with it
+now -- which was a latent bug of its own, hidden for as long as any gap over three seconds pushed
+the asked speed to ten and took the ceiling up with it.
+
+This restores the warp that the write-up above blames for bubble origins 23 s behind the clock. That
+is a fair trade and the blame was probably misplaced: a bubble's step is not budgeted and cannot lag
+the clock by design, but a step that *fails* does not advance the bubble at all -- and those
+sessions were full of `Update task failed`, from this mod building and destroying craft while KSA's
+worker walked the vehicle list. The warp multiplied the cost of each failure rather than causing it.
+The failures themselves are what the quiet-window work fixed.
+
+If a ceiling of this kind is wanted again, the signal is KSA's own `_achievedSpeedFraction` -- what
+share of the asked speed the solver is actually paying for, already read as `World.Achieved` -- and
+its floor has to be above one, so a gap is always repaid even on a drowning machine.

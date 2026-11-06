@@ -232,6 +232,13 @@ TOOLS = {
                   "flown one. The way to drop a stage while another game is watching.",
                   {"craft": {"type": "string"}}, [],
                   lambda a: _dump(send("stage", **a))),
+    "ksa_setorbit": ("Put a craft into a circular orbit of a body, as the debug menu's Set Orbit window "
+                     "does: the named craft, or the flown one. The only way to make a craft change the "
+                     "body it is going round without flying there, which is what a test of whether the "
+                     "other games follow it needs.",
+                     {"craft": {"type": "string"}, "body": {"type": "string"},
+                      "altitude": _num("metres above the mean radius")}, ["body"],
+                     lambda a: _dump(send("setorbit", **a))),
     "ksa_engine": ("Light or shut a craft's engine, which is the ignition key and the throttle: the named "
                    "craft, or the flown one. For making a craft burn while another game watches it.",
                    {"craft": {"type": "string"}, "on": {"type": "boolean"}, "throttle": _num("0 to 1")}, [],

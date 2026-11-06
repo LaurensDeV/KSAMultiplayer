@@ -69,7 +69,9 @@ public class ClockTests
     public void AFrameLongerThanKsasStepIsMadeUp()
     {
         Assert.Equal(1.0, ClockFollow.Asked(1.0, 1.0 / 60, 1.0 / 30), 9);
-        Assert.Equal(1.0 + ClockFollow.MostNudge, ClockFollow.Asked(1.0, 1.0 / 20, 1.0 / 30), 9);
+        // Half again, not a tenth: the make-up for a frame longer than the step cap is the point of
+        // this, and the ceiling used to clamp it away whenever little speed was being asked for.
+        Assert.Equal(1.5, ClockFollow.Asked(1.0, 1.0 / 20, 1.0 / 30), 9);
         Assert.Equal(10.0, ClockFollow.Asked(10.0, 1.0 / 60, 1.0 / 30), 9);
     }
 
@@ -95,29 +97,25 @@ public class ClockTests
     }
 
     [Fact]
-    public void AGameThatCannotKeepUpIsNotWarpedToCatchUp()
+    public void AWorldBehindAlwaysClosesTheGap()
     {
         const double cap = 1.0 / 30;
 
-        // The ceiling is what the world can actually be stepped at: KSA advances it by at most the
-        // step cap a frame, so 144 frames a second against a thirtieth-second cap is 4.8x and no
-        // more, whatever is asked. The whole ten needs 300 frames a second.
-        Assert.Equal(4.8, ClockFollow.MostCatchUpInHand(1.0 / 144, cap), 9);
-        Assert.Equal(ClockFollow.MostCatchUp, ClockFollow.MostCatchUpInHand(cap / ClockFollow.MostCatchUp, cap), 9);
+        // Whatever the frame rate, a world behind the server is asked for more than the server's own
+        // rate, so the gap is repaid rather than held. A ceiling worked out from the frame rate was
+        // tried here and pinned two players 200 s behind for a whole session: at exactly the minimum
+        // frame rate it allowed no catch-up at all, and below it the world lost time every second.
+        foreach (double frame in new[] { 1.0 / 144, 1.0 / 60, cap, 1.0 / 20, 0.5 })
+        {
+            double asked = ClockFollow.Asked(ClockFollow.Speed(200.0, 1.0), frame, cap);
+            Assert.True(asked > 1.0, $"a world 200 s behind at {1.0 / frame:F0} fps asked for {asked}");
+        }
 
-        // Keeping the step cap exactly, and a little under it: some warp, not ten times.
-        Assert.Equal(1.0, ClockFollow.MostCatchUpInHand(cap, cap), 9);
-        Assert.Equal(2.0, ClockFollow.MostCatchUpInHand(cap / 2.0, cap), 9);
-
-        // Two frames a second with a thirtieth-second cap, which is a breakup: no warp at all.
-        Assert.Equal(1.0, ClockFollow.MostCatchUpInHand(0.5, cap), 9);
-        // A minute behind and drowning: the world runs at the server's own rate and no faster, and
-        // stays a minute behind until the frames come back. The panel says so, and nothing breaks.
-        Assert.Equal(1.0, ClockFollow.Speed(60.0, 1.0, ClockFollow.MostCatchUpInHand(0.5, cap)), 9);
-
-        // Nothing measured yet is no reason to hold a world back.
-        Assert.Equal(ClockFollow.MostCatchUp, ClockFollow.MostCatchUpInHand(0.0, cap), 9);
-        Assert.Equal(ClockFollow.MostCatchUp, ClockFollow.MostCatchUpInHand(0.01, 0.0), 9);
+        // And a world that is only a little behind still makes up what a long frame costs it: KSA
+        // steps at most the cap a frame, so 20 frames a second needs half again to hold station.
+        Assert.Equal(1.5, ClockFollow.Asked(1.0, 1.0 / 20, cap), 9);
+        Assert.True(ClockFollow.Asked(1.0, 1.0 / 20, cap) > 1.0 + ClockFollow.MostNudge,
+                    "the make-up has to survive the ceiling, or a slow world loses time every second");
     }
 
     private static Wire.State At(double t, double x) =>

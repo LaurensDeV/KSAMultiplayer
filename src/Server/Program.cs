@@ -198,9 +198,13 @@ void Command(string line, GameServer.Player? who = null)
             if (server.Players.Count == 0) Answer("nobody is playing");
             foreach (GameServer.Player p in server.Players.OrderBy(p => p.Id))
             {
+                // Where a player is from goes to the console and nowhere else. An admin is a player
+                // like any other, and being able to run a command is not being told everybody's
+                // address; whoever is at the console has them in the log already.
                 Answer($"  {p.Id,3} {p.Name,-24} {(p.Loaded ? "playing" : p.WaitingForWorld ? "waiting for the world" : "loading")}"
                     + $"{(p.Admin ? ", admin" : "")}"
-                    + $"{(p.Controlling.Length > 0 ? $", flying {p.Controlling}" : "")}, from {p.At}, KSA {p.KsaBuild}");
+                    + $"{(p.Controlling.Length > 0 ? $", flying {p.Controlling}" : "")}"
+                    + $"{(who is null ? $", from {p.At}" : "")}, KSA {p.KsaBuild}");
             }
             break;
         case "say":
