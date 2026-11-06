@@ -24,7 +24,9 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
    screen (or, with that screen turned off, over the game once it has loaded), with KSA's welcome
    held until you have joined or pressed **Play alone**, which gives you the configuration back.
    **Connect** there asks the server which system its world is in, starts KSA in it with the rest
-   of your configuration as you last left it, and joins once the game has loaded. Enter the server's address (`host:port`, or just `host` for port 50100), your name and the
+   of your configuration as you last left it, and joins once the game has loaded. Tick **Change
+   settings before starting** to get KSA's configuration first, with the server's system chosen,
+   for graphics and the rest; **Start KSA** then joins. Enter the server's address (`host:port`, or just `host` for port 50100), your name and the
    password if there is one, and press **Connect**. There is a server at **`mp.ksarmory.com`** to
    try it on. The name starts as something like `Kitten 4821` rather than your Windows account name,
    so nothing of yours reaches a server's player list unless you put it there; change it to whatever

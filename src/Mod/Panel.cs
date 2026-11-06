@@ -513,31 +513,42 @@ internal static class Panel
     }
 
     /// <summary>
-    /// The first thing a player sees: where to join, or to play alone. A window of its own rather
-    /// than the panel moved, so the panel keeps the place the player has given it.
-    ///
-    /// <para>The world KSA starts in is a new game, so a server with no world yet is given this one
-    /// as it would be from anywhere else, and a server that has one replaces it.</para>
-    /// </summary>
-    /// <summary>
     /// Drawn in place of KSA's configuration at start, from the prefix on <c>Popup.DrawAll</c>: true
     /// when it was, and KSA's popups are left undrawn. Playing alone gives the configuration back;
     /// connecting asks the server which system to start in and starts there, with the rest of the
-    /// configuration as the player last left it.
+    /// configuration as the player last left it -- or, for a player who asked to see it first,
+    /// gives it back with the server's system chosen, and joins once its Start has been pressed.
     /// </summary>
     public static bool InsteadOfConfiguration()
     {
-        if (!Starting || World.Configuration is not { } configuration) return false;
+        if (!Starting || _configuring || World.Configuration is not { } configuration) return false;
         if (!_loaded) Load();
         if (Sync.AnsweredAhead() is { } system)
         {
-            if (World.StartIn(configuration, system, out string why)) _joinOnLoad = true;
+            if (World.StartIn(configuration, system, out string why, start: !_settingsFirst))
+            {
+                _joinOnLoad = true;
+                _configuring = _settingsFirst;
+                if (_configuring) Sync.Say("your settings, then Start KSA: the server is joined once the game has loaded");
+            }
             else Sync.Say(why);
         }
         StartWindow(ahead: true);
         return true;
     }
 
+    // Whether KSA's own configuration is shown once the server has said which system to start in.
+    // It is a modal, so nothing behind it can be clicked while it is up -- which is why it comes
+    // after the asking and not beside it, with nothing to go back to but its Start button.
+    private static bool _settingsFirst, _configuring;
+
+    /// <summary>
+    /// The first thing a player sees: where to join, or to play alone. A window of its own rather
+    /// than the panel moved, so the panel keeps the place the player has given it.
+    ///
+    /// <para>The world KSA starts in is a new game, so a server with no world yet is given this one
+    /// as it would be from anywhere else, and a server that has one replaces it.</para>
+    /// </summary>
     private static void StartWindow(bool ahead = false)
     {
         ImGuiViewportPtr screen = ImGui.GetMainViewport();
@@ -552,6 +563,7 @@ internal static class Panel
         {
             ImGui.PushTextWrapPos(0f);
             Join(ahead);
+            if (ahead) ImGui.Checkbox("Change settings before starting", ref _settingsFirst);
             ImGui.Separator();
             if (ImGui.Button("Play alone", null)) PlayAlone();
             foreach (string said in Sync.Said.TakeLast(3)) ImGui.TextDisabled(said);

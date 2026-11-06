@@ -120,7 +120,6 @@ public static class Wire
     /// takes a roster round it only half received and tells its player that somebody else is flying
     /// their craft.</para>
     ///
-<<<<<<< Updated upstream
     /// <para>18 carries the datagrams of 17 unchanged and moves for the usual reason: a game of 17
     /// makes a mess the rest have to look at. It can ask the whole room to run at ten times speed
     /// from inside its own pause menu, where it sees none of it and is not running at it itself. And
@@ -128,12 +127,11 @@ public static class Wire
     /// broken rocket arrive as a burst twice a second whose losses fall together -- which is what
     /// runs a craft past the end of what the others can carry it on from, in their worlds rather
     /// than its own.</para>
-=======
-    /// <para>18 has a welcome say which system the server's world is in, the cookie's included, so a
+    ///
+    /// <para>19 has a welcome say which system the server's world is in, the cookie's included, so a
     /// game can ask before it has a universe and start in the right one.</para>
->>>>>>> Stashed changes
     /// </summary>
-    public const ushort Version = 18;
+    public const ushort Version = 19;
 
     public const int BufferBytes = 8192;
     public const int NameChars = 24;

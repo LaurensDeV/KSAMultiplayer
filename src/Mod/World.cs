@@ -298,7 +298,8 @@ internal static class World
     /// configuration left as the player last set it. Empty to keep the system already chosen. False
     /// and why for a system this game does not have.
     /// </summary>
-    public static bool StartIn(ConfigOnStartPopup configuration, string system, out string why)
+    /// <param name="start">False to choose the system and leave the configuration up, for its own Start.</param>
+    public static bool StartIn(ConfigOnStartPopup configuration, string system, out string why, bool start = true)
     {
         why = "";
         if (system.Length > 0 && system != GameSettings.Current.System.LastSystemId)
@@ -318,7 +319,7 @@ internal static class World
             popup.Method("SetStartingVehicleLocation").GetValue();
             GameSettings.Current.Save();
         }
-        configuration.Active = false;
+        if (start) configuration.Active = false;
         return true;
     }
 
