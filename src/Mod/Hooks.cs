@@ -56,6 +56,8 @@ internal static class Hooks
                   "another player's craft can be wrecked in this world alone");
             Patch(AccessTools.Method(typeof(Program), nameof(Program.RefreshVehiclesInFrame)), nameof(BeforeRefreshVehicles),
                   "another player's craft is built while KSA is stepping the world, which fails its physics");
+            Patch(AccessTools.Method(typeof(Universe), nameof(Universe.DeserializeSave)), nameof(BeforeDeserializeSave),
+                  "a save loaded in this game would have every craft in it claimed and sent to everybody");
             PatchAfter(AccessTools.Method(typeof(VehicleEditor), "SetLocations"), nameof(AfterSetLocations),
                   "the editor offers this mod's extra launchpads as places to launch from");
             PatchAfter(AccessTools.Method(typeof(VehicleLaunchMenu), "SetLocations"), nameof(AfterLaunchMenuLocations),
@@ -266,12 +268,39 @@ internal static class Hooks
     {
         try
         {
+            // Here rather than in the frame hook, and before the session so a craft placed this
+            // frame has every pad to stand on: laying them out adds to the celestial's own list of
+            // locations, which ConstraintSim.ResolveLaunchPads walks on the solver from
+            // PopulateBepuStatesFromKinematic -- the method in the crash logs. It runs once a
+            // launch, so it was only ever a narrow window, but it is the same list that failed the
+            // physics of every craft in the bubble when pads were taken out of it.
+            Pads.LayOut();
             Sync.Settle();
         }
         catch (Exception e)
         {
             // Thrown on into KSA's own frame, this would take the game down with it.
             Log.Error("putting another player's craft into this world", e);
+        }
+    }
+
+    /// <summary>
+    /// Before a world is deserialized into this game. KSA destroys every vehicle and builds new
+    /// objects, so a session that carried on here would claim the whole save as craft of its own:
+    /// see <see cref="Sync.WorldLoadedHere"/>, which leaves the shared world instead.
+    ///
+    /// <para>Patched rather than hooked at the save menu because a world is loaded from several
+    /// places -- the menu, the bridge, a tool -- and this is the one they share.</para>
+    /// </summary>
+    private static void BeforeDeserializeSave()
+    {
+        try
+        {
+            Sync.WorldLoadedHere();
+        }
+        catch (Exception e)
+        {
+            Log.Error("leaving the shared world for a save loaded here", e);
         }
     }
 

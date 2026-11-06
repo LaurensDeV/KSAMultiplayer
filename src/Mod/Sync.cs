@@ -142,6 +142,25 @@ internal static class Sync
     /// they arrived.</para>
     /// </summary>
     private static readonly List<Vehicle> ToRemove = [];
+
+    /// <summary>
+    /// Another player's craft to be put where they say it is, waited for the frame's quiet window.
+    ///
+    /// <para>Because placing one writes a flight plan, and <c>Vehicle.SetFlightPlan</c> moves the
+    /// craft between two celestials' <c>Children</c> lists there and then -- plain lists that KSA
+    /// walks on the vehicle solver in <c>PhysicsStates.CheckSoiTransitions</c>, and on another
+    /// worker in <c>Orbit.IsOccluded</c>. KSA never calls it from a frame hook itself: it has a
+    /// whole Unsynchronized/Synchronized split so the worker only stashes the old parent and the
+    /// list is edited from one serialized point, and it defers the landed case through
+    /// <c>InputEvents.TeleportInputBuffer</c>. This mod was the one caller in the process that did
+    /// it with the solvers running, and `Collection was modified` out of
+    /// <c>FullPhysicsConstrainedStep</c> -- which is where that walk lives -- is in the logs of the
+    /// night everybody crashed.</para>
+    ///
+    /// <para>The same call hands an orbit's cached points back to an <c>ArrayPool</c> while a worker
+    /// reads them, which needs no change of parent and so happened on every placement.</para>
+    /// </summary>
+    private static readonly Dictionary<string, (Vehicle Craft, Wire.State State)> ToPlace = [];
     private static readonly List<string> SaidLines = [];
 
     private static Client? _client;
@@ -339,7 +358,9 @@ internal static class Sync
         Describes.Clear();
         Rebuilt.Clear();
         ToBuild.Clear();
-        ToRemove.Clear();
+        ToPlace.Clear();
+        // Not ToRemove: what is in it still has to go, and Settle takes it away on the next frame
+        // whether this game is in a shared world or its own again.
         PlacedAt.Clear();
         Engines.Clear();
         World.ForgetEngines();
@@ -582,6 +603,7 @@ internal static class Sync
         Say($"the world has come, {world.Data.Length / 1024} KB: loading it");
         (_loadingSince, _settle, Now) = (Wall(), 0, Stage.Loading);
         Puppets.Clear();
+        ToPlace.Clear();
         Built.Clear();
         MadeHere.Clear();
         Engines.Clear();
@@ -591,6 +613,28 @@ internal static class Sync
             Say($"the world could not be loaded: {why}");
             Disconnect();
         }
+    }
+
+    /// <summary>
+    /// A world about to be loaded in this game that the mod did not ask for: the player opened a
+    /// save of their own, or a tool did it for them.
+    ///
+    /// <para>This game cannot stay in the shared world across one. KSA destroys every vehicle and
+    /// deserializes new objects, and everything this session knows a craft by -- what it has seen,
+    /// built, claimed or made here -- is the identity of the old objects. So every craft of the
+    /// loaded save reads as one this game has just made, and the next frame claims the lot, writes
+    /// each one down and sends it to everybody: a single-player save uploaded into the room, which
+    /// is the same cascade a night of debris was spent on. Leaving is the honest answer, since the
+    /// world in front of this player is no longer the one the others are in.</para>
+    ///
+    /// <para>The mod's own loads say <see cref="Stage.Loading"/> before they start, which is how
+    /// this tells the server's world from the player's.</para>
+    /// </summary>
+    public static void WorldLoadedHere()
+    {
+        if (Now != Stage.Playing) return;
+        Say("a save was loaded in this game, which the others are not in: leaving the shared world");
+        Disconnect();
     }
 
     private static void StartPlaying(Client c)
@@ -1053,7 +1097,7 @@ internal static class Sync
             if (!v.HasPhysicsBubble && now >= PlacedAt.GetValueOrDefault(key))
             {
                 PlacedAt[key] = now + PlaceEverySeconds;
-                World.PlaceAnalytic(v, s, PlaceNearEnoughM);
+                ToPlace[key] = (v, s);
             }
         }
         foreach (Vehicle v in Puppets.Keys.Where(p => !wanted.Contains(p)).ToArray()) Puppets.Remove(v);
@@ -1200,13 +1244,25 @@ internal static class Sync
     /// </summary>
     public static void Settle()
     {
-        if (Now != Stage.Playing) return;
-        // Out before in: a name freed this frame is a name the next craft may want.
+        // Out before in: a name freed this frame is a name the next craft may want. Taken away
+        // whatever this game is doing, because a craft waiting in here is one this world should not
+        // have -- debris its copy of somebody's rocket shed, a hull being rebuilt, something swept
+        // -- and the quiet window is the only place it may go. Disconnecting used to empty the queue
+        // instead, which left every one of them standing in a world with nothing to drive them.
         foreach (Vehicle going in ToRemove)
         {
             if (World.IsAlive(going)) World.Destroy(going);
         }
         ToRemove.Clear();
+        if (Now != Stage.Playing) return;
+        foreach ((Vehicle craft, Wire.State state) in ToPlace.Values)
+        {
+            // Asked a frame ago, so asked of a craft that may since have been taken away, or been
+            // given a bubble by the solver -- which is the one thing placing must not fight.
+            if (!World.IsAlive(craft) || craft.HasPhysicsBubble || !Puppets.ContainsKey(craft)) continue;
+            World.PlaceAnalytic(craft, state, PlaceNearEnoughM);
+        }
+        ToPlace.Clear();
         if (ToBuild.Count == 0) return;
         foreach ((string key, (byte[] definition, string owner)) in ToBuild.ToArray())
         {

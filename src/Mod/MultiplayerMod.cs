@@ -38,8 +38,6 @@ public sealed class MultiplayerMod
         if (_disabled) return;
         try
         {
-            // Before the session, so a craft placed this frame has every pad to stand on.
-            Pads.LayOut();
             Sync.Update();
         }
         catch (Exception e)
