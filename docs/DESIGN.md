@@ -152,7 +152,10 @@ shared one.
      one is the player reaching for a warp: it is put to the others instead of taken. Out of flight
      the clock is let go of at real time and not at whatever this world was last run at, or the
      catch-up warp from a join goes on running in the editor and the tracking station with nothing
-     holding it to the server, and the world comes back further ahead than it went.
+     holding it to the server, and the world comes back further ahead than it went. A warp key
+     pressed from a menu that has stopped this world is taken and ignored, the same as one at either
+     end of the ladder: nobody is in this player's menu, and asking the room to warp while not
+     running at it oneself is not a question worth putting.
 
 What nobody owns is left to each world: a craft on rails goes the same way in every one, and a craft
 in physics that nobody flies drifts apart from world to world.

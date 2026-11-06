@@ -597,19 +597,28 @@ internal static class World
         doubleQuat ccf2Body = body2Ccf.Inverse();
         double3 off = D(s.PositionCcf) - positionCcf;
 
-        // A kitten is left alone over a wider gap than a rocket, and the gap it is left alone within
-        // is the gap that would otherwise wake it and set it walking on the spot.
-        bool walks = v is KittenEva;
+        // A kitten on the ground, which is the only place the correction can be read as walking: off
+        // the ground KSA gives a kitten's traction servo no budget at all, so there is nothing to be
+        // held back for and the clamp only stopped an EVA kitten keeping up with its owner.
+        bool walks = v is KittenEva && v.Situation.HasAnyContact();
         double rest = walks ? KittenRestM : 0.05;
         // Standing where it is told to stand, it is left on KSA's rails: woken every step, its physics is built again every step.
         if (v.Situation.IsOnRails() && Vec(D(s.VelocityCcf)) < 0.05 && Vec(off) < rest) return;
-        bool snap = Vec(off) > SnapM;
+
+        // Nothing heard for long enough that the state has stopped moving: Track carries a craft on
+        // past its newest word for a second and then holds it where it got to, and chasing that held
+        // point drags the craft back its whole frame's travel, every frame -- 130 m a frame in low
+        // orbit, for as long as four seconds, or fifty behind a warp. The craft is better left
+        // coasting on the velocity it was last given. True only when the carrying-on was cut short,
+        // because Track stamps the time it actually drew at.
+        bool held = Universe - Track.DelaySeconds - s.Universe > 0.0;
+        bool snap = !held && Vec(off) > SnapM;
         if (snap) states.Kinematic.PositionPhys += off.Transform(ccf2Body).Transform(body2Phys);
         doubleQuat wantedBody2Ccf = new(s.Body2Ccf.X, s.Body2Ccf.Y, s.Body2Ccf.Z, s.Body2Ccf.W);
         states.Kinematic.Body2Phys = body2Phys * (ccf2Body * wantedBody2Ccf);
 
         PhysicsStates.GetStatesCcf(in states.Origin, in states.Kinematic, out _, out double3 nowVelocity, out doubleQuat nowBody2Ccf);
-        double3 draw = snap ? double3.Zero : off / Math.Max(PullSeconds, dt);
+        double3 draw = snap || held ? double3.Zero : off / Math.Max(PullSeconds, dt);
         // Held to a walk, not to a distance: what matters to a kitten's legs is how fast this says
         // it is going, and the distance was already answered by the snap above.
         if (walks && Vec(draw) > KittenPullMetresPerSecond)
@@ -619,7 +628,12 @@ internal static class World
         double3 wanted = D(s.VelocityCcf) + draw;
         states.Kinematic.VelocityPhys += (wanted - nowVelocity).Transform(nowBody2Ccf.Inverse()).Transform(states.Kinematic.Body2Phys);
         states.Kinematic.AngularVelocityPhys = D(s.Spin).Transform(states.Kinematic.Body2Phys);
-        if (v.Situation.IsOnRails()) v.TakeOffRails();
+        // Only when something was actually corrected. Taking a craft off rails keeps it awake, and a
+        // craft in contact that is awake can never get back on them -- KSA only puts one back when
+        // its body sleeps, and it keeps it awake for as long as it is off rails. So doing this
+        // unconditionally latched every landed craft off rails on its first frame, and the standing
+        // still path above could never be reached again.
+        if (!held && Vec(off) >= rest && v.Situation.IsOnRails()) v.TakeOffRails();
     }
 
     /// <summary>

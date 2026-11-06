@@ -466,6 +466,12 @@ internal static class Hooks
     {
         try
         {
+            // Not from a menu that has stopped this world. The speed itself is already left alone
+            // while paused -- see Held -- but a warp key went straight past that and put the
+            // question to everybody: a player sat in the escape menu could ask the whole room to run
+            // at ten times speed, see nothing of it, and not be running at it themselves until they
+            // came out. Taken and ignored, as the keys are at either end of the ladder.
+            if (Paused()) return true;
             return Sync.StepSpeed(direction);
         }
         catch (Exception e)

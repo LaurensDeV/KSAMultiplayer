@@ -118,6 +118,47 @@ public class ClockTests
                     "the make-up has to survive the ceiling, or a slow world loses time every second");
     }
 
+    [Fact]
+    public void ACraftPastItsNewestWordKeepsTurningAndKeepsChangingSpeed()
+    {
+        // A quarter turn a second about Z, speeding up by 10 m/s every second.
+        Track track = new();
+        Vec3 spin = new(0, 0, Math.PI / 2);
+        track.Add(At(10.0, 0) with { Spin = spin, VelocityCcf = new Vec3(10, 0, 0) });
+        track.Add(At(10.5, 5) with { Spin = spin, VelocityCcf = new Vec3(15, 0, 0) });
+
+        // Half a second past the newest word, which is where a craft its owner is not flying spends
+        // most of its life: the attitude used to be frozen there and the velocity left as it was.
+        Wire.State s = Assert.IsType<Wire.State>(track.At(11.0 + Track.DelaySeconds));
+        Assert.Equal(11.0, s.Universe, 6);
+
+        // A quarter of a quarter-turn: 22.5 degrees about Z.
+        Quat turned = Quat.Turn(spin, 0.5);
+        Assert.Equal(Math.Sin(Math.PI / 8), turned.Z, 9);
+        Assert.Equal(Math.Cos(Math.PI / 8), turned.W, 9);
+        Assert.Equal(turned.Z, s.Body2Ccf.Z, 9);
+        Assert.Equal(1.0, s.Body2Ccf.LengthSquared, 9);
+
+        // And carried on at the acceleration the last two words showed, never for longer than the
+        // interval they spanned -- a craft that stages changes that all at once.
+        Assert.Equal(20.0, s.VelocityCcf.X, 6);
+        Wire.State far = Assert.IsType<Wire.State>(track.At(12.5 + Track.DelaySeconds));
+        Assert.Equal(20.0, far.VelocityCcf.X, 6);
+    }
+
+    [Fact]
+    public void NothingIsTurnedByNoSpin()
+    {
+        Assert.Equal(Quat.Identity, Quat.Turn(Vec3.Zero, 10.0));
+        Assert.Equal(Quat.Identity, Quat.Turn(new Vec3(0, 0, 1), 0.0));
+        // Two turns one after the other are the turn of the whole time.
+        Vec3 spin = new(0.3, -0.4, 0.5);
+        Quat once = Quat.Turn(spin, 0.4);
+        Quat twice = Quat.Turn(spin, 0.2) * Quat.Turn(spin, 0.2);
+        Assert.Equal(once.X, twice.X, 9);
+        Assert.Equal(once.W, twice.W, 9);
+    }
+
     private static Wire.State At(double t, double x) =>
         new(1, "R", 0, t, "Earth", new Vec3(x, 0, 0), new Vec3(10, 0, 0), new Vec3(x, 0, 0), new Vec3(10, 0, 0), Quat.Identity, Vec3.Zero, 0, 0);
 

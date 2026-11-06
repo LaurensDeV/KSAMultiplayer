@@ -68,7 +68,20 @@ internal static class Sync
     {
         public Vehicle Craft { get; } = craft;
         public int Shape { get; set; } = World.Shape(craft);
-        public double SendNext { get; set; }
+
+        /// <summary>
+        /// When this craft's state may next be sent, spread across the first interval rather than
+        /// left at zero.
+        ///
+        /// <para>Because every craft claimed on one frame was claimed against one reading of the
+        /// clock, so all of them came due on the same frame for ever after. A rocket coming apart
+        /// into sixty fragments then sent sixty datagrams at once, twice a second, which the server
+        /// turned into sixty relays to every player inside one of its own five-millisecond ticks --
+        /// a burst that holds up the clock and the roster it sends in the same tick, and whose
+        /// losses fall together on one instant rather than being spread over the second. Correlated
+        /// loss is what runs a craft past the end of what its watchers can carry it on from.</para>
+        /// </summary>
+        public double SendNext { get; set; } = Wall() + (OwnedEverySeconds * Random.Shared.NextDouble());
     }
 
     private static readonly Stopwatch Clock = Stopwatch.StartNew();
@@ -1103,7 +1116,13 @@ internal static class Sync
             if (shape != m.Shape && MaySayHow(key) && Define(c, v)) m.Shape = shape;
             if (now < m.SendNext) continue;
             bool controlled = ReferenceEquals(v, flown);
-            m.SendNext = now + (controlled ? ControlledEverySeconds : OwnedEverySeconds);
+            double every = controlled ? ControlledEverySeconds : OwnedEverySeconds;
+            // Counted on from when it was due, not from now. Set from now, the gap between sends is
+            // however many whole frames the interval needs -- so twenty a second asked for on a
+            // machine managing thirty frames came out as fifteen, and anything faster would land
+            // under the rate its watchers need to draw it smoothly at all. Never further back than
+            // one interval, or a game that was busy would try to make up a minute of sends at once.
+            m.SendNext = Math.Max(now - every, m.SendNext) + every;
             if (World.StateOf(v, key, controlled) is { } state) c.SendState(state);
         }
     }

@@ -28,6 +28,30 @@ public readonly record struct Quat(double X, double Y, double Z, double W)
     }
 
     /// <summary>The shortest-path blend from a to b, for drawing a craft between two states.</summary>
+    /// <summary>
+    /// Two rotations one after the other: <paramref name="by"/> applied in the body's own frame and
+    /// then <paramref name="a"/>, which is the order an attitude is turned by a body-frame spin.
+    /// </summary>
+    public static Quat operator *(Quat a, Quat by) => new(
+        (a.W * by.X) + (a.X * by.W) + (a.Y * by.Z) - (a.Z * by.Y),
+        (a.W * by.Y) - (a.X * by.Z) + (a.Y * by.W) + (a.Z * by.X),
+        (a.W * by.Z) + (a.X * by.Y) - (a.Y * by.X) + (a.Z * by.W),
+        (a.W * by.W) - (a.X * by.X) - (a.Y * by.Y) - (a.Z * by.Z));
+
+    /// <summary>
+    /// The turn an angular velocity makes in a time: a rotation about the direction of
+    /// <paramref name="spin"/>, at its length in radians a second, for <paramref name="seconds"/>.
+    /// </summary>
+    public static Quat Turn(Vec3 spin, double seconds)
+    {
+        double rate = spin.Length;
+        double angle = rate * seconds;
+        // Nothing to turn by, and nothing to divide by either.
+        if (!(angle > 1e-12)) return Identity;
+        double half = angle * 0.5, k = Math.Sin(half) / rate;
+        return new Quat(spin.X * k, spin.Y * k, spin.Z * k, Math.Cos(half));
+    }
+
     public static Quat Slerp(Quat a, Quat b, double t)
     {
         double dot = (a.X * b.X) + (a.Y * b.Y) + (a.Z * b.Z) + (a.W * b.W);

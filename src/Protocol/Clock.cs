@@ -206,11 +206,36 @@ public sealed class Track
         if (t >= newest.Universe)
         {
             double ahead = Math.Min(t - newest.Universe, MostAheadSeconds);
+            // Moving as it was last seen to be changing, not as it was. The mod writes this velocity
+            // into the craft outright, so a craft past its newest state was commanded at the speed it
+            // had up to a second ago -- four metres a second out in freefall. Taken from the two
+            // newest states, and never carried further forward than the interval they span: a craft
+            // that stages or throttles changes its acceleration all at once, and a guess from before
+            // that would run away.
+            (Vec3 velocityCcf, Vec3 velocityCci) = (newest.VelocityCcf, newest.VelocityCci);
+            if (_states.Count > 1 && _states[^2].Body == newest.Body)
+            {
+                double span = newest.Universe - _states[^2].Universe;
+                if (span > 1e-6)
+                {
+                    double k = Math.Min(ahead / span, 1.0);
+                    velocityCcf += (newest.VelocityCcf - _states[^2].VelocityCcf) * k;
+                    velocityCci += (newest.VelocityCci - _states[^2].VelocityCci) * k;
+                }
+            }
+            // Turned as well as moved. Only the two positions used to be carried on, so a craft past
+            // its newest state was drawn at a frozen attitude while the mod wrote it the matching
+            // angular velocity -- a spent stage held still mid-tumble and then stepped most of the
+            // turn at once, which is the pop. Spin is in the body's own frame, which is the frame
+            // this turn is in, and it is already in every datagram.
             return newest with
             {
                 Universe = newest.Universe + ahead,
                 PositionCcf = newest.PositionCcf + (newest.VelocityCcf * ahead),
                 PositionCci = newest.PositionCci + (newest.VelocityCci * ahead),
+                VelocityCcf = velocityCcf,
+                VelocityCci = velocityCci,
+                Body2Ccf = (newest.Body2Ccf * Quat.Turn(newest.Spin, ahead)).Normalized(),
             };
         }
         if (t <= _states[0].Universe) return _states[0];
