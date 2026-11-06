@@ -66,6 +66,20 @@ internal static class Panel
     public static bool Visible = true;
 
     /// <summary>
+    /// The game has just started and the player has neither joined a server nor chosen to play alone.
+    /// KSA's welcome is held until they have (<see cref="Hooks"/>): it is a modal over the middle of
+    /// the screen, and a player who must click through it first meets the mod as something behind it.
+    /// </summary>
+    public static bool Starting = true;
+
+    /// <summary>Whether KSA asked for its welcome while this was starting, so it is shown to a player who plays alone.</summary>
+    public static bool WelcomeHeld;
+
+    // Asked for from KSA's configuration, which has no universe to join with: the server is joined
+    // once the game has made one, in the system the server said.
+    private static bool _joinOnLoad;
+
+    /// <summary>
     /// Until when the player list is shown without Tab held, on this game's own clock. The bridge sets
     /// it, which only a developer's install starts: holding a key is the one thing it cannot do, and a
     /// list nobody can photograph is a list nobody can check.
@@ -84,12 +98,25 @@ internal static class Panel
     public static void Draw(bool atACraft)
     {
         if (!_loaded) Load();
+        if (_joinOnLoad)
+        {
+            _joinOnLoad = false;
+            Sync.Connect(AddressText.ToString(), NameText.ToString(), PasswordText.ToString());
+        }
         PadsWindow();
         WarpWindow();
         if (atACraft)
         {
             Scoreboard();
             ChatWindow();
+        }
+
+        // Joined by whatever means, the bridge's included, is a choice made.
+        if (Starting && Sync.Now != Sync.Stage.Off) Starting = false;
+        if (Starting)
+        {
+            StartWindow();
+            return;
         }
 
         ImGuiViewportPtr screen = ImGui.GetMainViewport();
@@ -485,7 +512,79 @@ internal static class Panel
         (_typing, _focusChat) = (false, false);
     }
 
-    private static void Join()
+    /// <summary>
+    /// Drawn in place of KSA's configuration at start, from the prefix on <c>Popup.DrawAll</c>: true
+    /// when it was, and KSA's popups are left undrawn. Playing alone gives the configuration back;
+    /// connecting asks the server which system to start in and starts there, with the rest of the
+    /// configuration as the player last left it -- or, for a player who asked to see it first,
+    /// gives it back with the server's system chosen, and joins once its Start has been pressed.
+    /// </summary>
+    public static bool InsteadOfConfiguration()
+    {
+        if (!Starting || _configuring || World.Configuration is not { } configuration) return false;
+        if (!_loaded) Load();
+        if (Sync.AnsweredAhead() is { } system)
+        {
+            if (World.StartIn(configuration, system, out string why, start: !_settingsFirst))
+            {
+                _joinOnLoad = true;
+                _configuring = _settingsFirst;
+                if (_configuring) Sync.Say("your settings, then Start KSA: the server is joined once the game has loaded");
+            }
+            else Sync.Say(why);
+        }
+        StartWindow(ahead: true);
+        return true;
+    }
+
+    // Whether KSA's own configuration is shown once the server has said which system to start in.
+    // It is a modal, so nothing behind it can be clicked while it is up -- which is why it comes
+    // after the asking and not beside it, with nothing to go back to but its Start button.
+    private static bool _settingsFirst, _configuring;
+
+    /// <summary>
+    /// The first thing a player sees: where to join, or to play alone. A window of its own rather
+    /// than the panel moved, so the panel keeps the place the player has given it.
+    ///
+    /// <para>The world KSA starts in is a new game, so a server with no world yet is given this one
+    /// as it would be from anywhere else, and a server that has one replaces it.</para>
+    /// </summary>
+    private static void StartWindow(bool ahead = false)
+    {
+        ImGuiViewportPtr screen = ImGui.GetMainViewport();
+        float2 centre = new(screen.WorkPos.X + (screen.WorkSize.X * 0.5f), screen.WorkPos.Y + (screen.WorkSize.Y * 0.5f));
+        float2? middle = new float2(0.5f, 0.5f);
+        ImGui.SetNextWindowPos(in centre, ImGuiCond.Always, in middle);
+        ImGui.SetNextWindowSize(new float2(StartWidth, 0f), ImGuiCond.Always);
+
+        const ImGuiWindowFlags start = ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove
+                                       | ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.NoNav;
+        if (ImGui.Begin("Multiplayer###KSAMultiplayerStart", start))
+        {
+            ImGui.PushTextWrapPos(0f);
+            Join(ahead);
+            if (ahead) ImGui.Checkbox("Change settings before starting", ref _settingsFirst);
+            ImGui.Separator();
+            if (ImGui.Button("Play alone", null)) PlayAlone();
+            foreach (string said in Sync.Said.TakeLast(3)) ImGui.TextDisabled(said);
+            ImGui.PopTextWrapPos();
+        }
+        ImGui.End();
+    }
+
+    private const float StartWidth = 380f;
+
+    private static void PlayAlone()
+    {
+        Starting = false;
+        Sync.EndAhead();
+        if (!WelcomeHeld) return;
+        WelcomeHeld = false;
+        if (KSA.GameSettings.ShowWelcomePopup()) KSA.WelcomePopup.Create();
+    }
+
+    /// <param name="ahead">From KSA's configuration, where there is no world yet: Connect asks the server which one to start in.</param>
+    private static void Join(bool ahead = false)
     {
         bool edited = false;
         ImGui.SetNextItemWidth(LabelRoom);
@@ -500,14 +599,16 @@ internal static class Panel
         // Kept as soon as a field is done with, not only on connecting: a name typed before a server
         // refuses, or before the player thinks better of it, is still the name they want next time.
         if (edited) Save();
-        bool ready = AddressText.ToString().Trim().Length > 0 && NameText.ToString().Trim().Length > 0;
+        bool ready = AddressText.ToString().Trim().Length > 0 && NameText.ToString().Trim().Length > 0 && !Sync.AskingAhead;
         ImGui.BeginDisabled(!ready);
         if (ImGui.Button("Connect", null))
         {
             Save();
-            Sync.Connect(AddressText.ToString(), NameText.ToString(), PasswordText.ToString());
+            if (ahead) Sync.AskAhead(AddressText.ToString());
+            else Sync.Connect(AddressText.ToString(), NameText.ToString(), PasswordText.ToString());
         }
         ImGui.EndDisabled();
+        if (ahead) return;
         ImGui.TextDisabled("Connecting replaces your open world with the server's,");
         ImGui.TextDisabled("unless the server has none yet: then yours becomes it.");
     }

@@ -20,6 +20,8 @@ public sealed class MultiplayerMod
     public void OnImmediateLoad(Mod mod)
     {
         Log.Info($"KSA Multiplayer {typeof(MultiplayerMod).Assembly.GetName().Version} loading (mod id {mod.Id}), protocol {Wire.Version}, KSA {World.KsaBuild}");
+        // Here and not with the rest: KSA's configuration at start comes before StarMap's AllModsLoaded.
+        Hooks.InstallEarly();
     }
 
     [StarMapAllModsLoaded]

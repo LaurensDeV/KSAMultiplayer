@@ -345,7 +345,7 @@ public sealed class GameServer : IDisposable
         {
             case Wire.Hello:
                 // Its welcome was lost.
-                _udp.Send(new Wire.Welcome(player.Id, "", Options.Name, _world is not null || !player.Seeding), from);
+                _udp.Send(new Wire.Welcome(player.Id, "", Options.Name, _world is not null || !player.Seeding, System: _worldSystem), from);
                 return;
             case Wire.Ping ping:
                 player.Rtt = ping.Rtt;
@@ -457,7 +457,9 @@ public sealed class GameServer : IDisposable
         // address that cannot hear the answer cannot join, whatever else it got right.
         if (!CookieHolds(hello, from, now))
         {
-            _udp.Send(new Wire.Welcome(0, "", Options.Name, false, Cookie(from, (long)(now / CookieSeconds))), from);
+            // The world's system goes with the cookie: it is what a game asks before it has a
+            // universe, and nothing a stranger could not learn by being refused for the wrong one.
+            _udp.Send(new Wire.Welcome(0, "", Options.Name, _world is not null, Cookie(from, (long)(now / CookieSeconds)), _worldSystem), from);
             return;
         }
         string? refused = _players.Count >= Options.MaxPlayers ? $"the server is full: {Options.MaxPlayers} players"
@@ -503,7 +505,7 @@ public sealed class GameServer : IDisposable
         _players[id] = p;
 
         bool seeding = _world is null && _players.Values.All(q => !q.Seeding);
-        _udp.Send(new Wire.Welcome(id, "", Options.Name, !seeding), from);
+        _udp.Send(new Wire.Welcome(id, "", Options.Name, !seeding, System: _worldSystem), from);
         Log($"{name} has joined from {from}{(p.Admin ? " as an admin" : "")}{(seeding ? ", and their world becomes the server's" : "")}");
         // Said only when there is something to say: that they are an admin, or that the token they
         // offered is no good, which is how a game deopped while it was away forgets the one it kept.

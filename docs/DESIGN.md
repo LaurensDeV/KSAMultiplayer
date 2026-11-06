@@ -377,6 +377,19 @@ against KSA `2026.10.25.5707`:
 
 ## What has not been tried
 
+- **The Multiplayer window before KSA's configuration and its welcome.** KSA's configuration at
+  start comes before StarMap's `AllModsLoaded`, so a prefix on `Popup.DrawAll` goes in at
+  `ImmediateLoad` (`Mod.PrepareSystems`, inside `ModLibrary.PrepareAll`) and draws the window instead
+  of KSA's popups while the `ConfigOnStartPopup` is up. Connect there joins nothing: a hello with no
+  cookie is answered by the server with one, and since protocol 19 that welcome says which system
+  the world is in, so the game starts in it (as choosing it from the configuration's list would)
+  and joins once loaded; with "Change settings before starting" ticked, KSA's configuration is
+  given back with that system chosen instead, and the join waits for its Start. Play alone gives the
+  configuration back. `WelcomePopup` is made inactive as
+  it is constructed, which takes it out of KSA's list before that is drawn, and is made again for a
+  player who plays alone. A server with no world is given the new game KSA starts in, which in its
+  default start type is at the craft `Rocket`. The probe is tested over loopback; none of the rest
+  has been run in a game.
 - **Placing a puppet without physics.** `SetFlightPlan` on a railed craft and `TeleportToLocation` on
   a moving one are reached in a run, but neither has been checked against where the craft should be.
 - **Pulling a puppet in physics.** Two craft were close enough to share a bubble; that the pull holds

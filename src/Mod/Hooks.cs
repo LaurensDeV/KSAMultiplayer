@@ -24,6 +24,8 @@ namespace KSAMultiplayer;
 /// boarding all go through; <see cref="KittenEva.BoardVehicle"/>, since by the time control is handed
 /// over the kitten is already inside; and <see cref="EVADoor.PerformEvaForSeat"/>: a craft another
 /// player flies is theirs to fly, and nobody else takes it, climbs into it or empties it.</item>
+/// <item>The constructor of <see cref="WelcomePopup"/>, after, and <see cref="Popup.DrawAll"/>: the
+/// Multiplayer window comes before KSA's configuration and its welcome.</item>
 /// </list>
 ///
 /// <para>Nothing in any of them may throw: they run inside KSA's own loop.</para>
@@ -35,11 +37,45 @@ internal static class Hooks
     private static Harmony? _harmony;
     private static bool _complained;
 
+    /// <summary>
+    /// What has to be in place before KSA's configuration at start, which comes before every other
+    /// hook StarMap offers: <see cref="Popup.DrawAll"/>, so the Multiplayer window is drawn in its
+    /// place. DrawAll and not <c>SelectSystem.DrawUi</c>, which is three lines and as likely to be
+    /// inlined into its frame as Celestial.GetLocation was into the editor.
+    /// </summary>
+    public static void InstallEarly()
+    {
+        try
+        {
+            _harmony ??= new Harmony(HarmonyId);
+            Patch(AccessTools.Method(typeof(Popup), nameof(Popup.DrawAll)), nameof(BeforePopups),
+                  "the Multiplayer window does not come before KSA's configuration at start");
+        }
+        catch (Exception e)
+        {
+            Log.Error("could not patch the game's start", e);
+        }
+    }
+
+    // False leaves KSA's popups undrawn this frame: the configuration, which the window stands in for.
+    private static bool BeforePopups()
+    {
+        try
+        {
+            return !Panel.InsteadOfConfiguration();
+        }
+        catch (Exception e)
+        {
+            Complain("drawing the Multiplayer window at start", e);
+            return true;
+        }
+    }
+
     public static void Install()
     {
         try
         {
-            _harmony = new Harmony(HarmonyId);
+            _harmony ??= new Harmony(HarmonyId);
             Patch(typeof(Vehicle).GetMethod(nameof(Vehicle.PrepareWorker), [typeof(SimStep)]), nameof(BeforePrepareWorker),
                   "other players' craft cannot be moved in physics");
             Patch(AccessTools.Method(typeof(Universe), nameof(Universe.SetSimulationSpeed), [typeof(double), typeof(bool)]), nameof(BeforeSpeed),
@@ -86,6 +122,10 @@ internal static class Hooks
             PatchAfter(AccessTools.Method(typeof(VehicleEditingSpace), nameof(VehicleEditingSpace.GenerateNewVehicleId)),
                   nameof(AfterNewVehicleId),
                   "two games in one world launch craft under the same name");
+            // The constructor and not Create, which is one line and as likely to be inlined into
+            // the loading as Celestial.GetLocation was into the editor.
+            PatchAfter(AccessTools.Constructor(typeof(WelcomePopup)), nameof(AfterWelcome),
+                  "KSA's welcome is shown over the multiplayer window when the game starts");
             Patch(AccessTools.PropertySetter(typeof(Program), nameof(Program.ControlledVehicle)), nameof(BeforeControl),
                   "another player's craft can be taken over here");
             Patch(AccessTools.Method(typeof(KittenEva), nameof(KittenEva.BoardVehicle), [typeof(Vehicle), typeof(EVADoor)]), nameof(BeforeBoard),
@@ -116,7 +156,26 @@ internal static class Hooks
         }
     }
 
-    private static void PatchAfter(MethodInfo? target, string postfix, string otherwise)
+    /// <summary>
+    /// KSA's welcome, put away before it is drawn while the player chooses between a server and
+    /// playing alone. A popup goes in KSA's list as it is made and leaves it once inactive, before
+    /// the list is next drawn. A player who plays alone is given it then (<see cref="Panel"/>).
+    /// </summary>
+    private static void AfterWelcome(WelcomePopup __instance)
+    {
+        try
+        {
+            if (!Panel.Starting) return;
+            __instance.Active = false;
+            Panel.WelcomeHeld = true;
+        }
+        catch (Exception e)
+        {
+            Complain("holding KSA's welcome", e);
+        }
+    }
+
+    private static void PatchAfter(MethodBase? target, string postfix, string otherwise)
     {
         if (target is null)
         {
