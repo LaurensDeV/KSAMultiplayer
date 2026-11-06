@@ -538,6 +538,30 @@ internal static class World
     private const double SnapM = 5.0, PullSeconds = 0.15;
 
     /// <summary>
+    /// The most of the drawing-there that may show up as speed, m/s, and the distance a kitten is
+    /// left alone within, m.
+    ///
+    /// <para>Because the speed a craft is drawn there at is the speed KSA measures it moving at, and
+    /// for a kitten that is the speed it is animated walking at.
+    /// <c>PhysicsBubble.BuildKittenLocomotionFacts</c> reads this very field back as
+    /// <c>TangentialSpeedPhys</c>, and <c>KittenLocomotion</c> picks the walk clip above 0.2 m/s,
+    /// saturates its playback rate at 1.6, and trips the kitten over at 7. Divided by
+    /// <see cref="PullSeconds"/>, that is three centimetres of disagreement to start its legs
+    /// moving and a metre to make it fall over -- and a puppet kitten is asked for no movement at
+    /// all, so KSA's traction servo brakes whatever this writes back towards nothing. For a few
+    /// centimetres the servo wins, the gap never closes, and the same correction goes in again every
+    /// frame: a kitten walking on the spot for as long as anybody watches. Players called it
+    /// jittering.</para>
+    ///
+    /// <para>So a kitten's correction is held below the walking threshold and it is left alone over
+    /// a wider gap. The gap then closes more slowly, or not at all while the servo pushes back,
+    /// which is the trade: a kitten standing four centimetres from where its owner says is nobody's
+    /// problem, and <see cref="SnapM"/> still answers for a real distance. A rocket keeps the fast
+    /// pull, having no legs to move.</para>
+    /// </summary>
+    private const double KittenPullMetresPerSecond = 0.15, KittenRestM = 0.25;
+
+    /// <summary>
     /// Another player's craft written where its game says it is, from the physics window: turned as
     /// told, moving as told, and drawn onto its place. Nothing in it may throw.
     /// </summary>
@@ -552,15 +576,26 @@ internal static class World
         doubleQuat ccf2Body = body2Ccf.Inverse();
         double3 off = D(s.PositionCcf) - positionCcf;
 
+        // A kitten is left alone over a wider gap than a rocket, and the gap it is left alone within
+        // is the gap that would otherwise wake it and set it walking on the spot.
+        bool walks = v is KittenEva;
+        double rest = walks ? KittenRestM : 0.05;
         // Standing where it is told to stand, it is left on KSA's rails: woken every step, its physics is built again every step.
-        if (v.Situation.IsOnRails() && Vec(D(s.VelocityCcf)) < 0.05 && Vec(off) < 0.05) return;
+        if (v.Situation.IsOnRails() && Vec(D(s.VelocityCcf)) < 0.05 && Vec(off) < rest) return;
         bool snap = Vec(off) > SnapM;
         if (snap) states.Kinematic.PositionPhys += off.Transform(ccf2Body).Transform(body2Phys);
         doubleQuat wantedBody2Ccf = new(s.Body2Ccf.X, s.Body2Ccf.Y, s.Body2Ccf.Z, s.Body2Ccf.W);
         states.Kinematic.Body2Phys = body2Phys * (ccf2Body * wantedBody2Ccf);
 
         PhysicsStates.GetStatesCcf(in states.Origin, in states.Kinematic, out _, out double3 nowVelocity, out doubleQuat nowBody2Ccf);
-        double3 wanted = D(s.VelocityCcf) + (snap ? double3.Zero : off / Math.Max(PullSeconds, dt));
+        double3 draw = snap ? double3.Zero : off / Math.Max(PullSeconds, dt);
+        // Held to a walk, not to a distance: what matters to a kitten's legs is how fast this says
+        // it is going, and the distance was already answered by the snap above.
+        if (walks && Vec(draw) > KittenPullMetresPerSecond)
+        {
+            draw = draw.Normalized() * KittenPullMetresPerSecond;
+        }
+        double3 wanted = D(s.VelocityCcf) + draw;
         states.Kinematic.VelocityPhys += (wanted - nowVelocity).Transform(nowBody2Ccf.Inverse()).Transform(states.Kinematic.Body2Phys);
         states.Kinematic.AngularVelocityPhys = D(s.Spin).Transform(states.Kinematic.Body2Phys);
         if (v.Situation.IsOnRails()) v.TakeOffRails();
