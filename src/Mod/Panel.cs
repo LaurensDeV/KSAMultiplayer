@@ -544,10 +544,21 @@ internal static class Panel
         if (ImGui.Button("Disconnect", null)) Sync.Disconnect();
     }
 
+    /// <summary>
+    /// The name offered to a player who has not chosen one, which names nobody.
+    ///
+    /// <para>Not the machine's account name, which is what this used to be. It is in front of the
+    /// player for one click before they join, so a real name put there by Windows years ago goes to
+    /// the server and onto everybody's player list without anybody deciding it should. "Kitten" is
+    /// also what the server calls a player who sends no name at all, so the two agree, and the
+    /// digits are there because a name already in the room gets a " 2" after it.</para>
+    /// </summary>
+    private static string Callsign() => $"Kitten {Random.Shared.Next(1000, 10000)}";
+
     private static void Load()
     {
         _loaded = true;
-        Settings s = new(Environment.UserName, "", "", true);
+        Settings s = new("", "", "", true);
         try
         {
             if (File.Exists(SettingsPath)) s = JsonSerializer.Deserialize<Settings>(File.ReadAllText(SettingsPath)) ?? s;
@@ -556,7 +567,10 @@ internal static class Panel
         {
             Log.Warn($"could not read {SettingsPath}: {e.Message}");
         }
-        NameText.SetValue(s.Name);
+        // Whatever was chosen before stands, including a name that came from the account name back
+        // when that was the default: it is what the others know this player by, and what an admin's
+        // token is kept against.
+        NameText.SetValue(s.Name.Trim().Length > 0 ? s.Name : Callsign());
         AddressText.SetValue(s.Address);
         PasswordText.SetValue(s.Password);
         Visible = s.Visible;

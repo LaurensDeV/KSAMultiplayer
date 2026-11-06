@@ -23,7 +23,9 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
 3. The **Multiplayer** window is there from the moment the game opens, before any world is loaded.
    Enter the server's address (`host:port`, or just `host` for port 50100), your name and the
    password if there is one, and press **Connect**. There is a server at **`mp.ksarmory.com`** to
-   try it on.
+   try it on. The name starts as something like `Kitten 4821` rather than your Windows account name,
+   so nothing of yours reaches a server's player list unless you put it there; change it to whatever
+   you want to be called and it is kept for next time.
 4. Connecting **replaces your open world with the server's**: save first. If the server has no world
    yet, yours becomes the server's world instead, and nothing is replaced.
 5. Hold **Tab** for who is playing and what their ping is. **Enter** opens a chat line, **Enter** sends
