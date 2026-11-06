@@ -232,9 +232,22 @@ has gone and says `Gone`, the same as any other way of losing one. Deleting anot
 was not shared and never could be -- the owner's game knows nothing of it -- which is why it is
 refused rather than relayed.
 
-Nothing in KSA teleports a craft from a menu. `Vehicle.TeleportToLocation` and
-`Vehicle.SetFlightPlan` are called only from the game's own code and from this mod, so there is no
-debug move for a shared world to disagree about.
+**The debug teleport cannot move somebody else's craft, and does not need its own refusal.**
+`Vehicle.DrawPhysicsDebugWindow` offers "Teleport To CCSFS LC-39A", a few other fixed places, and a
+"Teleport To..." window with a heightmap of any body that teleports on a double click. It draws
+under `if (Program.ControlledVehicle == this && Program.ShowPhysicsDebug)`, and the prefix on the
+`Program.ControlledVehicle` setter refuses another player's craft -- so the window never appears for
+one, and its buttons have nothing of theirs to act on.
+
+Teleporting a craft of this player's own is shared like any other way of moving it: this game's
+states are what every other game follows, so it simply arrives somewhere else. Nothing has to relay
+the teleport itself.
+
+The one gap left is a frame's worth: a craft this game is controlling before the roster says who
+owns it is not yet a puppet, so a teleport then would move it here alone -- and the pull or the
+analytic placing drags it back within the second. Not worth a flag, given that this mod places
+landed craft through `Vehicle.TeleportToLocation` itself and a refusal would have to let its own
+calls through.
 
 ## What has been seen in a game
 
