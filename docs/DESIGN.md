@@ -203,6 +203,22 @@ to keep an admin from being typed in by a stranger who guessed a name, not enoug
 somebody reading the datagrams. Taking one back is a `deop` away, which is the answer to a token that
 has got out.
 
+**A name can be taken.** `op` and `deop` name a player by what they chose to be called, and whoever
+joins first holds a name: a stranger who joins as the name an operator is about to type gets the
+token, and the operator's admin becomes "name 2". A roster holds only one of a name however it is
+capitalised, so the verbs are at least unambiguous about which player they mean -- but they mean
+whoever is holding the name, not whoever deserves it. On a server where that matters, set a password.
+
+**A game that drops and comes back** does not match the session it left, because its socket takes a
+fresh port each time it connects and a session is held under its address. A session that has not been
+heard from for three seconds is let go of when a game joins under its name, which is what makes a
+reconnect get its own name and its own craft back rather than becoming "name 2" and watching its own
+rocket for ten seconds -- or two minutes, when the drop was mid-load.
+
+**A hello from an address the server has not heard from is answered with a cookie and nothing else.**
+Only a hello that says it back holds a place, since a datagram's address is whatever its sender wrote
+there.
+
 ## What has been seen in a game
 
 Two games on one machine, each with a profile of its own, joined to one server: `tools/two-games.sh

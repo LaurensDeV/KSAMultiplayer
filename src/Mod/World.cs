@@ -568,7 +568,10 @@ internal static class World
     public static void Pull(Vehicle v, Wire.State s, double dt)
     {
         if (!v.HasPhysicsBubble || dt <= 0.0 || dt > 0.25) return;
-        // Across a change of body the two frames differ; the analytic placing takes it over.
+        // Across a change of body the two frames differ, so there is nothing to write. Nothing
+        // takes this over either: the analytic placing is only for a craft with no bubble, and this
+        // craft has one -- it runs on its own physics with its owner's engines until the two games
+        // agree on what it is going round, which is a moment at an SOI boundary.
         if ((v.Parent as Astronomical)?.Id is { } body && body != s.Body) return;
         PhysicsStates states = v.GetPhysicsStatesMutable();
         PhysicsStates.GetStatesCcf(in states.Origin, in states.Kinematic, out double3 positionCcf, out _, out doubleQuat body2Ccf);

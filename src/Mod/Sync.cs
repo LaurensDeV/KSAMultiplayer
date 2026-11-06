@@ -970,12 +970,14 @@ internal static class Sync
     /// A craft described to the others, at most once every <see cref="RedescribeEverySeconds"/> for
     /// any one name.
     ///
-    /// <para>A craft is described when this game adopts one it has not seen, and what it has seen is
-    /// a set of Vehicle objects. KSA remakes the remaining stack under the same name every time a
-    /// rocket sheds a part, and each remake is an object this game has never seen, so a breakup
-    /// describes one craft over and over: watched on a real server, 23 times in six seconds, each
-    /// copy relayed to every other game to be rebuilt. Which shape arrives matters far less than
-    /// that the last one does, so the newest is held and sent when the name may speak again.</para>
+    /// <para>Because a rocket coming apart changes shape every few frames, and the shape is what
+    /// asks for it to be written down again. Shedding a part does not remake the stack -- KSA's
+    /// Split reduces the host's part tree in place and the Vehicle object carries on, which is why
+    /// the shape is what notices at all -- but a craft destroyed and rebuilt is a new object, and a
+    /// breakup described one craft over and over: watched on a real server, 23 times in six
+    /// seconds, each copy relayed to every other game to be rebuilt. Which shape arrives matters
+    /// far less than that the last one does, so the newest is held and sent when the name may speak
+    /// again.</para>
     /// </summary>
     private static void Offer(Client c, string key, byte[] bytes)
     {

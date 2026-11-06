@@ -182,11 +182,17 @@ public sealed class Track
     {
         if (_states.Count > 0 && s.Universe <= _states[^1].Universe)
         {
-            // Out of order, or a world that went back in time on a reload: kept only if it is not already there.
-            if (_states.Any(k => k.Universe == s.Universe)) return;
+            // Out of order, or a world that went back in time on a reload: kept only if it is not
+            // already there. Walked rather than asked with a lambda, which boxes the list's
+            // enumerator and makes a delegate for every state heard, twenty a second per craft.
+            for (int k = _states.Count - 1; k >= 0; k--)
+            {
+                if (_states[k].Universe == s.Universe) return;
+            }
             if (s.Universe < _states[0].Universe - 10.0) _states.Clear();
         }
-        int at = _states.FindLastIndex(k => k.Universe < s.Universe) + 1;
+        int at = _states.Count;
+        while (at > 0 && _states[at - 1].Universe >= s.Universe) at--;
         // Older than everything there is room for. Dropped where it is seen, rather than inserted
         // at the front and then taken off the front again as the oldest, which is what dropping the
         // oldest comes to when the newcomer is it.
@@ -214,7 +220,10 @@ public sealed class Track
             };
         }
         if (t <= _states[0].Universe) return _states[0];
-        int i = _states.FindLastIndex(k => k.Universe <= t);
+        // The two either side of the time wanted. The guards above put it between the oldest and
+        // the newest, so there is one of each.
+        int i = _states.Count - 1;
+        while (i > 0 && _states[i].Universe > t) i--;
         Wire.State a = _states[i], b = _states[i + 1];
         // Across a change of parent body the two are in different frames.
         if (a.Body != b.Body) return b;
