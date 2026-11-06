@@ -325,6 +325,14 @@ against KSA `2026.10.25.5707`:
 - **Holding the catch-up warp to the frame rate's headroom.** The arithmetic is tested and the
   session that calls for it is written up in `errors.md`; a world that stays behind rather than
   warping into its own bubbles has not been flown.
+- **Everything a review turned up on 2026-11-06**, written up in `docs/REVIEW-2026-11-06.md` and
+  fixed the same day: placing another player's craft from the frame's quiet window, leaving the
+  shared world when a save is loaded here, holding a kitten's correction below a walk, a reconnect
+  taking its own name and craft back, a roster round taken whole or not at all, the clocks'
+  difference measured again on a line that got slower, and the three ways a stranger could stop the
+  server. The tests cover the arithmetic and the server over loopback, and the two-game rig says the
+  mod still shares a world -- but none of it has been in front of several players, which is where
+  every one of these was found.
 - **Two players at one launch site, both shedding pieces.** A name says what a craft came off, so
   the pieces go to the right player wherever they are standing; what is untested is the case the
   distance rule used to get wrong, which is the one that put another player's debris on the wire.

@@ -306,3 +306,42 @@ side. The four the GOLF save leaves unowned are the only craft neither game clai
 
 The rig's two numbers are the before and after: craft a game made up, and craft it neither owns nor
 drives. 15 and 28 before, 0 and 4 after.
+
+## 2026-11-06 -- the kittens jittering, and the players called "name 2"
+
+Two things players reported that a review of the whole mod finally explained.
+
+**The jittering kitten.** The speed another player's craft is drawn to its place at is the speed KSA
+measures it moving at. `World.Pull` writes `states.Kinematic.VelocityPhys`, and
+`PhysicsBubble.BuildKittenLocomotionFacts` reads that very field back as `TangentialSpeedPhys`,
+which `KittenLocomotion` uses to pick the walk clip, set its playback rate and decide whether the
+kitten has tripped. Over `PullSeconds` of 0.15 s, the correction is the position error times 16:
+
+| offset | correction | what KSA does with it |
+| --- | --- | --- |
+| 3 cm | 0.2 m/s | crosses `IdleSpeedThreshold`, so the idle and walk clips swap -- and `AnimBlendTime` is also 0.15 s, so the blend never finishes before they swap back |
+| 24 cm | 1.6 m/s | the walk clip saturates at `PlaybackRateMax` |
+| 1.05 m | 7 m/s | `TumbleSpeedGate`: the kitten trips |
+| 5 m | 33 m/s | `SnapM`, above which it is put there instead |
+
+And it holds itself open. A puppet kitten is asked for no movement at all -- the mod writes only the
+engine, and KSA zeroes `ThrusterCommandFlags` for a kitten that is not an Mmu -- so the traction
+servo brakes whatever the pull writes back towards nothing, about 0.08 m/s a substep. For a few
+centimetres the servo wins, the gap never closes, the same correction goes in again next frame, and
+the kitten walks on the spot for as long as anybody watches. No packet loss, no clock error and no
+warp needed: three centimetres is enough.
+
+Fixed by holding a kitten's correction below the walking threshold and leaving it alone over a wider
+gap. Rocket tolerances were being applied to a half-metre animal.
+
+**"averageksp 2" and "MrJeranimo 2".** A game's socket takes a fresh port every time it connects,
+and a session is held under its address -- so a reconnect never matched the session it was coming
+back to and was admitted beside its own ghost. Named "name 2" for the rest of the session, in the
+roster, in the chat and in `admins.json`; refused every claim on its own craft, because the ghost
+still answered for the owner; and told that a player of its own name was flying its rocket, with
+control taken away every frame. Ten seconds of it, or two minutes when the drop was mid-load, which
+is what `reload` leaves behind -- which is exactly the sequence in the write-up above. Fixed by
+letting go of a session that has been silent for three seconds when a game joins under its name.
+
+The rest of that review, including what was investigated and found not to be true, is in
+`docs/REVIEW-2026-11-06.md`.
