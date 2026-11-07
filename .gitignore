@@ -9,6 +9,8 @@ dist/
 .idea/
 .vscode/
 
+.claude
+
 # The two-games harness: a scratch world for the test server, and the logs of a run.
 .two-games-data/
 .two-games-server.log
