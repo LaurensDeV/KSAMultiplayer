@@ -382,3 +382,47 @@ The failures themselves are what the quiet-window work fixed.
 If a ceiling of this kind is wanted again, the signal is KSA's own `_achievedSpeedFraction` -- what
 share of the asked speed the solver is actually paying for, already read as `World.Achieved` -- and
 its floor has to be above one, so a gap is always repaid even on a drowning machine.
+
+## 2026-11-07 -- one player sees parts another player's craft has already shed
+
+Two reports from `mp.ksarmory.com` on 0.10.0: *"Onyx sees craft parts that I don't"*, and *"when I go
+onto a ladder on a craft he controls, and he starts it, for me it immediately disappears for a
+bit"*. Both logs have it, and both are the same mechanism seen from two sides.
+
+The server heard Onyx describe one craft five times:
+
+```
+23:21:39 Onyx says how Laurens death machine is built, 5 KB
+23:22:07 Onyx says how Laurens death machine is built, 5 KB -- 2 times now
+23:25:30 Onyx says how Laurens death machine is built, 5 KB -- 2 times now
+23:25:32 Onyx says how Laurens death machine is built, 5 KB -- 3 times now
+23:25:34 Onyx says how Laurens death machine is built, 4 KB -- 4 times now
+```
+
+The watching game rebuilt it three times and then stopped:
+
+```
+00:21:39 rebuilding Laurens death machine: 5868 bytes became 5879
+00:22:07 rebuilding Laurens death machine: 5879 bytes became 5950
+00:25:30 rebuilding Laurens death machine: 5869 bytes became 5879
+```
+
+Nothing at 23:25:32 or 23:25:34, because `RebuildEverySeconds` is 5 and both fell inside the window
+that opened at 23:25:30. The craft lost parts in those two words -- 5 KB became 4 KB -- and the
+watching game is still showing the 5,879-byte hull.
+
+**And it never catches up.** The throttle dropped the definition outright, on the reasoning written
+into the comment: that this shape "or whatever it has become by then, is built once the wait is
+over". That holds only if the craft changes shape *again*, because a definition is only sent on a
+change of shape -- and a craft that settles into its final shape inside the window never sends
+another. So the divergence is permanent, for the rest of the session, which is what the report says.
+
+Fixed by keeping the word the wait pushed back instead of dropping it, and taking it up when the
+window opens. Forgotten on a sweep, on a `Gone`, and when a definition cannot be built here, so the
+wait cannot resurrect a craft that has been taken away.
+
+The ladder half is the same rebuild seen from on board: a rebuild destroys the puppet and builds it
+again, so a player standing on its ladder watches it go and come back, and is dropped. That part is
+not fixed. Rebuilding is how a craft's shape is followed at all, and the craft genuinely is a new
+object afterwards -- what would have to change is following a change of shape without tearing the
+hull down, which is a larger thing than this.

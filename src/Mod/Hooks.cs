@@ -442,7 +442,10 @@ internal static class Hooks
         if (Held() is not { } held) return;
         if (Math.Abs(held - simulationSpeed) > 1e-9)
         {
-            Wanted(simulationSpeed);
+            // Asked of the room only when the player reached for it. A menu opening stops the world
+            // for KSA's own reasons, and putting that to everybody is how pressing Escape used to
+            // ask the whole room to stop.
+            if (!Paused()) Wanted(simulationSpeed);
             alert = false;
         }
         simulationSpeed = held;
@@ -628,17 +631,19 @@ internal static class Hooks
     {
         try
         {
-            // Nothing is held while this player is in a menu. KSA stops the world for its own
-            // reasons -- the vehicle editor (Program.OnFrameEditor), and Escape, the settings and
-            // the save and vehicle lists (Program.UpdateMenuPause) -- and runs it again on the way
-            // out, and this prefix would turn every one of those into a speed put to the whole
-            // room. Pressing Escape asked everybody else to stop.
+            // The editor is the one place this world is not this player's flight: KSA stops it
+            // there (Program.OnFrameEditor) and runs it again on the way out, nobody is flying
+            // anything meanwhile, and HoldTheClock brings the world back to the shared one when
+            // they come out.
             //
-            // None of it is anybody else's business: nobody is in this player's menu, the shared
-            // clock runs on without them, and HoldTheClock brings their world back to it when they
-            // come out. A player who means to change the speed does it from the world, not from a
-            // menu that has stopped it.
-            return Paused() ? null : Sync.HeldSpeed;
+            // Everywhere else the world is held to the shared speed even while a menu is open.
+            // Escape, the settings and the save lists all stop the world (Program.UpdateMenuPause),
+            // and a craft that stops when its pilot opens a menu is a craft that stops for nobody
+            // else: the shared clock runs on, so this player comes back behind it, and for as long
+            // as they are in there every other game has their craft frozen at one universe time and
+            // then lets go of it. One world has one time, and a menu is not a reason to leave it.
+            // What this does not do is tell anybody about it -- see BeforeSpeed.
+            return Program.IsEditorOpen ? null : Sync.HeldSpeed;
         }
         catch (Exception e)
         {

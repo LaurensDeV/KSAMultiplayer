@@ -149,10 +149,15 @@ shared one.
      33 ms a frame, so the speed asked makes up a slower frame -- and that make-up is carried by the
      ceiling, or a game slower than 30 frames a second loses universe time every second it runs. The warp keys and pause are held to that
      speed by prefixes on both `Universe.SetSimulationSpeed`, and a speed asked for that is not that
-     one is the player reaching for a warp: it is put to the others instead of taken. Out of flight
-     the clock is let go of at real time and not at whatever this world was last run at, or the
-     catch-up warp from a join goes on running in the editor and the tracking station with nothing
-     holding it to the server, and the world comes back further ahead than it went. A warp key
+     one is the player reaching for a warp: it is put to the others instead of taken. **A menu does
+     not stop this world**: Escape, the settings and the save lists all ask KSA to stop it, and that
+     ask is answered with the shared speed instead and told to nobody -- a craft that stops when its
+     pilot opens a menu stops for nobody else, so the player would come back behind the room and
+     every other game would have had their craft frozen at one universe time and then let go of it.
+     The editor is the exception, because nothing is being flown there: the clock is let go of at
+     real time and not at whatever this world was last run at, or the catch-up warp from a join goes
+     on running in the editor with nothing holding it to the server, and the world comes back further
+     ahead than it went. A warp key
      pressed from a menu that has stopped this world is taken and ignored, the same as one at either
      end of the ladder: nobody is in this player's menu, and asking the room to warp while not
      running at it oneself is not a question worth putting.
