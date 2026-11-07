@@ -84,6 +84,25 @@ nobody is connected, unless `--keep-time` is given.
 
 ### Options
 
+Each option is a line in the settings file, a `KSAMP_` environment variable, or a flag, and a flag
+wins over the environment, which wins over the file. The file is `ksamp-server.toml` beside the
+server, or wherever `--config <path>` says; with none there, the server writes one with every option
+at its default and what it does:
+
+```toml
+# the server's name, shown to players
+name = "KSA server"
+
+# UDP port to listen on (a restart takes it up)
+port = 50100
+```
+
+At the console, `set` lists every setting and where its value came from; `set <key> <value>`
+changes one and writes it to the file, and `settings` reads the file again after it has been edited.
+Either takes effect at once, except `port`, `bind` and `data`, which wait for a restart; a setting a
+flag or the environment gives stays theirs, and the console says so. Both are the console's alone,
+like `quit`.
+
 | Option | Environment | Default | |
 | --- | --- | --- | --- |
 | `--port` | `KSAMP_PORT` | `50100` | UDP port |
@@ -92,7 +111,7 @@ nobody is connected, unless `--keep-time` is given.
 | `--password` | `KSAMP_PASSWORD` | none | |
 | `--max-players` | `KSAMP_MAX_PLAYERS` | `16` | |
 | `--data` | `KSAMP_DATA` | `./data` | where the world is kept |
-| `--world` | `KSAMP_WORLD` | | a save folder or zip to start from, replacing the kept one |
+| `--world` | `KSAMP_WORLD` | | a save folder or zip to start from, replacing the kept one; not a setting in the file, since it is something to do once |
 | `--ksa-build` | `KSAMP_KSA_BUILD` | the world's | the KSA build players must run |
 | `--snapshot-every` | `KSAMP_SNAPSHOT_EVERY` | `300` | seconds between fresh saves |
 | `--keep-time` | `KSAMP_KEEP_TIME` | off | let time run with nobody connected |
@@ -102,7 +121,7 @@ nobody is connected, unless `--keep-time` is given.
 
 Commands typed into the server's console: `players`, `say <text>`, `kick <name> [why]`,
 `op <name>`, `deop <name>`, `admins`, `clear [name]`, `reload` (or `reset`), `save`, `status`,
-`version`, `quit`.
+`version`, `set [key value]`, `settings`, `quit`.
 It shuts down cleanly on Ctrl+C and on SIGTERM.
 
 `version` says what the server is, the protocol it speaks and the KSA build it holds players to --
@@ -165,6 +184,9 @@ docker build -f deploy/Dockerfile -t ksamp-server .
 ```bash
 docker run -dit --name ksamp -p 50100:50100/udp -v ksamp-data:/data -e KSAMP_NAME="Moon base" ksamp-server
 ```
+
+Its settings file is `/data/ksamp-server.toml`, in the volume, and the systemd unit's is
+`/var/lib/ksamp/ksamp-server.toml`: beside the executable is read-only in both.
 
 The commands above are read from standard input, so a container wants `-it` to have a console at
 all: `docker attach ksamp` then types into it, and Ctrl+P Ctrl+Q leaves it running. Started with

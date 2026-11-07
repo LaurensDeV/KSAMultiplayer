@@ -24,21 +24,32 @@ const string Usage = """
       --warp-answer <s>      seconds everyone has to answer a warp (default 30)
       --keep-time            let universe time run with nobody playing
       --speed <x>            how fast universe time runs (default 1)
+      --lapse-within <s>     seconds a craft stays its owner's while they are not near it (default 10)
+      --config <path>        the settings file (default: ksamp-server.toml beside the server)
       --help                 this
 
-    Every option can also be given as an environment variable: KSAMP_PORT, KSAMP_NAME,
-    KSAMP_PASSWORD, and so on, the option's name in capitals with dashes as underscores.
+    Every option but --world and --config can also be given as an environment variable --
+    KSAMP_PORT, KSAMP_NAME, KSAMP_PASSWORD and so on, the option's name in capitals with dashes as
+    underscores -- or as a line in the settings file: port = 50100. A flag wins over the
+    environment, and the environment over the file. With no file, the server writes one with every
+    setting at its default.
 
     With no world, the first player to join gives the server theirs.
 
     Console commands, on standard input: players, say <text>, kick <name> [why],
-    op <name>, deop <name>, admins, clear [name], reload, save, status, version, help, quit.
+    op <name>, deop <name>, admins, clear [name], reload, save, status, version, help, quit,
+    settings, set <key> <value>.
 
     An admin can type those same commands into a game's chat with a / in front. op hands the player
     a token their game keeps and offers at every join after, so they stay an admin without a
     password to type or to lose; deop takes it back, from a name whether or not it is playing. The
-    list is admins.json beside the world, and holds only each token's hash. quit is the console's
-    alone: a server nobody can start again is not something to hand out by accident.
+    list is admins.json beside the world, and holds only each token's hash. quit, settings and set
+    are the console's alone: a server nobody can start again, or one whose password an admin has
+    changed, is not something to hand out by accident.
+
+    settings reads the settings file again and set changes one line of it; either takes effect at
+    once, except port, bind and data, which wait for a restart, and a setting a flag or the
+    environment gives, which they go on overriding.
 
     clear takes every craft nobody is flying out of every game and out of the world the server
     hands out -- the broom for a world filling with spent stages. A name narrows it, with * and ?
@@ -72,38 +83,59 @@ for (int i = 0; i < args.Length; i++)
     }
 }
 
-string? Opt(string name) =>
-    opts.TryGetValue(name, out string? v) ? v : Environment.GetEnvironmentVariable("KSAMP_" + name.ToUpperInvariant().Replace('-', '_'));
+string configPath = Path.GetFullPath(opts.Remove("config", out string? asked) ? asked : Settings.DefaultPath);
 
-int OptInt(string name, int fallback) => Opt(name) is { } v ? int.Parse(v, CultureInfo.InvariantCulture) : fallback;
-double OptDouble(string name, double fallback) => Opt(name) is { } v ? double.Parse(v, CultureInfo.InvariantCulture) : fallback;
+// The file as it stands, written first when there is none so there is one to edit. A server that
+// cannot write beside itself -- a system install, say -- runs on its defaults and says where to
+// point --config instead.
+Dictionary<string, string> ReadFile()
+{
+    if (!File.Exists(configPath))
+    {
+        try
+        {
+            File.WriteAllText(configPath, Settings.Template());
+            Console.WriteLine($"wrote the default settings to {configPath}");
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"no settings file, and none could be written at {configPath} ({e.Message}): give --config a path that can be");
+            return [];
+        }
+    }
+    return Settings.Read(File.ReadAllText(configPath));
+}
+
+string? Opt(string name) =>
+    opts.TryGetValue(name, out string? v) ? v : Environment.GetEnvironmentVariable(Settings.EnvironmentName(name));
+
+foreach (string key in opts.Keys)
+{
+    if (key != "world" && Settings.Find(key) is null)
+    {
+        Console.Error.WriteLine($"no option --{key}; try --help");
+        return 2;
+    }
+}
 
 ServerOptions options;
 IPAddress? bind;
+string dataFolder;
+// What each setting came to and from where, as this server took them up: what set lists, and what
+// a reread of the file is measured against.
+Dictionary<string, (string Value, string From)> started;
 try
 {
-    options = new ServerOptions
-    {
-        Port = OptInt("port", 50100),
-        Name = Opt("name") ?? "KSA server",
-        Password = Opt("password") ?? "",
-        MaxPlayers = Math.Clamp(OptInt("max-players", 16), 1, 250),
-        KsaBuild = Opt("ksa-build") ?? "",
-        SnapshotEverySeconds = Math.Max(30.0, OptDouble("snapshot-every", 300.0)),
-        WarpAnswerSeconds = Math.Clamp(OptDouble("warp-answer", 30.0), 1.0, 300.0),
-        LapseWithin = Math.Clamp(OptDouble("lapse-within", 10.0), 1.0, 3600.0),
-        KeepTime = Opt("keep-time") is "true" or "1" or "yes",
-        Speed = Math.Clamp(OptDouble("speed", 1.0), 0.0, 100.0),
-    };
-    bind = Opt("bind") is { } b ? IPAddress.Parse(b) : null;
+    started = Settings.Resolve(opts, Environment.GetEnvironmentVariable, ReadFile());
+    (options, bind, dataFolder) = Settings.Options(started);
 }
 catch (FormatException e)
 {
-    Console.Error.WriteLine($"bad option: {e.Message}; try --help");
+    Console.Error.WriteLine($"bad setting: {e.Message}; try --help");
     return 2;
 }
 
-WorldStore store = new(Path.GetFullPath(Opt("data") ?? "data"));
+WorldStore store = new(Path.GetFullPath(dataFolder));
 Stopwatch watch = Stopwatch.StartNew();
 double Now() => watch.Elapsed.TotalSeconds;
 
@@ -131,6 +163,7 @@ string Version = typeof(GameServer).Assembly.GetName().Version?.ToString(3) ?? "
 
 while (server.Said.TryDequeue(out string? early)) Say(early);
 Say($"ksamp-server {Version}, speaking protocol {Wire.Version}");
+Say($"settings: {configPath}");
 Say($"{options.Name}: listening on UDP {(bind?.ToString() ?? "*")}:{server.Port}, up to {options.MaxPlayers} players{(options.Password.Length > 0 ? ", with a password" : "")}");
 Say(server.HasWorld ? "a world is ready to hand out" : "no world yet: the first player to join gives the server theirs");
 
@@ -272,9 +305,24 @@ void Command(string line, GameServer.Player? who = null)
             {
                 Answer($"  {slash}{what.PadRight(18)} {does}");
             }
-            Answer(who is null
-                ? $"  {"quit".PadRight(18)} stop the server"
-                : "  quit is the console's alone");
+            if (who is null)
+            {
+                Answer($"  {"settings".PadRight(18)} read the settings file again");
+                Answer($"  {"set <key> <value>".PadRight(18)} change a setting and keep it in the file; set alone lists them");
+                Answer($"  {"quit".PadRight(18)} stop the server");
+            }
+            else Answer("  quit, settings and set are the console's alone");
+            break;
+        // The console's alone, as quit is: an admin who could set the password could lock every
+        // other player out, and one who could set the data folder could point it anywhere.
+        case "settings" when who is null:
+            Reapply(null);
+            break;
+        case "set" when who is null:
+            Set(rest);
+            break;
+        case "settings" or "set":
+            Answer("settings and set are the console's alone");
             break;
         case "quit" or "exit" or "stop":
             // The console's alone: a server nobody can start again is not something to hand to an admin
@@ -286,6 +334,67 @@ void Command(string line, GameServer.Player? who = null)
             Answer($"no command '{parts[0]}'; try help");
             break;
     }
+}
+
+// The settings file read again, with one line of it changed first if asked, and what changed put
+// to the running server. A flag or the environment still wins over the file, and port, bind and
+// data stay as the server was started with until it is started again.
+void Reapply((Settings.Setting Setting, string Value)? change)
+{
+    Dictionary<string, (string Value, string From)> next;
+    ServerOptions nextOptions;
+    try
+    {
+        if (change is { } c)
+        {
+            string text = File.Exists(configPath) ? File.ReadAllText(configPath) : Settings.Template();
+            string changed = Settings.Write(text, c.Setting, c.Value);
+            // Checked before it is written, so a bad value never reaches the file.
+            Settings.Options(Settings.Resolve(opts, Environment.GetEnvironmentVariable, Settings.Read(changed)));
+            File.WriteAllText(configPath, changed);
+        }
+        next = Settings.Resolve(opts, Environment.GetEnvironmentVariable, Settings.Read(File.ReadAllText(configPath)));
+        (nextOptions, _, _) = Settings.Options(next);
+    }
+    catch (Exception e) when (e is FormatException or IOException or UnauthorizedAccessException)
+    {
+        Say($"settings not changed: {e.Message}");
+        return;
+    }
+    foreach (Settings.Setting s in Settings.All)
+    {
+        (string value, string from) = next[s.Key];
+        if (from is not ("the settings file" or "its default"))
+        {
+            if (change?.Setting == s) Say($"{s.Key} is written to the file, but {from} still gives it as '{value}'");
+            continue;
+        }
+        if (value == started[s.Key].Value) continue;
+        Say(s.Live ? $"{s.Key} is now '{value}'" : $"{s.Key} is '{value}' in the file; a restart takes it up");
+    }
+    server.Reconfigure(nextOptions);
+    foreach ((string key, (string Value, string From) v) in next) if (Settings.Find(key)!.Live) started[key] = v;
+}
+
+void Set(string rest)
+{
+    string[] kv = rest.Split(' ', 2, StringSplitOptions.TrimEntries);
+    if (kv[0].Length == 0)
+    {
+        foreach (Settings.Setting s in Settings.All)
+        {
+            // The password is the one value not to put in a log, which is where the console goes.
+            string shown = s.Key == "password" ? (started[s.Key].Value.Length > 0 ? "(set)" : "(none)") : $"'{started[s.Key].Value}'";
+            Say($"  {s.Key.PadRight(15)} {shown}, from {started[s.Key].From}");
+        }
+        return;
+    }
+    if (Settings.Find(kv[0]) is not { } setting)
+    {
+        Say($"no setting '{kv[0]}'; set alone lists them");
+        return;
+    }
+    Reapply((setting, kv.Length > 1 ? kv[1] : ""));
 }
 
 // Ticked often enough that a state is passed on within a frame of its arriving.

@@ -4,6 +4,9 @@
 #   docker run -dit --name ksamp -p 50100:50100/udp -v ksamp-data:/data \
 #       -e KSAMP_NAME="My server" -e KSAMP_PASSWORD=secret ksamp-server
 #
+# Settings are /data/ksamp-server.toml, in the volume so they outlive the container, written with
+# every default on the first start; -e KSAMP_ variables override it.
+#
 # -it, because the server's commands are read from standard input and a container started without a
 # terminal has none: docker attach ksamp types into it, Ctrl+P Ctrl+Q leaves it running.
 
@@ -21,4 +24,4 @@ RUN useradd --system --home /data ksamp && chown ksamp /data
 USER ksamp
 EXPOSE 50100/udp
 VOLUME /data
-ENTRYPOINT ["dotnet", "/app/ksamp-server.dll", "--data", "/data"]
+ENTRYPOINT ["dotnet", "/app/ksamp-server.dll", "--config", "/data/ksamp-server.toml", "--data", "/data"]
