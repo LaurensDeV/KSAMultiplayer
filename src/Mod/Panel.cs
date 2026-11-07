@@ -108,6 +108,12 @@ internal static class Panel
             _joinOnLoad = false;
             Sync.Connect(AddressText.ToString(), NameText.ToString(), PasswordText.ToString());
         }
+        // Wherever this window is drawn, the asking it started has to be finished with. Only the
+        // configuration at start acts on the answer, so only there is it left alone to take it: a
+        // look drained anywhere else is stored for the rows and says nothing, and a look drained
+        // nowhere stands for ever -- the rows stuck on "asking...", and Sync.Look refusing to begin
+        // another because one is still going, so the field could be changed and nothing happened.
+        if (!TheConfigurationIsAsking()) Sync.AnsweredAhead();
         PadsWindow();
         WarpWindow();
         if (atACraft)
@@ -559,6 +565,14 @@ internal static class Panel
     /// configuration as the player last left it -- or, for a player who asked to see it first,
     /// gives it back with the server's system chosen, and joins once its Start has been pressed.
     /// </summary>
+    /// <summary>
+    /// Whether <see cref="InsteadOfConfiguration"/> is the one drawing this frame, and so the one
+    /// to take what a server answers: the system it names is what KSA is about to start in, and a
+    /// drain anywhere else would swallow it. The same guard that method opens with.
+    /// </summary>
+    private static bool TheConfigurationIsAsking() =>
+        Starting && !_configuring && World.Configuration is not null;
+
     public static bool InsteadOfConfiguration()
     {
         if (!Starting || _configuring || World.Configuration is not { } configuration) return false;
