@@ -37,9 +37,10 @@ Set `worlds` and both records are made for each:
 
     export TF_VAR_worlds='{ mpcars = { port = 50101 } }'
 
-A mod that reads SRV needs only `mpcars.ksarmory.com`; one that does not needs
-`mpcars.ksarmory.com:50101`, and the address record is there so that works and so the name resolves
-for everything else. **The mod does not read SRV records yet**, so today the port is typed.
+The mod reads SRV, so a player types `mpcars.ksarmory.com` and nothing else. It asks only when no
+port was typed: `mpcars.ksarmory.com:50101` is the player being specific and is dialled as written,
+which is also the way in when a resolver mangles SRV or drops it. The address record is there so
+that fallback works and so the name resolves for everything else.
 
 Two things to know when it looks broken. Nothing but the mod consults an SRV record -- `ping` and a
 browser never will -- so check it with `dig +short SRV _ksamp._udp.mpcars.ksarmory.com` and not by
