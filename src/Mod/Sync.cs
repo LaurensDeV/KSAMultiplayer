@@ -350,7 +350,7 @@ internal static class Sync
     public static void Connect(string address, string name, string password)
     {
         Disconnect();
-        if (!TryAddress(address, out string host, out int port))
+        if (!TryAddress(address, out string host, out int port, out bool portGiven))
         {
             Say("that is not an address: give host:port, or a host for port 50100");
             return;
@@ -365,7 +365,7 @@ internal static class Sync
             return;
         }
         (_asking, _address) = ((name, password), address);
-        _finding = Find(host, port);
+        _finding = Find(host, port, portGiven);
         Now = Stage.Joining;
         Say($"looking up {host}...");
     }
@@ -377,12 +377,45 @@ internal static class Sync
 
     public static bool AskingAhead => _ahead is not null;
 
-    public static void AskAhead(string address)
+    /// <summary>What the last server asked answered about itself, and the address that was asked.</summary>
+    public static (string ServerName, string System, bool HasWorld, string Mods)? Server { get; private set; }
+
+    public static string ServerAsked { get; private set; } = "";
+
+    /// <summary>Whether a server is being asked about right now.</summary>
+    public static bool Asking => _ahead is not null;
+
+    private static bool _lookOnly;
+
+    private static string _askedOf = "";
+
+    /// <summary>
+    /// The same question as <see cref="AskAhead"/> and none of the answer acted on: what a window
+    /// shows about a server before anybody has decided to join it.
+    /// </summary>
+    public static void Look(string address)
+    {
+        if (Asking || ServerAsked == address) return;
+        AskAhead(address, quietly: true);
+    }
+
+    /// <summary>Why the last look found nothing, for the window to show in place of an answer.</summary>
+    public static string ServerTrouble { get; private set; } = "";
+
+    /// <summary>Forgotten, so the next window asks again rather than showing a server nobody chose.</summary>
+    public static void Forget() => (Server, ServerAsked) = (null, "");
+
+    public static void AskAhead(string address, bool quietly = false)
     {
         EndAhead();
-        if (!TryAddress(address, out string host, out int port))
+        // Set before anything can speak: a look the window asked for says nothing to the player,
+        // whether it answers, is refused, or finds nobody there.
+        _lookOnly = quietly;
+        ServerTrouble = "";
+        (Server, ServerAsked) = (null, "");
+        if (!TryAddress(address, out string host, out int port, out bool portGiven))
         {
-            Say("that is not an address: give host:port, or a host for port 50100");
+            Trouble(address, "that is not an address: give host:port, or a host for port 50100");
             return;
         }
         try
@@ -391,11 +424,20 @@ internal static class Sync
         }
         catch (SocketException e)
         {
-            Say($"could not open a socket: {e.Message}");
+            Trouble(address, $"could not open a socket: {e.Message}");
             return;
         }
-        _aheadFinding = Find(host, port);
-        Say($"asking {host} which world it holds...");
+        _aheadFinding = Find(host, port, portGiven);
+        _askedOf = address;
+        if (!_lookOnly) Say($"asking {host} which world it holds...");
+    }
+
+    // Kept for the window to show either way; said out loud only for an ask the player made, and
+    // then for the panel in a running game rather than for the one that is about to show the row.
+    private static void Trouble(string address, string why)
+    {
+        (ServerTrouble, ServerAsked) = (why, address);
+        if (!_lookOnly) Say(why);
     }
 
     /// <summary>
@@ -412,20 +454,32 @@ internal static class Sync
             if (finding.IsCompletedSuccessfully && finding.Result is { } at) c.Probe(at);
             else
             {
-                Say("that server could not be found");
+                Trouble(_askedOf, "could not be found");
                 EndAhead();
                 return null;
             }
         }
         c.Update();
-        while (c.Said.TryDequeue(out string? said)) Say(said);
+        while (c.Said.TryDequeue(out string? said))
+        {
+            ServerTrouble = said;
+            if (!_lookOnly) Say(said);
+        }
         if (c.Out.Length > 0)
         {
+            (ServerTrouble, ServerAsked) = (c.Out, _askedOf);
             EndAhead();
             return null;
         }
         if (c.Probed is not { } p) return null;
+        (Server, ServerAsked) = (p, _askedOf);
         EndAhead();
+        // Asked only so a window could say what is there; nobody is going anywhere yet.
+        if (_lookOnly)
+        {
+            _lookOnly = false;
+            return null;
+        }
         string name = p.ServerName.Length > 0 ? p.ServerName : "the server";
         // Said before a world is started rather than after it is refused. KSA reads its mods once,
         // at startup, so a player who learns here has a start screen to act from and one who learns
@@ -441,9 +495,9 @@ internal static class Sync
             Say($"{name}'s world does not have mods this game is running: {extra}. Turn them off and start again.");
             return null;
         }
-        Say(!p.HasWorld ? $"{name} has no world yet: yours becomes it"
-            : p.System.Length > 0 ? $"{name}'s world is in {p.System}: starting there"
-            : $"{name} does not say which system its world is in: starting in yours");
+        // Nothing said about the system: the window has a World row that says it already, in the name
+        // KSA's own list uses rather than the id, and a second telling of it under the buttons is a
+        // line the player reads twice. A refusal above is said because nothing else says it.
         return p.System;
     }
 
@@ -455,7 +509,7 @@ internal static class Sync
     /// <para>The same comparison the server makes in its own refusal, made here as well so it can be
     /// put to the player while it is still worth something. The server's is the one that decides.</para>
     /// </summary>
-    private static (string Missing, string Extra) ModsAgainst(string worldMods)
+    public static (string Missing, string Extra) ModsAgainst(string worldMods)
     {
         string[] wants = Split(worldMods);
         if (wants.Length == 0) return ("", "");
@@ -1427,23 +1481,40 @@ internal static class Sync
         World.SetSpeed(HeldSpeed.Value);
     }
 
-    private static async Task<IPEndPoint?> Find(string host, int port)
+    /// <summary>
+    /// How long a name is asked about for a port before the default one is used. Short because it is
+    /// spent before the first datagram goes anywhere, and a player watching a window that says
+    /// "looking up" has no way to tell a slow resolver from a server that is not there.
+    /// </summary>
+    private static readonly TimeSpan SrvWait = TimeSpan.FromSeconds(1.5);
+
+    private static async Task<IPEndPoint?> Find(string host, int port, bool portGiven)
     {
         if (IPAddress.TryParse(host, out IPAddress? ip)) return new IPEndPoint(ip.MapToIPv4(), port);
+        // Only when nobody said which port. A port typed after the name is the player being specific,
+        // and a record in somebody else's zone does not get to overrule them.
+        if (!portGiven && await Srv.LookupAsync(host, SrvWait) is { } said) (host, port) = (said.Host, said.Port);
         IPAddress[] found = await Dns.GetHostAddressesAsync(host, AddressFamily.InterNetwork);
         return found.Length > 0 ? new IPEndPoint(found[0], port) : null;
     }
 
     /// <summary>A server's address read: "host:port", or a host alone for the default port.</summary>
-    public static bool TryAddress(string text, out string host, out int port)
+    public static bool TryAddress(string text, out string host, out int port) =>
+        TryAddress(text, out host, out port, out _);
+
+    /// <param name="portGiven">Whether the port was typed. A name without one is a name worth asking
+    /// an SRV record about, since one machine holds several worlds and only a record says which port.</param>
+    /// <inheritdoc cref="TryAddress(string, out string, out int)"/>
+    public static bool TryAddress(string text, out string host, out int port, out bool portGiven)
     {
         text = text.Trim();
-        (host, port) = (text, DefaultPort);
+        (host, port, portGiven) = (text, DefaultPort, false);
         int colon = text.LastIndexOf(':');
         if (colon > 0 && text.IndexOf(':') == colon)
         {
             host = text[..colon];
             if (!int.TryParse(text[(colon + 1)..], out port) || port is < 1 or > 65535) return false;
+            portGiven = true;
         }
         return host.Length > 0 && !host.Contains(' ');
     }

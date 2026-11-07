@@ -29,7 +29,7 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
    game has loaded. Tick **Change settings before starting** to get KSA's configuration first, with
    the server's system chosen, for graphics and the rest; **Start KSA** then joins. Once in a game,
    KSA's **Mods** menu has an entry that brings the window back if you shut it.
-   Enter the server's address (`host:port`, or just `host` for port 50100), your name and the
+   Enter the server's address (a host on its own, or `host:port`), your name and the
    password if there is one, and press **Connect**. There is a server at **`mp.ksarmory.com`** to
    try it on. The name starts as something like `Kitten 4821` rather than your Windows account name,
    so nothing of yours reaches a server's player list unless you put it there; change it to whatever
@@ -79,6 +79,15 @@ Copy `dist/ksamp-server-linux-x64/ksamp-server` to the server and run it:
 
 Open **UDP port 50100** in the firewall (and on the router, if the server is at home). Players connect
 to the server's address.
+
+On another port, players would have to type `host:50101` -- unless the zone holds an SRV record,
+which the mod reads when no port is typed:
+
+    _ksamp._udp.mpcars.example.com.  300  IN  SRV  0 0 50101 mpcars.example.com.
+
+Keep an address record on the name beside it, both so the name resolves for everything that does not
+ask about SRV and so a player whose resolver drops the record can still get in by typing the port.
+`infra/` makes both from one line of configuration.
 
 ### Giving it a world
 

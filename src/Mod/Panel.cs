@@ -18,13 +18,10 @@ internal static class Panel
     private const ImGuiWindowFlags Flags = ImGuiWindowFlags.NoCollapse
                                            | ImGuiWindowFlags.NoFocusOnAppearing | ImGuiWindowFlags.NoNav;
 
-    private static readonly float2 FirstSize = new(320f, 250f);
-    private static readonly float2 SmallestSize = new(240f, 120f);
+    private static readonly float2 FirstSize = new(400f, 300f);
+    private static readonly float2 SmallestSize = new(320f, 120f);
     private static readonly float2 LargestSize = new(560f, 720f);
 
-    // What the widest label beside a field ("Your name") needs, so a field takes the rest of the
-    // window however it is resized and no label is cut off at the edge.
-    private const float LabelRoom = -112f;
 
     // Where the player list's columns start, from the left of its window.
     private const float PingColumn = 150f, FlyingColumn = 215f;
@@ -146,7 +143,6 @@ internal static class Panel
             ImGui.PushTextWrapPos(0f);
             if (Sync.Now == Sync.Stage.Off) Join();
             else Joined();
-            foreach (string said in Sync.Said.TakeLast(3)) ImGui.TextDisabled(said);
             ImGui.PopTextWrapPos();
         }
         ImGui.End();
@@ -571,7 +567,6 @@ internal static class Panel
                 // game this configuration starts, so its system, its game type and where it starts
                 // are the player's to choose after all.
                 _lockWhatTheServerSettled = _configuring && system.Length > 0;
-                if (_configuring) Sync.Say("your settings, then Start KSA: the server is joined once the game has loaded");
             }
             else Sync.Say(why);
         }
@@ -616,23 +611,39 @@ internal static class Panel
         _disabledRegions.Push(lockThis);
     }
 
+    /// <summary>Whether KSA's configuration is the popup being drawn at this moment.</summary>
+    private static bool _inConfiguration;
+
+    public static void ConfigurationDrawing(bool now) => _inConfiguration = now;
+
     /// <summary>
-    /// A way back out of KSA's configuration, drawn at the foot of its body because its own footer
-    /// holds one button and that array is a fixed length this mod has no business resizing. Only
-    /// while this mod is the reason that configuration is up: KSA's own has nowhere to go back to.
+    /// A way back out of KSA's configuration, in the footer beside its Start, because that is where
+    /// a button that leaves belongs.
+    ///
+    /// <para>Drawn from the footer's own beginning rather than added to the configuration's buttons:
+    /// KSA builds that row from an array of one, held in a static this mod has no business resizing.
+    /// The footer is begun, then right-aligned for what KSA puts in it, so anything drawn in between
+    /// takes the left of the same row.</para>
+    ///
+    /// <para>On both ways in, not only the one this mod asked for: a player who chose to play alone
+    /// is looking at the same screen, and a mind changed there has nowhere to go without this.</para>
     /// </summary>
-    public static void EndOfConfigurationBody()
+    public static void ConfigurationFooter()
     {
-        if (!_configuring) return;
-        ImGui.NewLine();
-        if (!ConsoleWidgets.Button("BACK TO MULTIPLAYER".AsSpan())) return;
+        if (!_inConfiguration) return;
+        bool back = ConsoleWidgets.Button("BACK TO MULTIPLAYER".AsSpan());
+        // So KSA's right-aligned Start lands on this line rather than under it.
+        ImGui.SameLine();
+        if (!back) return;
         // The popup stays as it is: KSA waits on it until there is a universe, and the start window
         // is drawn over it again by the prefix the moment this mod is the one answering for it.
+        // Starting again as well, for the player who got here by choosing to play alone: that is
+        // what turned this mod's own window off, and it is what turns it back on.
         _configuring = false;
         _lockWhatTheServerSettled = false;
         _joinOnLoad = false;
+        Starting = true;
         Sync.EndAhead();
-        Sync.Say("back to the server list; nothing has been joined");
     }
 
     /// <summary>And has ended. Only ever called for a region that was entered.</summary>
@@ -664,7 +675,7 @@ internal static class Panel
     {
         float2 screen = float2.Unpack(Program.GetWindow().Size);
         float scale = GameSettings.GetInterfaceScale();
-        float wide = float.Clamp(screen.X * (0.34f / scale), 400f, 520f);
+        float wide = float.Clamp(screen.X * (0.36f / scale), 440f, 560f);
         float tall = MathF.Min(screen.Y - 60f, 460f);
         if (!ConsoleStyle.BeginModal("###KSAMultiplayerStart".AsSpan(), "MULTIPLAYER".AsSpan(), new float2(wide, tall),
                                      hasFooter: true, ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoScrollbar))
@@ -674,26 +685,33 @@ internal static class Panel
         ConsoleStyle.BeginBody();
         ConsoleStyle.PushWidgetStyle();
 
+        // Said to a player, so it is shorter than the rest of this and sounds like it.
         ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.TextMuted);
         ImGui.TextWrapped(ahead
-            ? "Connecting asks the server which system its world is in and which mods it wants, then starts KSA there and joins once it has loaded."
-            : "Connecting replaces your open world with the server's, unless the server has none yet: then yours becomes it.");
+            ? "KSA will start in the server's system and join once it's loaded."
+            : "You'll be given the server's world. If it hasn't got one yet, yours becomes it.");
         ImGui.PopStyleColor();
 
         bool edited = false;
         if (ImGuiHelper.BeginRegion("Server"u8))
         {
-            edited |= Field("Server"u8, AddressText);
-            edited |= Field("Your name"u8, NameText);
-            // Not through ImGuiHelper, which has no masked input: the same two columns by hand, so
-            // the row lines up with the others and the password is still stars.
-            ImGui.Text("Password"u8);
-            ImGui.NextColumn();
-            ImGui.PushItemWidth(-1f);
-            ImGui.InputText("###KSAMultiplayerPassword", PasswordText, ImGuiInputTextFlags.Password);
-            edited |= ImGui.IsItemDeactivatedAfterEdit();
-            ImGui.PopItemWidth();
-            ImGui.NextColumn();
+            edited |= Field("Server"u8, "###KSAMultiplayerServer", AddressText);
+            edited |= Field("Your name"u8, "###KSAMultiplayerName", NameText);
+            edited |= Field("Password"u8, "###KSAMultiplayerPassword", PasswordText, ImGuiInputTextFlags.Password);
+
+            // Asked for by the window rather than by the player, and in the same region as the
+            // fields: what is over there belongs beside where it was typed, not under a heading of
+            // its own. Once the field is done with and not as it is typed, or a server is asked
+            // about "l" on the way to "localhost", a datagram a letter.
+            string typed = AddressText.ToString().Trim();
+            if (edited) _asked = "";
+            if (typed.Length > 0 && _asked.Length == 0 && !Sync.Asking)
+            {
+                _asked = typed;
+                Sync.Forget();
+                Sync.Look(typed);
+            }
+            ThisServer(typed);
             ImGuiHelper.EndRegion();
         }
         // Outside the regions, where KSA puts its configuration's own Always Show: a region lays its
@@ -708,15 +726,6 @@ internal static class Panel
         // Kept as soon as a field is done with, not only on connecting: a name typed before a server
         // refuses, or before the player thinks better of it, is still the name they want next time.
         if (edited) Save();
-
-        string[] lately = [.. Sync.Said.TakeLast(3)];
-        if (lately.Length > 0)
-        {
-            ImGui.NewLine();
-            ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.TextMuted);
-            foreach (string said in lately) ImGui.TextWrapped(said);
-            ImGui.PopStyleColor();
-        }
 
         ConsoleStyle.PopWidgetStyle();
         ConsoleStyle.EndBody();
@@ -740,12 +749,124 @@ internal static class Panel
         ConsoleStyle.EndModal();
     }
 
-    /// <summary>One of KSA's label-and-control rows, over this mod's own text buffers.</summary>
-    private static bool Field(ImString label, ImInputString into)
+    // The address the window has asked about, so it asks once a server and again when the field changes.
+    private static string _asked = "";
+
+    /// <summary>
+    /// What the server over there said of itself, before anybody has joined it: its name, whether it
+    /// holds a world, and the mods it wants against the mods this game has. The tick is a checkbox
+    /// nobody can press rather than a character, because a font that has no tick draws a box instead
+    /// and the one thing this must not be is ambiguous.
+    /// </summary>
+    private static void ThisServer(string typed)
     {
-        string text = into.ToString();
-        bool done = ImGuiHelper.DrawInput(label, ref text, isChanged: false, out _);
-        if (done || !string.Equals(text, into.ToString(), StringComparison.Ordinal)) into.SetValue(text);
+        // Always these three rows, answered or not: a window that grows a section when an answer
+        // arrives moves its own buttons out from under the pointer.
+        bool mine = Sync.ServerAsked == typed;
+        if (mine && Sync.Server is { } there)
+        {
+            (string missing, string extra) = Sync.ModsAgainst(there.Mods);
+            string[] wants = [.. there.Mods.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+            Told("Server name"u8, there.ServerName.Length > 0 ? there.ServerName : "unnamed");
+            Told("World"u8, !there.HasWorld ? "none yet: yours becomes it"
+                          : there.System.Length > 0 ? Named(there.System) : "yes");
+            Mods(wants, missing, extra);
+            return;
+        }
+        if (mine && Sync.ServerTrouble.Length > 0)
+        {
+            ImGui.Text("Server name"u8);
+            ImGui.NextColumn();
+            ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.Pending);
+            ImGui.TextWrapped(Sync.ServerTrouble);
+            ImGui.PopStyleColor();
+            ImGui.NextColumn();
+        }
+        else Told("Server name"u8, Sync.Asking ? "asking..." : "-");
+        Told("World"u8, "-");
+        Told("Mods"u8, "-");
+    }
+
+    /// <summary>
+    /// Mods that are nobody's choice, so no use in a list of what to go and turn on: KSA's own
+    /// content, which a game without is not a game, and this mod, which anybody reading this window
+    /// is running. Hidden only while this game has them -- one that is somehow missing is the most
+    /// worth seeing of all.
+    /// </summary>
+    private static readonly string[] Given = ["Core", "KSAMultiplayer"];
+
+    /// <summary>
+    /// The mods a server wants: how many in the label, and the list behind a dropdown, each green
+    /// where this game has it and red where it has not. Anything this game runs that the world has
+    /// not is under it, said as what to do about it rather than as what it is: that stops a join
+    /// just as surely as something missing, and a player reading this wants the next step.
+    /// </summary>
+    private static void Mods(string[] wants, string missing, string extra)
+    {
+        HashSet<string> absent = [.. missing.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+        string[] shown = [.. wants.Where(m => absent.Contains(m) || !Given.Contains(m, StringComparer.OrdinalIgnoreCase))];
+        string[] spare = [.. extra.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                                  .Where(m => !Given.Contains(m, StringComparer.OrdinalIgnoreCase))];
+
+        ImGui.Text($"Mods ({shown.Length})");
+        ImGui.NextColumn();
+        if (shown.Length == 0 && spare.Length == 0)
+        {
+            ImGui.TextDisabled("none needed");
+        }
+        else if (ImGui.TreeNode("Required mods###KSAMultiplayerMods"))
+        {
+            foreach (string mod in shown)
+            {
+                float4 how = absent.Contains(mod) ? ConsoleStyle.Danger : ConsoleStyle.Positive;
+                ImGui.TextColored(in how, mod);
+            }
+            if (spare.Length > 0)
+            {
+                ImGui.TextDisabled("turn these off:");
+                foreach (string mod in spare) ImGui.TextColored(in ConsoleStyle.Danger, mod);
+            }
+            ImGui.TreePop();
+        }
+        ImGui.NextColumn();
+    }
+
+    /// <summary>
+    /// A system as KSA's own configuration names it in its list -- "Earth and Moon" rather than
+    /// "SolLite" -- or the id itself for one this game does not have, which is a thing worth seeing
+    /// raw because it is why the join will be refused.
+    /// </summary>
+    private static string Named(string system) =>
+        SelectSystem.Systems.FirstOrDefault(s => s.Id == system)?.DisplayName.Value is { Length: > 0 } shown
+            ? shown
+            : system;
+
+    /// <summary>A row of KSA's two columns that says something rather than asking it.</summary>
+    private static void Told(ImString label, string what)
+    {
+        ImGui.Text(label);
+        ImGui.NextColumn();
+        ImGui.TextDisabled(what);
+        ImGui.NextColumn();
+    }
+
+    /// <summary>
+    /// One of KSA's label-and-control rows, written out rather than taken from `ImGuiHelper.DrawInput`.
+    ///
+    /// <para>That helper keeps the text in a string the caller owns and only hands it back when Enter
+    /// is struck, so a buffer of this mod's own had to be read into it every frame -- which put the
+    /// stored text back over whatever had just been typed, a letter at a time. It also has no masked
+    /// input for the password. The two columns are the same either way: a label, then the control.</para>
+    /// </summary>
+    private static bool Field(ImString label, string id, ImInputString into, ImGuiInputTextFlags flags = ImGuiInputTextFlags.None)
+    {
+        ImGui.Text(label);
+        ImGui.NextColumn();
+        ImGui.PushItemWidth(-1f);
+        ImGui.InputText(id, into, flags);
+        bool done = ImGui.IsItemDeactivatedAfterEdit();
+        ImGui.PopItemWidth();
+        ImGui.NextColumn();
         return done;
     }
 
@@ -762,33 +883,73 @@ internal static class Panel
     }
 
     /// <param name="ahead">From KSA's configuration, where there is no world yet: Connect asks the server which one to start in.</param>
+    /// <summary>
+    /// The box in the window over a running game, which is the only way back to a server list once
+    /// KSA has a universe: disconnect, type another, connect. What it cannot do is change the system
+    /// this game was started in, so that is the one thing it says out loud before the attempt.
+    /// </summary>
     private static void Join(bool ahead = false)
     {
+        // The same two columns in the same region as the start window's, rather than a block of
+        // fields with the server's answer under a heading of its own: one thing to read, laid out
+        // once, wherever the player meets it.
+        ConsoleStyle.PushWidgetStyle();
         bool edited = false;
-        ImGui.SetNextItemWidth(LabelRoom);
-        ImGui.InputText("Server", AddressText);
-        edited |= ImGui.IsItemDeactivatedAfterEdit();
-        ImGui.SetNextItemWidth(LabelRoom);
-        ImGui.InputText("Your name", NameText);
-        edited |= ImGui.IsItemDeactivatedAfterEdit();
-        ImGui.SetNextItemWidth(LabelRoom);
-        ImGui.InputText("Password", PasswordText, ImGuiInputTextFlags.Password);
-        edited |= ImGui.IsItemDeactivatedAfterEdit();
+        if (ImGuiHelper.BeginRegion("Server"u8))
+        {
+            edited |= Field("Server"u8, "###KSAMultiplayerJoinServer", AddressText);
+            edited |= Field("Your name"u8, "###KSAMultiplayerJoinName", NameText);
+            edited |= Field("Password"u8, "###KSAMultiplayerJoinPassword", PasswordText, ImGuiInputTextFlags.Password);
+
+            string asking = AddressText.ToString().Trim();
+            if (edited) _asked = "";
+            if (!ahead && asking.Length > 0 && _asked.Length == 0 && !Sync.Asking)
+            {
+                _asked = asking;
+                Sync.Forget();
+                Sync.Look(asking);
+            }
+            if (!ahead) ThisServer(asking);
+            ImGuiHelper.EndRegion();
+        }
+        ConsoleStyle.PopWidgetStyle();
         // Kept as soon as a field is done with, not only on connecting: a name typed before a server
         // refuses, or before the player thinks better of it, is still the name they want next time.
         if (edited) Save();
-        bool ready = AddressText.ToString().Trim().Length > 0 && NameText.ToString().Trim().Length > 0 && !Sync.AskingAhead;
+
+        // The one refusal this window can see coming and never fix: a universe is built once, and the
+        // system it was built in is the system this game has until it is started again. Above the
+        // button rather than under it, since the button is the floor of the window.
+        string typed = AddressText.ToString().Trim();
+        if (!ahead && Sync.ServerAsked == typed && Sync.Server is { } there
+            && there.HasWorld && there.System.Length > 0 && World.System.Length > 0 && there.System != World.System)
+        {
+            ImGui.TextColored(in ConsoleStyle.Danger,
+                              $"This world is in {Named(there.System)}; you are in {Named(World.System)}. Restart KSA to join it.");
+        }
+
+        bool ready = typed.Length > 0 && NameText.ToString().Trim().Length > 0 && !Sync.AskingAhead;
         ImGui.BeginDisabled(!ready);
-        if (ImGui.Button("Connect", null))
+        if (BottomRight("CONNECT".AsSpan()))
         {
             Save();
             if (ahead) Sync.AskAhead(AddressText.ToString());
             else Sync.Connect(AddressText.ToString(), NameText.ToString(), PasswordText.ToString());
         }
         ImGui.EndDisabled();
-        if (ahead) return;
-        ImGui.TextDisabled("Connecting replaces your open world with the server's,");
-        ImGui.TextDisabled("unless the server has none yet: then yours becomes it.");
+    }
+
+    /// <summary>
+    /// The window's one action, in KSA's outlined button and in the corner KSA's own modals put a
+    /// footer button in. Placed against the window rather than after the last thing drawn, so it
+    /// stays where the player left it while the rows above it grow a player list or a warning.
+    /// </summary>
+    private static bool BottomRight(ReadOnlySpan<char> label)
+    {
+        float2 pad = ImGui.GetStyle().WindowPadding;
+        ImGui.SetCursorPosX(ImGui.GetWindowWidth() - ConsoleWidgets.ButtonWidth(label) - pad.X);
+        ImGui.SetCursorPosY(ImGui.GetWindowHeight() - ConsoleWidgets.ButtonHeight - pad.Y);
+        return ConsoleWidgets.Button(label);
     }
 
     private static void Joined()
@@ -820,7 +981,7 @@ internal static class Panel
                 ImGui.TextDisabled($"known to the others as: {string.Join(", ", renamed)}");
             }
         }
-        if (ImGui.Button("Disconnect", null)) Sync.Disconnect();
+        if (BottomRight("DISCONNECT".AsSpan())) Sync.Disconnect();
     }
 
     /// <summary>

@@ -53,6 +53,22 @@ internal static class Hooks
             _harmony ??= new Harmony(HarmonyId);
             Patch(AccessTools.Method(typeof(Popup), nameof(Popup.DrawAll)), nameof(BeforePopups),
                   "the Multiplayer window does not come before KSA's configuration at start");
+            // These four belong here and not in Install, which KSA reaches only once every mod is
+            // loaded -- long after its configuration has been shown and dismissed. Registered there,
+            // they bound to the right methods and never ran, and the configuration let a player
+            // change what the server had already settled with no way back out of it.
+            Patch(AccessTools.Method(typeof(ConfigOnStartPopup), "OnDrawUi"), nameof(BeforeConfiguration),
+                  "the server's system and game type can be changed in KSA's configuration and then refused");
+            PatchAfter(AccessTools.Method(typeof(ImGuiHelper), nameof(ImGuiHelper.BeginRegion),
+                                          [typeof(ImString), typeof(ImGuiTreeNodeFlags), typeof(float)]),
+                       nameof(AfterBeginRegion),
+                  "the server's system and game type can be changed in KSA's configuration and then refused");
+            Patch(AccessTools.Method(typeof(ImGuiHelper), nameof(ImGuiHelper.EndRegion)), nameof(BeforeEndRegion),
+                  "the server's system and game type can be changed in KSA's configuration and then refused");
+            PatchAfter(AccessTools.Method(typeof(ConfigOnStartPopup), "OnDrawUi"), nameof(AfterConfiguration),
+                  "there is no way back out of KSA's configuration once this mod has handed it over");
+            PatchAfter(AccessTools.Method(typeof(ConsoleStyle), nameof(ConsoleStyle.BeginFooter)), nameof(AfterBeginFooter),
+                  "there is no way back out of KSA's configuration once this mod has handed it over");
         }
         catch (Exception e)
         {
@@ -61,11 +77,13 @@ internal static class Hooks
     }
 
     // False leaves KSA's popups undrawn this frame: the configuration, which the window stands in for.
-    private static void BeforeEndConsoleBody(Popup __instance)
+    // Every popup's footer begins here, so the window being drawn is what says whether this is the
+    // one to put a way out in.
+    private static void AfterBeginFooter()
     {
         try
         {
-            if (__instance is ConfigOnStartPopup) Panel.EndOfConfigurationBody();
+            Panel.ConfigurationFooter();
         }
         catch (Exception e)
         {
@@ -73,10 +91,23 @@ internal static class Hooks
         }
     }
 
+    private static void AfterConfiguration()
+    {
+        try
+        {
+            Panel.ConfigurationDrawing(false);
+        }
+        catch (Exception e)
+        {
+            Complain("letting go of KSA's configuration", e);
+        }
+    }
+
     private static void BeforeConfiguration()
     {
         try
         {
+            Panel.ConfigurationDrawing(true);
             Panel.StartOfConfiguration();
         }
         catch (Exception e)
@@ -167,20 +198,6 @@ internal static class Hooks
             // anything.
             PatchAfter(AccessTools.Method(typeof(Program), nameof(Program.DrawProgramMenusHook)), nameof(AfterProgramMenus),
                   "there is nothing in KSA's menu bar to say this game is in a shared world");
-            // What the server has settled is drawn in KSA's configuration but not changed there. The
-            // three are found by the order they are drawn in, so the configuration's own first frame
-            // is where the counting starts.
-            Patch(AccessTools.Method(typeof(ConfigOnStartPopup), "OnDrawUi"), nameof(BeforeConfiguration),
-                  "the server's system and game type can be changed in KSA's configuration and then refused");
-            PatchAfter(AccessTools.Method(typeof(ImGuiHelper), nameof(ImGuiHelper.BeginRegion),
-                                          [typeof(ImString), typeof(ImGuiTreeNodeFlags), typeof(float)]),
-                       nameof(AfterBeginRegion),
-                  "the server's system and game type can be changed in KSA's configuration and then refused");
-            Patch(AccessTools.Method(typeof(ImGuiHelper), nameof(ImGuiHelper.EndRegion)), nameof(BeforeEndRegion),
-                  "the server's system and game type can be changed in KSA's configuration and then refused");
-            // The foot of a popup's body, which is where a way back out of KSA's configuration goes.
-            Patch(AccessTools.Method(typeof(Popup), "EndConsoleBody"), nameof(BeforeEndConsoleBody),
-                  "there is no way back out of KSA's configuration once this mod has handed it over");
             Patch(AccessTools.Method(typeof(Universe), nameof(Universe.DestroyVehicleFromEvent)), nameof(BeforeDestroy),
                   "another player's craft can be wrecked in this world alone");
             Patch(AccessTools.Method(typeof(InputEvents.VehicleDestroyData), nameof(InputEvents.VehicleDestroyData.Apply)),
