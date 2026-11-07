@@ -2,6 +2,7 @@ using System.Text.Json;
 using Brutal.GlfwApi;
 using Brutal.ImGuiApi;
 using Brutal.Numerics;
+using KSA;
 
 namespace KSAMultiplayer;
 
@@ -334,6 +335,43 @@ internal static class Panel
 
     private static readonly float4 TagName = new(1f, 1f, 1f, 0.97f);
 
+    // In KSA's own menu bar, beside its version: green once this game is in the shared world, amber
+    // while it is still getting there. Nothing at all when no server is being talked to, because a
+    // menu bar is not somewhere to put a mod that is doing nothing.
+    private static readonly ImColor8 InTheWorld = new(120, 215, 130, 255);
+    private static readonly ImColor8 OnTheWay = new(235, 190, 90, 255);
+
+    /// <summary>
+    /// Drawn from a postfix on <c>Program.DrawProgramMenusHook</c>, which KSA leaves empty inside its
+    /// menu bar for exactly this, just before it writes its own version down the right-hand side.
+    /// </summary>
+    public static void DrawMenuBarStatus()
+    {
+        if (Sync.Now == Sync.Stage.Off) return;
+        bool here = Sync.Now == Sync.Stage.Playing;
+        string where = Sync.ServerAddress;
+        if (where.Length == 0) return;
+
+        float line = ImGui.GetTextLineHeight();
+        float radius = MathF.Max(3f, line * 0.22f);
+        float gap = radius * 3f;
+        float room = gap + ImGui.CalcTextSize(where).X;
+        // Left of KSA's version, which it puts ten pixels in from the right edge.
+        float version = ImGui.CalcTextSize(VersionInfo.Current.VersionString).X + 10f;
+        float from = ImGui.GetWindowWidth() - version - room - 18f;
+        if (from < ImGui.GetCursorPosX()) return;
+        ImGui.SetCursorPosX(from);
+
+        // Drawn after the text and off the text's own rectangle rather than off the cursor: the menu
+        // bar moves the cursor down for its own line, and the dot sat high of centre by that much.
+        ImGui.SetCursorPosX(from + gap);
+        float2 at = ImGui.GetCursorScreenPos();
+        ImGui.TextColored(in ConsoleStyle.TextMuted, where);
+        float2 top = ImGui.GetItemRectMin(), bottom = ImGui.GetItemRectMax();
+        ImGui.GetWindowDrawList().AddCircleFilled(new float2(at.X - gap + radius, (top.Y + bottom.Y) * 0.5f), radius,
+                                                  here ? InTheWorld : OnTheWay);
+    }
+
     private static readonly ImColor8 Claim = new(190, 205, 225, 120);
     private static readonly ImColor8 TagShade = new(0, 0, 0, 160);
     private static readonly ImColor8 Tag = new(255, 255, 255, 235);
@@ -529,12 +567,79 @@ internal static class Panel
             {
                 _joinOnLoad = true;
                 _configuring = _settingsFirst;
+                // Only what the server has already settled. A server with no world yet is given the
+                // game this configuration starts, so its system, its game type and where it starts
+                // are the player's to choose after all.
+                _lockWhatTheServerSettled = _configuring && system.Length > 0;
                 if (_configuring) Sync.Say("your settings, then Start KSA: the server is joined once the game has loaded");
             }
             else Sync.Say(why);
         }
         StartWindow(ahead: true);
         return true;
+    }
+
+    /// <summary>
+    /// The first three regions of KSA's configuration -- Select System, Game Type and Starting
+    /// Situation -- drawn but not changeable, because the server has settled all three and a player
+    /// who changes them here is only choosing which way to be refused.
+    ///
+    /// <para>By the order they are drawn in rather than by their names: a region's name reaches a
+    /// patch as an <c>ImString</c>, which is a ref struct, and keeping one out of the patch's
+    /// signature is worth more than reading it. The count is of calls and not of regions entered, so
+    /// a region the player has collapsed still takes its turn and the three that are locked stay the
+    /// three that are locked.</para>
+    /// </summary>
+    private const int ServerSettles = 3;
+
+    private static bool _lockWhatTheServerSettled;
+    private static int _regionsDrawn;
+    private static readonly Stack<bool> _disabledRegions = new();
+
+    /// <summary>KSA's configuration is about to draw itself again, from the top.</summary>
+    public static void StartOfConfiguration()
+    {
+        _regionsDrawn = 0;
+        while (_disabledRegions.Count > 0)
+        {
+            if (_disabledRegions.Pop()) ImGui.EndDisabled();
+        }
+    }
+
+    /// <summary>A region of it has begun; <paramref name="entered"/> is false for a collapsed one.</summary>
+    public static void RegionBegun(bool entered)
+    {
+        if (!_lockWhatTheServerSettled) return;
+        bool lockThis = ++_regionsDrawn <= ServerSettles;
+        if (!entered) return;
+        if (lockThis) ImGui.BeginDisabled();
+        _disabledRegions.Push(lockThis);
+    }
+
+    /// <summary>
+    /// A way back out of KSA's configuration, drawn at the foot of its body because its own footer
+    /// holds one button and that array is a fixed length this mod has no business resizing. Only
+    /// while this mod is the reason that configuration is up: KSA's own has nowhere to go back to.
+    /// </summary>
+    public static void EndOfConfigurationBody()
+    {
+        if (!_configuring) return;
+        ImGui.NewLine();
+        if (!ConsoleWidgets.Button("BACK TO MULTIPLAYER".AsSpan())) return;
+        // The popup stays as it is: KSA waits on it until there is a universe, and the start window
+        // is drawn over it again by the prefix the moment this mod is the one answering for it.
+        _configuring = false;
+        _lockWhatTheServerSettled = false;
+        _joinOnLoad = false;
+        Sync.EndAhead();
+        Sync.Say("back to the server list; nothing has been joined");
+    }
+
+    /// <summary>And has ended. Only ever called for a region that was entered.</summary>
+    public static void RegionEnding()
+    {
+        if (!_lockWhatTheServerSettled || _disabledRegions.Count == 0) return;
+        if (_disabledRegions.Pop()) ImGui.EndDisabled();
     }
 
     // Whether KSA's own configuration is shown once the server has said which system to start in.
@@ -549,33 +654,106 @@ internal static class Panel
     /// <para>The world KSA starts in is a new game, so a server with no world yet is given this one
     /// as it would be from anywhere else, and a server that has one replaces it.</para>
     /// </summary>
+    /// <summary>
+    /// Drawn as KSA draws its own configuration: the same frame and titlebar, the same grey regions,
+    /// the same label-and-control rows and the same yellow button, from KSA's `ConsoleStyle` and
+    /// `ImGuiHelper` rather than a window of this mod's own making. It stands in that window's place,
+    /// so looking like anything else would say it came from somewhere less trustworthy than the game.
+    /// </summary>
     private static void StartWindow(bool ahead = false)
     {
-        ImGuiViewportPtr screen = ImGui.GetMainViewport();
-        float2 centre = new(screen.WorkPos.X + (screen.WorkSize.X * 0.5f), screen.WorkPos.Y + (screen.WorkSize.Y * 0.5f));
-        float2? middle = new float2(0.5f, 0.5f);
-        ImGui.SetNextWindowPos(in centre, ImGuiCond.Always, in middle);
-        ImGui.SetNextWindowSize(new float2(StartWidth, 0f), ImGuiCond.Always);
-
-        const ImGuiWindowFlags start = ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove
-                                       | ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.NoNav;
-        if (ImGui.Begin("Multiplayer###KSAMultiplayerStart", start))
+        float2 screen = float2.Unpack(Program.GetWindow().Size);
+        float scale = GameSettings.GetInterfaceScale();
+        float wide = float.Clamp(screen.X * (0.34f / scale), 400f, 520f);
+        float tall = MathF.Min(screen.Y - 60f, 460f);
+        if (!ConsoleStyle.BeginModal("###KSAMultiplayerStart".AsSpan(), "MULTIPLAYER".AsSpan(), new float2(wide, tall),
+                                     hasFooter: true, ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoScrollbar))
         {
-            ImGui.PushTextWrapPos(0f);
-            Join(ahead);
-            if (ahead) ImGui.Checkbox("Change settings before starting", ref _settingsFirst);
-            ImGui.Separator();
-            if (ImGui.Button("Play alone", null)) PlayAlone();
-            foreach (string said in Sync.Said.TakeLast(3)) ImGui.TextDisabled(said);
-            ImGui.PopTextWrapPos();
+            return;
         }
-        ImGui.End();
+        ConsoleStyle.BeginBody();
+        ConsoleStyle.PushWidgetStyle();
+
+        ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.TextMuted);
+        ImGui.TextWrapped(ahead
+            ? "Connecting asks the server which system its world is in and which mods it wants, then starts KSA there and joins once it has loaded."
+            : "Connecting replaces your open world with the server's, unless the server has none yet: then yours becomes it.");
+        ImGui.PopStyleColor();
+
+        bool edited = false;
+        if (ImGuiHelper.BeginRegion("Server"u8))
+        {
+            edited |= Field("Server"u8, AddressText);
+            edited |= Field("Your name"u8, NameText);
+            // Not through ImGuiHelper, which has no masked input: the same two columns by hand, so
+            // the row lines up with the others and the password is still stars.
+            ImGui.Text("Password"u8);
+            ImGui.NextColumn();
+            ImGui.PushItemWidth(-1f);
+            ImGui.InputText("###KSAMultiplayerPassword", PasswordText, ImGuiInputTextFlags.Password);
+            edited |= ImGui.IsItemDeactivatedAfterEdit();
+            ImGui.PopItemWidth();
+            ImGui.NextColumn();
+            ImGuiHelper.EndRegion();
+        }
+        // Outside the regions, where KSA puts its configuration's own Always Show: a region lays its
+        // rows out in two columns and sizes the label one to the region, so a label of more than a
+        // word or two is cut -- "Change settings first" arrived as "Settings fir". A checkbox with
+        // its text beside it takes the width it needs.
+        if (ahead)
+        {
+            ImGui.NewLine();
+            ImGui.Checkbox("Change settings before starting", ref _settingsFirst);
+        }
+        // Kept as soon as a field is done with, not only on connecting: a name typed before a server
+        // refuses, or before the player thinks better of it, is still the name they want next time.
+        if (edited) Save();
+
+        string[] lately = [.. Sync.Said.TakeLast(3)];
+        if (lately.Length > 0)
+        {
+            ImGui.NewLine();
+            ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.TextMuted);
+            foreach (string said in lately) ImGui.TextWrapped(said);
+            ImGui.PopStyleColor();
+        }
+
+        ConsoleStyle.PopWidgetStyle();
+        ConsoleStyle.EndBody();
+
+        bool ready = AddressText.ToString().Trim().Length > 0 && NameText.ToString().Trim().Length > 0 && !Sync.AskingAhead;
+        ConsoleStyle.BeginFooter();
+        ConsoleStyle.FooterRightAlign(ConsoleWidgets.ButtonWidth("PLAY ALONE".AsSpan())
+                                      + ConsoleWidgets.ButtonWidth("CONNECT".AsSpan())
+                                      + ImGui.GetStyle().ItemSpacing.X);
+        if (ConsoleWidgets.Button("PLAY ALONE".AsSpan())) PlayAlone();
+        ImGui.SameLine();
+        ImGui.BeginDisabled(!ready);
+        if (ConsoleWidgets.PrimaryButton("CONNECT".AsSpan()))
+        {
+            Save();
+            if (ahead) Sync.AskAhead(AddressText.ToString());
+            else Sync.Connect(AddressText.ToString(), NameText.ToString(), PasswordText.ToString());
+        }
+        ImGui.EndDisabled();
+        ConsoleStyle.EndFooter();
+        ConsoleStyle.EndModal();
+    }
+
+    /// <summary>One of KSA's label-and-control rows, over this mod's own text buffers.</summary>
+    private static bool Field(ImString label, ImInputString into)
+    {
+        string text = into.ToString();
+        bool done = ImGuiHelper.DrawInput(label, ref text, isChanged: false, out _);
+        if (done || !string.Equals(text, into.ToString(), StringComparison.Ordinal)) into.SetValue(text);
+        return done;
     }
 
     private const float StartWidth = 380f;
 
     private static void PlayAlone()
     {
+        _lockWhatTheServerSettled = false;
         Starting = false;
         Sync.EndAhead();
         if (!WelcomeHeld) return;

@@ -371,6 +371,15 @@ against KSA `2026.10.25.5707`:
   prefix turned each into a speed put to the whole room -- pressing Escape asked everybody else to
   pause. Nothing is held while any of them is up. Watched for the editor; the rest are the same
   code path and the same flag.
+- **The start window in KSA's own chrome, and the dot in its menu bar.** The window is drawn with
+  `ConsoleStyle.BeginModal`, `ImGuiHelper.BeginRegion` and `ConsoleWidgets.PrimaryButton` -- the same
+  calls KSA's configuration makes, so it follows the game's theme and interface scale rather than
+  imitating them. Seen: the titlebar, the regions, the rows and the yellow button, in place of that
+  configuration. A region lays its rows out in two columns and sizes the label one to the region, so
+  anything longer than a word or two is cut; the checkbox sits outside them, where KSA puts its own.
+  The dot and the server's address go in KSA's menu bar from `Program.DrawProgramMenusHook`, which
+  the game leaves empty inside that bar for a mod to draw in, just before it writes its version.
+  Seen amber while a world was being handed over; green is for a game that is in the world.
 - **Closing a menu, which asks nobody to warp.** KSA keeps the simulation speed when a menu opens
   and sets it again when it shuts (`Program.UpdateMenuPause`), and what it keeps is whatever the mod
   last wrote: a tenth either side of normal, or several times normal mid-catch-up. The restore

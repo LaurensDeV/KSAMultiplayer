@@ -1,4 +1,5 @@
 using System.Reflection;
+using Brutal.ImGuiApi;
 using HarmonyLib;
 using KSA;
 
@@ -60,6 +61,67 @@ internal static class Hooks
     }
 
     // False leaves KSA's popups undrawn this frame: the configuration, which the window stands in for.
+    private static void BeforeEndConsoleBody(Popup __instance)
+    {
+        try
+        {
+            if (__instance is ConfigOnStartPopup) Panel.EndOfConfigurationBody();
+        }
+        catch (Exception e)
+        {
+            Complain("drawing a way back out of KSA's configuration", e);
+        }
+    }
+
+    private static void BeforeConfiguration()
+    {
+        try
+        {
+            Panel.StartOfConfiguration();
+        }
+        catch (Exception e)
+        {
+            Complain("counting KSA's configuration from the top", e);
+        }
+    }
+
+    // __result is false for a region the player has collapsed, which KSA then does not end.
+    private static void AfterBeginRegion(bool __result)
+    {
+        try
+        {
+            Panel.RegionBegun(__result);
+        }
+        catch (Exception e)
+        {
+            Complain("holding the server's choices still", e);
+        }
+    }
+
+    private static void BeforeEndRegion()
+    {
+        try
+        {
+            Panel.RegionEnding();
+        }
+        catch (Exception e)
+        {
+            Complain("letting go of the server's choices", e);
+        }
+    }
+
+    private static void AfterProgramMenus()
+    {
+        try
+        {
+            Panel.DrawMenuBarStatus();
+        }
+        catch (Exception e)
+        {
+            Complain("saying in the menu bar that this game is joined", e);
+        }
+    }
+
     private static bool BeforePopups()
     {
         try
@@ -100,6 +162,25 @@ internal static class Hooks
                   "a warp key steps from this world's speed rather than the shared one");
             Patch(AccessTools.Method(typeof(Universe), nameof(Universe.ResetSimulationSpeed)), nameof(BeforeNormalSpeed),
                   "the key for normal speed steps from this world's speed rather than the shared one");
+            // KSA leaves this empty inside its own menu bar for a mod to draw in. Whether this game is
+            // in a shared world, and which one, belongs where a player can see it without opening
+            // anything.
+            PatchAfter(AccessTools.Method(typeof(Program), nameof(Program.DrawProgramMenusHook)), nameof(AfterProgramMenus),
+                  "there is nothing in KSA's menu bar to say this game is in a shared world");
+            // What the server has settled is drawn in KSA's configuration but not changed there. The
+            // three are found by the order they are drawn in, so the configuration's own first frame
+            // is where the counting starts.
+            Patch(AccessTools.Method(typeof(ConfigOnStartPopup), "OnDrawUi"), nameof(BeforeConfiguration),
+                  "the server's system and game type can be changed in KSA's configuration and then refused");
+            PatchAfter(AccessTools.Method(typeof(ImGuiHelper), nameof(ImGuiHelper.BeginRegion),
+                                          [typeof(ImString), typeof(ImGuiTreeNodeFlags), typeof(float)]),
+                       nameof(AfterBeginRegion),
+                  "the server's system and game type can be changed in KSA's configuration and then refused");
+            Patch(AccessTools.Method(typeof(ImGuiHelper), nameof(ImGuiHelper.EndRegion)), nameof(BeforeEndRegion),
+                  "the server's system and game type can be changed in KSA's configuration and then refused");
+            // The foot of a popup's body, which is where a way back out of KSA's configuration goes.
+            Patch(AccessTools.Method(typeof(Popup), "EndConsoleBody"), nameof(BeforeEndConsoleBody),
+                  "there is no way back out of KSA's configuration once this mod has handed it over");
             Patch(AccessTools.Method(typeof(Universe), nameof(Universe.DestroyVehicleFromEvent)), nameof(BeforeDestroy),
                   "another player's craft can be wrecked in this world alone");
             Patch(AccessTools.Method(typeof(InputEvents.VehicleDestroyData), nameof(InputEvents.VehicleDestroyData.Apply)),
