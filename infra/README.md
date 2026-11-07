@@ -46,8 +46,33 @@ browser never will -- so check it with `dig +short SRV _ksamp._udp.mpcars.ksarmo
 pinging the name. And a world's record must stay unproxied: a proxied name resolves to Cloudflare,
 which carries no UDP, so the name would resolve perfectly and never connect.
 
-The record is inert until something listens on that port: `infra/server` needs a container for the
-world as well.
+`infra/server` takes the same map and gives each world a container and a volume of its own:
+
+    export TF_VAR_worlds='{ mpcars = { port = 50101 } }'
+
+Anything left out of a world's entry is the first server's: its player limit, its snapshot interval,
+its memory ceiling. `server_name` defaults to the world's own name, which is what the panel shows.
+
+Then the firewall rule, for the reason the first port's is there — Docker reaches the port without
+it, and the rule is how a reader knows that was meant:
+
+```bash
+ufw allow 50101/udp comment 'KSA Multiplayer: mpcars'
+```
+
+Each world has a console of its own, `docker attach ksamp-mpcars`, and admins of its own: `admins.json`
+lives in the volume, so being an admin of one world is nothing in another. `tofu output worlds` in
+either layer prints what a player types, which container holds which console, and which volume holds
+which save.
+
+**A world is its own container on purpose.** One of them filling its memory, wedging or being
+restarted leaves the others running, which is the whole reason these are not one process hosting
+several worlds. They do share the machine and the release: a world *can* be held on an older image
+when that is wanted, but by hand — there is no variable for it until something needs one.
+
+**Removing a world is deliberately awkward.** Its volume is `prevent_destroy`, so taking the entry
+out of the map fails the plan instead of deleting a world's save. Take it out of the state and remove
+the volume by hand if that is really what is meant.
 
 ## Applying
 

@@ -12,3 +12,18 @@ output "world_volume" {
   description = "The volume holding the shared world. Back this up, not the container."
   value       = docker_volume.world.name
 }
+
+# The other worlds, as an operator needs them: what a player types, which container holds the
+# console, and which volume holds the save.
+output "worlds" {
+  description = "Each other world: its address, its container and its volume."
+  value = {
+    for name, world in var.worlds :
+    name => {
+      port      = world.port
+      container = "ksamp-${name}"
+      console   = "docker attach ksamp-${name}"
+      volume    = "ksamp-world-${name}"
+    }
+  }
+}

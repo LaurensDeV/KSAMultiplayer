@@ -56,3 +56,42 @@ variable "memory_mb" {
   type        = number
   default     = 512
 }
+
+# Every other world on this machine, by the name it answers to.
+#
+# One address carries one UDP port once, so each needs a port of its own; the DNS layer's `worlds`
+# map must agree with this one, since that is where the name and its SRV record come from. Anything
+# left out is the same as the first server's.
+#
+# Each world is its own container and its own volume, so one of them filling its memory, wedging or
+# being restarted leaves the others alone. They share the machine, the image and the release: a
+# world can be pinned to another image by hand, and there is no variable for it until something
+# actually needs one.
+variable "worlds" {
+  description = "Other servers on this machine: the name each answers to, its UDP port, and what it does not share."
+  type = map(object({
+    port                   = number
+    server_name            = optional(string)
+    max_players            = optional(number)
+    snapshot_every_seconds = optional(number)
+    memory_mb              = optional(number)
+  }))
+  default = {}
+
+  validation {
+    condition     = alltrue([for w in var.worlds : w.port > 0 && w.port < 65536])
+    error_message = "Every world's port must be between 1 and 65535."
+  }
+
+  # Two worlds on one port is one world that will not start, and the one that loses is whichever
+  # Docker gets to second.
+  validation {
+    condition     = length(distinct([for w in var.worlds : w.port])) == length(var.worlds)
+    error_message = "Two worlds share a port; each needs one of its own."
+  }
+
+  validation {
+    condition     = alltrue([for w in var.worlds : w.port != var.port])
+    error_message = "A world is on ${var.port}, which is the first server's port."
+  }
+}

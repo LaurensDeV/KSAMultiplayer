@@ -75,3 +75,68 @@ resource "docker_container" "server" {
     max-file = "3"
   }
 }
+
+
+# Every other world on this machine. One container and one volume each, deliberately: a world that
+# fills its memory or needs restarting takes nothing else with it, which is the whole reason these
+# are not one process hosting several worlds.
+#
+# The image is the release's, the same one the first server runs, so a release moves every world
+# together. Separate containers mean they need not -- a world can be held on an older image by hand
+# when that is wanted -- which is the property this shape buys and one process would not have.
+
+# Losing this is losing that world's save. The lifecycle block means removing a world from the map
+# fails the plan rather than deleting its world: take it out of the state and remove the volume by
+# hand if that is really what is meant.
+resource "docker_volume" "other_world" {
+  for_each = var.worlds
+
+  name = "ksamp-world-${each.key}"
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "docker_container" "other_world" {
+  # Empty while nothing is deployed, which is also what keeps the image reference below unevaluated
+  # until there is an image to refer to.
+  for_each = var.server_image == "" ? {} : var.worlds
+
+  name  = "ksamp-${each.key}"
+  image = docker_image.server[0].repo_digest
+
+  restart  = "unless-stopped"
+  must_run = true
+
+  # Its own console, reached as `docker attach ksamp-<name>`; see the first server for why.
+  stdin_open = true
+  tty        = true
+
+  ports {
+    internal = 50100
+    external = each.value.port
+    protocol = "udp"
+  }
+
+  volumes {
+    volume_name    = docker_volume.other_world[each.key].name
+    container_path = "/data"
+  }
+
+  env = [
+    "KSAMP_NAME=${coalesce(each.value.server_name, each.key)}",
+    "KSAMP_MAX_PLAYERS=${coalesce(each.value.max_players, var.max_players)}",
+    "KSAMP_SNAPSHOT_EVERY=${coalesce(each.value.snapshot_every_seconds, var.snapshot_every_seconds)}",
+  ]
+
+  memory = coalesce(each.value.memory_mb, var.memory_mb)
+
+  stop_timeout = 20
+
+  log_driver = "json-file"
+  log_opts = {
+    max-size = "10m"
+    max-file = "3"
+  }
+}
