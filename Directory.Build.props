@@ -3,7 +3,8 @@
   <!--
     Where the KSA assemblies the mod compiles against come from. They are RocketWerkz's copyrighted
     files and are never committed. First match wins: KSA_DLL_DIR, then Import/, then a
-    ksa-game-assemblies checkout beside this repository, then a game install.
+    ksa-game-assemblies checkout beside this repository, then a game install. A game install is now
+    enough on its own: StarMap's API and Harmony come from NuGet rather than from beside it.
 
     Only the mod needs them. The protocol, the server and the tests reference nothing of KSA.
   -->
@@ -17,12 +18,13 @@
   </PropertyGroup>
 
   <!--
-    A game install has KSA.dll but not StarMap's or Harmony's assemblies, which the mod also needs;
-    say so plainly rather than with a wall of missing types.
+    Only KSA's own assemblies are wanted here: StarMap's API and Harmony come from NuGet, so a plain
+    game install is enough and no copy of the loader has to be found beside it. Say a missing install
+    plainly rather than with a wall of missing types.
   -->
   <Target Name="KsaMpCheckAssemblies" BeforeTargets="CoreCompile" Condition="'$(NeedsKsa)' == 'true'">
-    <Error Condition="'$(KsaDllDir)' == '' OR !Exists('$(KsaDllDir)KSA.dll') OR !Exists('$(KsaDllDir)StarMap.API.dll') OR !Exists('$(KsaDllDir)0Harmony.dll')"
-           Text="The mod needs KSA.dll, StarMap.API.dll and 0Harmony.dll in one folder, and none was found with all three (looked in: '$(KsaDllDir)'). Point KSA_DLL_DIR at one, for example a copy of the game's folder with StarMap installed in it. They are copyrighted: never commit them. The server and the tests need none of this." />
+    <Error Condition="'$(KsaDllDir)' == '' OR !Exists('$(KsaDllDir)KSA.dll')"
+           Text="The mod needs KSA's assemblies and none was found (looked in: '$(KsaDllDir)'). Point KSA_DLL_DIR at a game install, or at a mirror of one. They are copyrighted: never commit them. The server and the tests need none of this." />
   </Target>
 
 </Project>

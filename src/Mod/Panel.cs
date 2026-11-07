@@ -65,6 +65,13 @@ internal static class Panel
 
     public static bool Visible = true;
 
+    /// <summary>Shown, and kept shown: what KSA's Mods menu asks for, and the MP button beside it.</summary>
+    public static void Show()
+    {
+        Visible = true;
+        Save();
+    }
+
     /// <summary>
     /// Until when the player list is shown without Tab held, on this game's own clock. The bridge sets
     /// it, which only a developer's install starts: holding a key is the one thing it cannot do, and a
@@ -102,7 +109,7 @@ internal static class Panel
             if (ImGui.Begin("Multiplayer##reopen", Flags | ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoTitleBar))
             {
                 string label = Sync.Now == Sync.Stage.Off ? "MP" : $"MP: {Sync.Client?.Players.Length ?? 0}";
-                if (ImGui.SmallButton(label)) Visible = true;
+                if (ImGui.SmallButton(label)) Show();
             }
             ImGui.End();
             return;

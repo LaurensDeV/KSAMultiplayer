@@ -31,13 +31,27 @@
   </ItemGroup>
 
   <!--
-    The game's and the loader's assemblies, compile-time only: they are already loaded in the KSA
-    process, and a second copy would be another type identity. $(KsaDllDir) is resolved by
+    The loader's API and Harmony from NuGet, where StarMap publishes them, rather than from a copy of
+    somebody's install: they are MIT and public, so there is no reason for the private mirror of KSA's
+    copyrighted assemblies to be in the way of building this.
+
+    ExcludeAssets="runtime" is what keeps a player installing one assembly. Both are already loaded in
+    the KSA process (StarMap loads 0Harmony into the default context before the game starts), and a
+    second copy on disk would be another type identity. The version is the floor this mod needs rather
+    than the one it runs against: a mod's load context resolves these by name alone, and binds to
+    whatever the loader already has.
+  -->
+  <ItemGroup>
+    <PackageReference Include="StarMap.API" Version="0.5.2" ExcludeAssets="runtime" />
+    <PackageReference Include="Lib.Harmony" Version="2.4.3" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <!--
+    KSA's own assemblies, compile-time only for the same reason. $(KsaDllDir) is resolved by
     Directory.Build.props.
   -->
   <ItemGroup>
     <Reference Include="$(KsaDllDir)KSA.dll" Private="false" />
-    <Reference Include="$(KsaDllDir)StarMap.API.dll" Private="false" />
     <Reference Include="$(KsaDllDir)Brutal.Numerics.dll" Private="false" />
     <Reference Include="$(KsaDllDir)Brutal.Core.dll" Private="false" />
     <Reference Include="$(KsaDllDir)Brutal.Strings.dll" Private="false" />
@@ -48,7 +62,6 @@
     <Reference Include="$(KsaDllDir)Planet.Core.dll" Private="false" />
     <Reference Include="$(KsaDllDir)BepuUtilities.dll" Private="false" />
     <Reference Include="$(KsaDllDir)BepuPhysics.dll" Private="false" />
-    <Reference Include="$(KsaDllDir)0Harmony.dll" Private="false" />
   </ItemGroup>
 
 </Project>

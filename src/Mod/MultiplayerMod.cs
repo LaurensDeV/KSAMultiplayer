@@ -1,5 +1,6 @@
 using KSA;
 using StarMap.API;
+using StarMap.API.Services;
 
 namespace KSAMultiplayer;
 
@@ -15,6 +16,15 @@ public sealed class MultiplayerMod
     private int _faults;
     private bool _disabled;
     private Bridge? _bridge;
+    private readonly IModMenuService _menu;
+
+    private IDisposable? _menuItem;
+
+    /// <summary>
+    /// StarMap builds this with <c>ActivatorUtilities</c> and hands it the services it asks for, which
+    /// is why this mod wants StarMap 0.5.2 or later: nothing before 0.5 has any to hand.
+    /// </summary>
+    public MultiplayerMod(IModMenuService menu) => _menu = menu;
 
     [StarMapImmediateLoad]
     public void OnImmediateLoad(Mod mod)
@@ -26,6 +36,17 @@ public sealed class MultiplayerMod
     public void OnFullyLoaded()
     {
         Hooks.Install();
+        // KSA's own Mods menu, where a player looks for a mod's window before they look anywhere else.
+        // The panel's own MP button is still there for a player who has shut the window.
+        try
+        {
+            _menuItem = _menu.AddModMenuItem("Multiplayer", Panel.Show);
+            Log.Info("added Multiplayer to KSA's Mods menu");
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"could not add a Mods menu entry: {e.Message}");
+        }
         // A developer's install only: the bridge is how the tools drive two games against one
         // server, and a released mod has no business watching a folder for commands.
         if (Build.Developer) _bridge = new Bridge();
@@ -88,6 +109,7 @@ public sealed class MultiplayerMod
     [StarMapUnload]
     public void Unload()
     {
+        try { _menuItem?.Dispose(); } catch (Exception e) { Log.Warn($"could not take the Mods menu entry away: {e.Message}"); }
         try { Panel.Save(); } catch (Exception e) { Log.Warn($"could not keep the panel's settings: {e.Message}"); }
         try { Sync.Shutdown(); } catch (Exception e) { Log.Error("leaving the server", e); }
         Hooks.Remove();

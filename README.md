@@ -15,12 +15,14 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
 
 ## Playing
 
-1. Install [StarMap](https://github.com/StarMapLoader/StarMap), then take
+1. Install [StarMap](https://github.com/StarMapLoader/StarMap) **0.5.2 or later**, then take
    `KSAMultiplayer-<version>.zip` from the [releases](https://github.com/LaurensDeV/KSAMultiplayer/releases), unzip it into KSA's `mods` folder and
-   enable it, as with any StarMap mod.
+   enable it, as with any StarMap mod. StarMap before 0.5 hands a mod no services at all, and with
+   both installed the game will not start rather than the mod quietly not loading.
 2. Everyone needs **the same KSA build** and **every mod the server's world uses**. The server refuses
    anyone who differs and says what is missing.
-3. The **Multiplayer** window is there from the moment the game opens, before any world is loaded.
+3. The **Multiplayer** window is there from the moment the game opens, before any world is loaded, and
+   KSA's **Mods** menu has an entry that brings it back if you shut it.
    Enter the server's address (`host:port`, or just `host` for port 50100), your name and the
    password if there is one, and press **Connect**. There is a server at **`mp.ksarmory.com`** to
    try it on. The name starts as something like `Kitten 4821` rather than your Windows account name,

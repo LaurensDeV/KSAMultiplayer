@@ -10,7 +10,10 @@ dedicated server (`ksamp-server`) that runs on Linux with no game installed.
 - The mod compiles `src/Protocol/*.cs` into its own DLL, so a player installs one assembly.
 - Change `Wire.Version` whenever what a datagram means changes.
 - KSA's assemblies are copyrighted and never committed. `Directory.Build.props` finds them: `KSA_DLL_DIR`,
-  `Import/`, `../ksa-game-assemblies/current/dll`, then a game install (which lacks StarMap's and Harmony's).
+  `Import/`, `../ksa-game-assemblies/current/dll`, then a game install, which is enough on its own:
+  `StarMap.API` and `Lib.Harmony` come from NuGet, compile-time only so one assembly still ships.
+- The mod needs **StarMap 0.5.2 or later**: its entry class takes `IModMenuService`, and StarMap before
+  0.5 passes no services at all.
 - The decompiled game is in `../ksa-game-assemblies/current/src`; `../KSACars/docs/KSA-MODDING-NOTES.md`
   and `KSA-FRAME-ORDER.md` explain the engine, and why craft state is written in `Vehicle.PrepareWorker`.
 - Comment why, never what; state facts, not history.
