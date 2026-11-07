@@ -44,15 +44,15 @@ public sealed class MultiplayerMod
         {
             Fault("frame", e);
         }
-        // Last of all, so what it notes is what the frame ended with: KSA opens and shuts its menus
-        // during the frame, and the speed it puts back on the way out of one arrives in the next.
+        // Last of all: a speed the player asked for is spent by the write that follows it in the same
+        // breath, and anything still standing here was an input event that never reached a setter.
         try
         {
-            Hooks.NoteMenus();
+            Hooks.EndOfFrame();
         }
         catch (Exception e)
         {
-            Fault("noting the menus", e);
+            Fault("closing the frame", e);
         }
         // After the session, so a command reads the state this frame left and never half of it.
         try

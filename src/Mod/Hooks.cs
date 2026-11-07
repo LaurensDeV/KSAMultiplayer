@@ -12,7 +12,9 @@ namespace KSAMultiplayer;
 /// state survives the frame: KSA double-buffers it, and anything written from a StarMap hook is
 /// overwritten before it is read. Other players' craft are pulled to their states here.</item>
 /// <item>Both of <see cref="Universe"/>'s <c>SetSimulationSpeed</c>, which every warp key, auto-warp
-/// and the pause go through: while connected, the speed is the one that keeps the server's time.</item>
+/// and the pause go through: while connected, the speed is the one that keeps the server's time.
+/// <see cref="InputEvents.SimSpeedData.Apply"/> beside them, which is the only one of those that is
+/// the player's own word, and so the only one put to the room.</item>
 /// <item><see cref="Universe.DestroyVehicleFromEvent"/>: another player's craft is never destroyed
 /// here by a crash this world sees, only when its owner's game says it is gone.</item>
 /// <item><see cref="Vehicle.AddVolumetricExhaustInstances"/> and
@@ -40,12 +42,21 @@ internal static class Hooks
         try
         {
             _harmony = new Harmony(HarmonyId);
+            // Last of whatever is patching these three, because each is a write another mod may also
+            // be making and this one has to be the word that stands: a craft somebody else is flying
+            // goes where its owner says, and the clock is the server's. Harmony runs a lower priority
+            // later. Nothing here returns false, so another mod's prefix still runs either way.
             Patch(typeof(Vehicle).GetMethod(nameof(Vehicle.PrepareWorker), [typeof(SimStep)]), nameof(BeforePrepareWorker),
-                  "other players' craft cannot be moved in physics");
+                  "other players' craft cannot be moved in physics", Priority.Last);
             Patch(AccessTools.Method(typeof(Universe), nameof(Universe.SetSimulationSpeed), [typeof(double), typeof(bool)]), nameof(BeforeSpeed),
-                  "time warp is put back a frame late");
+                  "time warp is put back a frame late", Priority.Last);
             Patch(AccessTools.Method(typeof(Universe), nameof(Universe.SetSimulationSpeed), [typeof(SimSpeed)]), nameof(BeforeNamedSpeed),
-                  "time warp is put back a frame late");
+                  "time warp is put back a frame late", Priority.Last);
+            // Where a speed the player themselves asked for comes from, and the only place one does:
+            // a pick from KSA's own simulation-speed menu, or its console's speed command.
+            Patch(AccessTools.Method(typeof(InputEvents.SimSpeedData), nameof(InputEvents.SimSpeedData.Apply)),
+                  nameof(BeforePlayerSpeed),
+                  "a speed another mod sets is put to the room as though this player had asked for it");
             Patch(AccessTools.Method(typeof(Universe), nameof(Universe.IncreaseSimulationSpeed)), nameof(BeforeFaster),
                   "a warp key steps from this world's speed rather than the shared one");
             Patch(AccessTools.Method(typeof(Universe), nameof(Universe.DecreaseSimulationSpeed)), nameof(BeforeSlower),
@@ -126,14 +137,17 @@ internal static class Hooks
         _harmony!.Patch(target, postfix: new HarmonyMethod(typeof(Hooks).GetMethod(postfix, BindingFlags.NonPublic | BindingFlags.Static)!));
     }
 
-    private static void Patch(MethodInfo? target, string prefix, string otherwise)
+    private static void Patch(MethodInfo? target, string prefix, string otherwise, int priority = Priority.Normal)
     {
         if (target is null)
         {
             Log.Warn($"KSA has moved a method this mod patches: {otherwise}");
             return;
         }
-        _harmony!.Patch(target, prefix: new HarmonyMethod(typeof(Hooks).GetMethod(prefix, BindingFlags.NonPublic | BindingFlags.Static)!));
+        _harmony!.Patch(target, prefix: new HarmonyMethod(typeof(Hooks).GetMethod(prefix, BindingFlags.NonPublic | BindingFlags.Static)!)
+        {
+            priority = priority,
+        });
     }
 
     public static void Remove()
@@ -375,25 +389,28 @@ internal static class Hooks
         }
     }
 
-    // The speed stays the one that keeps the server's time. A speed asked for that is not that one
-    // came from the player reaching for a warp key or the pause, and is put to the other players
-    // instead: this game's own clock is not its own to change while it shares a world.
+    // The speed stays the one that keeps the server's time: this game's clock is not its own to
+    // change while it shares a world. A speed that is not that one is put to the other players
+    // instead -- but only when the player asked for it, which is the narrow case and not the wide one.
+    //
+    // Everything writes this. KSA puts the speed to 1 when the editor closes, when the flight
+    // computer finishes, when a space weather alert fires and when a craft is wrecked; it puts it to
+    // 0 for every menu, and back again on the way out -- back to whatever this mod last wrote, which
+    // is a nudge of a few per cent or, mid catch-up, several times speed. Other mods write it too: a
+    // weapons mod holding the world down while a round is in the air writes it every frame of every
+    // shot. Read as asks, those came back as this player asking the room to run at 1.08x for
+    // closing a menu, or to slow down for firing a gun nobody else could see.
+    //
+    // So nothing is an ask unless it followed the player's own input event, which is the one path
+    // that carries their word: InputEvents.SimSpeedData.Apply, where the pause and a bound speed
+    // arrive. The warp keys do not come through here at all -- Increase, Decrease and Reset are
+    // taken whole by Step -- so this is the pause, a speed bound to a key, and nothing else.
     private static void BeforeSpeed(ref double simulationSpeed, ref bool alert)
     {
         if (Held() is not { } held) return;
         if (Math.Abs(held - simulationSpeed) > 1e-9)
         {
-            // Asked of the room only when the player reached for it. Two things that are not:
-            //
-            // A menu opening stops the world for KSA's own reasons, and putting that to everybody is
-            // how pressing Escape used to ask the whole room to stop.
-            //
-            // And a menu closing puts back the speed KSA saved on the way in -- which is whatever
-            // this mod last wrote to hold the shared clock, a nudge of a few per cent or, mid
-            // catch-up, several times speed. Read as an ask, that came back as somebody asking the
-            // room to run at 1.08x or 0.94x every time anybody closed a menu. By the time it
-            // arrives the menu is already shut, so the frame before is what says it was there.
-            if (!Paused() && !_menusWere) Wanted(simulationSpeed);
+            if (PlayersOwnWord()) Wanted(simulationSpeed);
             alert = false;
         }
         simulationSpeed = held;
@@ -402,8 +419,30 @@ internal static class Hooks
     private static void BeforeNamedSpeed(ref SimSpeed speed)
     {
         if (Held() is not { } held || Math.Abs(held - speed.Value) <= 1e-9) return;
-        Wanted(speed.Value);
+        if (PlayersOwnWord()) Wanted(speed.Value);
         speed = new SimSpeed(held);
+    }
+
+    // Set by the player's own input event and taken by the one speed write that follows it. KSA
+    // applies the event and sets the speed in the same breath, so there is nothing in between for
+    // this to be mistaken for.
+    private static bool _playerAsked;
+
+    // Only an event carrying a speed, because only that one reaches a setter: KSA builds this with a
+    // speed for a pick from its own simulation-speed menu and for the console's speed command, and
+    // with an action alone for the three warp keys, which Step takes whole and which never reach a
+    // setter to spend this. Set for one of those and it would still be standing when something else
+    // wrote the speed later in the same frame -- a craft wrecked, a menu shut, another mod -- and
+    // that write would be read as the player's. Cleared at the end of the frame as well, for the
+    // pick that is refused before it reaches a setter.
+    private static void BeforePlayerSpeed(ref InputEvents.SimSpeedData __instance) =>
+        _playerAsked = __instance.Speed.HasValue;
+
+    private static bool PlayersOwnWord()
+    {
+        bool asked = _playerAsked;
+        _playerAsked = false;
+        return asked;
     }
 
     private static void Wanted(double speed)
@@ -575,13 +614,9 @@ internal static class Hooks
     private static bool Paused() =>
         Program.IsEditorOpen || EscMenu.Open || GameSettings.Show || GameSaves.IsOpen || VehicleSaves.IsOpen;
 
-    // Whether a menu was open at the end of the last frame, so that the speed KSA puts back on the
-    // way out of one can be told from a speed this player reached for. Noted at the end of the
-    // frame, after Program.UpdateMenuPause has had its say.
-    private static bool _menusWere;
 
     /// <summary>Called once at the end of every frame, from the mod's own frame hook.</summary>
-    public static void NoteMenus() => _menusWere = Paused();
+    public static void EndOfFrame() => _playerAsked = false;
 
     private static double? Held()
     {

@@ -149,11 +149,15 @@ shared one.
      33 ms a frame, so the speed asked makes up a slower frame -- and that make-up is carried by the
      ceiling, or a game slower than 30 frames a second loses universe time every second it runs. The warp keys and pause are held to that
      speed by prefixes on both `Universe.SetSimulationSpeed`, and a speed asked for that is not that
-     one is the player reaching for a warp: it is put to the others instead of taken -- except the one
-     KSA puts back as a menu closes, which is no player's ask. KSA keeps the speed the mod last wrote
-     when a menu opens and writes it again on the way out, so what arrives is a nudge or a catch-up
-     warp and the menu is already shut by then. The frame before is what says whether the menus were
-     up, noted at the end of every frame. **A menu does
+     one is put to the others instead of taken -- but only when the player asked for it. **Almost nothing
+     that writes the speed is a player.** KSA puts it to 1 when the editor closes, when the flight
+     computer finishes, when a space weather alert fires and when a craft is wrecked; to 0 for every
+     menu, and back again on the way out, back to whatever this mod last wrote. Another mod writes it
+     too: a weapons mod holding the world down while a round is in the air writes it every frame of
+     every shot. So the one path that carries the player's own word is the one that counts --
+     `InputEvents.SimSpeedData.Apply`, where the pause and a speed bound to a key arrive -- and a
+     write that did not follow it is held quietly and told to nobody. The warp keys never reach a
+     setter at all: `Increase`, `Decrease` and `Reset` are taken whole. **A menu does
      not stop this world**: Escape, the settings and the save lists all ask KSA to stop it, and that
      ask is answered with the shared speed instead and told to nobody -- a craft that stops when its
      pilot opens a menu stops for nobody else, so the player would come back behind the room and
@@ -371,7 +375,9 @@ against KSA `2026.10.25.5707`:
   and sets it again when it shuts (`Program.UpdateMenuPause`), and what it keeps is whatever the mod
   last wrote: a tenth either side of normal, or several times normal mid-catch-up. The restore
   arrived with the menu already shut, so the prefix read it as this player asking the room to run at
-  1.08 or 0.94. Three times into the editor and out again now put no ask on the server at all.
+  1.08 or 0.94. Three times into the editor and out again put no ask on the server at all. It was
+  one of five things writing the speed that were read as the player, and the rest were found by
+  looking for the other callers rather than by being reported.
 - **A launch landing on a free pad.** Two craft launched one after the other from CCSFS LC-39A
   went to `MP2` and then, with one more craft on the ground, to `MP3`, each time because the pad
   before it was taken. The pad is chosen inside
@@ -391,6 +397,13 @@ against KSA `2026.10.25.5707`:
 
 ## What has not been tried
 
+- **Another mod writing what this one writes.** The prefixes on both `SetSimulationSpeed` and on
+  `Vehicle.PrepareWorker` are given `Priority.Last`, so they are the word that stands when another
+  mod is patching the same method: a craft somebody else is flying goes where its owner says, and
+  the clock stays the server's. None of them returns false, so the other mod's prefix still runs.
+  Read against KSArmory, whose warp policy writes the speed, and KSACars, whose own hook writes it
+  during one of its races and whose car physics writes a craft's state in the same window as `Pull`.
+  Not yet watched with either of them installed.
 - **Placing a puppet without physics.** `SetFlightPlan` on a railed craft and `TeleportToLocation` on
   a moving one are reached in a run, but neither has been checked against where the craft should be.
 - **Pulling a puppet in physics.** Two craft were close enough to share a bubble; that the pull holds
