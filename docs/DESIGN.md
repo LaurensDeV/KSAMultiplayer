@@ -415,8 +415,12 @@ against KSA `2026.10.25.5707`:
   configuration back. `WelcomePopup` is made inactive as
   it is constructed, which takes it out of KSA's list before that is drawn, and is made again for a
   player who plays alone. A server with no world is given the new game KSA starts in, which in its
-  default start type is at the craft `Rocket`. The probe is tested over loopback; none of the rest
-  has been run in a game.
+  default start type is at the craft `Rocket`. Seen in a game only this far: with
+  `selectSystemOnStart` on, the window is drawn in place of KSA's configuration and Connect asks the
+  server, and with it off the game loads as it always did and the window is drawn over it. Play
+  alone, the settings-first path, the welcome being held back and the join after loading have not
+  been watched, and none of them can be: the bridge starts at `AllModsLoaded`, which is after the
+  configuration screen, so nothing can press those buttons but a person.
 - **Placing a puppet without physics.** `SetFlightPlan` on a railed craft and `TeleportToLocation` on
   a moving one are reached in a run, but neither has been checked against where the craft should be.
 - **Pulling a puppet in physics.** Two craft were close enough to share a bubble; that the pull holds

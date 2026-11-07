@@ -73,9 +73,9 @@ public sealed class Client : IDisposable
 
     /// <summary>
     /// What a server said of itself to <see cref="Probe"/>: its name, the system its world is in
-    /// (empty when it has no world or does not know), and whether it has one.
+    /// (empty when it has no world or does not know), whether it has one, and the mods it wants.
     /// </summary>
-    public (string ServerName, string System, bool HasWorld)? Probed { get; private set; }
+    public (string ServerName, string System, bool HasWorld, string Mods)? Probed { get; private set; }
 
     private bool _probing;
 
@@ -320,7 +320,7 @@ public sealed class Client : IDisposable
         switch (message)
         {
             case Wire.Welcome w when _probing:
-                Probed = (w.ServerName, w.System, w.HasWorld);
+                Probed = (w.ServerName, w.System, w.HasWorld, w.Mods);
                 (_probing, _server) = (false, null);
                 return;
             case Wire.Welcome w when !Joined:

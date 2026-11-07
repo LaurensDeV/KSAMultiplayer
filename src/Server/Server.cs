@@ -457,9 +457,11 @@ public sealed class GameServer : IDisposable
         // address that cannot hear the answer cannot join, whatever else it got right.
         if (!CookieHolds(hello, from, now))
         {
-            // The world's system goes with the cookie: it is what a game asks before it has a
-            // universe, and nothing a stranger could not learn by being refused for the wrong one.
-            _udp.Send(new Wire.Welcome(0, "", Options.Name, _world is not null, Cookie(from, (long)(now / CookieSeconds)), _worldSystem), from);
+            // The world's system and its mods go with the cookie: they are what a game asks before
+            // it has a universe, and nothing a stranger could not learn by being refused for the
+            // wrong one. The mods matter most here of anywhere, because KSA reads its own once at
+            // startup: a player told after a world has loaded has to restart to act on it.
+            _udp.Send(new Wire.Welcome(0, "", Options.Name, _world is not null, Cookie(from, (long)(now / CookieSeconds)), _worldSystem, WorldMods), from);
             return;
         }
         string? refused = _players.Count >= Options.MaxPlayers ? $"the server is full: {Options.MaxPlayers} players"
@@ -467,7 +469,7 @@ public sealed class GameServer : IDisposable
             : Refusal(hello);
         if (refused is not null)
         {
-            _udp.Send(new Wire.Welcome(0, refused, Options.Name, false), from);
+            _udp.Send(new Wire.Welcome(0, refused, Options.Name, false, Mods: WorldMods), from);
             Log($"refused {Wire.Clip(hello.Name, Wire.NameChars)} from {from}: {refused}");
             return;
         }
@@ -528,6 +530,9 @@ public sealed class GameServer : IDisposable
     }
 
     // Why a player cannot be let in: another build of KSA, or a mod the world may hold parts of that it does not have.
+    /// <summary>What this world wants of a game, as a hello says it: empty when it asks nothing.</summary>
+    private string WorldMods => string.Join(",", _worldMods);
+
     private string? Refusal(Wire.Hello hello)
     {
         string build = RequiredBuild;

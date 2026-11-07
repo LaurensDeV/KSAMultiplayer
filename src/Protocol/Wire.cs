@@ -128,8 +128,12 @@ public static class Wire
     /// runs a craft past the end of what the others can carry it on from, in their worlds rather
     /// than its own.</para>
     ///
-    /// <para>19 has a welcome say which system the server's world is in, the cookie's included, so a
-    /// game can ask before it has a universe and start in the right one.</para>
+    /// <para>19 has a welcome say which system the server's world is in and which mods it wants, the
+    /// cookie's included, so a game can ask both before it has a universe: start in the right system,
+    /// and be told what to enable while there is still a start screen to do it from. KSA reads its
+    /// mods once, at startup, so a mod a player learns about after a world has loaded costs them a
+    /// restart. A refusal grew with the same reasoning, from 200 characters to 600, since the one
+    /// worth reading names every mod that is missing.</para>
     /// </summary>
     public const ushort Version = 19;
 
@@ -143,6 +147,24 @@ public static class Wire
 
     /// <summary>The longest a join cookie is: 16 bytes in base64url come to 22 characters.</summary>
     public const int CookieChars = 32;
+
+    /// <summary>
+    /// The most characters a refusal carries. Long enough to name every mod a world wants and the
+    /// player has not: a refusal nobody can act on is the whole reason this is not 200.
+    /// </summary>
+    public const int RefusedChars = 600;
+
+    /// <summary>
+    /// The most characters of the world's mod list a welcome carries, which is fewer than the hello's
+    /// 4,000 on purpose.
+    ///
+    /// <para>The welcome that carries it is the cookie's, answered to an address the server has not
+    /// heard from before, so its size is an amplifier aimed at whoever a datagram claims to be from.
+    /// A hello is about 140 bytes; this keeps the answer near 450 rather than 4,400, which is a
+    /// reflector nobody wants. Twenty mod ids fit, the authoritative comparison happens at the real
+    /// handshake, and a list longer than this is clipped rather than refused.</para>
+    /// </summary>
+    public const int ProbeModsChars = 300;
 
     /// <summary>The most entries one <see cref="Owners"/> carries.</summary>
     public const int OwnersPerPage = 40;
@@ -220,7 +242,8 @@ public static class Wire
     /// <param name="HasWorld">Whether the server has a world to send; without one this player's open world becomes it.</param>
     /// <param name="Cookie">A word to say again in the next hello, when the server has not yet heard
     /// anything from this address that it chose itself. Empty on a welcome that admits or refuses.</param>
-    public sealed record Welcome(byte Id, string Refused, string ServerName, bool HasWorld, string Cookie = "", string System = "") : Message(Kind.Welcome);
+    /// <param name="Mods">The mods the server's world wants, comma separated; empty when it asks none.</param>
+    public sealed record Welcome(byte Id, string Refused, string ServerName, bool HasWorld, string Cookie = "", string System = "", string Mods = "") : Message(Kind.Welcome);
 
     /// <param name="Rtt">The player's round trip to the server, s, as that player last measured it; negative until it has.</param>
     /// <param name="Can">The speed that player's game is managing, as a multiple of real time:
@@ -430,11 +453,12 @@ public static class Wire
                 break;
             case Welcome m:
                 w.U8(m.Id);
-                w.Text(m.Refused, 200);
+                w.LongText(m.Refused, RefusedChars);
                 w.Text(m.ServerName, 64);
                 w.U8(m.HasWorld ? (byte)1 : (byte)0);
                 w.Text(m.Cookie, CookieChars);
                 w.Text(m.System, NameChars);
+                w.LongText(m.Mods, ProbeModsChars);
                 break;
             case Roster r:
                 w.U8((byte)Math.Min(r.Players.Length, 64));
@@ -579,7 +603,7 @@ public static class Wire
             Message m = (Kind)data[6] switch
             {
                 Kind.Hello => new Hello(r.Text(NameChars), r.Text(64), r.LongText(4000), r.Text(NameChars), r.Text(64), r.Text(TokenChars), r.Text(CookieChars)),
-                Kind.Welcome => new Welcome(r.U8(), r.Text(200), r.Text(64), r.U8() != 0, r.Text(CookieChars), r.Text(NameChars)),
+                Kind.Welcome => new Welcome(r.U8(), r.LongText(RefusedChars), r.Text(64), r.U8() != 0, r.Text(CookieChars), r.Text(NameChars), r.LongText(ProbeModsChars)),
                 Kind.Roster => ReadRoster(ref r),
                 Kind.Bye => new Bye(r.Text(200)),
                 Kind.Ping => new Ping(r.F64(), r.F32(), r.F32(), r.F32(), r.U8() != 0, r.Text(KeyChars)),

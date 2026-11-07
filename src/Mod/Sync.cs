@@ -427,10 +427,45 @@ internal static class Sync
         if (c.Probed is not { } p) return null;
         EndAhead();
         string name = p.ServerName.Length > 0 ? p.ServerName : "the server";
+        // Said before a world is started rather than after it is refused. KSA reads its mods once,
+        // at startup, so a player who learns here has a start screen to act from and one who learns
+        // after the join has a restart ahead of them either way.
+        (string missing, string extra) = ModsAgainst(p.Mods);
+        if (missing.Length > 0)
+        {
+            Say($"{name}'s world wants mods this game does not have: {missing}. Turn them on in KSA's mods and start again.");
+            return null;
+        }
+        if (extra.Length > 0)
+        {
+            Say($"{name}'s world does not have mods this game is running: {extra}. Turn them off and start again.");
+            return null;
+        }
         Say(!p.HasWorld ? $"{name} has no world yet: yours becomes it"
             : p.System.Length > 0 ? $"{name}'s world is in {p.System}: starting there"
             : $"{name} does not say which system its world is in: starting in yours");
         return p.System;
+    }
+
+    /// <summary>
+    /// What this game would be refused for, measured against the mods a world wants: the ones it has
+    /// not got, and the ones it is running that the world has not. Both empty when a world asks
+    /// nothing, which is what an imported world does until somebody saves over it.
+    ///
+    /// <para>The same comparison the server makes in its own refusal, made here as well so it can be
+    /// put to the player while it is still worth something. The server's is the one that decides.</para>
+    /// </summary>
+    private static (string Missing, string Extra) ModsAgainst(string worldMods)
+    {
+        string[] wants = Split(worldMods);
+        if (wants.Length == 0) return ("", "");
+        HashSet<string> here = [.. Split(World.Mods)];
+        HashSet<string> world = [.. wants];
+        return (string.Join(", ", wants.Where(m => !here.Contains(m)).Order()),
+                string.Join(", ", here.Where(m => !world.Contains(m)).Order()));
+
+        static string[] Split(string list) =>
+            [.. list.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
     }
 
     public static void EndAhead()

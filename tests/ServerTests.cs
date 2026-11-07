@@ -288,20 +288,38 @@ public class ServerTests
         rig.Clients.Add(early);
         early.Probe(server);
         rig.Until(() => early.Probed is not null, what: "an answer about a server with no world");
-        Assert.Equal(("KSA server", "", false), early.Probed!.Value);
+        Assert.Equal(("KSA server", "", false, ""), early.Probed!.Value);
 
-        rig.Server.SetWorld(new Blob(BlobKind.World, "", 0, 0.0, Rig.FakeWorld()), "B1", ["Core"], "SolLite", timeKnown: false);
+        rig.Server.SetWorld(new Blob(BlobKind.World, "", 0, 0.0, Rig.FakeWorld()), "B1", ["Core", "KSArmory"], "SolLite", timeKnown: false);
         Client later = new(rig.Now);
         rig.Clients.Add(later);
         later.Probe(server);
         rig.Until(() => later.Probed is not null, what: "an answer about a server with a world");
-        Assert.Equal(("KSA server", "SolLite", true), later.Probed!.Value);
+        // The mods come with it, so a player is told what to turn on before KSA has read its own.
+        Assert.Equal(("KSA server", "SolLite", true, "Core,KSArmory"), later.Probed!.Value);
 
         // Asking is not joining: nothing held on the roster, nothing said to anybody.
         rig.For(0.3);
         Assert.Empty(rig.Server.Players);
         Assert.False(later.Joined);
         Assert.Equal("", later.Out);
+    }
+
+    [Fact]
+    public void ARefusalNamesEveryModTheWorldWantsAndTheGameHasNot()
+    {
+        using Rig rig = new();
+        string[] wanted = [.. Enumerable.Range(1, 20).Select(i => $"SomeMod{i:00}")];
+        rig.Server.SetWorld(new Blob(BlobKind.World, "", 0, 0.0, Rig.FakeWorld()), "B1", wanted, "", timeKnown: false);
+
+        Client game = new(rig.Now);
+        rig.Clients.Add(game);
+        game.Connect(new IPEndPoint(IPAddress.Loopback, rig.Server.Port), "Alpha", "", "B1", "Core", "");
+        rig.Until(() => game.Out.Length > 0, what: "a refusal");
+
+        // Every one of them, not the first few: the old field held 200 characters and this list is
+        // longer than that, so a player read half a sentence and could not tell what was missing.
+        foreach (string mod in wanted) Assert.Contains(mod, game.Out);
     }
 
     [Fact]
