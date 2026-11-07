@@ -149,7 +149,11 @@ shared one.
      33 ms a frame, so the speed asked makes up a slower frame -- and that make-up is carried by the
      ceiling, or a game slower than 30 frames a second loses universe time every second it runs. The warp keys and pause are held to that
      speed by prefixes on both `Universe.SetSimulationSpeed`, and a speed asked for that is not that
-     one is the player reaching for a warp: it is put to the others instead of taken. **A menu does
+     one is the player reaching for a warp: it is put to the others instead of taken -- except the one
+     KSA puts back as a menu closes, which is no player's ask. KSA keeps the speed the mod last wrote
+     when a menu opens and writes it again on the way out, so what arrives is a nudge or a catch-up
+     warp and the menu is already shut by then. The frame before is what says whether the menus were
+     up, noted at the end of every frame. **A menu does
      not stop this world**: Escape, the settings and the save lists all ask KSA to stop it, and that
      ask is answered with the shared speed instead and told to nobody -- a craft that stops when its
      pilot opens a menu stops for nobody else, so the player would come back behind the room and
@@ -363,6 +367,11 @@ against KSA `2026.10.25.5707`:
   prefix turned each into a speed put to the whole room -- pressing Escape asked everybody else to
   pause. Nothing is held while any of them is up. Watched for the editor; the rest are the same
   code path and the same flag.
+- **Closing a menu, which asks nobody to warp.** KSA keeps the simulation speed when a menu opens
+  and sets it again when it shuts (`Program.UpdateMenuPause`), and what it keeps is whatever the mod
+  last wrote: a tenth either side of normal, or several times normal mid-catch-up. The restore
+  arrived with the menu already shut, so the prefix read it as this player asking the room to run at
+  1.08 or 0.94. Three times into the editor and out again now put no ask on the server at all.
 - **A launch landing on a free pad.** Two craft launched one after the other from CCSFS LC-39A
   went to `MP2` and then, with one more craft on the ground, to `MP3`, each time because the pad
   before it was taken. The pad is chosen inside
