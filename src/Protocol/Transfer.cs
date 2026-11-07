@@ -57,6 +57,12 @@ public sealed record Blob(BlobKind Kind, string Key, byte Owner, double Universe
     }
 
     /// <summary>Files packed into one zip, each under its own name.</summary>
+    /// <summary>
+    /// A blob's size for a log line. Bytes under a kilobyte, because the empty worlds a server
+    /// carries are a few hundred of them and "0 KB" reads as nothing at all.
+    /// </summary>
+    public static string Size(int bytes) => bytes < 1024 ? $"{bytes} B" : $"{bytes / 1024} KB";
+
     public static byte[] Zip(IEnumerable<(string Name, byte[] Data)> files)
     {
         using MemoryStream into = new();

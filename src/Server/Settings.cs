@@ -35,6 +35,7 @@ public static class Settings
         new("lapse-within", Kind.Number, "10", "seconds a craft stays its owner's while they are not near it, 1 to 3600", true),
         new("keep-time", Kind.Flag, "false", "let universe time run with nobody playing", true),
         new("speed", Kind.Number, "1", "how fast universe time runs, 0 to 100", true),
+        new("empty-world", Kind.Text, "", "start with an empty world of this system rather than waiting for a player to bring one, and the world 'fresh' puts in place of the one there is; empty to wait", true),
     ];
 
     public const string FileName = "ksamp-server.toml";
@@ -88,6 +89,17 @@ public static class Settings
             };
         }
 
+        string Empty()
+        {
+            (string v, string from) = s["empty-world"];
+            string system = v.Trim();
+            // Held to the worlds this server carries, since the only thing it could do with any
+            // other name is nothing, and a server that starts empty when it was told not to is a
+            // world a room is waiting on for no reason anybody can see.
+            return system.Length == 0 || StockWorld.Has(system) ? system
+                : throw new FormatException($"empty-world from {from} is '{system}', and there is no empty world for it; there is one for {string.Join(", ", StockWorld.Systems)}");
+        }
+
         int port = Whole("port");
         if (port is < 0 or > 65535) throw new FormatException($"port {port} is not a port");
         ServerOptions options = new()
@@ -102,6 +114,7 @@ public static class Settings
             LapseWithin = Math.Clamp(Number("lapse-within"), 1.0, 3600.0),
             KeepTime = Flag("keep-time"),
             Speed = Math.Clamp(Number("speed"), 0.0, 100.0),
+            EmptyWorld = Empty(),
         };
         IPAddress? bind = Text("bind").Trim() is { Length: > 0 } b
             ? IPAddress.TryParse(b, out IPAddress? at) ? at : throw new FormatException($"bind is '{b}', which is not an address")

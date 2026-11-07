@@ -32,6 +32,13 @@ public sealed class UniverseClock
     /// as the warp had added, and every game was left hundreds of seconds ahead of a server that had
     /// quietly rewound.</para>
     /// </summary>
+    /// <summary>
+    /// Not known again, so the next world loaded says what time it is. For a world thrown away and
+    /// replaced: the time that went with it was the old world's, and holding it would have every
+    /// game sprinting to catch a clock the new world has never been anywhere near.
+    /// </summary>
+    public void Forget() => Known = false;
+
     public void SetSpeed(double speed, double now)
     {
         if (Known) (_base, _baseAt) = (Now(now), now);

@@ -93,6 +93,11 @@ ask about SRV and so a player whose resolver drops the record can still get in b
 
 - **Let the first player bring one.** With no world, the first player to connect gives the server
   theirs.
+- **Or start empty.** Set `empty-world` to a system -- `SolLite` or `Sol` -- and the server starts
+  with an empty world of its own, so nobody has to hand one over and the first player joins into a
+  world that is already there. These are saves KSA itself wrote, carried in the server; it cannot
+  make one, since a world is KSA's own format and the server has no game. They pin the system a
+  world started from them is in, and go stale when KSA's save format moves on.
 - **Or copy a save in.** Copy a save folder from `Documents/My Games/Kitten Space Agency/saves/<name>`
   (or a zip of it) to the server and start with `--world <path>`.
 
@@ -137,10 +142,16 @@ like `quit`.
 | `--warp-answer` | `KSAMP_WARP_ANSWER` | `30` | seconds everyone has to answer a warp |
 | `--lapse-within` | `KSAMP_LAPSE_WITHIN` | `10` | seconds a craft stays its owner's once another player is watching it and they are neither in it nor looking at it |
 | `--speed` | `KSAMP_SPEED` | `1` | how fast universe time runs |
+| `--empty-world` | `KSAMP_EMPTY_WORLD` | | start with an empty world of this system (`SolLite` or `Sol`) instead of waiting for a player; also what `fresh` puts in place |
 
 Commands typed into the server's console: `players`, `say <text>`, `kick <name> [why]`,
 `op <name>`, `deop <name>`, `admins`, `clear [name]`, `reload` (or `reset`), `save`, `status`,
-`version`, `set [key value]`, `settings`, `quit`.
+`version`, `fresh`, `set [key value]`, `settings`, `quit`.
+
+`fresh` throws the world away and puts an empty one in its place -- the one `empty-world` names:
+every craft gone, universe time started over, and everybody handed the new world where they stand.
+Like `quit`, `settings` and `set`, it is the console's alone and an admin cannot type it in chat.
+There is no undoing it.
 It shuts down cleanly on Ctrl+C and on SIGTERM.
 
 `version` says what the server is, the protocol it speaks and the KSA build it holds players to --

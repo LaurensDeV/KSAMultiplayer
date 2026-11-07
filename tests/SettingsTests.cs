@@ -88,6 +88,21 @@ public class SettingsTests
         Assert.Contains(says, e.Message);
     }
 
+    [Fact]
+    public void AnEmptyWorldIsOneTheServerCarries()
+    {
+        Dictionary<string, string> file = new() { ["empty-world"] = "SolLite" };
+        (ServerOptions o, _, _) = Settings.Options(Settings.Resolve(None, NoEnvironment, file));
+        Assert.Equal("SolLite", o.EmptyWorld);
+
+        // And a system there is no world for is refused, since the only thing the server could do
+        // with it is nothing: it would wait for a player while saying it would not.
+        FormatException e = Assert.Throws<FormatException>(() =>
+            Settings.Options(Settings.Resolve(None, NoEnvironment, new Dictionary<string, string> { ["empty-world"] = "Mars" })));
+        Assert.Contains("Mars", e.Message);
+        Assert.Contains("SolLite", e.Message);
+    }
+
     /// <summary>
     /// Said rather than silently taken, because Write changes the first line with a key on it and
     /// Read used to keep the last: set wrote a value the server then ignored, and said nothing.

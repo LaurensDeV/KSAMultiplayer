@@ -1,0 +1,5 @@
+name = "stocksol"
+created = 2026-11-07T23:01:19.423346
+updated = 2026-11-07T23:01:19.4273991
+version = "v2026.10.25.5707"
+systems = [ "Sol", ]

@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UniverseData>
+  <GameTime Nanos="106859727451" />
+  <CameraData>
+    <Position X="-3306515.5837" Y="-16320912.0602" Z="7237689.0815" />
+    <Rotation X="0.7542" Y="-0.0467" Z="-0.1143" />
+    <CameraMode>Orbit</CameraMode>
+    <Following Id="Earth" />
+    <TidalLocking Value="true" />
+    <MapInverted Value="false" />
+    <MapPreviouslyControlled />
+  </CameraData>
+  <System>
+    <Id Id="SolLite" />
+    <GroundClutter>
+      <Celestial>Earth</Celestial>
+      <Ecotype>Grass</Ecotype>
+      <GridResolution>0</GridResolution>
+    </GroundClutter>
+    <GroundClutter>
+      <Celestial>Earth</Celestial>
+      <Ecotype>Tree</Ecotype>
+      <GridResolution>0</GridResolution>
+    </GroundClutter>
+    <GroundClutter>
+      <Celestial>Earth</Celestial>
+      <Ecotype>SmallTree</Ecotype>
+      <GridResolution>0</GridResolution>
+    </GroundClutter>
+    <GroundClutter>
+      <Celestial>Earth</Celestial>
+      <Ecotype>Shrub</Ecotype>
+      <GridResolution>0</GridResolution>
+    </GroundClutter>
+    <GroundClutter>
+      <Celestial>Luna</Celestial>
+      <Ecotype>Rocks</Ecotype>
+      <GridResolution>0</GridResolution>
+    </GroundClutter>
+    <GroundClutter>
+      <Celestial>Luna</Celestial>
+      <Ecotype>LargerRocks</Ecotype>
+      <GridResolution>0</GridResolution>
+    </GroundClutter>
+    <GroundClutter>
+      <Celestial>Luna</Celestial>
+      <Ecotype>SmallerRocks</Ecotype>
+      <GridResolution>0</GridResolution>
+    </GroundClutter>
+  </System>
+  <KittenRoster>
+    <Kitten Name="Hunter" Character="HunterKitten" MissionCount="0" KIA="false">
+      <TotalMissionTime />
+      <TravelledMeters M="0" />
+      <FastestSpeed M="0" />
+    </Kitten>
+    <Kitten Name="Banjo" Character="BanjoKitten" MissionCount="0" KIA="false">
+      <TotalMissionTime />
+      <TravelledMeters M="0" />
+      <FastestSpeed M="0" />
+    </Kitten>
+    <Kitten Name="Polaris" Character="PolarisKitten" MissionCount="0" KIA="false">
+      <TotalMissionTime />
+      <TravelledMeters M="0" />
+      <FastestSpeed M="0" />
+    </Kitten>
+    <Kitten Name="Mubrook" Character="HunterKitten" MissionCount="0" KIA="false">
+      <TotalMissionTime />
+      <TravelledMeters M="0" />
+      <FastestSpeed M="0" />
+    </Kitten>
+    <Kitten Name="Mibrook" Character="HunterKitten" MissionCount="0" KIA="false">
+      <TotalMissionTime />
+      <TravelledMeters M="0" />
+      <FastestSpeed M="0" />
+    </Kitten>
+    <Kitten Name="Lispark" Character="BanjoKitten" MissionCount="0" KIA="false">
+      <TotalMissionTime />
+      <TravelledMeters M="0" />
+      <FastestSpeed M="0" />
+    </Kitten>
+    <Kitten Name="Nofable" Character="PolarisKitten" MissionCount="0" KIA="false">
+      <TotalMissionTime />
+      <TravelledMeters M="0" />
+      <FastestSpeed M="0" />
+    </Kitten>
+    <Kitten Name="Dobelle" Character="PolarisKitten" MissionCount="0" KIA="false">
+      <TotalMissionTime />
+      <TravelledMeters M="0" />
+      <FastestSpeed M="0" />
+    </Kitten>
+    <Kitten Name="Gespark" Character="PolarisKitten" MissionCount="0" KIA="false">
+      <TotalMissionTime />
+      <TravelledMeters M="0" />
+      <FastestSpeed M="0" />
+    </Kitten>
+    <Kitten Name="Mibelle" Character="HunterKitten" MissionCount="0" KIA="false">
+      <TotalMissionTime />
+      <TravelledMeters M="0" />
+      <FastestSpeed M="0" />
+    </Kitten>
+    <Kitten Name="Dibelle" Character="BanjoKitten" MissionCount="0" KIA="false">
+      <TotalMissionTime />
+      <TravelledMeters M="0" />
+      <FastestSpeed M="0" />
+    </Kitten>
+    <Kitten Name="Mowood" Character="BanjoKitten" MissionCount="0" KIA="false">
+      <TotalMissionTime />
+      <TravelledMeters M="0" />
+      <FastestSpeed M="0" />
+    </Kitten>
+    <Kitten Name="Deglen" Character="BanjoKitten" MissionCount="0" KIA="false">
+      <TotalMissionTime />
+      <TravelledMeters M="0" />
+      <FastestSpeed M="0" />
+    </Kitten>
+    <Kitten Name="Dufluff" Character="PolarisKitten" MissionCount="0" KIA="false">
+      <TotalMissionTime />
+      <TravelledMeters M="0" />
+      <FastestSpeed M="0" />
+    </Kitten>
+    <Kitten Name="Bulyn" Character="HunterKitten" MissionCount="0" KIA="false">
+      <TotalMissionTime />
+      <TravelledMeters M="0" />
+      <FastestSpeed M="0" />
+    </Kitten>
+    <Kitten Name="Pewick" Character="BanjoKitten" MissionCount="0" KIA="false">
+      <TotalMissionTime />
+      <TravelledMeters M="0" />
+      <FastestSpeed M="0" />
+    </Kitten>
+    <Kitten Name="Momir" Character="PolarisKitten" MissionCount="0" KIA="false">
+      <TotalMissionTime />
+      <TravelledMeters M="0" />
+      <FastestSpeed M="0" />
+    </Kitten>
+    <Kitten Name="Gohollow" Character="PolarisKitten" MissionCount="0" KIA="false">
+      <TotalMissionTime />
+      <TravelledMeters M="0" />
+      <FastestSpeed M="0" />
+    </Kitten>
+    <Kitten Name="Bowell" Character="BanjoKitten" MissionCount="0" KIA="false">
+      <TotalMissionTime />
+      <TravelledMeters M="0" />
+      <FastestSpeed M="0" />
+    </Kitten>
+    <Kitten Name="Fimoss" Character="BanjoKitten" MissionCount="0" KIA="false">
+      <TotalMissionTime />
+      <TravelledMeters M="0" />
+      <FastestSpeed M="0" />
+    </Kitten>
+  </KittenRoster>
+</UniverseData>

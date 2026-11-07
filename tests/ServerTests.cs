@@ -120,6 +120,61 @@ public class ServerTests
     }
 
     /// <summary>
+    /// An empty world the server carries, so a room does not wait on somebody to bring one. The
+    /// save is KSA's own and nothing here reads inside it; what is checked is that it goes out as
+    /// any other world does and arrives whole.
+    /// </summary>
+    [Fact]
+    public void AServerCanStartWithAnEmptyWorldOfItsOwn()
+    {
+        byte[] empty = StockWorld.Zip("SolLite")!;
+        using Rig rig = new(new ServerOptions { EmptyWorld = "SolLite" });
+        rig.Server.SetWorld(new Blob(BlobKind.World, "", 0, 0.0, empty), "", [], "SolLite", timeKnown: false);
+
+        Client a = rig.Join("Alice");
+        rig.Until(() => a.Blobs.Any(x => x.Kind == BlobKind.World), seconds: 20, what: "the world to come");
+        // Nobody was asked for one, and what came is the world the server was carrying.
+        Assert.Null(a.SnapshotWanted);
+        Assert.Equal(empty, a.Blobs.First(x => x.Kind == BlobKind.World).Data);
+    }
+
+    /// <summary>
+    /// fresh: the world thrown away under everybody and an empty one handed out where they stand.
+    /// </summary>
+    [Fact]
+    public void FreshThrowsTheWorldAwayAndHandsOutAnEmptyOne()
+    {
+        using Rig rig = new(new ServerOptions { EmptyWorld = "SolLite" });
+        Client a = Seed(rig);
+        rig.Until(() => rig.Server.CraftCount >= 0 && rig.Server.HasWorld, what: "a world");
+        a.Upload(new Blob(BlobKind.Vehicle, "Rocket", a.Id, 5000, Rig.FakeWorld(2)));
+        rig.For(0.3);
+        byte[] was = rig.Server.World!.Data;
+
+        string said = rig.Server.Fresh("a test asked");
+        Assert.Contains("SolLite", said);
+        Assert.NotEqual(was, rig.Server.World!.Data);
+        Assert.Equal(StockWorld.Zip("SolLite"), rig.Server.World!.Data);
+        // Nothing of the old world is still known, and its time went with it.
+        Assert.Equal(0, rig.Server.CraftCount);
+        Assert.False(rig.Server.UniverseClock.Known);
+        // And it goes out: the player is put back on the new one rather than left in the old.
+        rig.Until(() => a.Blobs.Any(x => x.Kind == BlobKind.World && x.Data.SequenceEqual(StockWorld.Zip("SolLite")!)),
+                  seconds: 20, what: "the empty world to arrive");
+    }
+
+    [Fact]
+    public void FreshWithNothingToStartFromSaysSo()
+    {
+        using Rig rig = new();
+        Seed(rig);
+        string said = rig.Server.Fresh("a test asked");
+        Assert.Contains("set empty-world", said);
+        // And the world everybody is in is left exactly where it was.
+        Assert.True(rig.Server.HasWorld);
+    }
+
+    /// <summary>
     /// A game whose frame loop has stopped. Everything a client sends goes out of <c>Update</c>, so
     /// a stall sends nothing at all -- and ten seconds of nothing used to be a player the server
     /// dropped, which is what put people out of a world every time KSA hitched on a rebuild.

@@ -225,6 +225,18 @@ token, and the operator's admin becomes "name 2". A roster holds only one of a n
 capitalised, so the verbs are at least unambiguous about which player they mean -- but they mean
 whoever is holding the name, not whoever deserves it. On a server where that matters, set a password.
 
+**The server carries empty worlds it cannot make.** A world is a KSA save -- a `meta.toml` and a
+`universe.xml` -- and this half of the project never references KSA, on a machine with no game
+installed, so there is nothing here that could write one. One empty save per system was made once in
+the game instead and is carried as bytes: `src/Server/worlds/<System>/`, embedded, zipped on demand
+into the shape a player's handover has and sent out the same way. Nothing reads inside them. Under a
+kilobyte each, because an empty universe is a camera, a system id and some ground clutter. What it
+costs is a system and a version: the system a world started from one is in for ever, which is why
+there is one per system and a setting to pick rather than one assumed, and the save says which KSA
+build wrote it, so each goes stale when the format moves on. `fresh` puts one in place of the world
+there is -- every craft dropped, the universe clock forgotten so the next load says the time, and
+everybody handed the new world where they stand.
+
 **A stalled game is still a game.** Everything a client sends goes out of `Update`, on KSA's own
 thread, so a frame that runs long -- a rocket being rebuilt, a scene loading, a machine thrashing --
 sends nothing at all, and ten seconds of that was a player the server dropped out of a world they
@@ -428,6 +440,11 @@ against KSA `2026.10.25.5707`:
 
 ## What has not been tried
 
+- **An empty world the server carries, and `fresh`.** Driven over loopback: a server set to start
+  empty hands its own world to the first player without asking anybody for one, and `fresh` replaces
+  the world, drops every craft, forgets the clock and puts the room back on the new one. What has
+  not been watched is KSA loading one of these saves -- they were written by the game and handed
+  straight back to it, but no game has been seen opening one that came off a server.
 - **The keepalive under a real stall.** Driven over loopback by stopping a client's `Update` and
   putting the clock forward: sixteen seconds of a frozen frame loop keeps its place, eighty lets it
   go. What has not been watched is KSA itself hitching -- a rebuild, a scene load -- and the session

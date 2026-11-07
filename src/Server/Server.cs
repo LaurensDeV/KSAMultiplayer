@@ -33,6 +33,13 @@ public sealed record ServerOptions
     public double LapseWithin { get; init; } = 10.0;
 
     public double Speed { get; init; } = 1.0;
+
+    /// <summary>
+    /// The celestial system of the empty world this server starts with when it has none, as KSA
+    /// names it; empty to wait for the first player to hand theirs over instead. Also the world
+    /// <c>fresh</c> puts in place of the one there is.
+    /// </summary>
+    public string EmptyWorld { get; init; } = "";
 }
 
 /// <summary>
@@ -201,7 +208,7 @@ public sealed class GameServer : IDisposable
             _worldTimeKnown = saved.TimeKnown;
             // Including one written before that was checked.
             if (saved.TimeKnown && ClockFollow.SaneUniverse(saved.World.Universe)) UniverseClock.Set(saved.World.Universe, clock());
-            Log($"world loaded from {store.Folder}: {saved.World.Data.Length / 1024} KB"
+            Log($"world loaded from {store.Folder}: {Blob.Size(saved.World.Data.Length)}"
                 + (saved.TimeKnown ? $" at universe time {saved.World.Universe:F0} s" : ", its universe time to come from the first player to load it"));
         }
         _snapshotNext = clock() + options.SnapshotEverySeconds;
@@ -582,7 +589,7 @@ public sealed class GameServer : IDisposable
         if (_world is null) return;
         p.WaitingForWorld = false;
         p.Link.Send(_world.Encode(), _clock());
-        Log($"sending {p.Name} the world, {_world.Data.Length / 1024} KB");
+        Log($"sending {p.Name} the world, {Blob.Size(_world.Data.Length)}");
     }
 
     // An empty server's time is the time of the world it hands out.
@@ -635,12 +642,12 @@ public sealed class GameServer : IDisposable
                 // rest out of the server, and out of every restart of it, by sending a world.
                 if (!p.WorldAsked)
                 {
-                    Log($"{p.Name} sent a world nobody asked for, {blob.Data.Length / 1024} KB: left where it came from");
+                    Log($"{p.Name} sent a world nobody asked for, {Blob.Size(blob.Data.Length)}: left where it came from");
                     return;
                 }
                 p.WorldAsked = false;
                 SetWorld(blob, p.KsaBuild, p.Mods, p.System);
-                Log($"{p.Name} saved the world: {blob.Data.Length / 1024} KB at universe time {blob.Universe:F0} s");
+                Log($"{p.Name} saved the world: {Blob.Size(blob.Data.Length)} at universe time {blob.Universe:F0} s");
                 if (p.Seeding) OnLoaded(p, blob.Universe);
                 return;
             case BlobKind.Vehicle when p.Loaded && blob.Key.Length > 0:
@@ -651,7 +658,7 @@ public sealed class GameServer : IDisposable
                 Blob stamped = blob with { Owner = p.Id, Universe = UniverseClock.Now(_clock()) };
                 craft.Definition = stamped.Encode();
                 craft.Described++;
-                Log($"{p.Name} says how {blob.Key} is built, {blob.Data.Length / 1024} KB"
+                Log($"{p.Name} says how {blob.Key} is built, {Blob.Size(blob.Data.Length)}"
                     + (craft.Described > 1 ? $" -- {craft.Described} times now" : ""));
                 craft.Universe = stamped.Universe;
                 _gone.Remove(blob.Key);
@@ -1115,6 +1122,38 @@ public sealed class GameServer : IDisposable
             _rosterNext = 0.0;
         }
         return back.Length;
+    }
+
+    /// <summary>
+    /// The world thrown away and an empty one put in its place: every craft gone, universe time
+    /// started over, and everybody handed the new world where they stand.
+    ///
+    /// <para>The empty world is one the server carries rather than one it makes, so there has to be
+    /// one for a system before this can do anything -- which is also what keeps it from being a
+    /// command that quietly leaves a room with no world at all. Craft are dropped here rather than
+    /// swept: a sweep takes them out of the world the games are holding, and this is throwing that
+    /// world away whole, so there is nothing left for anyone to be flying.</para>
+    ///
+    /// <para>Time is forgotten with them. Held, every game would load a world that has never been
+    /// past a couple of minutes and then sprint to catch a clock still reading the old one's.</para>
+    /// </summary>
+    public string Fresh(string why)
+    {
+        if (StockWorld.Zip(Options.EmptyWorld) is not { } zip)
+        {
+            string carried = string.Join(", ", StockWorld.Systems);
+            return Options.EmptyWorld.Length == 0
+                ? $"nothing to start from: set empty-world to one of {carried} first"
+                : $"no empty world for '{Options.EmptyWorld}'; there is one for {carried}";
+        }
+        _crafts.Clear();
+        _gone.Clear();
+        UniverseClock.Forget();
+        SetWorld(new Blob(BlobKind.World, "", 0, 0.0, zip), Options.KsaBuild, [], Options.EmptyWorld, timeKnown: false);
+        int back = ReloadAll(why);
+        Log($"the world is new and empty, in {Options.EmptyWorld}: {why}");
+        return $"a new empty world in {Options.EmptyWorld}"
+               + (back > 0 ? $", handed to {back} player{(back == 1 ? "" : "s")}" : ", with nobody here to give it to");
     }
 
     /// <summary>

@@ -21,4 +21,13 @@
     <ProjectReference Include="..\Protocol\KSAMultiplayer.Protocol.csproj" />
   </ItemGroup>
 
+  <!--
+    Empty worlds, one folder per system, exactly as KSA wrote them. Carried in the assembly so a
+    server can start with a world instead of waiting for a player to bring one: the server never
+    reads them, it hands the bytes out as any other world, so nothing of KSA's format is known here.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="worlds\**\*" />
+  </ItemGroup>
+
 </Project>

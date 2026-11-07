@@ -37,18 +37,24 @@ const string Usage = """
     A variable set here overrides the file for good, so the console cannot change what it gives:
     use one for a setting that belongs to the machine, and the file for the rest.
 
-    With no world, the first player to join gives the server theirs.
+    With no world, the first player to join gives the server theirs -- or set empty-world to a
+    system and the server starts with an empty world of its own instead.
 
     Console commands, on standard input: players, say <text>, kick <name> [why],
-    op <name>, deop <name>, admins, clear [name], reload, save, status, version, help, quit,
-    settings, set <key> <value>.
+    op <name>, deop <name>, admins, clear [name], reload, save, status, version, help, fresh,
+    quit, settings, set <key> <value>.
 
     An admin can type those same commands into a game's chat with a / in front. op hands the player
     a token their game keeps and offers at every join after, so they stay an admin without a
     password to type or to lose; deop takes it back, from a name whether or not it is playing. The
-    list is admins.json beside the world, and holds only each token's hash. quit, settings and set
-    are the console's alone: a server nobody can start again, or one whose password an admin has
-    changed, is not something to hand out by accident.
+    list is admins.json beside the world, and holds only each token's hash. fresh, quit, settings
+    and set are the console's alone: a server nobody can start again, one whose password an admin
+    has changed, or a world thrown away under everybody standing in it, is not something to hand
+    out by accident.
+
+    fresh throws the world away and puts an empty one in its place, the one empty-world names:
+    every craft gone, universe time started over, and everybody handed the new world where they
+    stand. There is no undoing it.
 
     settings reads the settings file again and set changes one line of it; either takes effect at
     once, except port, bind and data, which wait for a restart, and a setting a flag or the
@@ -152,7 +158,14 @@ try
         byte[] zip = WorldStore.Import(worldPath);
         string system = WorldStore.SystemOf(zip);
         store.Save(new Blob(BlobKind.World, "", 0, 0.0, zip), options.KsaBuild, [], system, timeKnown: false);
-        Say($"world imported from {worldPath}: {zip.Length / 1024} KB{(system.Length > 0 ? $", in {system}" : "")}");
+        Say($"world imported from {worldPath}: {Blob.Size(zip.Length)}{(system.Length > 0 ? $", in {system}" : "")}");
+    }
+    // Only when there is nothing: a world kept from the last run, or one just imported, is the world
+    // this server has, and starting empty over the top of it would throw away what it was keeping.
+    else if (options.EmptyWorld.Length > 0 && store.Load() is null && StockWorld.Zip(options.EmptyWorld) is { } empty)
+    {
+        store.Save(new Blob(BlobKind.World, "", 0, 0.0, empty), options.KsaBuild, [], options.EmptyWorld, timeKnown: false);
+        Say($"starting with an empty world in {options.EmptyWorld}; the first player joins into it rather than giving theirs");
     }
     server = new GameServer(options, Now, store, bind);
 }
@@ -296,7 +309,7 @@ void Command(string line, GameServer.Player? who = null)
         case "status":
             double u = server.UniverseClock.Now(Now());
             Answer($"{server.Players.Count} players, {server.CraftCount} craft known, universe time {(server.UniverseClock.Known ? $"{u:F1} s" : "not yet known")}"
-                + $"{(server.UniverseClock.Running ? "" : " (held)")}, world {(server.World is { } w ? $"{w.Data.Length / 1024} KB" : "none")}"
+                + $"{(server.UniverseClock.Running ? "" : " (held)")}, world {(server.World is { } w ? Blob.Size(w.Data.Length) : "none")}"
                 + $", {server.Socket.Received} datagrams in, {server.Socket.Sent} out");
             break;
         // One command a line. All of them on one was unreadable, and the three that needed saying
@@ -310,14 +323,23 @@ void Command(string line, GameServer.Player? who = null)
             }
             if (who is null)
             {
+                Answer($"  {"fresh".PadRight(18)} throw the world away and start on an empty one");
                 Answer($"  {"settings".PadRight(18)} read the settings file again");
                 Answer($"  {"set <key> <value>".PadRight(18)} change a setting and keep it in the file; set alone lists them");
                 Answer($"  {"quit".PadRight(18)} stop the server");
             }
-            else Answer("  quit, settings and set are the console's alone");
+            else Answer("  fresh, quit, settings and set are the console's alone");
             break;
         // The console's alone, as quit is: an admin who could set the password could lock every
         // other player out, and one who could set the data folder could point it anywhere.
+        // The console's alone, with quit: it throws away the world everybody is standing in, and
+        // there is no undoing it from a chat window.
+        case "fresh" when who is null:
+            Answer(server.Fresh("the operator started the world over"));
+            break;
+        case "fresh":
+            Answer("fresh is the console's alone");
+            break;
         case "settings" when who is null:
             Reapply(null);
             break;
