@@ -207,6 +207,8 @@ internal static class Hooks
                   "another player's craft is built while KSA is stepping the world, which fails its physics");
             Patch(AccessTools.Method(typeof(Universe), nameof(Universe.DeserializeSave)), nameof(BeforeDeserializeSave),
                   "a save loaded in this game would have every craft in it claimed and sent to everybody");
+            PatchAfter(AccessTools.Method(typeof(Program), nameof(Program.OnGameLoaded)), nameof(AfterGameLoaded),
+                  "a world from the server with no craft in it never finishes loading");
             PatchAfter(AccessTools.Method(typeof(VehicleEditor), "SetLocations"), nameof(AfterSetLocations),
                   "the editor offers this mod's extra launchpads as places to launch from");
             PatchAfter(AccessTools.Method(typeof(VehicleLaunchMenu), "SetLocations"), nameof(AfterLaunchMenuLocations),
@@ -540,6 +542,23 @@ internal static class Hooks
     /// <para>Patched rather than hooked at the save menu because a world is loaded from several
     /// places -- the menu, the bridge, a tool -- and this is the one they share.</para>
     /// </summary>
+    /// <summary>
+    /// After a save has finished going into this game: the other end of
+    /// <see cref="BeforeDeserializeSave"/>, called by KSA one line after it, and the moment a world
+    /// from the server is actually here.
+    /// </summary>
+    private static void AfterGameLoaded()
+    {
+        try
+        {
+            Sync.WorldHasLoaded();
+        }
+        catch (Exception e)
+        {
+            Log.Error("noting that the world has loaded", e);
+        }
+    }
+
     private static void BeforeDeserializeSave()
     {
         try

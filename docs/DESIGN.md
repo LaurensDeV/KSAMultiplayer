@@ -237,6 +237,13 @@ build wrote it, so each goes stale when the format moves on. `fresh` puts one in
 there is -- every craft dropped, the universe clock forgotten so the next load says the time, and
 everybody handed the new world where they stand.
 
+**A world is called what the folder it is in is called.** KSA registers a save under the name in its
+`meta.toml`, not the folder it was read from (`UncompressedSave.FromDirectory` registers
+`SaveMetaData.Name`), so a world unpacked into the handover folder and loaded by that folder's name
+is only found if its meta happens to agree. One handed over by another player agrees, because the
+game that wrote it wrote it under this same name; one imported by an operator or carried by the
+server agrees by luck. The name is rewritten to match the folder as the world is unpacked.
+
 **A stalled game is still a game.** Everything a client sends goes out of `Update`, on KSA's own
 thread, so a frame that runs long -- a rocket being rebuilt, a scene loading, a machine thrashing --
 sends nothing at all, and ten seconds of that was a player the server dropped out of a world they
@@ -334,6 +341,12 @@ against KSA `2026.10.25.5707`:
 
 - **Joining, seeding and the handover.** The first game's world became the server's, 31 KB, and the
   second received it, loaded it and reached the shared world.
+- **An empty world the server carries.** A server started with `empty-world = "SolLite"` handed its
+  own 977-byte world to a game that had asked nobody for one, and the game loaded it and reached the
+  shared world in about a second. Two things had to be fixed before it would, and neither was about
+  the save: KSA lists a save under the name its `meta.toml` gives rather than the folder it is in,
+  so a world whose meta said anything else was written to the handover folder and then not found in
+  it; and the loading stage waited for a craft to fly, which a world with nothing in it never has.
 - **Who flies what.** Claims relayed both ways; each game held the other's craft as a puppet and its
   own as its own.
 - **Building a craft from another game's definition.** A kitten the second game sent out on EVA was
@@ -440,11 +453,6 @@ against KSA `2026.10.25.5707`:
 
 ## What has not been tried
 
-- **An empty world the server carries, and `fresh`.** Driven over loopback: a server set to start
-  empty hands its own world to the first player without asking anybody for one, and `fresh` replaces
-  the world, drops every craft, forgets the clock and puts the room back on the new one. What has
-  not been watched is KSA loading one of these saves -- they were written by the game and handed
-  straight back to it, but no game has been seen opening one that came off a server.
 - **The keepalive under a real stall.** Driven over loopback by stopping a client's `Update` and
   putting the clock forward: sixteen seconds of a frozen frame loop keeps its place, eighty lets it
   go. What has not been watched is KSA itself hitching -- a rebuild, a scene load -- and the session

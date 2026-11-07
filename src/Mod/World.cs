@@ -330,7 +330,9 @@ internal static class World
         if (why.Length > 0) return false;
         try
         {
-            Blob.UnzipInto(zip, Path.Combine(GameSaves.SaveFolderPath, HandoverSave));
+            string folder = Path.Combine(GameSaves.SaveFolderPath, HandoverSave);
+            Blob.UnzipInto(zip, folder);
+            CallItTheHandover(folder);
             GameSaves.Refresh();
             GameSaves.LoadSaveGame(HandoverSave);
             return true;
@@ -340,6 +342,38 @@ internal static class World
             why = e.GetBaseException().Message;
             return false;
         }
+    }
+
+    /// <summary>
+    /// The name in a world's <c>meta.toml</c> made to match the folder it was just written to.
+    ///
+    /// <para>KSA lists a save under the name its meta gives, not the folder it is in --
+    /// <c>UncompressedSave.FromDirectory</c> registers <c>SaveMetaData.Name</c> -- so a world whose
+    /// meta says anything else is written to the handover folder and then cannot be found in it:
+    /// <c>LoadSaveGame</c> logs "save 'Multiplayer' not found" and the join sits on "loading the
+    /// world" for ever. A world handed over by another player happens to agree, because the game
+    /// that saved it saved it under this same name. One imported by an operator, or an empty one
+    /// the server carries, agrees only by luck.</para>
+    ///
+    /// <para>Left alone if there is no meta or no name in it: that is a save KSA will refuse for
+    /// its own reasons, and saying so is its job rather than this one's.</para>
+    /// </summary>
+    private static void CallItTheHandover(string folder)
+    {
+        string meta = Path.Combine(folder, "meta.toml");
+        if (!File.Exists(meta)) return;
+        string[] lines = File.ReadAllLines(meta);
+        bool found = false;
+        for (int i = 0; i < lines.Length; i++)
+        {
+            if (!lines[i].TrimStart().StartsWith("name", StringComparison.Ordinal)) continue;
+            int eq = lines[i].IndexOf('=');
+            if (eq < 0 || lines[i][..eq].Trim() != "name") continue;
+            lines[i] = $"name = \"{HandoverSave}\"";
+            found = true;
+            break;
+        }
+        if (found) File.WriteAllLines(meta, lines);
     }
 
     // ------------------------------------------------------------------ craft definitions

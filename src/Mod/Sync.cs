@@ -562,6 +562,7 @@ internal static class Sync
         World.ForgetEngines();
         (_worldToLoad, _notLoading, _notSaving) = (null, "", "");
         (_claimed, _address, _watching, Behind, Now) = ("", "", "", null, Stage.Off);
+        _worldCame = false;
         (_askedSpeed, _askWarpNext) = (1.0, 0.0);
         if (HeldSpeed is not null)
         {
@@ -785,7 +786,10 @@ internal static class Sync
                         Disconnect();
                         return;
                     }
-                    if (World.AtACraft && ++_settle > SettleFrames) StartPlaying(c);
+                    // Either says the world is here: KSA saying it has finished loading one, which
+                    // is the only word there is for a world with no craft in it, or a craft to fly,
+                    // which is what said it before and still does if that patch did not take.
+                    if ((_worldCame || World.AtACraft) && ++_settle > SettleFrames) StartPlaying(c);
                     break;
                 case Stage.Playing:
                     Play(c);
@@ -817,7 +821,7 @@ internal static class Sync
         }
         (_notLoading, _worldToLoad) = ("", null);
         Say($"the world has come, {Blob.Size(world.Data.Length)}: loading it");
-        (_loadingSince, _settle, Now) = (Wall(), 0, Stage.Loading);
+        (_loadingSince, _settle, _worldCame, Now) = (Wall(), 0, false, Stage.Loading);
         Puppets.Clear();
         ToPlace.Clear();
         Built.Clear();
@@ -846,6 +850,23 @@ internal static class Sync
     /// <para>The mod's own loads say <see cref="Stage.Loading"/> before they start, which is how
     /// this tells the server's world from the player's.</para>
     /// </summary>
+    // Set by a patch when KSA has finished putting a save into this game, and read by the loading
+    // stage as the world having arrived.
+    private static bool _worldCame;
+
+    /// <summary>
+    /// KSA has finished loading a save. While this mod is waiting on one, that is the world being
+    /// here -- which is the only thing that says so for a world with nothing in it.
+    ///
+    /// <para>What used to say it was a craft to fly. Every world handed over had one, so waiting
+    /// for one worked until a world did not: an empty one never finished loading at all, and the
+    /// window sat on "loading the world..." until the three minutes ran out and it gave up.</para>
+    /// </summary>
+    public static void WorldHasLoaded()
+    {
+        if (Now == Stage.Loading) _worldCame = true;
+    }
+
     public static void WorldLoadedHere()
     {
         if (Now != Stage.Playing) return;
