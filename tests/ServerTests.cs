@@ -17,7 +17,26 @@ public sealed class Rig : IDisposable
         Server = new GameServer((options ?? new ServerOptions()) with { Port = 0 }, Now, store, IPAddress.Loopback, admins);
     }
 
-    public double Now() => _watch.Elapsed.TotalSeconds;
+    // Time nobody waited for. The clocks here are the rig's, so a test about something that happens
+    // after ten seconds of silence can have those ten seconds without taking them.
+    private double _skipped;
+
+    public double Now() => _watch.Elapsed.TotalSeconds + _skipped;
+
+    /// <summary>
+    /// Puts the clock forward and then lets the machine run for a moment, so anything living on a
+    /// thread of its own -- the client's keepalive -- gets to notice the time it was given.
+    /// </summary>
+    public void Skip(double seconds, double real = 0.3)
+    {
+        _skipped += seconds;
+        double until = Now() + real;
+        while (Now() < until)
+        {
+            Server.Tick();
+            Thread.Sleep(5);
+        }
+    }
 
     public Client Join(string name, string build = "B1", string mods = "Core", string password = "", string system = "SolLite", string token = "")
     {
@@ -98,6 +117,38 @@ public class ServerTests
         b.SayLoaded(world.Universe);
         rig.Until(() => rig.Server.Players.First(p => p.Id == b.Id).Loaded, what: $"{name} to load");
         return b;
+    }
+
+    /// <summary>
+    /// A game whose frame loop has stopped. Everything a client sends goes out of <c>Update</c>, so
+    /// a stall sends nothing at all -- and ten seconds of nothing used to be a player the server
+    /// dropped, which is what put people out of a world every time KSA hitched on a rebuild.
+    /// </summary>
+    [Fact]
+    public void AGameThatStallsStaysInTheWorld()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+
+        // Nobody calls Update: this is the game frozen, and only the server runs.
+        for (int i = 0; i < 8; i++) rig.Skip(2.0);
+
+        Assert.Contains(rig.Server.Players, p => p.Id == a.Id);
+        Assert.True(a.Joined);
+        Assert.DoesNotContain(rig.Server.Said, said => said.Contains("gone quiet", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// And the other end of it: a seat is not held open for ever by a process that has hung. Past
+    /// the minute a stall is spoken for, the keepalive stops and the server's own silence takes over.
+    /// </summary>
+    [Fact]
+    public void AGameThatNeverComesBackIsLetGoOf()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        for (int i = 0; i < 40; i++) rig.Skip(2.0, real: 0.05);
+        Assert.DoesNotContain(rig.Server.Players, p => p.Id == a.Id);
     }
 
     [Fact]
@@ -348,7 +399,12 @@ public class ServerTests
         // It stops answering without saying goodbye, which is every ungraceful drop: a crash, a
         // kill, a lost Bye. Not disposed, because that says goodbye and is the case that already
         // worked -- this one leaves the server still holding the session.
+        //
+        // Dropped on the floor rather than merely left unticked: a game that has died is not sending
+        // a keepalive either, and the keepalive is what tells a stall from a death. Ticking it would
+        // now be a game that is frozen and still here, which is a session the server should keep.
         rig.Clients.Remove(a);
+        a.Socket.Loss = 1.0;
         double quiet = rig.Now() + 4.0;
         rig.Until(() => rig.Now() > quiet, seconds: 10.0, what: "the session to go quiet");
         Assert.Single(rig.Server.Players);
@@ -358,6 +414,7 @@ public class ServerTests
         // Not "Bob 2", and not beside its own ghost: one session, under the name it asked for.
         Assert.Single(rig.Server.Players);
         Assert.Equal("Bob", rig.Server.Players.First().Name);
+        a.Dispose();
     }
 
     [Theory]
@@ -1193,3 +1250,4 @@ public class ServerTests
         Assert.InRange(rig.Server.UniverseClock.Speed, 1.0, 8.5);
     }
 }
+

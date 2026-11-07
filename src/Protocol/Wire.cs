@@ -134,8 +134,12 @@ public static class Wire
     /// mods once, at startup, so a mod a player learns about after a world has loaded costs them a
     /// restart. A refusal grew with the same reasoning, from 200 characters to 600, since the one
     /// worth reading names every mod that is missing.</para>
+    ///
+    /// <para>20 adds <see cref="Alive"/>, which a game sends off its own thread while its frame loop
+    /// is stalled. Before it, ten seconds of stutter read as a player who had gone, and a game that
+    /// hitched on a rebuild was thrown out of a world it was still in.</para>
     /// </summary>
-    public const ushort Version = 19;
+    public const ushort Version = 20;
 
     public const int BufferBytes = 8192;
     public const int NameChars = 24;
@@ -217,6 +221,7 @@ public static class Wire
         Swept = 23,
         Command = 24,
         Op = 25,
+        Alive = 26,
     }
 
     /// <summary>Where a warp has got to: nobody has asked, somebody has and is waiting, or it is running.</summary>
@@ -266,6 +271,18 @@ public static class Wire
     /// a craft its owner is neither in nor looking at is one they have walked away from, and after a
     /// while it goes back to being anybody's.</param>
     public sealed record Ping(double Sent, float Rtt, float Late, float Can, bool Here, string Watching) : Message(Kind.Ping);
+
+    /// <summary>
+    /// Nothing but "this game is still here", sent from a thread of its own so a frame loop that has
+    /// stopped does not read as a player who has left.
+    ///
+    /// <para>Empty on purpose. A <see cref="Ping"/> carries the clock, the round trip and what is
+    /// being flown, all of it worked out on the game's own thread: sending one from somewhere else
+    /// would hand the server a measurement that was never taken, and be answered with a
+    /// <see cref="Pong"/> whose timings mean nothing. This says the one thing that is still true
+    /// while a game is stalled, and the server reads it for that and nothing else.</para>
+    /// </summary>
+    public sealed record Alive() : Message(Kind.Alive);
 
     /// <param name="Echo">The ping's own time, on the asker's clock.</param>
     /// <param name="Answered">When it was answered, on the answerer's clock.</param>
@@ -475,6 +492,8 @@ public static class Wire
             case Bye b:
                 w.Text(b.Why, 200);
                 break;
+            case Alive:
+                break;
             case Ping p:
                 w.F64(p.Sent);
                 w.F32(p.Rtt);
@@ -606,6 +625,7 @@ public static class Wire
                 Kind.Welcome => new Welcome(r.U8(), r.LongText(RefusedChars), r.Text(64), r.U8() != 0, r.Text(CookieChars), r.Text(NameChars), r.LongText(ProbeModsChars)),
                 Kind.Roster => ReadRoster(ref r),
                 Kind.Bye => new Bye(r.Text(200)),
+                Kind.Alive => new Alive(),
                 Kind.Ping => new Ping(r.F64(), r.F32(), r.F32(), r.F32(), r.U8() != 0, r.Text(KeyChars)),
                 Kind.Pong => new Pong(r.F64(), r.F64()),
                 Kind.Clock => new Clock(r.F64(), r.F64(), r.F32()),

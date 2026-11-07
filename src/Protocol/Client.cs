@@ -15,6 +15,24 @@ public sealed class Client : IDisposable
     private const double HelloEverySeconds = 0.5, JoinWithinSeconds = 15.0;
     private const double PingEverySeconds = 1.0, SilentSeconds = 10.0;
 
+    /// <summary>
+    /// How quiet this end has to have gone before the keepalive thread speaks for it, s, and how
+    /// often it does. Twice the gap between pings: while the frame loop is running it is never
+    /// reached, and a game that has stopped still gets four or five words in before the server's ten
+    /// seconds are up, which is enough for some of them to be lost.
+    /// </summary>
+    private const double AliveAfterSeconds = 2.0;
+
+    /// <summary>
+    /// How long a stalled frame loop is spoken for, s, before this end stops holding the place open.
+    ///
+    /// <para>A stutter is seconds and a world loading is tens of them; a minute of nothing is a game
+    /// that is not coming back, and its thread would otherwise hold a seat and a rocket in the world
+    /// for as long as the process existed. Past this the server's own silence takes over and the
+    /// session is let go of, which is what used to happen the moment a frame ran long.</para>
+    /// </summary>
+    private const double AliveWhileStalledSeconds = 60.0;
+
     // A pong slower than this says nothing of the clocks: a game loading a world stands still for seconds with one on its way.
     private const double ClockRttSeconds = 0.5;
 
@@ -54,6 +72,13 @@ public sealed class Client : IDisposable
     // The quickest round trip is what the clock is set by; the latest is what a player is shown,
     // since a scoreboard wants the line as it is now, not at its best since joining.
     private double _lastRtt = double.NaN;
+
+    // Read and written by both the frame loop and the keepalive thread. Plain doubles: 64 bits are
+    // written whole on the runtimes this is built for, and the worst a stale read costs is one
+    // keepalive that was not needed.
+    private double _sentAt, _tickedAt;
+    private readonly Thread _alive;
+    private volatile bool _stopped;
     private (double Universe, double Sent, double Rate)? _serverClock;
     private double _serverRate;
     private uint _sequence;
@@ -62,6 +87,35 @@ public sealed class Client : IDisposable
     {
         _clock = clock;
         _udp = new Udp(port, clock, "KSAMultiplayer client");
+        (_sentAt, _tickedAt) = (clock(), clock());
+        _alive = new Thread(KeepAlive) { IsBackground = true, Name = "KSAMultiplayer keepalive" };
+        _alive.Start();
+    }
+
+    /// <summary>
+    /// Says this game is still here while its frame loop is not saying anything.
+    ///
+    /// <para>Everything else this client sends goes out of <see cref="Update"/>, on the game's own
+    /// thread, so a game that stalls -- a rocket being rebuilt, a scene loading, a machine thrashing
+    /// -- sends nothing at all, and ten seconds of that is a player the server drops. The stall is
+    /// one-sided: datagrams coming the other way are stamped by the reader thread and found waiting
+    /// afterwards, so this end never gave up on the server. Only the server gave up on this end.</para>
+    ///
+    /// <para>Sleeps in quarters of a second and does its deciding by the clock it was given, so a
+    /// thread that oversleeps still speaks at the right moment rather than counting its own naps.</para>
+    /// </summary>
+    private void KeepAlive()
+    {
+        while (!_stopped)
+        {
+            Thread.Sleep(250);
+            if (_stopped || !Joined || _server is null) continue;
+            double now = _clock();
+            // Nothing to do while the frame loop is sending for itself, and nothing worth doing once
+            // it has been gone long enough that this is holding a seat for a game that has died.
+            if (now - _sentAt < AliveAfterSeconds || now - _tickedAt > AliveWhileStalledSeconds) continue;
+            Send(new Wire.Alive());
+        }
     }
 
     public byte Id { get; private set; }
@@ -202,7 +256,11 @@ public sealed class Client : IDisposable
         _probing = true;
     }
 
-    public void Send(Wire.Message m) => _udp.Send(m, _server);
+    public void Send(Wire.Message m)
+    {
+        _sentAt = _clock();
+        _udp.Send(m, _server);
+    }
 
     /// <summary>One of this game's own craft where it is; the owner and sequence are filled in here.</summary>
     public void SendState(Wire.State s)
@@ -269,6 +327,9 @@ public sealed class Client : IDisposable
     public void Update()
     {
         double now = _clock();
+        // Stamped first, before anything here can throw: this is "the frame loop is running", and a
+        // frame that went wrong part way through is still a game somebody is sitting in front of.
+        _tickedAt = now;
         int handled = 0;
         while (handled++ < 4096 && _udp.TryReceive(out (byte[] Data, IPEndPoint From, double Arrived) d))
         {
@@ -449,8 +510,13 @@ public sealed class Client : IDisposable
     /// <summary>Says goodbye and closes the socket.</summary>
     public void Dispose()
     {
+        _stopped = true;
         if (Joined) Send(new Wire.Bye("left"));
         Id = 0;
+        // Before the socket goes, so the keepalive is not part way through sending down one that has
+        // been disposed. A quarter of a second is its whole cycle; the wait is generous to a thread
+        // the scheduler has not got round to.
+        _alive.Join(TimeSpan.FromSeconds(1));
         _udp.Dispose();
     }
 }

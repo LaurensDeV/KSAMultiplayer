@@ -225,6 +225,18 @@ token, and the operator's admin becomes "name 2". A roster holds only one of a n
 capitalised, so the verbs are at least unambiguous about which player they mean -- but they mean
 whoever is holding the name, not whoever deserves it. On a server where that matters, set a password.
 
+**A stalled game is still a game.** Everything a client sends goes out of `Update`, on KSA's own
+thread, so a frame that runs long -- a rocket being rebuilt, a scene loading, a machine thrashing --
+sends nothing at all, and ten seconds of that was a player the server dropped out of a world they
+had never left. The stall is one-sided: datagrams coming the other way are stamped by the reader
+thread and found waiting afterwards, so a game never gave up on a server, only a server on a game.
+A thread of the client's own now sends `Alive` -- empty, carrying nothing a stalled frame loop could
+not vouch for -- once two seconds have passed with the frame loop silent. It speaks for a stall of
+up to a minute and then stops, so a process that has hung does not hold a seat and a rocket in the
+world for as long as it exists; past that the server's own silence takes over, which is what used to
+happen the moment a frame ran long. `Udp.Send` takes a lock for this, since two threads shared one
+scratch buffer.
+
 **A game that drops and comes back** does not match the session it left, because its socket takes a
 fresh port each time it connects and a session is held under its address. A session that has not been
 heard from for three seconds is let go of when a game joins under its name, which is what makes a
@@ -235,6 +247,16 @@ rocket for ten seconds -- or two minutes, when the drop was mid-load.
 flying and which KSA build they have, but where they are from only in the server's own console: an
 admin is a player like any other, and being trusted to sweep debris is not being trusted with
 everybody's address.
+
+**An address with no port is asked about before it is dialled.** `Srv` queries
+`_ksamp._udp.<name>` and takes the host and port the lowest-priority record gives, which is how one
+machine holds several worlds under names of their own: an address record cannot carry a port, and an
+SRV record is the only one that can. Written by hand, because .NET resolves A and AAAA and has no
+SRV at all, and the library everyone else uses is a second assembly this mod will not ship. It is a
+hint and never a requirement -- no resolver, no record, a mangled packet, or a target of `.` all end
+as the name and port 50100, which is what happened before any of it existed. A port typed after the
+name skips the question: that is the player being specific, and somebody else's zone does not get to
+overrule them.
 
 **A hello from an address the server has not heard from is answered with a cookie and nothing else.**
 Only a hello that says it back holds a place, since a datagram's address is whatever its sender wrote
@@ -406,6 +428,10 @@ against KSA `2026.10.25.5707`:
 
 ## What has not been tried
 
+- **The keepalive under a real stall.** Driven over loopback by stopping a client's `Update` and
+  putting the clock forward: sixteen seconds of a frozen frame loop keeps its place, eighty lets it
+  go. What has not been watched is KSA itself hitching -- a rebuild, a scene load -- and the session
+  surviving it, which is the thing it was written for.
 - **Another mod writing what this one writes.** The prefixes on both `SetSimulationSpeed` and on
   `Vehicle.PrepareWorker` are given `Priority.Last`, so they are the word that stands when another
   mod is patching the same method: a craft somebody else is flying goes where its owner says, and

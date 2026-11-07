@@ -17,6 +17,7 @@ public sealed class Udp : IDisposable
     private readonly ConcurrentQueue<(byte[] Data, IPEndPoint From, double Arrived)> _in = new();
     private readonly Func<double> _clock;
     private readonly byte[] _out = new byte[Wire.BufferBytes];
+    private readonly Lock _sending = new();
     private readonly Random _chance = new();
     private volatile bool _closed;
 
@@ -42,10 +43,17 @@ public sealed class Udp : IDisposable
 
     public bool TryReceive(out (byte[] Data, IPEndPoint From, double Arrived) datagram) => _in.TryDequeue(out datagram);
 
+    /// <remarks>
+    /// Locked because the keepalive is sent from a thread of its own while the game's frame loop
+    /// sends everything else: two senders sharing one scratch buffer wrote over each other's bytes
+    /// mid-datagram. Uncontended almost always -- the keepalive only fires while the frame loop is
+    /// not sending at all -- and a socket send is orders of magnitude dearer than taking a lock.
+    /// </remarks>
     public void Send(Wire.Message message, IPEndPoint? to)
     {
         if (to is null || _closed) return;
         if (Loss > 0 && _chance.NextDouble() < Loss) return;
+        lock (_sending)
         try
         {
             // Inside the guard, not in front of it: a message that will not fit the buffer throws
