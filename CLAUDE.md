@@ -22,6 +22,11 @@ dedicated server (`ksamp-server`) that runs on Linux with no game installed.
   `StarMap.API` and `Lib.Harmony` come from NuGet, compile-time only so one assembly still ships.
 - The mod needs **StarMap 0.5.3 or later**: its entry class takes `IModMenuService`, StarMap before
   0.5 passes no services at all, and 0.5.3 is the first that runs on KSA 2026.11.10.5801.
+- Discord's Social SDK is never committed either: its terms forbid redistributing it. The build finds it
+  (`DISCORD_SDK_DIR`, `Import/discord_social_sdk/`, `../discord_social_sdk/discord_social_sdk`) and puts
+  its library beside the mod; without it the mod has no Discord. Nor is the Discord application id, which
+  Discord's Developer Terms count a credential: the build takes it from `DISCORD_APPLICATION_ID` or
+  `Import/discord-application-id.txt`.
 - The decompiled game is in `../ksa-game-assemblies/current/src`; `../KSACars/docs/KSA-MODDING-NOTES.md`
   and `KSA-FRAME-ORDER.md` explain the engine, and why craft state is written in `Vehicle.PrepareWorker`.
 - A KSA update is the `upgrade-ksa` skill. `KsaBuild` in `Directory.Build.props` is the build a

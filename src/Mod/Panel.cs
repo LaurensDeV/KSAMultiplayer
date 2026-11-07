@@ -146,6 +146,8 @@ internal static class Panel
         // nowhere stands for ever -- the rows stuck on "asking...", and Sync.Look refusing to begin
         // another because one is still going, so the field could be changed and nothing happened.
         if (!TheConfigurationIsAsking()) Sync.AnsweredAhead();
+        // An invite accepted in Discord is a server chosen, whatever this game was doing.
+        if (Invited() is { } invite) Sync.Connect(invite.Address, NameText.ToString(), invite.Password);
         PadsWindow();
         WarpWindow();
         if (atACraft)
@@ -646,6 +648,9 @@ internal static class Panel
     {
         if (!Starting || _configuring || World.Configuration is not { } configuration) return false;
         if (!_loaded) Load();
+        // The first frames there are when Discord has launched this game for an invite.
+        Discord.Pump();
+        if (Invited() is { } invite) Sync.AskAhead(invite.Address);
         if (Sync.AnsweredAhead() is { } system)
         {
             if (World.StartIn(configuration, system, out string why, start: !_settingsFirst))
@@ -1393,6 +1398,15 @@ internal static class Panel
     }
 
     private const float StartWidth = 380f;
+
+    /// <summary>An invite accepted in Discord, put in the fields as though it had been typed, so a refusal can be answered from them.</summary>
+    private static (string Address, string Password)? Invited()
+    {
+        if (Discord.TakeInvite() is not { } invite) return null;
+        AddressText.SetValue(invite.Address);
+        PasswordText.SetValue(invite.Password);
+        return invite;
+    }
 
     /// <summary>
     /// What PLAY ALONE presses. Reachable by the bridge as well as by a hand, because a tool asked

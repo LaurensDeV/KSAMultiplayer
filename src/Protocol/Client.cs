@@ -134,6 +134,12 @@ public sealed class Client : IDisposable
     /// <summary>Whether the server had a world when this player was let in; without one, this player's world becomes it.</summary>
     public bool ServerHasWorld { get; private set; }
 
+    /// <summary>
+    /// The most players the server takes, as the welcome with the cookie said on the way in: the
+    /// one welcome that carries it, and one every game that joins is sent. Zero until then.
+    /// </summary>
+    public int MostPlayers { get; private set; }
+
     /// <summary>What a server said of itself to <see cref="Probe"/>, or null until one has.</summary>
     public ServerFacts? Probed { get; private set; }
 
@@ -261,7 +267,7 @@ public sealed class Client : IDisposable
     /// <param name="token">What this server gave this machine when it was opped, to be an admin again without being asked.</param>
     public void Connect(IPEndPoint server, string name, string ksaBuild, string mods, string system, string password, string token = "")
     {
-        (_server, Id, Out, ServerName, ServerHasWorld) = (server, 0, "", "", false);
+        (_server, Id, Out, ServerName, ServerHasWorld, MostPlayers) = (server, 0, "", "", false, 0);
         Admin = false;
         _hello = new Wire.Hello(Wire.Clip(name, Wire.NameChars), ksaBuild, mods, system, password, Wire.Clip(token, Wire.TokenChars));
         (_helloNext, _joinUntil, _heardAt) = (0.0, _clock() + JoinWithinSeconds, _clock());
@@ -474,6 +480,7 @@ public sealed class Client : IDisposable
                     // back before it holds a place for this address. Said again at once, so joining
                     // costs one more datagram each way and no waiting.
                     if (_hello is not null) _hello = _hello with { Cookie = w.Cookie };
+                    MostPlayers = w.MaxPlayers;
                     _helloNext = 0.0;
                     return;
                 }

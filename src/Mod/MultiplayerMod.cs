@@ -75,6 +75,14 @@ public sealed class MultiplayerMod
         {
             Fault("frame", e);
         }
+        try
+        {
+            Discord.Update(Sync.Wall());
+        }
+        catch (Exception e)
+        {
+            Fault("discord", e);
+        }
         // Last of all: a speed the player asked for is spent by the write that follows it in the same
         // breath, and anything still standing here was an input event that never reached a setter.
         try
@@ -124,6 +132,7 @@ public sealed class MultiplayerMod
         try { Panel.Save(); } catch (Exception e) { Log.Warn($"could not keep the panel's settings: {e.Message}"); }
         try { Browser.Stop(); } catch (Exception e) { Log.Warn($"could not put the server list down: {e.Message}"); }
         try { Sync.Shutdown(); } catch (Exception e) { Log.Error("leaving the server", e); }
+        try { Discord.Shutdown(); } catch (Exception e) { Log.Error("letting go of Discord", e); }
         Bridge.Close();
         Hooks.Remove();
         Log.Info("unloaded");
