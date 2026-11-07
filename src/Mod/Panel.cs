@@ -336,6 +336,7 @@ internal static class Panel
     // menu bar is not somewhere to put a mod that is doing nothing.
     private static readonly ImColor8 InTheWorld = new(120, 215, 130, 255);
     private static readonly ImColor8 OnTheWay = new(235, 190, 90, 255);
+    private static readonly ImColor8 OutOfIt = new(225, 95, 95, 255);
 
     /// <summary>
     /// Drawn from a postfix on <c>Program.DrawProgramMenusHook</c>, which KSA leaves empty inside its
@@ -343,9 +344,14 @@ internal static class Panel
     /// </summary>
     public static void DrawMenuBarStatus()
     {
-        if (Sync.Now == Sync.Stage.Off) return;
+        // Red and saying so rather than gone: a bar that empties as a game drops out of a world
+        // looks the same as a bar belonging to a game that was never in one, and a player who has
+        // just been dropped is exactly the one who needs telling. Nothing at all until this game
+        // has been pointed at a server, so a game played alone carries no badge about it.
+        bool off = Sync.Now == Sync.Stage.Off;
+        if (off && Sync.LastServer.Length == 0) return;
         bool here = Sync.Now == Sync.Stage.Playing;
-        string where = Sync.ServerAddress;
+        string where = off ? "disconnected" : Sync.ServerAddress;
         if (where.Length == 0) return;
 
         float line = ImGui.GetTextLineHeight();
@@ -365,7 +371,7 @@ internal static class Panel
         ImGui.TextColored(in ConsoleStyle.TextMuted, where);
         float2 top = ImGui.GetItemRectMin(), bottom = ImGui.GetItemRectMax();
         ImGui.GetWindowDrawList().AddCircleFilled(new float2(at.X - gap + radius, (top.Y + bottom.Y) * 0.5f), radius,
-                                                  here ? InTheWorld : OnTheWay);
+                                                  off ? OutOfIt : here ? InTheWorld : OnTheWay);
     }
 
     private static readonly ImColor8 Claim = new(190, 205, 225, 120);

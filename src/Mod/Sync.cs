@@ -235,6 +235,13 @@ internal static class Sync
     /// <summary>The server this game was told to join, as it was given.</summary>
     public static string ServerAddress => _address;
 
+    /// <summary>
+    /// The last server this game was pointed at, kept after it has left: the address itself is let
+    /// go of on disconnecting, and the menu bar still has to be able to say which world this game
+    /// is out of rather than quietly going blank.
+    /// </summary>
+    public static string LastServer { get; private set; } = "";
+
     public static double Wall() => Clock.Elapsed.TotalSeconds;
 
     /// <summary>
@@ -364,7 +371,7 @@ internal static class Sync
             Say($"could not open a socket: {e.Message}");
             return;
         }
-        (_asking, _address) = ((name, password), address);
+        (_asking, _address, LastServer) = ((name, password), address, address);
         _finding = Find(host, port, portGiven);
         Now = Stage.Joining;
         Say($"looking up {host}...");
@@ -809,7 +816,7 @@ internal static class Sync
             return;
         }
         (_notLoading, _worldToLoad) = ("", null);
-        Say($"the world has come, {world.Data.Length / 1024} KB: loading it");
+        Say($"the world has come, {Blob.Size(world.Data.Length)}: loading it");
         (_loadingSince, _settle, Now) = (Wall(), 0, Stage.Loading);
         Puppets.Clear();
         ToPlace.Clear();
@@ -898,7 +905,7 @@ internal static class Sync
             return false;
         }
         c.Upload(new Blob(BlobKind.World, "", c.Id, save.Universe, save.Zip));
-        Log.Info($"sent the server a save of this world, {save.Zip.Length / 1024} KB at {save.Universe:F1} s");
+        Log.Info($"sent the server a save of this world, {Blob.Size(save.Zip.Length)} at {save.Universe:F1} s");
         return true;
     }
 
