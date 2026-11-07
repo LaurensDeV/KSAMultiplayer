@@ -194,7 +194,17 @@ internal static class Hooks
             Log.Warn($"could not patch after a method KSA no longer has: {otherwise}");
             return;
         }
-        _harmony!.Patch(target, postfix: new HarmonyMethod(typeof(Hooks).GetMethod(postfix, BindingFlags.NonPublic | BindingFlags.Static)!));
+        try
+        {
+            _harmony!.Patch(target, postfix: new HarmonyMethod(typeof(Hooks).GetMethod(postfix, BindingFlags.NonPublic | BindingFlags.Static)!));
+        }
+        catch (Exception e)
+        {
+            // One at a time. A patch that threw here came out in Install's own catch instead, which
+            // left every patch after it in the list unmade: one ambiguous overload took most of the
+            // mod with it and the log said only that the game could not be patched.
+            Log.Error($"could not patch after {target.DeclaringType?.Name}.{target.Name}: {otherwise}", e);
+        }
     }
 
     private static void Patch(MethodInfo? target, string prefix, string otherwise, int priority = Priority.Normal)
@@ -204,10 +214,17 @@ internal static class Hooks
             Log.Warn($"KSA has moved a method this mod patches: {otherwise}");
             return;
         }
-        _harmony!.Patch(target, prefix: new HarmonyMethod(typeof(Hooks).GetMethod(prefix, BindingFlags.NonPublic | BindingFlags.Static)!)
+        try
         {
-            priority = priority,
-        });
+            _harmony!.Patch(target, prefix: new HarmonyMethod(typeof(Hooks).GetMethod(prefix, BindingFlags.NonPublic | BindingFlags.Static)!)
+            {
+                priority = priority,
+            });
+        }
+        catch (Exception e)
+        {
+            Log.Error($"could not patch {target.DeclaringType?.Name}.{target.Name}: {otherwise}", e);
+        }
     }
 
     public static void Remove()
