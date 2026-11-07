@@ -119,12 +119,24 @@ done
 echo "profiles in $TEST_ROOT"
 
 cd "$(dirname "$STARMAP_EXE")"
+# Counted rather than trusted. The launch is backgrounded with its output thrown away, so a copy
+# that never ran -- StarMap.exe without its execute bit is the way to manage that, and a copy of a
+# release unzipped by hand has none -- looked exactly like a copy that started, and the first sign
+# was no mod log half a minute later.
+started=0
 for name in A B; do
     ./StarMap.exe -InstancePath "$(win "$TEST_ROOT/$name")" >/dev/null 2>&1 &
     disown
-    echo "launched $name"
     # One at a time: two loading at once fight over the disk and the card.
     sleep 25
+    started=$((started + 1))
+    running=$(tasklist.exe 2>/dev/null | grep -ci starmap || true)
+    if (( running < started )); then
+        echo "error: $name did not start ($running of $started running)." >&2
+        echo "       Is $STARMAP_EXE executable? chmod +x it if it came out of a zip." >&2
+        exit 1
+    fi
+    echo "launched $name"
 done
 
 # Windows gives the window in front the processor and throttles the one behind it, and both copies
