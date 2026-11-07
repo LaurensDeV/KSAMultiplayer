@@ -41,3 +41,27 @@ variable "port" {
   type        = number
   default     = 50100
 }
+
+# Every other world on the same machine, by the name it answers to.
+#
+# One address carries one UDP port once, so a second world needs a port of its own -- and a port is
+# the one thing an address record cannot carry. Hence an SRV record beside each name: a client that
+# looks it up is told the port, and one that does not falls back to this name and the mod's default,
+# which is the first world. A world on the default port needs no entry here; that is `host` above.
+variable "worlds" {
+  description = "Other servers on this machine: the name each answers to, and the UDP port it is on."
+  type = map(object({
+    port = number
+  }))
+  default = {}
+
+  validation {
+    condition     = alltrue([for w in var.worlds : w.port > 0 && w.port < 65536])
+    error_message = "Every world's port must be between 1 and 65535."
+  }
+
+  validation {
+    condition     = !contains(keys(var.worlds), var.host)
+    error_message = "A world cannot be named ${var.host}: that is the first server, declared by host and port."
+  }
+}

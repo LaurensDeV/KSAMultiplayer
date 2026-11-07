@@ -5,7 +5,7 @@ bucket for state that the domain's other infrastructure uses.
 
 | Layer | State key | What it owns |
 | --- | --- | --- |
-| `infra/dns` | `ksamultiplayer/dns.tfstate` | the one Cloudflare record |
+| `infra/dns` | `ksamultiplayer/dns.tfstate` | the Cloudflare records |
 | `infra/server` | `ksamultiplayer/server.tfstate` | the container and the world's volume |
 
 The split is by change cadence: the record never changes, the image changes on every release. It
@@ -24,7 +24,30 @@ layer touches nothing of it:
   nothing else on the machine.
 - **Its own volume.** `ksamp-world`, marked `prevent_destroy`.
 
-A `tofu destroy` here removes one DNS record, one container and nothing else.
+A `tofu destroy` here removes this project's DNS records, its containers and nothing else.
+
+## More than one world on the machine
+
+One address carries one UDP port once, so a second world needs a port of its own. An address record
+cannot carry a port, so each world past the first also gets an **SRV record**, which can:
+
+    _ksamp._udp.mpcars.ksarmory.com.  300  IN  SRV  0 0 50101 mpcars.ksarmory.com.
+
+Set `worlds` and both records are made for each:
+
+    export TF_VAR_worlds='{ mpcars = { port = 50101 } }'
+
+A mod that reads SRV needs only `mpcars.ksarmory.com`; one that does not needs
+`mpcars.ksarmory.com:50101`, and the address record is there so that works and so the name resolves
+for everything else. **The mod does not read SRV records yet**, so today the port is typed.
+
+Two things to know when it looks broken. Nothing but the mod consults an SRV record -- `ping` and a
+browser never will -- so check it with `dig +short SRV _ksamp._udp.mpcars.ksarmory.com` and not by
+pinging the name. And a world's record must stay unproxied: a proxied name resolves to Cloudflare,
+which carries no UDP, so the name would resolve perfectly and never connect.
+
+The record is inert until something listens on that port: `infra/server` needs a container for the
+world as well.
 
 ## Applying
 
