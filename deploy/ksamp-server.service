@@ -10,6 +10,10 @@
 #
 # A service has no standard input, so it has no console either: clear, reload and the rest are
 # reached only from a terminal the server was started in. Run it under tmux or screen to keep one.
+#
+# Settings are in /var/lib/ksamp/ksamp-server.toml, written with every default on the first start:
+# the file's default place is beside the executable, which ProtectSystem makes read-only here. Edit
+# it and restart, or set them from a console. An Environment= line overrides the file for good.
 
 [Unit]
 Description=KSA Multiplayer dedicated server
@@ -19,9 +23,7 @@ Wants=network-online.target
 [Service]
 User=ksamp
 WorkingDirectory=/var/lib/ksamp
-ExecStart=/usr/local/bin/ksamp-server --data /var/lib/ksamp/data
-Environment=KSAMP_NAME=KSA server
-# Environment=KSAMP_PASSWORD=change-me
+ExecStart=/usr/local/bin/ksamp-server --config /var/lib/ksamp/ksamp-server.toml --data /var/lib/ksamp/data
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true
