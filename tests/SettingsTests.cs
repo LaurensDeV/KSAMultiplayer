@@ -88,6 +88,18 @@ public class SettingsTests
         Assert.Contains(says, e.Message);
     }
 
+    /// <summary>
+    /// Said rather than silently taken, because Write changes the first line with a key on it and
+    /// Read used to keep the last: set wrote a value the server then ignored, and said nothing.
+    /// </summary>
+    [Fact]
+    public void AKeySetTwiceIsRefused()
+    {
+        FormatException e = Assert.Throws<FormatException>(() => Settings.Read("port = 1\nname = \"a\"\nport = 2\n"));
+        Assert.Contains("line 3", e.Message);
+        Assert.Contains("'port' is set twice", e.Message);
+    }
+
     [Fact]
     public void AValueOfTheWrongKindNamesTheSettingAndWhereItCameFrom()
     {

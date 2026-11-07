@@ -144,6 +144,10 @@ public static class Settings
             if (eq <= 0) throw new FormatException($"line {i + 1}: not 'key = value': {line}");
             string key = line[..eq].Trim();
             if (Find(key) is null) throw new FormatException($"line {i + 1}: no setting called '{key}'");
+            // TOML forbids a key twice, and here it would be worse than untidy: Write changes the
+            // first line with a key on it and this kept the last, so 'set port 50999' wrote a value
+            // into the file that the server went on ignoring, with nothing said either way.
+            if (read.ContainsKey(key)) throw new FormatException($"line {i + 1}: '{key}' is set twice");
             read[key] = Value(line[(eq + 1)..].Trim(), i + 1);
         }
         return read;

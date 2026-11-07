@@ -28,11 +28,14 @@ const string Usage = """
       --config <path>        the settings file (default: ksamp-server.toml beside the server)
       --help                 this
 
-    Every option but --world and --config can also be given as an environment variable --
-    KSAMP_PORT, KSAMP_NAME, KSAMP_PASSWORD and so on, the option's name in capitals with dashes as
-    underscores -- or as a line in the settings file: port = 50100. A flag wins over the
-    environment, and the environment over the file. With no file, the server writes one with every
-    setting at its default.
+    Every option but --config can also be given as an environment variable -- KSAMP_PORT,
+    KSAMP_NAME, KSAMP_PASSWORD and so on, the option's name in capitals with dashes as
+    underscores -- and every one but --world and --config as a line in the settings file:
+    port = 50100. A flag wins over the environment, and the environment over the file. With no
+    file, the server writes one with every setting at its default.
+
+    A variable set here overrides the file for good, so the console cannot change what it gives:
+    use one for a setting that belongs to the machine, and the file for the rest.
 
     With no world, the first player to join gives the server theirs.
 

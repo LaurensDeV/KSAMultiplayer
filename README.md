@@ -201,11 +201,14 @@ docker build -f deploy/Dockerfile -t ksamp-server .
 ```
 
 ```bash
-docker run -dit --name ksamp -p 50100:50100/udp -v ksamp-data:/data -e KSAMP_NAME="Moon base" ksamp-server
+docker run -dit --name ksamp -p 50100:50100/udp -v ksamp-data:/data ksamp-server
 ```
 
 Its settings file is `/data/ksamp-server.toml`, in the volume, and the systemd unit's is
-`/var/lib/ksamp/ksamp-server.toml`: beside the executable is read-only in both.
+`/var/lib/ksamp/ksamp-server.toml`: beside the executable is read-only in both. Set the name and
+the password in there, or with `set` at the console. Neither is given as `-e KSAMP_NAME` here, nor
+as an `Environment=` line in the unit, because a variable overrides the file for good: the console
+would write a new name into the file and the old one would go on being the one players see.
 
 The commands above are read from standard input, so a container wants `-it` to have a console at
 all: `docker attach ksamp` then types into it, and Ctrl+P Ctrl+Q leaves it running. Started with

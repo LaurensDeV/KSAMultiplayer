@@ -1,11 +1,13 @@
 # The dedicated server in a container. From the repository root:
 #
 #   docker build -f deploy/Dockerfile -t ksamp-server .
-#   docker run -dit --name ksamp -p 50100:50100/udp -v ksamp-data:/data \
-#       -e KSAMP_NAME="My server" -e KSAMP_PASSWORD=secret ksamp-server
+#   docker run -dit --name ksamp -p 50100:50100/udp -v ksamp-data:/data ksamp-server
 #
 # Settings are /data/ksamp-server.toml, in the volume so they outlive the container, written with
-# every default on the first start; -e KSAMP_ variables override it.
+# every default on the first start. Edit it and restart, or set them from the console.
+#
+# No -e KSAMP_ here, for the reason the unit has no Environment= line: a variable overrides the
+# file for good, so the name set that way is one the console can write down and never apply.
 #
 # -it, because the server's commands are read from standard input and a container started without a
 # terminal has none: docker attach ksamp types into it, Ctrl+P Ctrl+Q leaves it running.
