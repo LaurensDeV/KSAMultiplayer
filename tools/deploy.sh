@@ -46,6 +46,13 @@ if ! cp "$OUT/KSAMultiplayer.dll" "$TARGET/" 2>/dev/null; then
     exit 1
 fi
 cp "$OUT/mod.toml" "$TARGET/"
+# Discord's library and its notices, which the build put beside the mod when it found the SDK.
+for f in discord_partner_sdk.dll libdiscord_partner_sdk.so discord-license-notices.txt; do
+    if [[ -f "$OUT/$f" ]]; then cp "$OUT/$f" "$TARGET/"; fi
+done
+if [[ ! -f "$OUT/discord_partner_sdk.dll" && ! -f "$OUT/libdiscord_partner_sdk.so" ]]; then
+    echo "note: built without Discord's Social SDK (set DISCORD_SDK_DIR) -- the mod has no Discord" >&2
+fi
 [[ -f "$OUT/KSAMultiplayer.pdb" ]] && cp "$OUT/KSAMultiplayer.pdb" "$TARGET/"
 : > "$TARGET/developer"
 echo "installed to $TARGET"

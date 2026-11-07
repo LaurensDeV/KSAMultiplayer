@@ -52,6 +52,10 @@ Once you're in:
   that machine rather than leaving it behind. After joining, your game may run fast for a few
   seconds to catch up.
 - **Chat** from the window.
+- **Invite from Discord.** While you are on a server, Discord shows which one and how many are on it,
+  and your friends can be invited or ask to join from there. Accepting starts the game if it is
+  closed, in the server's system, and joins. The invite carries the server's password, so whoever
+  you let in can read it.
 
 Two craft with the same name can't both be seen: the panel tells you to rename yours if that happens.
 
@@ -185,7 +189,7 @@ be reached -- `tmux` or `screen` is the way to keep one for a service.
 | `./tools/test.sh` | the protocol and the server over loopback; needs nothing of KSA |
 | `./tools/build.sh` | the server and the mod; the mod needs KSA's assemblies, found by `Directory.Build.props` (set `KSA_DLL_DIR`) |
 | `./tools/publish-server.sh [rid]` | the server as one self-contained executable |
-| `./tools/package.sh` | the mod as a player installs it, `dist/KSAMultiplayer-<version>.zip` |
+| `./tools/package.sh` | the mod as a player installs it, `dist/KSAMultiplayer-<version>.zip`, with Discord's Social SDK library beside it when the build finds the SDK (`DISCORD_SDK_DIR`, `Import/discord_social_sdk/`, or `../discord_social_sdk/discord_social_sdk`; Discord's terms forbid redistributing it, so it is never committed), and Discord switched on only when the build is given the application id in `DISCORD_APPLICATION_ID` or `Import/discord-application-id.txt`, which Discord's terms keep out of open-source code |
 | `./tools/deploy.sh` | the mod into this machine's KSA, as a developer's install: it starts the bridge |
 | `./tools/run.sh` | deploy and launch the game, showing the mod's log |
 | `./tools/play.sh` | the game with this mod and nothing else, in a profile of its own |
@@ -196,7 +200,7 @@ be reached -- `tmux` or `screen` is the way to keep one for a service.
 | --- | --- |
 | `src/Protocol/` | what the server and the mod both speak: the wire format, transfers, the clocks, a client session. Nothing of KSA |
 | `src/Server/` | the dedicated server: `GameServer`, the world kept on disk, and the console program |
-| `src/Mod/` | the StarMap mod: `Sync` runs the session each frame, `World` is every contact with KSA, `Hooks` the patches, `Panel` the window |
+| `src/Mod/` | the StarMap mod: `Sync` runs the session each frame, `World` is every contact with KSA, `Hooks` the patches, `Panel` the window, `Discord` the presence and invites |
 | `tests/` | the protocol and the server driven over loopback |
 | `tools/ksa-mcp/` | commands into a running game through the mod's bridge, for driving a test without a hand on the keyboard |
 | `deploy/` | a systemd unit and a Dockerfile |

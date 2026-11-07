@@ -382,6 +382,16 @@ against KSA `2026.10.25.5707`:
 
 ## What has not been tried
 
+- **Discord.** `src/Mod/Discord.cs` calls the Social SDK's C API: rich presence with a party (an id
+  hashed from the server's address, the roster's size, and `Welcome.MostPlayers`) and a join
+  secret of the address and the password; `SetActivityJoinCallback` hands an accepted invite to the
+  panel, which joins it, or from the start window asks the server first as Connect does; and
+  `RegisterLaunchCommand` starts the game the way it was started this time for an invite accepted
+  while it is closed. It runs only in a build given an application id (`DISCORD_APPLICATION_ID` or
+  `Import/discord-application-id.txt`, never the source: Discord's Developer Terms 2(d) forbid it in
+  an open-source project) and beside `discord_partner_sdk`. None of it has been run, and whether invites work
+  through the Discord client with nobody signed in to the SDK is Discord's to show.
+
 - **The Multiplayer window before KSA's configuration and its welcome.** KSA's configuration at
   start comes before StarMap's `AllModsLoaded`, so a prefix on `Popup.DrawAll` goes in at
   `ImmediateLoad` (`Mod.PrepareSystems`, inside `ModLibrary.PrepareAll`) and draws the window instead

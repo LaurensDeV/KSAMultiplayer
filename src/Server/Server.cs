@@ -232,6 +232,8 @@ public sealed class GameServer : IDisposable
     /// <summary>What has happened, for the console.</summary>
     public Queue<string> Said { get; } = new();
 
+    private byte Most => (byte)Math.Clamp(Options.MaxPlayers, 1, 255);
+
     public byte OwnerOf(string key) => _crafts.TryGetValue(key, out Craft? c) ? c.Owner : (byte)0;
 
     /// <summary>Puts a world in place of the one there is, as an operator would from the console.</summary>
@@ -345,7 +347,7 @@ public sealed class GameServer : IDisposable
         {
             case Wire.Hello:
                 // Its welcome was lost.
-                _udp.Send(new Wire.Welcome(player.Id, "", Options.Name, _world is not null || !player.Seeding, System: _worldSystem), from);
+                _udp.Send(new Wire.Welcome(player.Id, "", Options.Name, _world is not null || !player.Seeding, System: _worldSystem, MostPlayers: Most), from);
                 return;
             case Wire.Ping ping:
                 player.Rtt = ping.Rtt;
@@ -459,7 +461,7 @@ public sealed class GameServer : IDisposable
         {
             // The world's system goes with the cookie: it is what a game asks before it has a
             // universe, and nothing a stranger could not learn by being refused for the wrong one.
-            _udp.Send(new Wire.Welcome(0, "", Options.Name, _world is not null, Cookie(from, (long)(now / CookieSeconds)), _worldSystem), from);
+            _udp.Send(new Wire.Welcome(0, "", Options.Name, _world is not null, Cookie(from, (long)(now / CookieSeconds)), _worldSystem, Most), from);
             return;
         }
         string? refused = _players.Count >= Options.MaxPlayers ? $"the server is full: {Options.MaxPlayers} players"
@@ -505,7 +507,7 @@ public sealed class GameServer : IDisposable
         _players[id] = p;
 
         bool seeding = _world is null && _players.Values.All(q => !q.Seeding);
-        _udp.Send(new Wire.Welcome(id, "", Options.Name, !seeding, System: _worldSystem), from);
+        _udp.Send(new Wire.Welcome(id, "", Options.Name, !seeding, System: _worldSystem, MostPlayers: Most), from);
         Log($"{name} has joined from {from}{(p.Admin ? " as an admin" : "")}{(seeding ? ", and their world becomes the server's" : "")}");
         // Said only when there is something to say: that they are an admin, or that the token they
         // offered is no good, which is how a game deopped while it was away forgets the one it kept.

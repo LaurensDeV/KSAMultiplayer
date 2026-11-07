@@ -235,6 +235,9 @@ internal static class Sync
     /// <summary>The server this game was told to join, as it was given.</summary>
     public static string ServerAddress => _address;
 
+    /// <summary>The password this game joined with, which a Discord invite carries along with the address.</summary>
+    public static string ServerPassword => _asking?.Password ?? "";
+
     public static double Wall() => Clock.Elapsed.TotalSeconds;
 
     /// <summary>

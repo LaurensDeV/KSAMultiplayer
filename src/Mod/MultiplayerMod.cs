@@ -46,6 +46,14 @@ public sealed class MultiplayerMod
         {
             Fault("frame", e);
         }
+        try
+        {
+            Discord.Update(Sync.Wall());
+        }
+        catch (Exception e)
+        {
+            Fault("discord", e);
+        }
         // After the session, so a command reads the state this frame left and never half of it.
         try
         {
@@ -82,6 +90,7 @@ public sealed class MultiplayerMod
     {
         try { Panel.Save(); } catch (Exception e) { Log.Warn($"could not keep the panel's settings: {e.Message}"); }
         try { Sync.Shutdown(); } catch (Exception e) { Log.Error("leaving the server", e); }
+        try { Discord.Shutdown(); } catch (Exception e) { Log.Error("letting go of Discord", e); }
         Hooks.Remove();
         Log.Info("unloaded");
         Log.Shutdown();

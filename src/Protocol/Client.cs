@@ -71,6 +71,9 @@ public sealed class Client : IDisposable
     /// <summary>Whether the server had a world when this player was let in; without one, this player's world becomes it.</summary>
     public bool ServerHasWorld { get; private set; }
 
+    /// <summary>The most players the server takes, as its welcome said; zero from one that did not.</summary>
+    public int MostPlayers { get; private set; }
+
     /// <summary>
     /// What a server said of itself to <see cref="Probe"/>: its name, the system its world is in
     /// (empty when it has no world or does not know), and whether it has one.
@@ -339,7 +342,7 @@ public sealed class Client : IDisposable
                     _server = null;
                     return;
                 }
-                (Id, ServerName, ServerHasWorld, _pingNext) = (w.Id, w.ServerName, w.HasWorld, 0.0);
+                (Id, ServerName, ServerHasWorld, MostPlayers, _pingNext) = (w.Id, w.ServerName, w.HasWorld, w.MostPlayers, 0.0);
                 Said.Enqueue($"joined {(w.ServerName.Length > 0 ? w.ServerName : "the server")} as player {w.Id}");
                 return;
             case Wire.Roster r when Joined:

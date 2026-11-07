@@ -11,6 +11,11 @@ dedicated server (`ksamp-server`) that runs on Linux with no game installed.
 - Change `Wire.Version` whenever what a datagram means changes.
 - KSA's assemblies are copyrighted and never committed. `Directory.Build.props` finds them: `KSA_DLL_DIR`,
   `Import/`, `../ksa-game-assemblies/current/dll`, then a game install (which lacks StarMap's and Harmony's).
+- Discord's Social SDK is never committed either: its terms forbid redistributing it. The build finds it
+  (`DISCORD_SDK_DIR`, `Import/discord_social_sdk/`, `../discord_social_sdk/discord_social_sdk`) and puts
+  its library beside the mod; without it the mod has no Discord. Nor is the Discord application id, which
+  Discord's Developer Terms count a credential: the build takes it from `DISCORD_APPLICATION_ID` or
+  `Import/discord-application-id.txt`.
 - The decompiled game is in `../ksa-game-assemblies/current/src`; `../KSACars/docs/KSA-MODDING-NOTES.md`
   and `KSA-FRAME-ORDER.md` explain the engine, and why craft state is written in `Vehicle.PrepareWorker`.
 - Comment why, never what; state facts, not history.

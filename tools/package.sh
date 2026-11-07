@@ -14,6 +14,13 @@ STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 mkdir -p "$STAGE/KSAMultiplayer"
 cp "$BIN/KSAMultiplayer.dll" "$BIN/mod.toml" "$STAGE/KSAMultiplayer/"
+# Discord's library and its notices, which the build put beside the mod when it found the SDK.
+for f in discord_partner_sdk.dll libdiscord_partner_sdk.so discord-license-notices.txt; do
+    if [[ -f "$BIN/$f" ]]; then cp "$BIN/$f" "$STAGE/KSAMultiplayer/"; fi
+done
+if [[ ! -f "$BIN/discord_partner_sdk.dll" && ! -f "$BIN/libdiscord_partner_sdk.so" ]]; then
+    echo "note: built without Discord's Social SDK (set DISCORD_SDK_DIR) -- the mod has no Discord" >&2
+fi
 mkdir -p "$HERE/dist"
 ZIP="$HERE/dist/KSAMultiplayer-$VERSION.zip"
 rm -f "$ZIP"
