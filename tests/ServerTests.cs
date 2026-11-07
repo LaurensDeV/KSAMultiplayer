@@ -278,6 +278,33 @@ public class ServerTests
     }
 
     [Fact]
+    public void AGameCanAskWhichSystemTheWorldIsInWithoutJoining()
+    {
+        using Rig rig = new();
+        IPEndPoint server = new(IPAddress.Loopback, rig.Server.Port);
+
+        // No world yet: the game starting up keeps the system it would have chosen.
+        Client early = new(rig.Now);
+        rig.Clients.Add(early);
+        early.Probe(server);
+        rig.Until(() => early.Probed is not null, what: "an answer about a server with no world");
+        Assert.Equal(("KSA server", "", false), early.Probed!.Value);
+
+        rig.Server.SetWorld(new Blob(BlobKind.World, "", 0, 0.0, Rig.FakeWorld()), "B1", ["Core"], "SolLite", timeKnown: false);
+        Client later = new(rig.Now);
+        rig.Clients.Add(later);
+        later.Probe(server);
+        rig.Until(() => later.Probed is not null, what: "an answer about a server with a world");
+        Assert.Equal(("KSA server", "SolLite", true), later.Probed!.Value);
+
+        // Asking is not joining: nothing held on the roster, nothing said to anybody.
+        rig.For(0.3);
+        Assert.Empty(rig.Server.Players);
+        Assert.False(later.Joined);
+        Assert.Equal("", later.Out);
+    }
+
+    [Fact]
     public void OneNameIsOnARosterHoweverItIsCapitalised()
     {
         using Rig rig = new();

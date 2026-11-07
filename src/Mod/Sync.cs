@@ -370,6 +370,75 @@ internal static class Sync
         Say($"looking up {host}...");
     }
 
+    // A server asked which system its world is in, from KSA's configuration at start: there is no
+    // universe to join with yet, and the one about to be made has to be the server's.
+    private static Client? _ahead;
+    private static Task<IPEndPoint?>? _aheadFinding;
+
+    public static bool AskingAhead => _ahead is not null;
+
+    public static void AskAhead(string address)
+    {
+        EndAhead();
+        if (!TryAddress(address, out string host, out int port))
+        {
+            Say("that is not an address: give host:port, or a host for port 50100");
+            return;
+        }
+        try
+        {
+            _ahead = new Client(Wall);
+        }
+        catch (SocketException e)
+        {
+            Say($"could not open a socket: {e.Message}");
+            return;
+        }
+        _aheadFinding = Find(host, port);
+        Say($"asking {host} which world it holds...");
+    }
+
+    /// <summary>
+    /// Pumped from the configuration's frames, which are the only ones there are before the game
+    /// loads. The system the server's world is in once it has said, empty when that is the
+    /// player's to choose; null until then, and after.
+    /// </summary>
+    public static string? AnsweredAhead()
+    {
+        if (_ahead is not { } c) return null;
+        if (_aheadFinding is { IsCompleted: true } finding)
+        {
+            _aheadFinding = null;
+            if (finding.IsCompletedSuccessfully && finding.Result is { } at) c.Probe(at);
+            else
+            {
+                Say("that server could not be found");
+                EndAhead();
+                return null;
+            }
+        }
+        c.Update();
+        while (c.Said.TryDequeue(out string? said)) Say(said);
+        if (c.Out.Length > 0)
+        {
+            EndAhead();
+            return null;
+        }
+        if (c.Probed is not { } p) return null;
+        EndAhead();
+        string name = p.ServerName.Length > 0 ? p.ServerName : "the server";
+        Say(!p.HasWorld ? $"{name} has no world yet: yours becomes it"
+            : p.System.Length > 0 ? $"{name}'s world is in {p.System}: starting there"
+            : $"{name} does not say which system its world is in: starting in yours");
+        return p.System;
+    }
+
+    public static void EndAhead()
+    {
+        _ahead?.Dispose();
+        (_ahead, _aheadFinding) = (null, null);
+    }
+
     public static void Disconnect()
     {
         bool was = _client is not null;

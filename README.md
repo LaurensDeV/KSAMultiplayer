@@ -21,15 +21,23 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
    both installed the game will not start rather than the mod quietly not loading.
 2. Everyone needs **the same KSA build** and **every mod the server's world uses**. The server refuses
    anyone who differs and says what is missing.
-3. The **Multiplayer** window is there from the moment the game opens, before any world is loaded, and
-   KSA's **Mods** menu has an entry that brings it back if you shut it.
+3. The **Multiplayer** window is the first thing the game shows, in place of KSA's configuration
+   screen (or, with that screen turned off, over the game once it has loaded), with KSA's welcome
+   held until you have joined or pressed **Play alone**, which gives you the configuration back.
+   **Connect** there asks the server which system its world is in and which mods it wants, starts
+   KSA in that system with the rest of your configuration as you last left it, and joins once the
+   game has loaded. Tick **Change settings before starting** to get KSA's configuration first, with
+   the server's system chosen, for graphics and the rest; **Start KSA** then joins. Once in a game,
+   KSA's **Mods** menu has an entry that brings the window back if you shut it.
    Enter the server's address (`host:port`, or just `host` for port 50100), your name and the
    password if there is one, and press **Connect**. There is a server at **`mp.ksarmory.com`** to
    try it on. The name starts as something like `Kitten 4821` rather than your Windows account name,
    so nothing of yours reaches a server's player list unless you put it there; change it to whatever
    you want to be called and it is kept for next time.
 4. Connecting **replaces your open world with the server's**: save first. If the server has no world
-   yet, yours becomes the server's world instead, and nothing is replaced.
+   yet, yours becomes the server's world instead, and nothing is replaced: joined straight from
+   the start, that is the new game KSA opens on. A game set to start in sandbox, at no craft, waits
+   until there is one to hand over.
 5. Hold **Tab** for who is playing and what their ping is. **Enter** opens a chat line, **Enter** sends
    it; a line behind a `/` goes to the server as a command instead, and is said to nobody. Another player's craft carries their name, and is theirs: you can watch it, not fly it.
 
