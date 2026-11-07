@@ -383,10 +383,17 @@ internal static class Hooks
         if (Held() is not { } held) return;
         if (Math.Abs(held - simulationSpeed) > 1e-9)
         {
-            // Asked of the room only when the player reached for it. A menu opening stops the world
-            // for KSA's own reasons, and putting that to everybody is how pressing Escape used to
-            // ask the whole room to stop.
-            if (!Paused()) Wanted(simulationSpeed);
+            // Asked of the room only when the player reached for it. Two things that are not:
+            //
+            // A menu opening stops the world for KSA's own reasons, and putting that to everybody is
+            // how pressing Escape used to ask the whole room to stop.
+            //
+            // And a menu closing puts back the speed KSA saved on the way in -- which is whatever
+            // this mod last wrote to hold the shared clock, a nudge of a few per cent or, mid
+            // catch-up, several times speed. Read as an ask, that came back as somebody asking the
+            // room to run at 1.08x or 0.94x every time anybody closed a menu. By the time it
+            // arrives the menu is already shut, so the frame before is what says it was there.
+            if (!Paused() && !_menusWere) Wanted(simulationSpeed);
             alert = false;
         }
         simulationSpeed = held;
@@ -567,6 +574,14 @@ internal static class Hooks
     /// <summary>Whether KSA has stopped this player's world for a menu of its own.</summary>
     private static bool Paused() =>
         Program.IsEditorOpen || EscMenu.Open || GameSettings.Show || GameSaves.IsOpen || VehicleSaves.IsOpen;
+
+    // Whether a menu was open at the end of the last frame, so that the speed KSA puts back on the
+    // way out of one can be told from a speed this player reached for. Noted at the end of the
+    // frame, after Program.UpdateMenuPause has had its say.
+    private static bool _menusWere;
+
+    /// <summary>Called once at the end of every frame, from the mod's own frame hook.</summary>
+    public static void NoteMenus() => _menusWere = Paused();
 
     private static double? Held()
     {

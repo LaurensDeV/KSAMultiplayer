@@ -44,6 +44,16 @@ public sealed class MultiplayerMod
         {
             Fault("frame", e);
         }
+        // Last of all, so what it notes is what the frame ended with: KSA opens and shuts its menus
+        // during the frame, and the speed it puts back on the way out of one arrives in the next.
+        try
+        {
+            Hooks.NoteMenus();
+        }
+        catch (Exception e)
+        {
+            Fault("noting the menus", e);
+        }
         // After the session, so a command reads the state this frame left and never half of it.
         try
         {
