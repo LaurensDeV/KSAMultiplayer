@@ -207,7 +207,23 @@ public sealed class GameServer : IDisposable
         _snapshotNext = clock() + options.SnapshotEverySeconds;
     }
 
-    public ServerOptions Options { get; }
+    public ServerOptions Options { get; private set; }
+
+    /// <summary>
+    /// Settings changed while the server runs, from the console. Everything read as it is used
+    /// simply is the new value from here on; the port stays what the socket is bound to, and the
+    /// two that were already acted on are acted on again.
+    /// </summary>
+    public void Reconfigure(ServerOptions next)
+    {
+        double now = _clock();
+        ServerOptions was = Options;
+        Options = next with { Port = was.Port };
+        // A shorter wait is not made to sit out the longer one already counting down.
+        if (next.SnapshotEverySeconds != was.SnapshotEverySeconds) _snapshotNext = Math.Min(_snapshotNext, now + next.SnapshotEverySeconds);
+        // A warp holds the clock for as long as it runs and gives it back at this speed when it ends.
+        if (next.Speed != was.Speed && _warpPhase == Wire.WarpPhase.None) UniverseClock.SetSpeed(next.Speed, now);
+    }
     public UniverseClock UniverseClock { get; } = new();
     public int Port => _udp.Port;
     public Udp Socket => _udp;
