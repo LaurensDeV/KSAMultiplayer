@@ -65,7 +65,7 @@ internal static class Panel
 
     public static bool Visible = true;
 
-    /// <summary>Shown, and kept shown: what KSA's Mods menu asks for, and the MP button beside it.</summary>
+    /// <summary>Shown, and kept shown: what KSA's Mods menu asks for, and the only way back to a shut window.</summary>
     public static void Show()
     {
         Visible = true;
@@ -126,22 +126,15 @@ internal static class Panel
             return;
         }
 
+        // Shut is shut: nothing of this mod is drawn over the game. KSA's Mods menu is the way back,
+        // which is a place a player already looks rather than a button of this mod's own parked in a
+        // corner of the screen for ever.
+        if (!Visible) return;
+
         ImGuiViewportPtr screen = ImGui.GetMainViewport();
         // Clear of KSA's own instruments down the right edge, which are drawn over this window.
         float2 at = new(screen.WorkPos.X + screen.WorkSize.X - (FirstSize.X + 140f), screen.WorkPos.Y + 80f);
         ImGui.SetNextWindowPos(in at, ImGuiCond.FirstUseEver, null);
-
-        if (!Visible)
-        {
-            if (ImGui.Begin("Multiplayer##reopen", Flags | ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoTitleBar))
-            {
-                string label = Sync.Now == Sync.Stage.Off ? "MP" : $"MP: {Sync.Client?.Players.Length ?? 0}";
-                if (ImGui.SmallButton(label)) Show();
-            }
-            ImGui.End();
-            return;
-        }
-
         ImGui.SetNextWindowSize(in FirstSize, ImGuiCond.FirstUseEver);
         ImGui.SetNextWindowSizeConstraints(in SmallestSize, in LargestSize);
 

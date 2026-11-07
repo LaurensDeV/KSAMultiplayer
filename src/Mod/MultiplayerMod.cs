@@ -38,8 +38,9 @@ public sealed class MultiplayerMod
     public void OnFullyLoaded()
     {
         Hooks.Install();
-        // KSA's own Mods menu, where a player looks for a mod's window before they look anywhere else.
-        // The panel's own MP button is still there for a player who has shut the window.
+        // KSA's own Mods menu, where a player looks for a mod's window before they look anywhere else,
+        // and the only way back to a window that has been shut: nothing of this mod is drawn over the
+        // game once it is.
         try
         {
             _menuItem = _menu.AddModMenuItem("Multiplayer", Panel.Show);
