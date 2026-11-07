@@ -101,6 +101,8 @@ internal sealed class Bridge
             "pause" => Paused(true),
             "resume" => Paused(false),
             "speed" => Speed(command),
+            "modspeed" => ModSpeed(command),
+            "pickspeed" => PickSpeed(command),
             "warpkey" => WarpKey(command),
             "save" => SaveGame(command),
             "step" => BeginStep(command),
@@ -447,6 +449,41 @@ internal sealed class Bridge
     // Pausing and the speed go through Universe.SetSimulationSpeed, which this mod holds to the
     // server's while connected (Hooks.BeforeSpeed): so these say so rather than appear to work.
     private static Reply Paused(bool paused) => Speed(paused ? 0.0 : 1.0);
+
+    // The speed picked the way the player picks it: an input event carrying a speed, which is what
+    // KSA's own simulation-speed menu puts in the buffer and what its console's speed command goes
+    // through. The other half of ModSpeed, and the half that should reach the room.
+    private static Reply PickSpeed(BridgeCommand command)
+    {
+        double x = command.Number("x", 1.0);
+        try
+        {
+            InputEvents.SimSpeedBuffer.Add(new InputEvents.SimSpeedData { Speed = new SimSpeed(x) });
+            return Done(new() { ["picked"] = x });
+        }
+        catch (Exception e)
+        {
+            return Failed(e.GetBaseException().Message);
+        }
+    }
+
+    // The speed written the way another mod writes it: straight at KSA, with none of the guard
+    // Speed keeps. A weapons mod holding the world down while a round is in the air does exactly
+    // this, and the whole question is whether the room is told about it, so a test needs to be able
+    // to do it while connected.
+    private static Reply ModSpeed(BridgeCommand command)
+    {
+        double x = command.Number("x", 1.0);
+        try
+        {
+            KSA.Universe.SetSimulationSpeed(new SimSpeed(x));
+            return Done(new() { ["wrote"] = x, ["speed"] = World.Speed, ["asked"] = Sync.AskedSpeed });
+        }
+        catch (Exception e)
+        {
+            return Failed(e.GetBaseException().Message);
+        }
+    }
 
     private static Reply Speed(BridgeCommand command) => Speed(command.Number("x", 1.0));
 

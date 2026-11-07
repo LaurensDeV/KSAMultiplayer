@@ -239,6 +239,16 @@ TOOLS = {
                      {"craft": {"type": "string"}, "body": {"type": "string"},
                       "altitude": _num("metres above the mean radius")}, ["body"],
                      lambda a: _dump(send("setorbit", **a))),
+    "ksa_modspeed": ("Write the simulation speed straight at KSA, the way another mod does, with none "
+                     "of the guard ksa_speed keeps. For testing whether a program's write is put to "
+                     "the room as though the player had asked for it.",
+                     {"x": _num("the speed to write")}, ["x"],
+                     lambda a: _dump(send("modspeed", **a))),
+    "ksa_pickspeed": ("Pick a simulation speed the way the player picks one from KSA's own speed menu: "
+                      "an input event carrying a speed. The other half of ksa_modspeed, and the half "
+                      "that should reach the room.",
+                      {"x": _num("the speed to pick")}, ["x"],
+                      lambda a: _dump(send("pickspeed", **a))),
     "ksa_engine": ("Light or shut a craft's engine, which is the ignition key and the throttle: the named "
                    "craft, or the flown one. For making a craft burn while another game watches it.",
                    {"craft": {"type": "string"}, "on": {"type": "boolean"}, "throttle": _num("0 to 1")}, [],
