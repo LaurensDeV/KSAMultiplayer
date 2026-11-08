@@ -230,6 +230,15 @@ jobs:
           world out again, which takes a few seconds and no reconnection, and is the only thing that
           ever puts universe time back.
 
+          ## Upgrading a server when KSA has
+
+          A world remembers the KSA build of whoever gave it to the server, and the server turns away
+          anyone running a different one. So the day KSA updates, a world seeded before it refuses
+          **everybody who updates** -- and nothing says so from inside the game beyond the refusal.
+          Either \`fresh\` at the console, which throws that world away and starts an empty one, or
+          \`set ksa-build <the new build>\` to make the operator's word the test instead of the
+          world's. A world the server started by itself records no build and turns nobody away.
+
           ## State
 
           Two games on one machine have flown in one world through it: launching, EVA, chat, the
