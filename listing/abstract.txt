@@ -1,0 +1,1 @@
+A shared world for Kitten Space Agency: several players, each in their own game, flying in one universe kept by a dedicated server. Rockets, rovers and kittens on EVA all sync.
