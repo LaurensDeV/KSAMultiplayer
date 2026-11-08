@@ -241,7 +241,7 @@ public class ServerTests
         for (int i = 0; i < 5; i++) a.SendState(Rig.State("Rocket", 5000 + i, x: i));
         rig.Until(() => b.TrackOf("Rocket").Newest is { Universe: 5004 }, what: "the states");
         Assert.Equal(a.Id, b.TrackOf("Rocket").Newest!.Owner);
-        Assert.Empty(a.Tracked.Where(k => k == "Rocket" && a.TrackOf(k).Newest is not null));
+        Assert.DoesNotContain(a.Tracked, k => k == "Rocket" && a.TrackOf(k).Newest is not null);
         rig.Until(() => b.Players.Any(p => p.Id == a.Id && p.Controlling == "Rocket"), what: "the roster");
     }
 

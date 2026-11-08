@@ -1005,16 +1005,18 @@ internal static class Sync
             }
             Deferred.Remove(blob.Key);
             Definitions[blob.Key] = blob.Data;
-            if (standing)
+            // Bound again rather than taken from the flag: standing can only be true where the
+            // lookup above found one, but that is a bool by now and nothing can see through it.
+            if (standing && old is { } was)
             {
                 Rebuilt[blob.Key] = Wall();
                 // Said because one session rebuilt a single fragment of another player's rocket 89
                 // times, and the guard above means each of those definitions really did differ --
                 // or the one before it had been forgotten. Which of the two it is decides the fix.
                 Log.Info($"rebuilding {blob.Key}: {(had is null ? "nothing was known of it" : $"{had.Length} bytes became {blob.Data.Length}")}");
-                Puppets.Remove(old);
+                Puppets.Remove(was);
                 Built.Remove(blob.Key);
-                Later(old);
+                Later(was);
                 here.Remove(blob.Key);
             }
 

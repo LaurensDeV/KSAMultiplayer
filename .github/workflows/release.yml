@@ -31,7 +31,7 @@ jobs:
       ksa_build: ${{ steps.facts.outputs.ksa_build }}
       protocol: ${{ steps.facts.outputs.protocol }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Said before the checkout below, which without a key fails on a 404 from the API that says
       # nothing about why: the key is never sent, so the private repository is simply not there.
@@ -43,14 +43,14 @@ jobs:
 
       # CI skips the mod without the key; a release must not. A release with no zip in it is the
       # thing this workflow is for.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: LaurensDeV/ksa-game-assemblies
           path: .ksa-assemblies
           ssh-key: ${{ secrets.KSA_ASSEMBLIES_KEY }}
           persist-credentials: false
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
 
@@ -77,7 +77,7 @@ jobs:
               echo "protocol=$(grep -oP 'const ushort Version = \K[0-9]+' src/Protocol/Wire.cs)"
           } >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: mod
           path: dist/*.zip
@@ -87,9 +87,9 @@ jobs:
     name: The server a host runs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
 
@@ -111,7 +111,7 @@ jobs:
           ./tools/publish-server.sh win-x64
           python3 -c "import shutil; shutil.make_archive('dist/ksamp-server-win-x64', 'zip', 'dist/ksamp-server-win-x64')"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: server
           # Named, not dist/*.zip: the mod's zip is built in another job but lands in the same folder
@@ -127,7 +127,7 @@ jobs:
     outputs:
       digest: ${{ steps.build.outputs.digest }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: docker/setup-buildx-action@v3
 
@@ -163,16 +163,20 @@ jobs:
     needs: [mod, server, image]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # The whole history and every tag, because the notes below are written out of them: a shallow
+      # clone has neither the release commit's body nor the tag before this one to count from.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       # One step each, named: the image build uploads a record of itself as an artifact too, and
       # downloading everything meant the release fell over fetching a file nobody asked for. Named
       # outright rather than matched, so this does not rest on which glob dialect the action speaks.
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: mod
           path: assets
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: server
           path: assets
@@ -186,6 +190,21 @@ jobs:
         run: |
           # Docker refuses a repository name with a capital in it, and this is the line a host copies.
           OWNER=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
+
+          # What the release is, in its own words. Every release already has that prose written: it
+          # is the body of the chore(release) commit the tag sits on, and until now it stayed in the
+          # history where nobody reading the release page would find it.
+          WHATS_NEW=$(git log -1 --format=%b "$GITHUB_REF_NAME")
+
+          # Then the bare list, folded away, for whoever wants what changed rather than the story.
+          # The release commit itself is left out of it: it is the story, and it is directly above.
+          PREVIOUS=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || true)
+          CHANGELOG=""
+          if [[ -n "$PREVIOUS" ]]; then
+              list=$(git log --no-merges --format='- %s' "$PREVIOUS..$GITHUB_REF_NAME" | grep -v '^- chore(release)' || true)
+              CHANGELOG=$(printf '<details>\n<summary>Every change since %s</summary>\n\n%s\n</details>' "$PREVIOUS" "$list")
+          fi
+
           cat > notes.md <<NOTES
           A shared world for Kitten Space Agency: several players, each in their own game, flying in
           one universe kept by a dedicated server that runs on Linux with no game installed.
@@ -193,6 +212,12 @@ jobs:
           Everyone in a world needs **KSA \`$KSA_BUILD\`** and a mod of this release. A game and a
           server speaking different versions refuse each other by name rather than misread the
           bytes, and this one speaks **protocol $PROTOCOL**.
+
+          ## What's new
+
+          $WHATS_NEW
+
+          $CHANGELOG
 
           ## Playing
 
@@ -289,9 +314,9 @@ jobs:
     if: needs.deployable.outputs.ok == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: opentofu/setup-opentofu@v1
+      - uses: opentofu/setup-opentofu@v2
         with:
           tofu_version: "1.9.0"
 

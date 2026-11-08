@@ -16,15 +16,15 @@ jobs:
     name: Server and protocol
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
       - name: Test
         run: ./tools/test.sh
       - name: Publish the Linux server
         run: ./tools/publish-server.sh linux-x64
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ksamp-server-linux-x64
           path: dist/ksamp-server-linux-x64/
@@ -37,18 +37,18 @@ jobs:
     env:
       HAVE_KEY: ${{ secrets.KSA_ASSEMBLIES_KEY != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Skip notice
         if: env.HAVE_KEY != 'true'
         run: echo "::notice::KSA_ASSEMBLIES_KEY is not set, so the mod cannot be compiled here."
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: env.HAVE_KEY == 'true'
         with:
           repository: LaurensDeV/ksa-game-assemblies
           path: .ksa-assemblies
           ssh-key: ${{ secrets.KSA_ASSEMBLIES_KEY }}
           persist-credentials: false
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         if: env.HAVE_KEY == 'true'
         with:
           dotnet-version: "10.0.x"
@@ -60,7 +60,7 @@ jobs:
 
       # The zip holds the mod's own assembly and its manifest, and none of KSA's: package.sh copies
       # those two files and nothing else, so this is publishable from a public repository.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: env.HAVE_KEY == 'true'
         with:
           name: mod
