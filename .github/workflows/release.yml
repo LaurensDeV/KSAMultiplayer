@@ -96,18 +96,29 @@ jobs:
       - name: Test
         run: ./tools/test.sh
 
-      # Both architectures, since a hobby server is as likely to be an ARM box as an x86 one.
+      # Both Linux architectures, since a hobby server is as likely to be an ARM box as an x86 one,
+      # and Windows, because the machine a player already has is the one they will host on first.
+      # A tarball loses nothing on Linux and a zip is what Windows opens without being told how.
       - name: Publish
         run: |
           for rid in linux-x64 linux-arm64; do
               ./tools/publish-server.sh "$rid"
               tar czf "dist/ksamp-server-$rid.tar.gz" -C "dist/ksamp-server-$rid" .
           done
+          # python3 rather than zip, as tools/package.sh does: it is there on any machine that can
+          # run these scripts, and zip is not -- a release built by hand on a developer's box fails
+          # on it otherwise.
+          ./tools/publish-server.sh win-x64
+          python3 -c "import shutil; shutil.make_archive('dist/ksamp-server-win-x64', 'zip', 'dist/ksamp-server-win-x64')"
 
       - uses: actions/upload-artifact@v4
         with:
           name: server
-          path: dist/*.tar.gz
+          # Named, not dist/*.zip: the mod's zip is built in another job but lands in the same folder
+          # name, and an artifact that quietly carried both would publish the mod twice.
+          path: |
+            dist/ksamp-server-*.tar.gz
+            dist/ksamp-server-*.zip
           if-no-files-found: error
 
   image:
@@ -202,9 +213,15 @@ jobs:
               -e KSAMP_NAME="My server" ghcr.io/$OWNER/ksamp-server@$DIGEST
           \`\`\`
 
-          Or \`ksamp-server-linux-x64.tar.gz\` below: one self-contained executable and a systemd
-          unit, needing no .NET and no KSA. The server has no world until a player gives it one, and
-          hands that world to everyone who joins after.
+          Or an executable from below, needing no .NET and no KSA:
+          \`ksamp-server-linux-x64.tar.gz\` (with a systemd unit beside it),
+          \`ksamp-server-linux-arm64.tar.gz\` for a Pi or an ARM VPS, or
+          \`ksamp-server-win-x64.zip\` to run \`ksamp-server.exe\` on the machine you already have.
+          The server has no world until a player gives it one, and hands that world to everyone who
+          joins after -- or set \`empty-world\` and it starts with one of its own.
+
+          Hosting on the same machine you play on works: the server is its own process and needs no
+          game. Whoever else joins needs the port open to them.
 
           Its commands are typed into its console, which is standard input -- hence \`-it\` above, and
           \`docker attach ksamp\` to reach it, Ctrl+P Ctrl+Q to leave it running. \`clear\` is the broom

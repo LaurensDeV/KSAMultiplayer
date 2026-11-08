@@ -60,8 +60,9 @@ Two craft with the same name can't both be seen: the panel tells you to rename y
 
 ## Running a server
 
-The server is a single self-contained file. Take `ksamp-server-linux-x64.tar.gz` from the
-[releases](https://github.com/LaurensDeV/KSAMultiplayer/releases), or build it on any machine with the .NET 10 SDK; it needs no KSA files:
+The server is a single self-contained file, and runs on a machine with no game on it. Take
+`ksamp-server-linux-x64.tar.gz`, `ksamp-server-linux-arm64.tar.gz` or `ksamp-server-win-x64.zip`
+from the [releases](https://github.com/LaurensDeV/KSAMultiplayer/releases), or build it on any machine with the .NET 10 SDK; it needs no KSA files:
 
 ```bash
 ./tools/publish-server.sh              # linux-x64
@@ -69,6 +70,10 @@ The server is a single self-contained file. Take `ksamp-server-linux-x64.tar.gz`
 
 ```bash
 ./tools/publish-server.sh linux-arm64  # a Raspberry Pi or an ARM VPS
+```
+
+```bash
+./tools/publish-server.sh win-x64      # a Windows box, including the one you play on
 ```
 
 Copy `dist/ksamp-server-linux-x64/ksamp-server` to the server and run it:
