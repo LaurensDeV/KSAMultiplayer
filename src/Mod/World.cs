@@ -304,7 +304,7 @@ internal static class World
         why = "";
         if (system.Length > 0 && system != GameSettings.Current.System.LastSystemId)
         {
-            if (SelectSystem.Systems.FirstOrDefault(s => s.Id == system) is not { } chosen)
+            if (SystemLibrary.PickerSystems().FirstOrDefault(s => s.Id == system) is not { } chosen)
             {
                 why = $"the server's world is in {system}, which this game does not have";
                 return false;

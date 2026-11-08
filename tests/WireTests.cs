@@ -63,8 +63,8 @@ public class WireTests
     [Fact]
     public void EveryMessageComesBackAsItWent()
     {
-        Assert.Equal(new Wire.Hello("Jeb", "2026.10.25.5707", "Core,KSAMultiplayer", "SolLite", "pw", "t0ken"),
-                     RoundTrip(new Wire.Hello("Jeb", "2026.10.25.5707", "Core,KSAMultiplayer", "SolLite", "pw", "t0ken")));
+        Assert.Equal(new Wire.Hello("Jeb", "2026.11.10.5801", "Core,KSAMultiplayer", "SolLite", "pw", "t0ken"),
+                     RoundTrip(new Wire.Hello("Jeb", "2026.11.10.5801", "Core,KSAMultiplayer", "SolLite", "pw", "t0ken")));
         Assert.Equal(new Wire.Command("clear Rocket_*"), RoundTrip(new Wire.Command("clear Rocket_*")));
         Assert.Equal(new Wire.Op(true, "t0ken"), RoundTrip(new Wire.Op(true, "t0ken")));
         Assert.Equal(new Wire.Op(false, ""), RoundTrip(new Wire.Op(false, "")));

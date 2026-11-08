@@ -337,7 +337,7 @@ calls through.
 Two games on one machine, each with a profile of its own, joined to one server: `tools/two-games.sh
 --test` sets that up and `tools/ksa-mcp` drives both through the mod's bridge (`src/Mod/Bridge.cs`),
 so a run is repeatable and what each game thinks is readable rather than guessed at. Seen working
-against KSA `2026.10.25.5707`:
+against KSA `2026.11.10.5801` with StarMap 0.5.3:
 
 - **Joining, seeding and the handover.** The first game's world became the server's, 31 KB, and the
   second received it, loaded it and reached the shared world.
@@ -450,6 +450,18 @@ against KSA `2026.10.25.5707`:
   `Nasley 2` by the server, each game kept flying its own, and each built the other's and stood it
   where its owner put it. The second game holds the other player's under a name of its own
   (`Nasley (2)`), since KSA looks a craft up by its Id and this world now has two of them.
+- **A KSA update, flown.** The move from `2026.10.25.5707` to `2026.11.10.5801`. Three breaks the
+  compiler found: a location is keyed by `Key` rather than `Id` and names its concrete with a
+  `DataReference` rather than a string, the list of systems moved from `SelectSystem.Systems` to
+  `SystemLibrary.PickerSystems()`, and letting a kitten out answers with an `EvaRequest` rather than
+  a bool. Two more it could not: that same `EvaRequest`, and boarding's `CrewSeatResult`, are what a
+  prefix's `__result` has to be, and a prefix still declaring `bool` is refused by Harmony at
+  install -- the patch logs and the refusal it carries quietly stops happening. Then
+  `tools/breakup.sh` on the new build: both worlds came out holding the same 13 craft, nothing made
+  up on either side, nothing claimed that a game had only been told about, and no physics step
+  refused. The worlds the server carries were written by the older build and still load, because
+  every element added since -- a world's `Rules`, a kitten's `Condition` and `CauseOfDeath` -- has a
+  default, and the default rules are a fresh game's.
 
 ## What has not been tried
 

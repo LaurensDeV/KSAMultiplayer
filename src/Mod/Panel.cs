@@ -857,7 +857,7 @@ internal static class Panel
     /// raw because it is why the join will be refused.
     /// </summary>
     private static string Named(string system) =>
-        SelectSystem.Systems.FirstOrDefault(s => s.Id == system)?.DisplayName.Value is { Length: > 0 } shown
+        SystemLibrary.PickerSystems().FirstOrDefault(s => s.Id == system)?.DisplayName.Value is { Length: > 0 } shown
             ? shown
             : system;
 

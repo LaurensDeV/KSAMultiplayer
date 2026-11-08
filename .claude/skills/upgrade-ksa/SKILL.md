@@ -87,6 +87,26 @@ If all three agree, stop — there is nothing to upgrade.
 
 Write the new build number down. It is needed in five places in step 7.
 
+**Then check StarMap**, because a KSA update usually breaks the loader too and a mod cannot be
+tested through a loader that will not start. Its releases name the build they were made for:
+
+```bash
+curl -s 'https://api.github.com/repos/StarMapLoader/StarMap/releases?per_page=5' \
+    | grep -oP '"(tag_name|body)": "[^"]*' | head
+curl -s 'https://api.nuget.org/v3-flatcontainer/starmap.api/index.json'   # what can be compiled against
+```
+
+0.5.3 was released the same day as 2026.11.10.5801 and says only "Made StarMap compatible with KSA
+2026.11.10.5801". Its `StarMap.API` assembly was **byte-identical in public API** to 0.5.2, so the
+mod needed no source change and the `PackageReference` bump was bookkeeping — but the loader beside
+the game had to be the new one, and `tools/two-games.sh` takes the folder named exactly `StarMap`
+under the Windows home, so that is the copy that has to be replaced. Decompile both and diff before
+assuming, since the version alone says nothing:
+
+```bash
+ilspycmd -o /tmp/a <old>/StarMap.API.dll && ilspycmd -o /tmp/b <new>/StarMap.API.dll && diff -ru /tmp/a /tmp/b
+```
+
 ## 2. Refresh the binaries and the corpus
 
 This repo has no sync scripts; `../KSArmory/tools/sync-import.sh`,
@@ -141,6 +161,17 @@ Three groups, in order of how quietly they go:
 - **Private fields read by reflection.** `Popup.Popups`, `Universe._simulationQuickSpeeds`,
   `VehicleEditor._selectedCelestial` and `_selectedLocation`. `src/Mod/Pads.cs` already tries
   `_locationObjects` then `_locations` because KSA renamed that once — a precedent, not a one-off.
+- **The `__result` of every prefix that writes one**, which is the one class the compiler cannot see
+  at all: `__result` has to be the target's return type exactly, and Harmony refuses the whole patch
+  at install when it is not — so the refusal that prefix existed to make quietly stops happening.
+  Check each against the new corpus by hand. Going to 2026.11.10.5801 moved two at once:
+  `EVADoor.PerformEvaForSeat` went from `bool` to an `EvaRequest`, and `KittenEva.BoardVehicle` to a
+  `CrewSeatResult`. Only the first produced a build error, and only because `src/Mod/Bridge.cs`
+  happened to call it as well; the second was invisible. Grep for them:
+
+  ```bash
+  grep -nP '__result' src/Mod/Hooks.cs
+  ```
 
 ### What the compiler sees
 
@@ -220,7 +251,15 @@ What to look for, in order of how quietly it fails:
   incomplete.
 - **A `universe.xml` schema change.** The worst case, because an old save may load with craft at
   their defaults. Compare an empty save written by the new build against
-  `src/Server/worlds/SolLite/universe.xml`; step 6 replaces them.
+  `src/Server/worlds/SolLite/universe.xml`; step 6 replaces them. Read the diff of `UniverseData`,
+  `KittenRosterData`, `KittenRosterEntryData`, `CameraData` and `CelestialSystemData` and ask of
+  each change whether an element the carried worlds **lack** has a sane default — an added one with
+  a default costs nothing, which is why the 5707 worlds still load on 5801.
+- **A change to `VehicleData`,** which is the craft definition this mod puts on the wire, built with
+  `XmlHelper.AttributeOverrides` and its own `XmlSerializer` (`World.Define`). An element gained or
+  lost here changes what a datagram means even though no datagram changed, so it takes a
+  `Wire.Version` bump: 5801 dropped `ResourceManager`. The per-player KSA build check does **not**
+  cover this, because a world the server carries records no build at all and so gates nobody.
 - **A new system, or a renamed one.** `src/Server/worlds/` carries `SolLite` and `Sol`, and the
   server refuses a join whose system differs from the world's (`Server.cs`, `_worldSystem`). A new
   stock system wants a world of its own, or `empty-world` cannot name it.
@@ -272,6 +311,9 @@ Nothing enforces this, so it is the step that rots. Five places:
 - `src/Server/worlds/*/meta.toml` — written by KSA in step 6, not by hand
 - `tests/WireTests.cs` — a build string as test data; harmless, but misleading left stale
 - `errors.md` — only for a **new** entry; existing ones are dated history and must not be moved
+- `CLAUDE.md` and `README.md` again, for **StarMap's** minimum version, when the loader had to move
+  with the game. Nothing in `mod.toml` declares it, so that prose is the only place it is written
+  down and the only warning a player gets.
 
 `README.md` and `docs/DESIGN.md` are assertions that someone flew it against that build. **Do not
 sweep the number through with `sed`**: until step 8 has actually run, the old number is the true

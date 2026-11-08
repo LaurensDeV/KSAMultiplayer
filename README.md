@@ -7,15 +7,15 @@ Any craft syncs: rockets, rovers, kittens on EVA. The mod's folder and
 id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
 
 > **Status: played, not finished.** Two games on one machine have flown in one world through it,
-> against KSA `2026.10.25.5707`, and the server and the protocol are tested headlessly besides
-> (74 tests, real UDP over loopback, a lossy line included). An 89-part rocket has been flown in a
+> against KSA `2026.11.10.5801`, and the server and the protocol are tested headlessly besides
+> (120 tests, real UDP over loopback, a lossy line included). An 89-part rocket has been flown in a
 > shared world and staged while the other game watched, which rebuilt the dropped stage as its own
 > craft. What two games across the internet do is not known.
 > See [docs/DESIGN.md](docs/DESIGN.md#what-has-not-been-tried).
 
 ## Playing
 
-1. Install [StarMap](https://github.com/StarMapLoader/StarMap) **0.5.2 or later**, then take
+1. Install [StarMap](https://github.com/StarMapLoader/StarMap) **0.5.3 or later**, then take
    `KSAMultiplayer-<version>.zip` from the [releases](https://github.com/LaurensDeV/KSAMultiplayer/releases), unzip it into KSA's `mods` folder and
    enable it, as with any StarMap mod. StarMap before 0.5 hands a mod no services at all, and with
    both installed the game will not start rather than the mod quietly not loading.
@@ -98,6 +98,10 @@ ask about SRV and so a player whose resolver drops the record can still get in b
   world that is already there. These are saves KSA itself wrote, carried in the server; it cannot
   make one, since a world is KSA's own format and the server has no game. They pin the system a
   world started from them is in, and go stale when KSA's save format moves on.
+
+  A world the server carries records **no KSA build**, so unlike a world a player hands over it
+  checks nobody's: set `ksa-build` as well if everyone should be on one build. Players still have to
+  agree with each other, since a craft is passed between games as KSA's own serialisation of one.
 - **Or copy a save in.** Copy a save folder from `Documents/My Games/Kitten Space Agency/saves/<name>`
   (or a zip of it) to the server and start with `--world <path>`.
 

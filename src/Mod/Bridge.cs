@@ -319,8 +319,8 @@ internal sealed class Bridge
                 said["room"] = Pads.Room(open);
                 if (body?.BodyTemplate is { } t && site.Length > 0)
                 {
-                    said["pads_at_site"] = Pads.At(t, site).Select(p => (object?)p.Id).ToList();
-                    said["free_pad"] = Pads.Free(body, site)?.Id;
+                    said["pads_at_site"] = Pads.At(t, site).Select(p => (object?)p.Key).ToList();
+                    said["free_pad"] = Pads.Free(body, site)?.Key;
                 }
             }
             return Done(said);
@@ -391,7 +391,11 @@ internal sealed class Bridge
             break;
         }
         if (seat is null) return Failed($"nobody aboard {craft.Id} to get out");
-        if (!EVADoor.PerformEvaForSeat(craft, seat)) return Failed($"{craft.Id} would not let anybody out");
+        // Queued is the one answer that sent anybody out; the rest say why not, and are worth saying.
+        if (EVADoor.PerformEvaForSeat(craft, seat) is var asked && asked != EvaRequest.Queued)
+        {
+            return Failed($"{craft.Id} would not let anybody out: {asked}");
+        }
         return Done(new() { ["from"] = craft.Id });
     }
 

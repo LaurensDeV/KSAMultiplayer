@@ -12,8 +12,8 @@ dedicated server (`ksamp-server`) that runs on Linux with no game installed.
 - KSA's assemblies are copyrighted and never committed. `Directory.Build.props` finds them: `KSA_DLL_DIR`,
   `Import/`, `../ksa-game-assemblies/current/dll`, then a game install, which is enough on its own:
   `StarMap.API` and `Lib.Harmony` come from NuGet, compile-time only so one assembly still ships.
-- The mod needs **StarMap 0.5.2 or later**: its entry class takes `IModMenuService`, and StarMap before
-  0.5 passes no services at all.
+- The mod needs **StarMap 0.5.3 or later**: its entry class takes `IModMenuService`, StarMap before
+  0.5 passes no services at all, and 0.5.3 is the first that runs on KSA 2026.11.10.5801.
 - The decompiled game is in `../ksa-game-assemblies/current/src`; `../KSACars/docs/KSA-MODDING-NOTES.md`
   and `KSA-FRAME-ORDER.md` explain the engine, and why craft state is written in `Vehicle.PrepareWorker`.
 - A KSA update is the `upgrade-ksa` skill. The mod pins no build and retargets itself silently, and

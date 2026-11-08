@@ -42,7 +42,7 @@
     whatever the loader already has.
   -->
   <ItemGroup>
-    <PackageReference Include="StarMap.API" Version="0.5.2" ExcludeAssets="runtime" />
+    <PackageReference Include="StarMap.API" Version="0.5.3" ExcludeAssets="runtime" />
     <PackageReference Include="Lib.Harmony" Version="2.4.3" ExcludeAssets="runtime" />
   </ItemGroup>
 

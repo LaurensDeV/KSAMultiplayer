@@ -456,7 +456,7 @@ internal static class Hooks
             double lat = free.Latitude.GetRadians() * 180.0 / Math.PI;
             double lon = free.Longitude.GetRadians() * 180.0 / Math.PI;
             if (Math.Abs(lat - latitude) < 1e-12 && Math.Abs(lon - longitude) < 1e-12) return;
-            Log.Info($"launching from {free.Id} instead: the site's own pad is taken");
+            Log.Info($"launching from {free.Key} instead: the site's own pad is taken");
             (latitude, longitude) = (lat, lon);
         }
         catch (Exception e)
@@ -474,7 +474,7 @@ internal static class Hooks
             // did. Refusing the launch is the editor's job and is not done here.
             if (Pads.Free(__instance, id) is not { } free) return true;
             __result = free;
-            if (!string.Equals(free.Id, id, StringComparison.Ordinal)) Log.Info($"launching from {free.Id}: {id} is taken");
+            if (!string.Equals(free.Key, id, StringComparison.Ordinal)) Log.Info($"launching from {free.Key}: {id} is taken");
             return false;
         }
         catch (Exception e)
@@ -760,10 +760,13 @@ internal static class Hooks
         return false;
     }
 
-    private static bool BeforeBoard(Vehicle host, ref bool __result)
+    // __result is KSA's own answer and must be its type exactly, or Harmony refuses the patch at
+    // install and the refusal below never happens. SeatTaken, of the answers it has, is the one
+    // that is true: the craft is somebody's, and this game is not them.
+    private static bool BeforeBoard(Vehicle host, ref CrewSeatResult __result)
     {
         if (!Others(host)) return true;
-        __result = false;
+        __result = CrewSeatResult.SeatTaken;
         return false;
     }
 
@@ -776,7 +779,7 @@ internal static class Hooks
         return false;
     }
 
-    private static bool BeforeEva(Vehicle vehicle, ref bool __result)
+    private static bool BeforeEva(Vehicle vehicle, ref EvaRequest __result)
     {
         try
         {
@@ -787,7 +790,9 @@ internal static class Hooks
             Complain("taking a craft before its crew is sent out", e);
             return true;
         }
-        __result = false;
+        // Anything but Queued is a refusal, and this one is nothing to do with the seat or the
+        // roster: there is no way out of a craft that is not this game's to open.
+        __result = EvaRequest.NoDoor;
         return false;
     }
 

@@ -54,7 +54,7 @@ internal static class Pads
         AccessTools.Method(typeof(LocationReference), "ResolveStaticObject");
 
     public static bool Ours(LocationReference location) =>
-        location.Id.Contains(Suffix, StringComparison.Ordinal);
+        location.Key.Contains(Suffix, StringComparison.Ordinal);
 
     /// <summary>
     /// Laid out once per celestial template, idempotently: a world loaded again finds them already
@@ -119,9 +119,9 @@ internal static class Pads
     /// </summary>
     public static List<LandmarkReference> At(CelestialTemplate template, string siteId) =>
         [.. template.Locations.OfType<LandmarkReference>()
-                    .Where(l => l.IsLaunchPad && (l.Id == siteId || l.Id.StartsWith(siteId + Suffix, StringComparison.Ordinal)))
-                    .OrderBy(l => l.Id.Length)
-                    .ThenBy(l => l.Id, StringComparer.Ordinal)];
+                    .Where(l => l.IsLaunchPad && (l.Key == siteId || l.Key.StartsWith(siteId + Suffix, StringComparison.Ordinal)))
+                    .OrderBy(l => l.Key.Length)
+                    .ThenBy(l => l.Key, StringComparer.Ordinal)];
 
     /// <summary>
     /// The site's own pad first, so a quiet site launches from where it always did; the rest in an
@@ -155,8 +155,8 @@ internal static class Pads
         if (asked is null) return null;
         // One of this mod's own would mean the editor was given one to offer, which it is not; the
         // site's name is the part before the suffix either way.
-        int cut = asked.Id.IndexOf(Suffix, StringComparison.Ordinal);
-        return Free(celestial, cut < 0 ? asked.Id : asked.Id[..cut]);
+        int cut = asked.Key.IndexOf(Suffix, StringComparison.Ordinal);
+        return Free(celestial, cut < 0 ? asked.Key : asked.Key[..cut]);
     }
 
     /// <summary>
@@ -195,10 +195,10 @@ internal static class Pads
             {
                 // Only when the answer changes. The editor asks this every frame it is open to know
                 // whether to warn, and logging each one put two thousand lines in a session.
-                if (!_said.TryGetValue(siteId, out string? was) || was != pad.Id)
+                if (!_said.TryGetValue(siteId, out string? was) || was != pad.Key)
                 {
-                    _said[siteId] = pad.Id;
-                    Log.Info($"{pad.Id} is the free pad at {siteId}, with {craft.Count} craft on {celestial.Id}");
+                    _said[siteId] = pad.Key;
+                    Log.Info($"{pad.Key} is the free pad at {siteId}, with {craft.Count} craft on {celestial.Id}");
                 }
                 return pad;
             }
@@ -279,9 +279,12 @@ internal static class Pads
                 double east = ring * Math.Sin(turn) / celestial.MeanRadius;
                 LandmarkReference made = new()
                 {
-                    Id = $"{site.Id}{Suffix}{i + 1}",
+                    Key = $"{site.Key}{Suffix}{i + 1}",
                     IsLaunchPad = true,
-                    StaticObjectId = site.StaticObjectId,
+                    // The site's own reference, shared rather than copied: it is already resolved by
+                    // the time a world is current, and a new one made here would be tracked by no
+                    // content scope and so never resolve to the concrete it names.
+                    StaticObjectReference = site.StaticObjectReference,
                     // Longitude closes up towards the poles, so a step east is wider in longitude the
                     // further the site is from the equator.
                     Latitude = new RadianReference(lat + north),
@@ -294,12 +297,12 @@ internal static class Pads
                 Resolve?.Invoke(made, null);
                 if (made.GetStaticObject() is null)
                 {
-                    Log.Warn($"{made.Id} has no concrete under it, so it is no pad: not adding it");
+                    Log.Warn($"{made.Key} has no concrete under it, so it is no pad: not adding it");
                     continue;
                 }
                 template.Locations.Add(made);
             }
-            Log.Info($"laid out {PerSite - 1} more launchpads in a ring at {site.Id}, {ring:F0} m out and {chord:F0} m apart");
+            Log.Info($"laid out {PerSite - 1} more launchpads in a ring at {site.Key}, {ring:F0} m out and {chord:F0} m apart");
         }
     }
 }

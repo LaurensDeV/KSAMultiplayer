@@ -138,8 +138,15 @@ public static class Wire
     /// <para>20 adds <see cref="Alive"/>, which a game sends off its own thread while its frame loop
     /// is stalled. Before it, ten seconds of stutter read as a player who had gone, and a game that
     /// hitched on a rebuild was thrown out of a world it was still in.</para>
+    ///
+    /// <para>21 is KSA 2026.11.10.5801 rather than anything of this protocol's own: a craft
+    /// definition is KSA's own serialisation of one, and that build drops the <c>ResourceManager</c>
+    /// element from it. The build each player runs is checked too, but only when the world says
+    /// which build it is -- a world the server carries records none, so nothing else would stop a
+    /// game on either side of the change from building another's craft from a definition it reads
+    /// differently.</para>
     /// </summary>
-    public const ushort Version = 20;
+    public const ushort Version = 21;
 
     public const int BufferBytes = 8192;
     public const int NameChars = 24;
