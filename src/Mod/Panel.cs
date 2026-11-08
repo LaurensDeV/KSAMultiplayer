@@ -31,10 +31,20 @@ internal static class Panel
 
     // KSA draws the navball at the bottom left at a fixed size and offset, whatever the window's size
     // (NavBallRenderer: the translation and the scale are both in pixels), so one clearance holds at
-    // every resolution. Measured off a screenshot its top edge is about 150 px up; this leaves the
-    // chat's bottom edge above that with a little air. It sat under the navball before, which is
-    // where a window goes to be unread.
-    private const float NavballClear = 190f;
+    // every resolution. What has to be cleared is the whole cluster and not the ball: the mode row
+    // above it -- STAR, SURF, ORBT, OVEL, TGT -- is the topmost thing there. Measured off a 1600x1024
+    // screenshot, the disc's top edge is 271 px up and that row's is 310; this leaves the chat's
+    // bottom edge above the row with a little air.
+    //
+    // It was 190 before, read off a screenshot of a test profile at 800x500, which put the chat's
+    // lower half inside the navball at the sizes anybody actually plays at.
+    private const float NavballClear = 324f;
+
+    // The same, for KSA's altimeter: it sits under the menu bar at the top centre, which is where the
+    // scoreboard goes too. Measured at 1600x1024 with hudScale 100, the menu bar ends 26 px down and
+    // the altimeter's box 58. The board sat at 60 -- flush under it, which read as clipping it -- so
+    // this is that bottom edge with air under it.
+    private const float AltimeterClear = 88f;
 
     // What the server says, told from what a player says at a glance: an answer to a command is not
     // conversation, and in a room of several players the one voice that is not a person should not
@@ -357,7 +367,15 @@ internal static class Panel
         bool off = Sync.Now == Sync.Stage.Off;
         if (off && Sync.LastServer.Length == 0) return;
         bool here = Sync.Now == Sync.Stage.Playing;
-        string where = off ? "disconnected" : Sync.ServerAddress;
+        // How many are in the world, this game counted among them, so the number agrees with the
+        // list Tab shows rather than being one short of it. Only once joined: before that the roster
+        // is empty and a "(0)" would read as an empty server rather than as a join still going on.
+        int count = Sync.Client is { Joined: true } joined ? joined.Players.Length : 0;
+        // "(2 players)" rather than "(2)", which beside an address reads as a port or a version as
+        // readily as it does a count of anybody.
+        string where = off ? "disconnected"
+                           : count > 0 ? $"{Sync.ServerAddress} ({count} player{(count == 1 ? "" : "s")})"
+                           : Sync.ServerAddress;
         if (where.Length == 0) return;
 
         float line = ImGui.GetTextLineHeight();
@@ -404,7 +422,7 @@ internal static class Panel
         if (!World.KeyDown(GlfwKey.Tab) && Sync.Wall() >= BoardUntil) return;
 
         ImGuiViewportPtr screen = ImGui.GetMainViewport();
-        float2 at = new(screen.WorkPos.X + ((screen.WorkSize.X - BoardWidth) * 0.5f), screen.WorkPos.Y + 60f);
+        float2 at = new(screen.WorkPos.X + ((screen.WorkSize.X - BoardWidth) * 0.5f), screen.WorkPos.Y + AltimeterClear);
         ImGui.SetNextWindowPos(in at, ImGuiCond.Always, null);
         ImGui.SetNextWindowBgAlpha(0.85f);
 
