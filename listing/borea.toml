@@ -42,9 +42,7 @@ tags = ["gameplay", "user-interface"]
 github = "LaurensDeV/KSAMultiplayer"
 
 [links]
-# REQUIRED before this can be merged: the Ahwoo thread this listing hangs on. Post it first --
-# listing/forum-post.md is the title and the body -- then put its URL here.
-# forums = "https://forums.ahwoo.com/forums/kitten-space-agency/mod-releases/....../"
+forums = "https://forums.ahwoo.com/forums/kitten-space-agency/mod-releases/ksa-multiplayer.1578/"
 repository = "https://github.com/LaurensDeV/KSAMultiplayer"
 bugtracker = "https://github.com/LaurensDeV/KSAMultiplayer/issues"
 
