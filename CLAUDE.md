@@ -16,6 +16,8 @@ dedicated server (`ksamp-server`) that runs on Linux with no game installed.
   0.5 passes no services at all.
 - The decompiled game is in `../ksa-game-assemblies/current/src`; `../KSACars/docs/KSA-MODDING-NOTES.md`
   and `KSA-FRAME-ORDER.md` explain the engine, and why craft state is written in `Vehicle.PrepareWorker`.
+- A KSA update is the `upgrade-ksa` skill. The mod pins no build and retargets itself silently, and
+  a patch in `src/Mod/Hooks.cs` whose target has moved warns once in the log and is otherwise lost.
 - Comment why, never what; state facts, not history.
 - Commit messages are Conventional Commits. A behaviour fix is not a `fix` until it has been seen in game.
 

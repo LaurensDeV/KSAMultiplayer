@@ -27,3 +27,8 @@ infra/**/backend.hcl
 
 # A saved plan: local, and a credential of sorts once variables are in it.
 infra/**/tfplan
+
+# Claude Code: the skills under .claude/skills/ are shared and tracked. These two are not content --
+# per-machine permissions, and real git worktrees for parallel agents.
+.claude/settings.local.json
+.claude/worktrees/
