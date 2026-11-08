@@ -145,8 +145,16 @@ public static class Wire
     /// which build it is -- a world the server carries records none, so nothing else would stop a
     /// game on either side of the change from building another's craft from a definition it reads
     /// differently.</para>
+    ///
+    /// <para>22 is the ground at a launch site, which this mod now levels out to where it puts its
+    /// own pads. Nothing of the protocol changed and nothing of the terrain crosses the wire: each
+    /// game works it out from the same content and arrives at the same answer. That is exactly why
+    /// it has to be gated here -- a game that had not, sharing a world with games that had, would
+    /// place every craft at a launch site against ground of a different shape, and at Vandenberg,
+    /// where the levelling is 52 m deep, another player's rocket would stand buried in a hillside
+    /// that is not there for anybody else.</para>
     /// </summary>
-    public const ushort Version = 21;
+    public const ushort Version = 22;
 
     public const int BufferBytes = 8192;
     public const int NameChars = 24;

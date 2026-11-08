@@ -426,3 +426,61 @@ again, so a player standing on its ladder watches it go and come back, and is dr
 not fixed. Rebuilding is how a craft's shape is followed at all, and the craft genuinely is a new
 object afterwards -- what would have to change is following a change of shape without tearing the
 hull down, which is a larger thing than this.
+
+## 2026-11-08 -- a kitten walks in under a launchpad at Vandenberg and is stuck
+
+Reported from a game, with a screenshot of CCSFS LC-39A beside it: the seven pads this mod rings a
+launch site with draw only part of their circular access road, a wedge of it missing on the side
+facing the middle pad every time, while the middle pad's road is whole. At VSFB LC-4 the same pads
+stand at visibly different heights from one another, and a kitten can walk in under the edge of one
+and not get out again.
+
+None of it is a drawing fault. The roads are drawn in full, every frame, for all eight pads: KSA has
+no per-object clipping or bounds culling in that path at all, only a horizon test. What is wrong is
+the ground.
+
+A launch site is levelled by a `Decal` terrain modifier in `Astronomicals.xml` which holds the
+ground at one absolute altitude over a disc, dead flat only within `(1 - SmoothFactor) * Radius` and
+feathering back to the planet's own height by `Radius`. The lift is real and it is the planet's own
+heightmap it is lifted from -- read out of `Earth_Height.ktx2`, which is uncompressed R16:
+
+| site | flat core | natural | held at | lift |
+| --- | --- | --- | --- | --- |
+| CCSFS LC-39A | 85.3 m | 11.09 m | 16.97 m | 5.88 m |
+| VSFB LC-4 | 67.5 m | 127.62 m | 180 m | 52.38 m |
+| Starbase OLM A | 93.0 m | 8.52 m | 17.27 m | 8.75 m |
+| GSC ELA-4 | 77.5 m | 21.29 m | 29.11 m | 7.82 m |
+| Māhia LC-1A | 93.0 m | 15.95 m | 16.02 m | 0.07 m |
+
+The pad the game shipped fits inside the flat core at three of the five sites -- not at Kourou or
+Vandenberg, whose own aprons already run past it. This mod's pads stand 150 m out, on the feather,
+at every site. Each one is placed flush with the ground sampled at its own centre and is then a
+rigid flat disc 82 m across, so the ground rises above its inward edge and falls away under its
+outward one. At the Cape that is 1.57 m of burial and 2.78 m of overhang; at Vandenberg, 5.80 m and
+10.53 m, which is the gap the kitten walked into. The differing heights are the same arithmetic: at
+150 m out Vandenberg's flatten weight is 0.881, so a ninth of a 52 m hillside still comes through,
+and each pad's centre lands on a different part of it.
+
+Shrinking the ring does not fix it. Six pads at 100 m would take the Cape's burial from 1.57 m to
+0.10 m and its overhang only from 2.78 m to 2.01 m, and Vandenberg's overhang from 10.53 m to
+6.96 m -- the wedge would stop showing in a screenshot and the kitten would still be stuck.
+
+Fixed by widening the site's own decal until its flat core takes the whole complex in, so the ground
+under it is dead flat and every pad stands at the same height on it. `docs/DESIGN.md` has the rest,
+including why it is done where it is.
+
+**And flat ground showed up a second fault the slope had been hiding.** A pad lays a disc of grass
+82 m across the ground around it -- the widest thing it draws, against 62.1 m for the circular road
+-- and the pads stood 130 m apart, so those discs had always overlapped by 35 m on every side. While
+the inward half of every pad was buried, so were the overlaps. Levelled, the two discs are exactly
+coplanar, their depths are interpolated from different model matrices and round against each other
+pixel by pixel, and it came back as a patchwork of each showing through the other, worst close up.
+Nothing else could be moved: the apron belongs to the static object the ring pads share with the
+pad the game shipped, so shrinking it would shrink that one too, and `GroundOffset` is on that same
+shared object, so there is no per-pad height to stagger. The pads went from 130 m apart to 169 m,
+which leaves four metres of grass between aprons and puts the ring 195 m out. The levelling follows
+the ring, so it widened to 303 m on its own.
+
+Both flown at VSFB LC-4, the worst case of the two: all eight pads at one height on flat ground,
+every ring road whole, grass between the aprons, nothing to walk in under, and the hillside still
+behind the site rather than levelled with it.

@@ -463,8 +463,59 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   every element added since -- a world's `Rules`, a kitten's `Condition` and `CauseOfDeath` -- has a
   default, and the default rules are a fresh game's.
 
+- **Flat ground under all eight launchpads, and nothing to walk in under.** KSA levels a launch site
+  with a terrain decal 550 m across holding the ground at one absolute height -- 16.97 m at the Cape
+  against 11.09 m of natural Florida, 180 m at Vandenberg against 127.62 m of hillside -- dead flat
+  only over a core 170 m across and feathering back to the planet's own by the rim. The pads laid
+  out here stood 150 m from the site, out on that feather, each a rigid disc placed flush with the
+  ground sampled at its own centre: the side facing the site buried, the side facing away hanging
+  over a drop. 1.6 m and 2.8 m at the Cape; 5.8 m and 10.5 m at Vandenberg, where they also stood at
+  visibly different heights, each centre landing on its own part of the hillside, and where a kitten
+  could walk in under a pad and not get out again. `errors.md` has the measurements.
+
+  A decal of its own for each pad is how the game would do it, and was tried: the modifier count is
+  read by the per-celestial render data, by the planet renderer's buffer and by the ground clutter
+  renderer at three different moments, and there is no window before all three. It died on the first
+  rendered frame in `GroundClutterRenderer.GenerateBatch`, and there was no room for it anyway -- a
+  celestial has sixteen modifier textures and Earth already spends nine.
+
+  What is in is the other way round: the site's own decal widened until its flat core takes the whole
+  complex in. One number changed rather than a modifier added, and the one change that answers the
+  burial, the overhang and the differing heights together, since inside the core the decal's weight
+  is exactly one and the ground is flat under every pad. `Pads.Level` does it from a prefix on
+  `Universe.SetupRenderData`, the last moment before KSA copies a decal's radius into the parameters
+  the GPU reads and fills that buffer, once, in the planet renderer's constructor. Levelled before it
+  every reader agrees and nothing is rebuilt; levelled after, the ground the physics finds and the
+  ground a player sees would be different ground. The core is worked out from the site's own decal
+  and this mod's own ring rather than written down, so moving the pads moves the levelling with them.
+
+  Flat ground then showed what the slope had been hiding. A pad lays 82 m of grass over the ground
+  around it and the pads were 130 m apart, so those discs had always overlapped by 35 m a side:
+  invisible while the inward half of every pad was buried, and a patchwork of each showing through
+  the other once the two were exactly coplanar with their depths interpolated from different
+  matrices. So the pads moved apart as well -- 169 m between centres, four metres of grass between
+  aprons, a ring 195 m out, and the levelling followed it to 303 m without being told to.
+
+  Flown at Vandenberg, the hard case: 52 m of lift, and where the kitten got stuck. All eight pads
+  stand at one height on flat ground, every ring road is whole, there is grass between the aprons
+  rather than a patchwork, and the hillside still rises behind the site instead of the mountain
+  being levelled with it.
+
 ## What has not been tried
 
+- **Grass and rocks kept off the extra launchpads.** KSA keeps four circles of ground clear of
+  ground clutter for a whole planet -- the cap is in the clutter compute shader as much as in the
+  struct handed to it, so a mod cannot raise it -- and spends one on each of the first four
+  launchpads in the celestial's list. Earth ships five launch sites, so the fifth grows grass
+  through its concrete in a game with no mods at all, and the pads added here never stood a chance.
+  A postfix now spends those four on whole complexes instead: one circle of the ring plus a pad's
+  clearance, which is not an approximation of the eight it replaces but exactly their union, since a
+  ring pad's own circle already reaches past the site's centre. Four sites are covered and the fifth
+  is no worse off than the game leaves it. The pads also have to exist before KSA asks, which is why
+  they are laid out from the same early hook and not only on the frame: KSA decides it while the
+  world is still loading, so on the frame they were never in the list it walked. **Not looked
+  for.** The pads are clear of scrub in every picture taken since, but nobody has stood at the
+  fifth site, and there is no before to compare against.
 - **The keepalive under a real stall.** Driven over loopback by stopping a client's `Update` and
   putting the clock forward: sixteen seconds of a frozen frame loop keeps its place, eighty lets it
   go. What has not been watched is KSA itself hitching -- a rebuild, a scene load -- and the session
@@ -529,13 +580,6 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
 - **A full site refusing a launch.** Nobody has filled all eight pads to see the refusal and the
   line drawn over the editor. What has been watched is the other side of it: the warning rightly
   absent and nothing refused while pads are free.
-- **Flat ground under the extra launchpads.** KSA levels a launch site with a terrain decal about
-  100 m across, and only the pad it shipped stands inside one, so the seven added around it have
-  their aprons cut by whatever the planet makes of the ground. Adding decals of their own is how
-  the game itself would do it and was tried: the modifier count is read by the per-celestial render
-  data, by the planet renderer's buffer and by the ground clutter renderer, at three different
-  moments, and there is no window before all three. It died on the first rendered frame, in
-  `GroundClutterRenderer.GenerateBatch`. Reverted; the pads stand on the ground as they find it.
 - **A craft described over and over while it comes apart.** A game adopts a craft it has not seen,
   and `Seen` holds Vehicle objects: when KSA destroys and remakes a stack under the same Id, as it
   does while a rocket breaks up, the new object is unseen and the craft is described again. Watched

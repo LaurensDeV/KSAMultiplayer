@@ -1,5 +1,6 @@
 using System.Reflection;
 using Brutal.ImGuiApi;
+using Brutal.Numerics;
 using HarmonyLib;
 using KSA;
 
@@ -29,6 +30,11 @@ namespace KSAMultiplayer;
 /// player flies is theirs to fly, and nobody else takes it, climbs into it or empties it.</item>
 /// <item>The constructor of <see cref="WelcomePopup"/>, after, and <see cref="Popup.DrawAll"/>: the
 /// Multiplayer window comes before KSA's configuration and its welcome.</item>
+/// <item><see cref="Universe.SetupRenderData"/>, the last moment the ground at a launch site can be
+/// levelled and still be the ground every reader of it sees, and
+/// <c>GroundClutterPlacementData.PopulateLaunchPadExclusionZones</c> after, which keeps grass and
+/// rocks off whole launch complexes rather than off four single pads. <see cref="Pads"/> says
+/// why.</item>
 /// </list>
 ///
 /// <para>Nothing in any of them may throw: they run inside KSA's own loop.</para>
@@ -69,6 +75,14 @@ internal static class Hooks
                   "there is no way back out of KSA's configuration once this mod has handed it over");
             PatchAfter(AccessTools.Method(typeof(ConsoleStyle), nameof(ConsoleStyle.BeginFooter)), nameof(AfterBeginFooter),
                   "there is no way back out of KSA's configuration once this mod has handed it over");
+            // Also here, and for the same reason the four above are: by the time every mod is loaded
+            // KSA has read the terrain into the planets' render data and there is no second chance
+            // at it. This one is earlier still -- see Pads.Level.
+            Patch(AccessTools.Method(typeof(Universe), nameof(Universe.SetupRenderData)), nameof(BeforeRenderData),
+                  "the extra launchpads stand out on the slope at the edge of the site's levelled ground");
+            PatchAfter(AccessTools.Method(typeof(GroundClutterPlacementData), "PopulateLaunchPadExclusionZones"),
+                       nameof(AfterExclusionZones),
+                  "grass and rocks grow through the extra launchpads");
         }
         catch (Exception e)
         {
@@ -284,6 +298,54 @@ internal static class Hooks
         catch (Exception e)
         {
             Complain("holding KSA's welcome", e);
+        }
+    }
+
+    /// <summary>
+    /// Before KSA builds the planets' render data, which is the last moment the ground at a launch
+    /// site can be levelled and still be the ground every reader of it sees: <see cref="Pads.Level"/>
+    /// says why. The pads are laid out here as well as on the frame, early enough that KSA knows of
+    /// them when it decides which ground to keep clear of grass and rocks: it decides that while the
+    /// world is still loading, so on the frame they were never in the list it walked.
+    /// </summary>
+    private static void BeforeRenderData()
+    {
+        try
+        {
+            Pads.LayOut();
+            Pads.Level();
+        }
+        catch (Exception e)
+        {
+            Complain("levelling the ground at the launch sites", e);
+        }
+    }
+
+    private static readonly FieldInfo? ClutterBody =
+        AccessTools.Field(typeof(GroundClutterPlacementData), "_celestial");
+
+    /// <summary>
+    /// The four circles of ground KSA keeps clear of grass and rocks, spent on whole launch
+    /// complexes rather than on four single pads: <see cref="Pads.Clearings"/> says why one does for
+    /// eight. Written over KSA's own answer rather than added to it, there being no room to add.
+    /// </summary>
+    private static void AfterExclusionZones(GroundClutterPlacementData __instance,
+                                            ref ClutterCubeCellGrid.ExclusionZoneArray __0)
+    {
+        try
+        {
+            if (ClutterBody?.GetValue(__instance) is not Celestial celestial) return;
+            int i = 0;
+            foreach ((double3 where, double angle) in Pads.Clearings(celestial))
+            {
+                if (i >= ClutterCubeCellGrid.MAX_LAUNCH_PAD_EXCLUSION_ZONES) break;
+                __0[i++] = new float4(float3.Pack(where), (float)angle);
+            }
+            for (; i < ClutterCubeCellGrid.MAX_LAUNCH_PAD_EXCLUSION_ZONES; i++) __0[i] = float4.Zero;
+        }
+        catch (Exception e)
+        {
+            Complain("keeping ground clutter off the extra launchpads", e);
         }
     }
 
@@ -523,7 +585,9 @@ internal static class Hooks
             // locations, which ConstraintSim.ResolveLaunchPads walks on the solver from
             // PopulateBepuStatesFromKinematic -- the method in the crash logs. It runs once a
             // launch, so it was only ever a narrow window, but it is the same list that failed the
-            // physics of every craft in the bubble when pads were taken out of it.
+            // physics of every craft in the bubble when pads were taken out of it. Still here, and
+            // not only in BeforeRenderData, for a system loaded after the one the game started on:
+            // KSA builds the planets' render data once and never comes back to it.
             Pads.LayOut();
             Sync.Settle();
         }

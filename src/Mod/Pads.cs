@@ -29,12 +29,31 @@ internal static class Pads
     /// <summary>
     /// How close neighbouring pads sit, as a multiple of the pad's own footprint.
     ///
-    /// <para>Just over one. The footprint is the clearance KSA keeps around a pad, not the concrete:
-    /// measured off a picture of the eight, the apron is about 118 m across against a footprint
-    /// radius of 108 m, so a little more than one footprint between centres leaves the aprons
-    /// nearly touching.</para>
+    /// <para>Enough that the grass a pad lays over the ground around it stops short of its
+    /// neighbour's. That disc is the widest thing a pad draws by a long way -- 81.9 m to the mesh's
+    /// rim and 82.5 m to the corners of the boxes that collide it, against 62.1 m for the circular
+    /// road and 14.9 m for the concrete -- so two of them want 165 m between centres and this
+    /// leaves them four metres apart.</para>
+    ///
+    /// <para>1.2 was read off a picture, and put the centres 130 m apart: those discs overlapped by
+    /// 35 m on every side. Nothing showed while the ground still sloped, the overlaps being buried
+    /// along with everything else on the inward side. Levelled, the discs are exactly coplanar,
+    /// their depth values are interpolated from different matrices and round against each other
+    /// pixel by pixel, and the overlap came back as a patchwork of each showing through the other,
+    /// worst close up. <see cref="Level"/> is why this number is what it is.</para>
     /// </summary>
-    private const double Spacing = 1.2;
+    private const double Spacing = 1.56;
+
+    /// <summary>
+    /// How much room the site's own levelling is given to come back down to the planet, in metres.
+    ///
+    /// <para>A site's decal holds the ground at one height over a flat core and feathers back to
+    /// whatever the planet makes of it by the decal's radius. Widening the core eats into that rim,
+    /// and a rim given no room is a berm: Kourou's decal is 250 m across, so taking its core out to
+    /// where the pads are and leaving its radius alone would drop 7.8 m over 18 m of ground. This is
+    /// the width the rim keeps before the radius itself is widened to make room for it.</para>
+    /// </summary>
+    private const double Rim = 150.0;
 
     /// <summary>What this mod's pads are called: the site's own id and a number, from 2 up.</summary>
     public const string Suffix = " MP";
@@ -247,19 +266,114 @@ internal static class Pads
     public static string Full =>
         Program.Editor is { } editor && !Room(editor) ? Chosen(editor).Site : "";
 
-    /// <summary>Forgotten when a world goes, since the next one builds its templates afresh.</summary>
-    public static void Forget()
+    /// <summary>How far this mod's pads stand from the site they ring, in metres.</summary>
+    private static double Ring(double footprint) =>
+        footprint * Spacing / (2.0 * Math.Sin(Math.PI / (PerSite - 1)));
+
+    /// <summary>
+    /// The ground under this mod's pads, levelled with the ground under the site's own.
+    ///
+    /// <para>KSA levels a launch site with a terrain decal that holds the ground at one absolute
+    /// height over a flat core and feathers back to the planet's own by the decal's radius. The core
+    /// is 85 m at the Cape and 68 m at Vandenberg, and these pads stand 150 m out: on the feather,
+    /// where some of the hillside still comes through. A pad is a rigid disc placed flush with the
+    /// ground at its own centre, so the side of it facing the site is buried and the side facing
+    /// away hangs over a drop -- 1.6 m and 2.8 m at the Cape, 5.8 m and 10.5 m at Vandenberg, where
+    /// a kitten can walk in under a pad and be stuck there. Pads on a slope also stand at different
+    /// heights from one another, the hillside under each one's centre being its own.</para>
+    ///
+    /// <para>Widening the core until the pads are inside it is the one change that answers all
+    /// three: within the core the decal's weight is exactly one, so the ground under the whole
+    /// complex is dead flat and every pad sits on it at the same height. The numbers are the site's
+    /// own and this mod's own rather than anything measured and written down here, so a change to
+    /// <see cref="Spacing"/> or <see cref="PerSite"/> carries the levelling with it.</para>
+    ///
+    /// <para>Called where the celestials exist and nothing has read the terrain yet. KSA copies a
+    /// decal's radius into the parameters the GPU reads as the planets' render data is built, and
+    /// fills that buffer once, in the planet renderer's constructor. Widened before it, every reader
+    /// agrees and nothing has to be rebuilt; widened after, the ground the physics finds and the
+    /// ground a player sees would be different ground.</para>
+    /// </summary>
+    public static void Level()
     {
-        Added.Clear();
-        _laidOutFor = null;
+        try
+        {
+            if (Universe.CurrentSystem is not { } system) return;
+            foreach (Celestial celestial in system.All.OfType<Celestial>())
+            {
+                if (celestial.BodyTemplate is not { } template) continue;
+                if (template.TerrainReference?.ProceduralModifiers?.Modifiers is not { } modifiers) continue;
+                foreach (LandmarkReference site in Sites(template))
+                {
+                    if (site.GetStaticObject() is not { } pad || pad.FootprintRadius <= 0.0) continue;
+                    // The whole complex: out to the ring, and a pad's own footprint past the far
+                    // side of it, which reaches further than anything the pad draws.
+                    double want = Ring(pad.FootprintRadius) + pad.FootprintRadius;
+                    foreach (DecalModifierReference decal in modifiers.OfType<DecalModifierReference>())
+                    {
+                        if (decal.Poi is not { } where) continue;
+                        // The decal that levels this site, found by where it is and not by what it
+                        // is called: it carries its own copy of the site's position, and KSA's two
+                        // names for the one place are not the same string.
+                        if ((where.ForwardCcf - site.ForwardCcf).Length() * celestial.MeanRadius
+                            > pad.FootprintRadius) continue;
+                        Widen(decal, want, site.Key);
+                    }
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"could not level the ground at the launch sites: {e.GetBaseException().Message}");
+        }
     }
+
+    // Absolute and never relative: the core asked for is the same every time, so a second pass over
+    // a decal already widened finds it wide enough and leaves it alone.
+    private static void Widen(DecalModifierReference decal, double core, string siteId)
+    {
+        double had = (1.0 - decal.SmoothFactor.Value) * decal.Radius.Value;
+        if (had >= core) return;
+        double radius = Math.Max(decal.Radius.Value, core + Rim);
+        decal.Radius.Value = radius;
+        decal.SmoothFactor.Value = 1.0 - core / radius;
+        Log.Info($"levelled the ground {core:F0} m out at {siteId}, from {had:F0} m, "
+                 + $"inside a decal of {radius:F0} m");
+    }
+
+    /// <summary>
+    /// The ground to keep ground clutter off at each of this celestial's launch sites: one circle
+    /// around the whole complex rather than one around every pad, as a direction and an angle.
+    ///
+    /// <para>KSA keeps four of these for a whole planet -- <c>MAX_LAUNCH_PAD_EXCLUSION_ZONES</c>, in
+    /// the clutter compute shader as much as in the struct handed to it -- and spends one on each of
+    /// the first four launchpads in the celestial's list. Earth ships five launch sites, so the
+    /// fifth has grass growing through it in a game with no mods at all, and the pads this mod adds
+    /// never stood a chance. One circle per site is not an approximation of the eight it stands in
+    /// for: a ring pad's own circle already reaches past the site's centre, so the eight together
+    /// are exactly a circle of the ring plus a pad's clearance, which is what this gives.</para>
+    /// </summary>
+    public static IEnumerable<(double3 Where, double Angle)> Clearings(Celestial celestial)
+    {
+        if (celestial.BodyTemplate is not { } template) yield break;
+        foreach (LandmarkReference site in Sites(template))
+        {
+            if (site.GetStaticObject() is not { } pad || pad.FootprintRadius <= 0.0) continue;
+            double metres = Ring(pad.FootprintRadius) + pad.FootprintRadius
+                            + LocationReference.CLUTTER_CLEARANCE_METERS;
+            yield return (site.ForwardCcf, metres / celestial.MeanRadius);
+        }
+    }
+
+    // The sites the game shipped, which are the ones this mod rings. Taken as an array because a
+    // caller may add to the list it comes from.
+    private static LandmarkReference[] Sites(CelestialTemplate template) =>
+        [.. template.Locations.OfType<LandmarkReference>().Where(l => l.IsLaunchPad && !Ours(l))];
 
     private static void Spread(Celestial celestial, CelestialTemplate template)
     {
         // The sites the game shipped, taken before anything is added to the list that is being read.
-        LandmarkReference[] sites = [.. template.Locations.OfType<LandmarkReference>()
-                                                          .Where(l => l.IsLaunchPad && !Ours(l))];
-        foreach (LandmarkReference site in sites)
+        foreach (LandmarkReference site in Sites(template))
         {
             if (site.GetStaticObject() is not { } pad || pad.FootprintRadius <= 0.0) continue;
             // A ring around the pad the game shipped, rather than rows running off one side of it.
@@ -268,7 +382,7 @@ internal static class Pads
             // that stands half buried in anything else. Seven in a ring sit 150 m from the site where
             // two rows of four threw the far one 411 m away.
             double chord = pad.FootprintRadius * Spacing;
-            double ring = chord / (2.0 * Math.Sin(Math.PI / (PerSite - 1)));
+            double ring = Ring(pad.FootprintRadius);
             double lat = site.Latitude.GetRadians();
             double lon = site.Longitude.GetRadians();
             for (int i = 1; i < PerSite; i++)
