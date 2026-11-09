@@ -9,6 +9,7 @@ Any craft syncs: rockets, rovers, kittens walking about on EVA. You see other pl
 - **Time warp is asked, not taken.** Changing the simulation speed is put to the room first, and only whoever asked can end it. A game that cannot keep up holds the speed down for everyone, so nothing runs away from the slowest machine.
 - **Hold Tab** for who is playing and their ping, **Enter** for a chat line.
 - Launchpads are shared out, so two players launching at one site do not land on top of each other.
+- **A list of servers.** The window the game opens on shows the servers it can find: how many players are on each, which world they are in, the latency, and, for one you cannot join, why — the KSA build it wants, a mod to turn on, a mod to turn off, or simply full. Pick a row to fill its address in, or type an address and connect.
 
 ### The server
 
@@ -16,11 +17,13 @@ One self-contained executable. Point it at a port and it waits; the first player
 
 It keeps the world between runs, saves periodically, and has a console: `clear` sweeps up the spent stages a shared world fills with, `reload` hands the world out again without anybody reconnecting, and `fresh` throws it away and starts over. Players can be made admins and run those commands from inside the game.
 
+Set `advertise = true` and it lists itself in the public directories, so players find it in that window instead of having to be sent an address. Off by default, because listing a server at home publishes a household's address.
+
 There is a server at **`mp.ksarmory.com`** to try it on.
 
 ### What you need
 
-Everyone in a world needs **the same KSA build**, the same mod version, and every mod the world's craft use. The server turns away anyone who differs and says what is missing, rather than letting a mismatch corrupt the world quietly.
+Everyone in a world needs **the same KSA build**, a mod new enough to speak the same protocol, and every mod the world's craft use. The server turns away anyone who differs and says what is missing, rather than letting a mismatch corrupt the world quietly.
 
 ### Honest status
 

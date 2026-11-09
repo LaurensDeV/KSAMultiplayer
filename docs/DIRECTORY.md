@@ -21,9 +21,13 @@ servers you want to vouch for, serve it, and open a pull request to add its URL 
 `directories.txt`.
 
 What you give up is registration: a server cannot announce itself to a file, so the list is whatever
-you put in it and the `players`, `world` and `latency` on each row stay whatever you last wrote. The
-mod probes every address itself before showing a row as joinable, so a stale file is slow rather
-than wrong -- it just cannot grow on its own.
+you put in it and the `players` and `system` on each row stay whatever you last wrote. The mod
+probes every address itself before showing a row as joinable, so a stale file is slow rather than
+wrong -- it just cannot grow on its own.
+
+Three things such a file still has to get right: `v` is exactly 1, the URL you publish is `https://`
+because an `http://` one is skipped without a word, and `seen` is a real timestamp -- a row with
+`seen: 0` loses every tie to a live directory carrying the same server.
 
 Run the service below when you want servers to be able to add themselves.
 
@@ -57,16 +61,21 @@ GET https://your.directory/v1/servers
 
 `v` must be 1. A reader that does not know a version ignores the whole document rather than reading
 it for the fields that happen to look familiar. `host` and `port` are the only required fields on a
-server; `seen` is seconds since 1970, or 0 from a directory that keeps no times. A client takes at
-most 250 servers from one directory.
+server; `seen` is seconds since 1970, or 0 from a directory that keeps no times. A reader takes at
+most 250 servers from one directory, stops at a megabyte and gives up after eight seconds, so a
+listing has to be small and quick rather than complete. A row with no `host`, or a port outside
+1-65535, is dropped and the rest kept; `servers` may be absent, and fields a reader does not know
+are ignored.
 
-**A static file satisfies this.** That is the whole design. A clan's three servers can be a JSON
-file on any host that serves HTTPS, and the mod cannot tell it from this service — so if you only
-want to publish a fixed list of servers you trust, you do not need to run any software at all.
+Everything past the address is a hint, and this mod reads almost none of it: `name` fills a row
+until the server answers for itself, and `seen` breaks a tie when two directories carry the same
+server. `protocol`, `ksa`, `players`, `max`, `password`, `system` and `mods` are read by nothing
+today — the mod asks every server for all of it and shows what the server said. Write them anyway
+where they are cheap, since another reader may want them, but `host`, `port` and `name` are the
+whole of what matters now.
 
-Everything past the address is a hint. The mod asks every server itself before showing it as
-joinable, and overwrites your `players`, `name`, `system` and `mods` with what the server said to
-it. Hints decide what is shown first and what is filtered out while the answers are still arriving.
+A listing is IPv4 only. The protocol's socket and every name this project resolves are IPv4, so an
+IPv6-only server cannot be listed, and a name is followed to its A records alone.
 
 ## The write half, which is optional
 
@@ -75,19 +84,34 @@ POST   https://your.directory/v1/announce     {"v": 1, "port": 50100, "host": "m
 DELETE https://your.directory/v1/announce     {"v": 1, "port": 50100, "host": "mp.example.com"}
 ```
 
-`host` may be left out, and then the server is listed at whatever address the announcement arrived
-from. Both answer:
+**Only the listing URL is ever configured; the announce URL is derived from it.** A trailing
+`/servers` is replaced with `/announce`, and anything else has `/announce` appended — so a listing
+at `https://d.example/list.json` takes announcements at `https://d.example/list.json/announce`.
+Serve yours at a path ending `/servers` unless you want them arriving underneath it.
+
+`host` is sent as `""` rather than left out when a server has no name to give, and is then listed at
+whatever address the announcement arrived from; do not tell the two apart. The `DELETE` carries a
+JSON body, which some proxies and frameworks drop — where yours does, no server can ever withdraw.
+Both answer:
 
 ```json
 {"ok": true, "seen": "45.133.178.13", "listed": false, "say": "being asked about now; it is listed once it answers"}
 ```
 
 `seen` is the address you saw it come from and `say` is read by a human in a server's log, so write
-it for one. A refusal is a 200 with `ok: false` and words in `say`, not a status code: a server
-operator needs to know *why*, and a 403 sends them to check a firewall that is fine.
+it for one.
+
+A refusal *about the server* — an address nobody can reach, nothing answering at it, the list full,
+too many already from that address — is a 200 with `ok: false` and words in `say`, never a status
+code: an operator needs to know *why*, and a 403 sends them to check a firewall that is fine. A
+request you cannot act on at all is a status code: 400 for a body that will not parse or a `v` you
+do not know, 415 for a body that is not JSON, 429 over a rate limit. Put the `say` body on a 400
+wherever you can manage one, because a sender reads any non-2xx as "not listed, reason unknown".
+`seen` is `""` when a request never got far enough for the address to matter.
 
 A server announces every 60 seconds and withdraws when it stops or when its operator turns
-advertising off.
+advertising off. A rate limit wants to leave that room and little more: this one allows 20
+announcements and 60 reads a minute from one address.
 
 ## The three rules that matter
 
@@ -116,8 +140,8 @@ announced itself within 300 s. The second condition matters because a withdrawal
 without it a server whose operator opted out stays listed for as long as it keeps answering.
 
 Refuse unreachable addresses at the announcement rather than filtering them later: loopback, private
-(10/8, 172.16/12, 192.168/16), link-local, carrier-grade NAT (100.64/10), the documentation ranges,
-and multicast and above. An operator behind CGNAT should be told that, plainly, rather than left
+(10/8, 172.16/12, 192.168/16), link-local, carrier-grade NAT (100.64/10), `0/8`, the documentation
+and benchmarking (198.18/15) ranges, and multicast and above. An operator behind CGNAT should be told that, plainly, rather than left
 wondering why nobody joins.
 
 ## Serve the list over HTTPS, never over UDP
@@ -132,17 +156,23 @@ answer. A connection that has to be established cannot be aimed at a third party
 The probe is the only check an attacker cannot forge cheaply, because passing it means actually
 running the protocol at the address claimed. Everything else is secondary, and worth having anyway:
 a per-address rate limit on both endpoints, a cap on how many servers one address may list (this one
-allows four), a cap on the list as a whole, and a withdrawal that only the announcing address may
-make.
+allows four), a cap on the list as a whole (this one, 500), and a withdrawal that only the
+announcing address may make.
 
 Turnstile and the like are no use here — they want a browser, and a heartbeat sender is a headless
 Linux process.
 
 ## Getting listed
 
-Open a pull request adding your directory to `directories.txt` in this repository. The mod and every
-advertising server read that file at startup, so adding one is a pull request and retiring one is a
-commented-out line. Neither is a release, which is the point.
+Open a pull request adding your directory to `directories.txt` in this repository. The mod re-reads
+that file every time it refreshes its list, so adding one is a pull request and retiring one is a
+commented-out line. Neither is a release, which is the point. The URL has to be `https://`; an
+`http://` line is skipped without a word.
+
+**That gets you players, not servers.** A server does not read `directories.txt`: it announces to
+the list compiled into its own build, or to whatever `directories` names in its settings. So servers
+reach your list once their operators point them at it, or once a release carries you in that
+built-in list — until then, serve a list you curate yourself.
 
 Publish an abuse address and what you will and will not list. A directory with no stated policy
 and no way to complain to it becomes an advertising board, and then the ranking becomes the
@@ -161,6 +191,10 @@ docker run -d --name ksamp-directory -p 8080:8080 \
 Pin the tag to a release rather than tracking `main`. A directory reads a welcome in the protocol
 version it was built against, so which build you run decides which servers you can list at all.
 
+It serves plain HTTP, so put TLS in front of it — any reverse proxy will do. What you submit to
+`directories.txt` has to be `https://`, and an `http://` URL is skipped by every reader without a
+word.
+
 To build it instead, from a checkout:
 
 ```bash
@@ -170,8 +204,8 @@ docker build -f deploy/Dockerfile.directory -t ksamp-directory .
 | | |
 |---|---|
 | `KSAMP_DIRECTORY_NAME` | what it calls itself on a row, so a player knows which to switch off |
-| `KSAMP_TRUST_PROXY` | networks whose `X-Forwarded-For` is believed, comma separated |
-| `ASPNETCORE_URLS` | where it listens, default `http://0.0.0.0:8080` |
+| `KSAMP_TRUST_PROXY` | networks whose `X-Forwarded-For` is believed, comma separated; the loopback and the private ranges already, which covers a proxy beside it on a host or a Docker network |
+| `ASPNETCORE_URLS` | where it listens, default `http://0.0.0.0:8080`. Keep the 8080 inside the container — the image's health check asks `127.0.0.1:8080` — and publish it elsewhere with `-p` |
 
 It needs **outbound UDP** — that is how it sees anything — and inbound HTTP and nothing else. It
 keeps nothing on disk and wants no volume: every entry is listed only while a probe answered
@@ -179,13 +213,18 @@ recently, so a restart is refilled by the next round of heartbeats and is wrong 
 interval. A database here would bring back rows for servers that stopped while it was down, which is
 the one thing a list of servers must not do.
 
-Behind a reverse proxy, set `KSAMP_TRUST_PROXY` to the proxy's network and nothing wider. The address
-an announcement arrives from is the whole of what this trusts, and `X-Forwarded-For` is a header the
-sender chooses.
+`KSAMP_TRUST_PROXY` already covers the loopback and the private ranges, which is what a proxy beside
+it on a host or a Docker network needs. Narrow it to your proxy's own network if strangers can reach
+you from one of those ranges as well. The address an announcement arrives from is the whole of what
+this trusts, and `X-Forwarded-For` is a header the sender chooses.
 
 `GET /health` answers `{"ok":true,"known":1,"listed":1,"protocol":23,"document":1}`. `known` counts
 entries and `listed` counts the ones currently in the list; the two differing is normal and is how
 many servers are announcing but not answering.
+
+There is no conformance suite for a directory of your own. The nearest things are this one's
+`/health`, `tests/RosterTests.cs` for the expiry and reachability rules, and pointing a game at your
+URL through its own `directories.json` to see whether rows appear.
 
 ## A directory is tied to one protocol version
 

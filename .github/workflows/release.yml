@@ -222,8 +222,9 @@ jobs:
           ## Playing
 
           Install [StarMap](https://github.com/StarMapLoader/StarMap), unzip \`KSAMultiplayer-*.zip\`
-          into KSA's \`mods\` folder and enable it. Load a world, get into flight, and the
-          **Multiplayer** window is at the top right.
+          into KSA's \`mods\` folder and enable it. The **PLAY MULTIPLAYER** window comes up before
+          anything else: pick a server from the list it shows, or type an address, and press
+          **CONNECT**.
 
           There is a server at **\`mp.ksarmory.com\`** to try it on.
 

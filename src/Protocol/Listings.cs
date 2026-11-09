@@ -41,7 +41,7 @@ public sealed record Listed(
 public sealed record Listing(int V, string Directory, Listed[] Servers);
 
 /// <summary>What a server sends a directory to be listed by it.</summary>
-/// <param name="Host">The name it wants listing under, empty to be listed at whatever address the directory sees this arrive from. A name is checked by being asked, not by being resolved: what matters is whether it answers, not whether it points where it claims to.</param>
+/// <param name="Host">The name it wants listing under, empty to be listed at whatever address the directory sees this arrive from. A name has to resolve to the address the announcement came from, and is asked as well: without the first a directory is a port scanner anybody may aim, and without the second it lists servers nobody can reach.</param>
 public sealed record Announcement(int V, int Port, string Host = "");
 
 /// <summary>

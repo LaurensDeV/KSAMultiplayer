@@ -8,7 +8,7 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
 
 > **Status: played, not finished.** Two games on one machine have flown in one world through it,
 > against KSA `2026.11.10.5801`, and the server and the protocol are tested headlessly besides
-> (120 tests, real UDP over loopback, a lossy line included). An 89-part rocket has been flown in a
+> (160 tests, real UDP over loopback, a lossy line included). An 89-part rocket has been flown in a
 > shared world and staged while the other game watched, which rebuilt the dropped stage as its own
 > craft. What two games across the internet do is not known.
 > See [docs/DESIGN.md](docs/DESIGN.md#what-has-not-been-tried).
@@ -17,42 +17,28 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
 
 1. Install [StarMap](https://github.com/StarMapLoader/StarMap) **0.5.3 or later**, then take
    `KSAMultiplayer-<version>.zip` from the [releases](https://github.com/LaurensDeV/KSAMultiplayer/releases), unzip it into KSA's `mods` folder and
-   enable it, as with any StarMap mod. StarMap before 0.5 hands a mod no services at all, and with
-   both installed the game will not start rather than the mod quietly not loading.
+   enable it, as with any StarMap mod. StarMap before 0.5 hands a mod no services at all, so an old
+   StarMap with this mod installed stops the game starting rather than letting the mod quietly fail
+   to load.
 2. Everyone needs **the same KSA build** and **every mod the server's world uses**. The server refuses
    anyone who differs and says what is missing.
-3. The **Multiplayer** window is the first thing the game shows, in place of KSA's configuration
-   screen (or, with that screen turned off, over the game once it has loaded), with KSA's welcome
-   held until you have joined or pressed **Play alone**, which gives you the configuration back.
-   **Connect** there asks the server which system its world is in and which mods it wants, starts
-   KSA in that system with the rest of your configuration as you last left it, and joins once the
-   game has loaded. Tick **Change settings before starting** to get KSA's configuration first, with
-   the server's system chosen, for graphics and the rest; **Start KSA** then joins. Once in a game,
-   KSA's **Mods** menu has an entry that brings the window back if you shut it.
-   The window lists the servers it can find, with how many players are on each and, for one you
-   cannot join, why -- the KSA build it wants, or a mod you have not got. Picking one fills the
-   address in; servers you have connected to before are in the list too, so you can see whether
-   anybody is on them. **Refresh** asks again. Nothing about the list is on the way in: typing an
-   address and pressing **Connect** works whether or not the list came up at all.
+3. **Join a server.** The **PLAY MULTIPLAYER** window is the first thing the game shows, in place
+   of KSA's configuration screen (or, with that screen turned off, over the game once it has
+   loaded), with KSA's welcome held until you have joined or pressed **PLAY ALONE**, which hands the
+   configuration back. Pick a server from the list it shows, or type an address -- a host on its
+   own, or `host:port` -- then put in your name and the password if there is one, and press
+   **CONNECT**. There is a server at **`mp.ksarmory.com`** to try it on.
 
-   What the list costs you: the mod fetches `directories.txt` from this repository and then each
-   directory's list over HTTPS, and asks every server on it the same question your game asks before
-   joining one. So the operators of the servers listed see a request from your address, as they
-   would if you typed the address yourself -- a few dozen of them rather than one. Nothing about
-   you goes with it: no name, no account, nothing but the request. Put a `directories.json` beside
-   your settings in `Documents/KSAMultiplayer` to use different directories, or none:
-
-   ```json
-   { "use": ["https://a.directory.example/v1/servers"] }
-   ```
-
-   `use` replaces the list, `add` extends it, and `remove` drops one by URL.
-
-   Enter the server's address (a host on its own, or `host:port`), your name and the
-   password if there is one, and press **Connect**. There is a server at **`mp.ksarmory.com`** to
-   try it on. The name starts as something like `Kitten 4821` rather than your Windows account name,
-   so nothing of yours reaches a server's player list unless you put it there; change it to whatever
+   Your name starts as something like `Kitten 4821` rather than your Windows account name, so
+   nothing of yours reaches a server's player list unless you put it there. Change it to whatever
    you want to be called and it is kept for next time.
+
+   **CONNECT** asks the server which system its world is in and which mods it wants, starts KSA in
+   that system with the rest of your configuration as you last left it, and joins once the game has
+   loaded. Tick **Display settings before starting** for KSA's configuration screen first, with the
+   server's system already chosen, and KSA's own **Start** then joins. **BACK TO MULTIPLAYER** in
+   that screen's footer brings this window back, as does an entry in KSA's **Mods** menu once you
+   are in a game.
 4. Connecting **replaces your open world with the server's**: save first. If the server has no world
    yet, yours becomes the server's world instead, and nothing is replaced: joined straight from
    the start, that is the new game KSA opens on. A game set to start in sandbox, at no craft, waits
@@ -75,43 +61,91 @@ Once you're in:
   seconds to catch up.
 - **Chat** from the window.
 
-Two craft with the same name can't both be seen: the panel tells you to rename yours if that happens.
+Two craft with the same name are still two craft: the server gives the second one a name of its own,
+your game goes on calling it what you called it, and the player list says *known to the others as*
+with the name everybody else sees. Two players with the same name are told apart the same way.
+
+### The server list
+
+The window lists every server it can find, a row each:
+
+| Column | |
+| --- | --- |
+| **Server** | its name, `(password)` where it wants one, and a marker where this game cannot join -- `[wrong KSA build]`, `[turn mods on]`, `[turn mods off]`, `[full]`, `[wrong version]`, `[no answer]`, or `[recent]` for an address you have been to before |
+| **Players** | how many are on it, against the most it takes |
+| **World** | the system its world is in, or that it has none yet |
+| **Latency** | the round trip, measured by the asking |
+
+Servers with players on them come first, then the ones you could join. **REFRESH** asks again, and
+servers you have connected to before are in the list whether or not a directory carries them, so you
+can see who is on them. Picking a row fills the address in; the **Password** field becomes the words
+*none needed* for a server that has said it wants none, and **CONNECT** is greyed for a row this game
+would be refused from, with the reason beside it.
+
+Nothing about the list is on the way in: typing an address and pressing **CONNECT** works whether or
+not the list ever came up. The list is in this window only -- the **Multiplayer** panel inside a game
+takes an address and not a list, so changing servers from there is disconnect, type, connect.
+
+What the list costs you: the mod fetches `directories.txt` from this repository and then each
+directory's list over HTTPS, and asks every server on it the same question your game asks before
+joining one. So the operators of the servers listed see a request from your address, as they would if
+you typed the address yourself -- a few dozen of them rather than one. Nothing about you goes with
+it: no name, no account, nothing but the request.
+
+Put a `directories.json` beside your settings in `Documents/KSAMultiplayer` to use different
+directories:
+
+```json
+{ "use": ["https://a.directory.example/v1/servers"] }
+```
+
+`use` replaces the list, `add` extends it, and `remove` drops one by URL. An empty `use` falls back
+to the built-in list rather than standing for none, so going without means `remove`-ing the ones you
+have.
 
 ## Running a server
 
 The server is a single self-contained file, and runs on a machine with no game on it. Take
 `ksamp-server-linux-x64.tar.gz`, `ksamp-server-linux-arm64.tar.gz` or `ksamp-server-win-x64.zip`
-from the [releases](https://github.com/LaurensDeV/KSAMultiplayer/releases), or build it on any machine with the .NET 10 SDK; it needs no KSA files:
-
-```bash
-./tools/publish-server.sh              # linux-x64
-```
-
-```bash
-./tools/publish-server.sh linux-arm64  # a Raspberry Pi or an ARM VPS
-```
-
-```bash
-./tools/publish-server.sh win-x64      # a Windows box, including the one you play on
-```
-
-Copy `dist/ksamp-server-linux-x64/ksamp-server` to the server and run it:
+from the [releases](https://github.com/LaurensDeV/KSAMultiplayer/releases), unpack it on the machine that is to run it, and start it:
 
 ```bash
 ./ksamp-server --name "Moon base" --password secret
 ```
 
+To build it instead, on any machine with the .NET 10 SDK and no KSA files on it:
+
+```bash
+./tools/publish-server.sh              # linux-x64
+./tools/publish-server.sh linux-arm64  # a Raspberry Pi or an ARM VPS
+./tools/publish-server.sh win-x64      # a Windows box, including the one you play on
+```
+
+That writes `dist/ksamp-server-<rid>/ksamp-server`; copy it across and run it as above.
+
 Open **UDP port 50100** in the firewall (and on the router, if the server is at home). Players connect
 to the server's address.
 
-On another port, players would have to type `host:50101` -- unless the zone holds an SRV record,
-which the mod reads when no port is typed:
+### Giving it a world
 
-    _ksamp._udp.mpcars.example.com.  300  IN  SRV  0 0 50101 mpcars.example.com.
+- **Let the first player bring one.** With no world, the first player to connect gives the server
+  theirs.
+- **Or start empty.** Set `empty-world` to a system -- `SolLite` or `Sol` -- and the server starts
+  with an empty world of its own, so nobody has to hand one over and the first player joins into a
+  world that is already there. These are saves KSA itself wrote, carried in the server; it cannot
+  make one, since a world is KSA's own format and the server has no game. They pin the system a
+  world started from them is in, and go stale when KSA's save format moves on.
 
-Keep an address record on the name beside it, both so the name resolves for everything that does not
-ask about SRV and so a player whose resolver drops the record can still get in by typing the port.
-`infra/` makes both from one line of configuration.
+  A world the server carries records **no KSA build**, so unlike a world a player hands over it
+  checks nobody's: set `ksa-build` as well if everyone should be on one build. Players still have to
+  agree with each other, since a craft is passed between games as KSA's own serialisation of one.
+- **Or copy a save in.** Copy a save folder from `Documents/My Games/Kitten Space Agency/saves/<name>`
+  (or a zip of it) to the server and start with `--world <path>`.
+
+The server keeps the world in `--data` (default `./data`) and carries on from it after a restart. Every
+five minutes, and whenever someone joins a world that's more than 30 seconds old, it asks the player who
+has been in longest for a fresh save, so a player joining starts close to now. Universe time stops while
+nobody is connected, unless `--keep-time` is given.
 
 ### Letting players find it
 
@@ -139,30 +173,21 @@ A server sharing a machine with a directory has to give a name, and is told so. 
 never gets out to the internet and back, so what the directory sees is an address inside the
 machine, and the name is the only thing left to go on.
 
-`--directories` points somewhere else -- a group's own directory, or one for testing. The default is
-the list in `directories.txt`, fetched at startup and remembered, so a directory can be retired
-without anybody updating anything. `docs/DIRECTORY.md` is what running one takes.
+`--directories` points somewhere else -- a group's own directory, or one for testing. With none
+given, a server announces to the list compiled into its own build. It does not read
+`directories.txt`: that file is what the *mod* reads, so a directory added there becomes visible to
+players, and gets servers as their operators point them at it. `docs/DIRECTORY.md` is what running
+one takes.
 
-### Giving it a world
+On another port, players have to type `host:50101` -- unless the zone holds an SRV record, which the
+mod reads when no port is typed:
 
-- **Let the first player bring one.** With no world, the first player to connect gives the server
-  theirs.
-- **Or start empty.** Set `empty-world` to a system -- `SolLite` or `Sol` -- and the server starts
-  with an empty world of its own, so nobody has to hand one over and the first player joins into a
-  world that is already there. These are saves KSA itself wrote, carried in the server; it cannot
-  make one, since a world is KSA's own format and the server has no game. They pin the system a
-  world started from them is in, and go stale when KSA's save format moves on.
+    _ksamp._udp.moon.example.com.  300  IN  SRV  0 0 50101 moon.example.com.
 
-  A world the server carries records **no KSA build**, so unlike a world a player hands over it
-  checks nobody's: set `ksa-build` as well if everyone should be on one build. Players still have to
-  agree with each other, since a craft is passed between games as KSA's own serialisation of one.
-- **Or copy a save in.** Copy a save folder from `Documents/My Games/Kitten Space Agency/saves/<name>`
-  (or a zip of it) to the server and start with `--world <path>`.
-
-The server keeps the world in `--data` (default `./data`) and carries on from it after a restart. Every
-five minutes, and whenever someone joins a world that's more than 30 seconds old, it asks the player who
-has been in longest for a fresh save, so a player joining starts close to now. Universe time stops while
-nobody is connected, unless `--keep-time` is given.
+Keep an address record on the name beside it, both so the name resolves for everything that does not
+ask about SRV and so a player whose resolver drops the record can still get in by typing the port.
+`infra/` makes both from one line of configuration. Advertising carries the port for you, so this is
+for a server players reach by name without one.
 
 ### Options
 
@@ -206,9 +231,9 @@ like `quit`.
 | `--advertise-as` | `KSAMP_ADVERTISE_AS` | the address seen | the hostname to be listed under |
 | `--directories` | `KSAMP_DIRECTORIES` | the built-in list | where to announce, separated by commas |
 
-Commands typed into the server's console: `players`, `say <text>`, `kick <name> [why]`,
-`op <name>`, `deop <name>`, `admins`, `clear [name]`, `reload` (or `reset`), `save`, `status`,
-`version`, `fresh`, `set [key value]`, `settings`, `quit`.
+Commands typed into the server's console: `help`, `players`, `say <text>`, `kick <name> [why]`, `op <name>`, `deop <name>`, `admins`,
+`clear [name]`, `reload` (or `reset`), `save`, `status`, `version`, `fresh`, `set [key value]`,
+`settings`, `quit`.
 
 `fresh` throws the world away and puts an empty one in its place -- the one `empty-world` names:
 every craft gone, universe time started over, and everybody handed the new world where they stand.
@@ -234,12 +259,19 @@ world they swept themselves, so clearing costs no loading screen and leaves the 
 to everybody again, and each game loads it and comes back in a few seconds. Nobody reconnects, and
 nobody loses what they are flying.
 
+It is also the only way universe time is ever put back, which is why it is a command of its own
+rather than something `clear` does on the way past. A game's own time comes down by loading a world
+and by no other means -- a game more than three seconds ahead of the server stops dead until the
+server catches up -- and while they are all loading there is nobody in the world, so the server's
+clock returns to the world's own time at the same moment theirs do.
+
 ### Admins
 
 An admin types those same commands into the game's chat with a `/` in front -- `/clear Rocket_*`,
-`/reload`, `/players` -- and the answer comes back in their own chat. `quit` is the console's alone.
+`/reload`, `/players` -- and the answer comes back in their own chat.
 A line behind a `/` is said to nobody, so a player who types one where they are no admin has told the
-room nothing and is told so themselves.
+room nothing and is told so themselves. `quit`, `fresh`, `settings` and `set` are the console's
+alone, each saying so when an admin tries it.
 
 Who is one starts at the console, since nobody is one on a server that has just come up:
 
@@ -258,30 +290,33 @@ to take an admin away, not enough to become one. A player has to be connected to
 is said once, to a game, and never stored anywhere it could be said again -- and the name it is
 remembered under follows whoever last joined with it, so `deop` names the player you can see.
 
-`reload` is also the only way universe time is ever put back, which is why it is a command of its
-own rather than something `clear` does on the way past. A game's own
-time comes down by loading a world and by no other means -- a game more than three seconds ahead of
-the server stops dead until the server catches up -- and while they are all loading there is nobody
-in the world, so the server's clock returns to the world's own time at the same moment theirs do.
-
 ### As a service
 
-[`deploy/ksamp-server.service`](deploy/ksamp-server.service) is a systemd unit with the install steps
-in its header. [`deploy/Dockerfile`](deploy/Dockerfile) builds a container from the repository root:
+Every release publishes a container image, so there is nothing to build or clone:
+
+```bash
+docker run -dit --name ksamp -p 50100:50100/udp -v ksamp-data:/data ghcr.io/laurensdev/ksamp-server:v0.16.0
+```
+
+A release's notes carry the same line pinned to that build's digest, which is what to run on a
+machine you care about: a tag moves and a digest does not.
+[`deploy/Dockerfile`](deploy/Dockerfile) builds one yourself from the repository root, and
+[`deploy/ksamp-server.service`](deploy/ksamp-server.service) is a systemd unit with the install
+steps in its header:
 
 ```bash
 docker build -f deploy/Dockerfile -t ksamp-server .
 ```
 
-```bash
-docker run -dit --name ksamp -p 50100:50100/udp -v ksamp-data:/data ksamp-server
-```
-
 Its settings file is `/data/ksamp-server.toml`, in the volume, and the systemd unit's is
-`/var/lib/ksamp/ksamp-server.toml`: beside the executable is read-only in both. Set the name and
-the password in there, or with `set` at the console. Neither is given as `-e KSAMP_NAME` here, nor
-as an `Environment=` line in the unit, because a variable overrides the file for good: the console
-would write a new name into the file and the old one would go on being the one players see.
+`/var/lib/ksamp/ksamp-server.toml`: beside the executable is read-only in both. Set the name and the
+password in there, or with `set` at the console.
+
+A `-e KSAMP_NAME`, or an `Environment=` line in the unit, wins over the file for good -- `set name`
+at the console then writes a name into the file that players never see. So put it in the environment
+where the machine's configuration is the source of truth and the console is not meant to override it,
+which is what `infra/` does for `mp.ksarmory.com`, and in the file where you want to change it from
+the console.
 
 The commands above are read from standard input, so a container wants `-it` to have a console at
 all: `docker attach ksamp` then types into it, and Ctrl+P Ctrl+Q leaves it running. Started with
@@ -292,7 +327,7 @@ be reached -- `tmux` or `screen` is the way to keep one for a service.
 
 | Command | |
 | --- | --- |
-| `./tools/test.sh` | the protocol and the server over loopback; needs nothing of KSA |
+| `./tools/test.sh` | the protocol, the server and the directory over loopback; needs nothing of KSA |
 | `./tools/build.sh` | the server and the mod; the mod needs KSA's assemblies, found by `Directory.Build.props` (set `KSA_DLL_DIR`) |
 | `./tools/publish-server.sh [rid]` | the server as one self-contained executable |
 | `./tools/package.sh` | the mod as a player installs it, `dist/KSAMultiplayer-<version>.zip` |
@@ -306,12 +341,15 @@ be reached -- `tmux` or `screen` is the way to keep one for a service.
 | --- | --- |
 | `src/Protocol/` | what the server and the mod both speak: the wire format, transfers, the clocks, a client session. Nothing of KSA |
 | `src/Server/` | the dedicated server: `GameServer`, the world kept on disk, and the console program |
+| `src/Directory/` | the directory service: the roster, the probe that checks an announcement, the HTTP endpoints. Nothing of KSA |
 | `src/Mod/` | the StarMap mod: `Sync` runs the session each frame, `World` is every contact with KSA, `Hooks` the patches, `Panel` the window |
 | `tests/` | the protocol and the server driven over loopback |
 | `tools/ksa-mcp/` | commands into a running game through the mod's bridge, for driving a test without a hand on the keyboard |
 | `deploy/` | a systemd unit and a Dockerfile |
 | `infra/` | `mp.ksarmory.com` and the server behind it, as OpenTofu |
 | `docs/DESIGN.md` | how it works, and what it cannot do yet |
+| `docs/DIRECTORY.md` | what a directory answers, and what running one takes |
+| `docs/SERVER-BROWSER.md` | the research the server list came out of |
 
 ## Thanks
 

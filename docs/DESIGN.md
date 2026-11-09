@@ -10,13 +10,21 @@ server runs no world at all, which is why it needs no game and runs anywhere .NE
   game A ── UDP ──┐                      ┌── UDP ── game C
                   ├── ksamp-server ──────┤
   game B ── UDP ──┘  (no KSA, no world)  └── ...
+
+  game A ── HTTPS ── ksamp-directory ── UDP ─> any server, to check that it answers
 ```
 
 - **`src/Protocol`** is all both sides share: `Wire` (the datagrams), `Link` (anything too big for one),
-  `UniverseClock`, `ClockFollow` and `Track` (time), `Udp` (a socket read on its own thread) and `Client`
-  (a game's end of it). It has nothing of KSA, so the tests drive a real server and real clients with it.
-  The mod compiles these files into its own DLL, so a player installs one assembly.
+  `UniverseClock`, `ClockFollow` and `Track` (time), `Udp` (a socket read on its own thread), `Client`
+  (a game's end of it), `Srv` (the record that carries a port), and for the server list `Probes` (one
+  socket asking many addresses at once), `Listings` (what a directory answers) and `ServerFacts`
+  (what a server said of itself). It has nothing of KSA, so the tests drive a real server and real
+  clients with it. The mod compiles these files into its own DLL, so a player installs one assembly.
 - **`src/Server`** is `GameServer` and a console program round it.
+- **`src/Directory`** is the list of servers the mod's browser reads: `Roster` (who is listed, and
+  for how long), `Watch` (the probe that checks an announcement before believing a word of it), and
+  an HTTP program round them. Nothing of KSA and nothing of the game server either -- it runs on its
+  own machine or none, and a world needs no directory. `docs/DIRECTORY.md` is the specification.
 - **`src/Mod`** is the StarMap mod. `World` is every call into KSA; `Sync` is what a game does each frame;
   `Hooks` are the Harmony prefixes; `Panel` is the window. `Bridge` reads commands from a folder and
   answers in another, so the tools can drive a game; only a developer's install starts it.
@@ -529,33 +537,59 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
 
 - **The server browser.** Seen in a game 2026-11-09, against the real directory at
   `servers.ksarmory.com`. The window listed `mp.ksarmory.com` from the directory and `127.0.0.1`
-  from this player's own remembered addresses, probed both from one socket, and drew the second
-  greyed with `protocol 22, you have 23` -- a genuine mismatch, since that was a server left
-  running from an earlier build. Picking a row filled the address field. The mod's log, from a
-  start at 15:32:46: `1 of 1 directories answered (ksarmory), 1 servers listed, 1 of this player's
-  own`, then 45 ms later `1 of 2 can be joined`. The whole of it -- fetching the list of
-  directories, reading the directory, merging, resolving, probing and judging -- took under a
-  second from the mod loading, on a window that is drawn before KSA has a universe.
+  from this player's own remembered addresses, probed both from one socket, and marked the second
+  `[wrong version]` -- a genuine mismatch, since that was a server left running from an earlier
+  build, with the whole of it in the log as `protocol 22, you have 23`. The mod's log, from a start
+  at 15:32:46: `1 of 1 directories answered (ksarmory), 1 servers listed, 1 of this player's own`,
+  then 45 ms later `1 of 2 can be joined`. The whole of it -- fetching the list of directories,
+  reading the directory, merging, resolving, probing and judging -- took under a second from the mod
+  loading, on a window drawn before KSA has a universe.
+
+  **Joining from a row has been seen too.** A row picked, `CONNECT` pressed, the server's world
+  handed over and loaded, and a craft launched into it with its definition relayed. That is the
+  whole path the window exists for, and it carries `Wire.Version` 23 end to end: the cookie welcome
+  now holds the player count, the most players, a flags byte for whether a password is wanted and
+  the KSA build the world wants, about twenty bytes that take the answer from roughly 450 to 470
+  against a 140-byte hello -- an amplification factor of about 3.4 rather than 3.2.
+
+  `docs/DIRECTORY.md` is what a directory answers and `docs/SERVER-BROWSER.md` is the research the
+  design came out of. What follows is only what watching it taught.
 
   It took two tries to look right. At 440-560 px wide and 460 tall, which is the shape KSA's own
   configuration is, the third column cut every reason in half and the address field sat below the
   bottom edge -- the one control that has to work when nothing else does. A table wants width and a
-  column of labelled fields wants none, and the window was built for the second. It is 640-920 wide
-  and 640 tall now, both text columns stretch, and the rows that repeated the server's name, world
-  and mods under the fields are drawn only for an address that is not already a row above.
+  column of labelled fields wants none, and the window had been built for the second.
 
-  A row also says the round trip to the server, which cost nothing to know: the probe is a question
-  and its answer, so the time between them was already being measured and simply not written down.
-  It is taken from the hello that was answered rather than the first one sent, so a server that
-  needed asking twice is not charged for the lost datagram.
+  The shape it settled on is Beik's, and it is a different answer rather than a wider version of the
+  same one: 820-1180 px against 0.62 of the screen, up to 900 tall, the list filling a scrolling box
+  of its own, and beneath it two blocks splitting *what you are* from *where you are going* -- the
+  nickname and the start-settings box on the left, the address, the password and `CONNECT` on the
+  right. `PLAY ALONE` sits in the titlebar, away from the yellow button a player actually wants, and
+  `BACK TO MULTIPLAYER` in KSA's own configuration footer is the way back from it.
 
-  The rows under the fields that say what a server is came back after that, for a server in the
-  list as well as one typed. Taking them away took the mod list with them, and the list has no room
-  for a mod list -- which is the one thing on the window a player has to act on *before* KSA
-  starts, since it reads its own mods once and a player told after a world has loaded is a player
-  who has to restart. They are drawn from the row's own answer now rather than from a second probe
-  of a server this game has just probed. The password field is greyed where a server has said it
-  wants none, which it has said in every welcome since protocol 23.
+  **Whether this game can join a server is the state of a row, not a value in a column.** The marker
+  beside the name carries it -- `[wrong KSA build]`, `[turn mods on]`, `[turn mods off]`, `[full]`,
+  `[wrong version]`, `[no answer]`, `[recent]` -- and `CONNECT` is greyed, with the reason beside
+  it, for a row this game would be refused from. Rows were dimmed for this before there was a
+  marker, and dimming fought the colour ImGui fills a row with when it is chosen or merely under the
+  pointer, so a row could disappear as the mouse crossed it.
+
+  A row also says the round trip, which cost nothing to know: the probe is a question and its
+  answer, so the time between them was already being measured and simply not written down. It is
+  taken from the hello that was answered rather than the first one sent, so a server that needed
+  asking twice is not charged for the lost datagram.
+
+  A row carries what a server said of itself rather than what a directory claimed of it, which is
+  why one server reached through two directories collapses onto the address that answered. The
+  password field is replaced by the words *none needed* where a server has said it wants none, which
+  it has said in every welcome since protocol 23 -- an empty box a player cannot type in looks far
+  too much like an empty box they have not typed in yet. Servers with players on them sort first,
+  then the ones that can be joined.
+
+  The mod list under the fields is the one thing here a player has to act on *before* KSA starts,
+  since KSA reads its own mods once and a player told after a world has loaded is a player who has
+  to restart. It is drawn from the row's own answer rather than from a second probe of a server this
+  game has just finished probing.
 
   One fault worth recording because the screen would never have shown it: a row still being looked
   up in DNS is in no state at all -- not answered, not given up on, and not among the probes
@@ -563,33 +597,33 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   to being asked, and said `0 of 2` with one row already good. Names being resolved are counted as
   outstanding now.
 
-  The columns are headed, and carry the count of servers on the first of them: `Servers (2)`,
-  `Players`, `World`, `Latency`. Latency sits last because it is the least of what decides whether
-  to join -- the build, the mods and whether anybody is on it all come first -- and that is where
-  every server browser worth copying puts it. The header's id is held apart from its text with a
-  `###`, since a count that changes as servers answer would otherwise be a new column each time.
+  The columns are headed `Server`, `Players`, `World` and `Latency`, and the count of what can be
+  joined runs along the box's floor beside how many directories answered, rather than inside a
+  heading where it would change a column's identity every time a server replied. Latency sits last
+  because it is the least of what decides whether to join -- the build, the mods and whether anybody
+  is on it all come first -- and that is where every server browser worth copying puts it.
 
-  **What has not been seen is joining from it.** The row was picked and the address filled, and
-  nothing past that was pressed.
+  **A label that says the opposite of its meaning was the fault that kept coming back.** `Mods (1)`
+  beside "1 to turn off" reads as *the server wants one*. "Extra mods" was read as mods to get
+  rather than mods to drop. Each time the fix was the same: put a number next to the thing it counts,
+  and let the label say only what the row is about.
 
 ## What has not been tried
 
-- **`Wire.Version` 23.** The cookie welcome now carries the player count, the most players, a flags
-  byte for whether a password is wanted, and the KSA build the world wants -- about twenty bytes,
-  taking that answer from roughly 450 to 470 against a 140-byte hello, so its amplification factor
-  goes from about 3.2 to 3.4. Round-tripped in the tests and read back off a real server over
-  loopback. Not seen between a game and a server.
-- **A server listing itself.** `advertise` is off by default, and a server that is advertising says
-  every sixty seconds that it is still there and withdraws when it stops or when the setting goes
-  back to `false`. What a directory answers goes into the log whatever it says, including why a
-  server was not listed. Never run against a directory on another machine, so what has not been
-  seen is the case that matters most: a server whose port is closed or forwarded wrongly being told
-  so in terms its operator acts on.
-- **The directory on the machine that runs the world.** `infra/server/directory.tf` makes the
-  container, and nothing in this repository can finish it: the hostname and the Caddy site block
-  belong to the KSArmory repository, which owns this machine's reverse proxy. Neither has been
-  applied, so `servers.ksarmory.com` does not exist yet and the built-in directory list points at
-  nothing.
+- **A server being told its port is shut.** `advertise` is off by default, and a server that is
+  advertising says every sixty seconds that it is still there and withdraws when it stops or when
+  the setting goes back to `false`. That much has been watched end to end: `mp.ksarmory.com`
+  announces to `servers.ksarmory.com` on another machine and is listed there only once a probe
+  reached it, and what a directory answers goes into the log whatever it says. What has not been
+  seen is the case that matters most to somebody standing a server up -- a port closed or forwarded
+  wrongly, and an operator reading the refusal and acting on it.
+- **A directory somebody else runs.** `servers.ksarmory.com` is deployed and listing, and the split
+  it needed holds: this repository owns the container, the KSArmory repository owns the hostname and
+  the Caddy site block in front of it. What the whole design turns on and nobody has done is a
+  second directory, on different hardware and under a different person -- which is the case that
+  decides whether retiring this one ever costs a player anything. A server does not even read
+  `directories.txt` today: it announces to the list compiled into its own build, so a new directory
+  reaches players by that file and reaches servers only as their operators point them at it.
 - **Grass and rocks kept off the extra launchpads.** KSA keeps four circles of ground clear of
   ground clutter for a whole planet -- the cap is in the clutter compute shader as much as in the
   struct handed to it, so a mod cannot raise it -- and spends one on each of the first four
@@ -649,9 +683,12 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
 - **Two players at one launch site, both shedding pieces.** A name says what a craft came off, so
   the pieces go to the right player wherever they are standing; what is untested is the case the
   distance rule used to get wrong, which is the one that put another player's debris on the wire.
-- **Two games across the internet.** Both games and the server were on one machine. WSL in its default
-  NAT mode cannot be reached from a Windows game at all, which is why `two-games.sh` publishes a
-  Windows server unless WSL is in mirrored mode.
+- **Two games on different machines.** The *server* has been remote -- `mp.ksarmory.com` on a VPS,
+  reached across the internet, with a craft described to two other players in its world -- so that
+  path is exercised. What has not happened is two games behind two different connections, where each
+  player's own line, NAT and jitter are in play rather than one machine's loopback. WSL in its
+  default NAT mode cannot be reached from a Windows game at all, which is why `two-games.sh`
+  publishes a Windows server unless WSL is in mirrored mode.
 - **A puppet's engines where this game is stepping the craft.** The plume the mod writes for a craft
   out of physics has been watched; the one KSA draws for a puppet close enough to be in this game's
   own physics has not, so the rule that hands that case back to KSA is read off the source alone.

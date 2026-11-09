@@ -1,12 +1,16 @@
-# Directories of KSA Multiplayer servers, read at startup by the mod and by every server that
-# advertises itself. One URL to a line; a line starting with # is ignored.
+# Directories of KSA Multiplayer servers, read by the mod every time it refreshes its list. One URL
+# to a line; a line starting with # is ignored, and a line that is not https:// is skipped silently.
 #
 # This file is here rather than in a build because a list compiled into one cannot be fixed without
 # shipping another. Retiring a directory is a commented-out line here and adding one is a pull
 # request, and neither is a release.
 #
-# A directory answers GET <url> with a listing and takes announcements at the sibling /announce.
-# docs/DIRECTORY.md is the whole specification; it is short on purpose, so that standing one up is
-# an afternoon rather than a project.
+# That holds for players. A server does not read this file: it announces to the list compiled into
+# its own build, or to whatever `directories` names in its settings. So a new directory becomes
+# readable here, and gets servers only as their operators point them at it.
+#
+# A directory answers GET <url> with a listing, and takes announcements at /announce in place of a
+# trailing /servers. docs/DIRECTORY.md is the whole specification; it is short on purpose, so that
+# standing one up is an afternoon rather than a project.
 
 https://servers.ksarmory.com/v1/servers

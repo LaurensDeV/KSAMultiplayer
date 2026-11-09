@@ -1,8 +1,10 @@
 # A server browser
 
-A plan, not a description: none of this is built. It is written down because the research behind the
-decisions is worth more than the decisions, and because three of the four things that killed the
-comparable projects are design choices made on the first day.
+A record, not a plan: this is the research the built thing came out of, kept because the research
+behind the decisions is worth more than the decisions, and because three of the four things that
+killed the comparable projects are design choices made on the first day.
+`docs/DIRECTORY.md` is the specification as it now stands, and `docs/DESIGN.md` says what has been
+seen in a game. Where this file and those two disagree, they are right and this one is history.
 
 ## What a player gets
 
@@ -25,13 +27,7 @@ The read side is deliberately dumb enough that **a static file is a valid implem
 
     GET https://<directory>/v1/servers
 
-```json
-{ "v": 1, "directory": "ksarmory",
-  "servers": [ { "host": "mp.ksarmory.com", "port": 50100, "name": "KSArmory",
-                 "protocol": 23, "ksa": "2026.11.10.5801", "players": 3, "max": 16,
-                 "password": false, "system": "Sol", "mods": "...",
-                 "seen": 1794233842 } ] }
-```
+`docs/DIRECTORY.md` carries the document itself and is the copy to keep true.
 
 So a directory can be this project's VPS with live heartbeats, or a clan's three servers in a
 GitHub Pages repo, or a file on someone's Caddy. The client cannot tell, and does not need to.
@@ -143,8 +139,10 @@ Valheim's equivalent boots fine and simply never prints a join code.
 So the answer to an announce carries what the directory observed and whether it listed the server,
 and the server logs it in words:
 
-    the directory at servers.ksarmory.com could not reach this server at 86.82.x.x:50100:
-    players will not be able to connect
+    not listed at https://servers.ksarmory.com/v1/servers: nothing answered at 86.82.x.x:50100:
+    check that the UDP port is open on the firewall and forwarded on the router
+
+(The wording as built; this file's first draft said it differently and the intent is the same.)
 
 ## The bootstrap list must be data, not code
 
@@ -159,8 +157,11 @@ to copy exactly.
 
 Three sources, unioned:
 
-1. `directories.txt` in this repository, fetched over HTTPS, refreshed every 15 minutes, with the
-   last good copy cached on disk. Commenting out a line is a sufficient fix for a dead directory.
+1. `directories.txt` in this repository, fetched over HTTPS, with the last good copy cached on disk
+   in `directories-seen.txt`. Commenting out a line is a sufficient fix for a dead directory *for
+   players*; a server announces to the list compiled into its build and reads this file never, which
+   the plan did not foresee. As built the list is re-read whenever it has been more than a minute,
+   and only while the window is open, rather than on a 15-minute timer.
 2. `Documents/KSAMultiplayer/directories.json`, beside the `tokens.json` already kept there, so a
    player can add a clan's directory or strike one out.
 3. A compiled-in default, as the last resort only.
@@ -246,9 +247,10 @@ rather than an absent one.
 
 Probe-before-list is the defence that matters, because answering the game's own protocol at the
 address you claim is the one thing an attacker cannot forge cheaply. Everything else is secondary:
-a per-source-IP limit on both endpoints, a cap on new registrations per address per day, and a deny
-list fetched from the repository and applied before a request is handled -- Luna's, which is free
-and reviewable by pull request.
+a per-source-IP limit on both endpoints, a cap on how many servers one address may list, and a cap
+on the list as a whole. Neither the per-day registration cap nor the repository-backed deny list
+proposed here was built: what shipped is four concurrent entries per address, 500 in all, and
+`docs/DIRECTORY.md`'s Abuse section is the honest account of the defences that exist.
 
 Refuse at registration rather than storing and filtering later: loopback, RFC1918, link-local,
 CGNAT (100.64/10), multicast.
@@ -272,23 +274,24 @@ of it is already known to the server and already assembled for the console's `st
 | players | `U8` | the row is half a row without it |
 | max players | `U8` | leaks today only in the full-server refusal text |
 | flags | `U8` | password required, and room for the next one |
-| KSA build | `Text(24)` | the compatibility axis a player cannot otherwise see |
+| KSA build | `Text(64)` | the compatibility axis a player cannot otherwise see |
 
 About twenty bytes, taking the cookie welcome from ~450 to ~470 against a ~140-byte hello, so the
 amplification factor goes from roughly 3.2 to 3.4. Small, but it belongs in the comment that sets
 the cap rather than slipping past it.
 
-`Wire.Version` 22 -> 23. Everybody updates together, so this is worth batching with any other
-protocol change that is waiting.
+`Wire.Version` 22 -> 23, which is done. Everybody updates together, so it was worth batching with
+any other protocol change that was waiting.
 
 ## Probing many servers at once
 
 `Client` opens a UDP socket *and* starts a keepalive thread in its constructor, and `Sync` holds one
 probe at a time. Pointing a browser at thirty rows that way is thirty sockets and thirty threads.
 
-So: one socket, fan the hellos out, collect answers by source address, a one-second budget, no
-keepalive. New, small, belongs in `src/Protocol`, and testable over loopback by `tools/test.sh`
-without KSA.
+So: one socket, fan the hellos out, collect answers by source address, a budget, no keepalive. New,
+small, belongs in `src/Protocol`, and testable over loopback by `tools/test.sh` without KSA. Built
+as `src/Protocol/Probes.cs`, which re-asks every 0.4 s and gives up after 2 s rather than the one
+second guessed at here.
 
 ## Drawing it
 
@@ -297,9 +300,10 @@ pays off here: `ConsoleStyle.BeginBody()` is an `ImGui.BeginChild` with KSA's sc
 pushed, so **a long list scrolls for free and looks native**. `ConsoleWidgets` has a
 `(label, id, size)` button overload, which is what a per-row JOIN button needs for unique ids.
 
-Use `ImGui.BeginTable`, not `ImGuiHelper.BeginRegion`: a region sizes its label column to the region
+Use `ImGui.BeginTable`, not `ImGuiHelper.BeginRegion` -- which is what was built, and the in-game
+Join box is now the only `BeginRegion` left. A region sizes its label column to the region
 and clips anything longer than a word, which already ate "Change settings before starting" down to
-"Settings fir". No `BeginTable` exists anywhere in the mod yet.
+"Settings fir".
 
 Fetch directories off the frame thread and poll with `IsCompleted`, as `Sync._finding` already does
 for address resolution.
@@ -315,7 +319,9 @@ over loopback with no KSA.
 
 **2. Read-only browser.** The directory service, its DNS record and its Caddy block, serving a
 static curated list with one entry. The browser in the mod reads it, probes it, filters it. **This is
-a working server browser with no announce path and therefore no abuse surface at all.**
+a working server browser with no announce path and therefore no abuse surface at all.** As it went
+out this phase and the next landed together: `servers.ksarmory.com` is live and carries what it has
+probed, not a curated file.
 
 **3. The announce path.** The three settings, the heartbeat on the existing tick loop, probe
 verification, delist on shutdown and on `advertise = false`.

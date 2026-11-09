@@ -2,8 +2,15 @@
 
 Three analyses of craft synchronisation — the interpolation that decides where a craft should be
 drawn, the write that puts it there, and what goes on the wire — each then attacked by a reviewer.
-Read at `ce4b0fb`. Nothing here has been seen in a game: it is all source reading and arithmetic,
-which is exactly the weakness that made today's catch-up ceiling a regression.
+Read at `ce4b0fb`. Nothing here had been seen in a game when it was written: it is all source
+reading and arithmetic, which is exactly the weakness that made today's catch-up ceiling a
+regression.
+
+**Partly acted on since.** Of "What to ship, in order" below, 1, 2, 4 and 6 are in the code --
+`Sync.cs` jitters `SendNext` on construction and accumulates it rather than resetting it, `World.cs`
+takes a craft off rails only when `Pull` writes something, and `Clock.cs` carries attitude forward
+by `Spin` and extrapolates `VelocityCcf`. Check any other item against the line it names before
+treating it as outstanding, and `docs/DESIGN.md` for what has since been watched in a game.
 
 ## The correction that matters most: tonight's kitten fix is inert after one frame
 

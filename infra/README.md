@@ -1,12 +1,13 @@
 # Infrastructure
 
-`mp.ksarmory.com` and the dedicated server behind it, as code. OpenTofu, two layers, the same R2
-bucket for state that the domain's other infrastructure uses.
+`mp.ksarmory.com`, the dedicated server behind it and the server directory at
+`servers.ksarmory.com`, as code. OpenTofu, two layers, the same R2 bucket for state that the
+domain's other infrastructure uses.
 
 | Layer | State key | What it owns |
 | --- | --- | --- |
 | `infra/dns` | `ksamultiplayer/dns.tfstate` | the Cloudflare records |
-| `infra/server` | `ksamultiplayer/server.tfstate` | the container and the world's volume |
+| `infra/server` | `ksamultiplayer/server.tfstate` | the game containers, the world's volume, the directory container |
 
 The split is by change cadence: the record never changes, the image changes on every release. It
 also means a deploy never sources a token that could rewrite the zone.
@@ -20,11 +21,43 @@ layer touches nothing of it:
 - **Its own record.** `mp` is declared here as an address record. It is deliberately *not* in the
   zone's `subdomains` set, which is CNAMEs for names Caddy serves — this one is UDP and Caddy
   serves nothing on it.
-- **Its own container.** Not a Swarm service, not on the `ksarmory` overlay network, reached by
-  nothing else on the machine.
+- **Its own containers.** Not Swarm services. The game server is on no shared network and is
+  reached by nothing else on the machine.
 - **Its own volume.** `ksamp-world`, marked `prevent_destroy`.
 
+The one exception is the directory, which has to be reachable over HTTPS and so has to be reachable
+by that machine's Caddy. It joins the `ksarmory` network **by name**, which is a reference and not
+ownership: this layer never creates or destroys that network, so the repository that does is
+unaffected. Set `directory_network` to `""` to publish a loopback port instead and share nothing.
+
 A `tofu destroy` here removes this project's DNS records, its containers and nothing else.
+
+## The directory
+
+`servers.ksarmory.com` is the list of servers the mod's browser reads, and it is a container of this
+layer's like any other: `directory_image` by digest, `directory_name` for what it calls itself on a
+row. Empty `directory_image` means not deployed, which is also how it is taken away.
+
+**Two halves, in two repositories.** This layer owns the container. The name and the TLS in front of
+it belong to KSArmory, which owns this machine's Caddy, so standing the directory up took one line
+in that repository's Caddyfile and one entry in its `subdomains`:
+
+    servers.ksarmory.com -> reverse_proxy ksamp-directory:8080
+
+Nothing here can make that change, because nothing here owns that state. With `directory_network`
+set, Caddy reaches the container by name on the shared network, exactly as it reaches feedback; with
+it empty, the container publishes `directory_port` on the loopback and Caddy reaches it at the bridge
+gateway instead.
+
+**Changing anything in KSArmory's services layer is a CI job, not a local apply.** A local
+`tofu apply` there writes live settings back from whatever the local environment holds, which blanks
+the ones it does not know; and targeting Caddy alone does not help, because `depends_on` pulls the
+other services in with it. Make the change through that repository's pipeline.
+
+The directory needs **outbound UDP**, since probing is the whole of how it learns anything, and
+inbound HTTP from Caddy. It keeps nothing on disk and has no volume: every entry is listed only
+while a probe answered recently, so a restart refills from the next round of heartbeats and is wrong
+for one heartbeat interval.
 
 ## More than one world on the machine
 
@@ -120,9 +153,15 @@ deploys nothing: what the machine runs is a release.
 
 To deploy by hand anyway -- an image from `main`, or a release whose deploy failed:
 
-1. Take the digest from the run's summary into `infra/server/.env`:
+1. Take both digests from the runs' summaries into `infra/server/.env`:
    `export TF_VAR_server_image=ghcr.io/<owner>/ksamp-server@sha256:...`
+   `export TF_VAR_directory_image=ghcr.io/<owner>/ksamp-directory@sha256:...`
 2. `tofu apply` in `infra/server`.
+
+**Set both, every time.** `directory_image` defaults to empty and empty means *not deployed*, so an
+apply with only `TF_VAR_server_image` in the environment plans the directory's container away and
+takes `servers.ksarmory.com` down. The release workflow exports both for this reason. Read the plan
+before confirming it: a destroy you did not mean to ask for is in there in black and white.
 
 By digest rather than by tag, so the machine runs the image that was built. A run whose summary has
 scrolled away can be asked of the registry instead, by the commit that built it:

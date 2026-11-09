@@ -6,7 +6,8 @@
     ksa-game-assemblies checkout beside this repository, then a game install. A game install is now
     enough on its own: StarMap's API and Harmony come from NuGet rather than from beside it.
 
-    Only the mod needs them. The protocol, the server and the tests reference nothing of KSA.
+    Only the mod needs them. The protocol, the server, the directory and the tests reference
+    nothing of KSA.
   -->
   <PropertyGroup>
     <KsaDllDir Condition="'$(KsaDllDir)' == '' AND '$(KSA_DLL_DIR)' != ''">$([MSBuild]::EnsureTrailingSlash('$(KSA_DLL_DIR)'))</KsaDllDir>

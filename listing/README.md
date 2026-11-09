@@ -1,7 +1,8 @@
 # listing/
 
 What players read on [Borea](https://ksamodding.github.io/Borea/). The repository's own
-`README.md` is for developers and ships in the archive; this folder is the store page.
+`README.md` is for developers and stays in the repository -- the archive a player installs holds the
+assembly and `mod.toml` and nothing else -- so this folder is the store page.
 
 | File | Where it goes |
 | --- | --- |

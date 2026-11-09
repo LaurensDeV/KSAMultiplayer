@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# The protocol and the server, driven over loopback. No game, and no KSA assemblies, needed.
+# The protocol, the server and the directory, driven over loopback. No game, and no KSA
+# assemblies, needed.
 #
 #     ./tools/test.sh
 #     ./tools/test.sh --filter ServerTests

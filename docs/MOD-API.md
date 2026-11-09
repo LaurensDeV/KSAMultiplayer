@@ -2,7 +2,9 @@
 
 **Nothing here is built.** This is the plan for one thing: a mod that has never heard of KSA
 Multiplayer should be able to put its own state into a shared world, and KSA Multiplayer should carry
-it without having heard of that mod either. Written against StarMap 0.5.0 and protocol 18.
+it without having heard of that mod either. Written against StarMap 0.5.0 and protocol 18; the mod
+now wants StarMap 0.5.3 and speaks protocol 23, so check anything concrete here against the code
+before relying on it.
 
 The two mods must agree on one thing, and it is a string.
 
@@ -578,13 +580,17 @@ a guest skip work nobody can use.
 
 ## The server should say which mods a world allows
 
-Today it does not say, it *infers*. `_worldMods` is whatever the player who happened to hand over
-the world had enabled, kept in `world.json`, and `Refusal` then demands exact set equality in both
-directions: you are refused for missing one of them and refused again for having one they lacked.
-Three things are wrong with that, and the first is the worst:
+Partly shipped since this was written: the `mods` setting lets an operator pin the list outright,
+and `GameServer.RequiredMods` takes it over the world's when it is set. What is below still holds
+for a server that leaves it empty, and the three-way distinction is not built at all.
+
+With `mods` empty the server does not say, it *infers*. `_worldMods` is whatever the player who
+happened to hand over the world had enabled, kept in `world.json`, and `Refusal` then demands exact
+set equality in both directions: you are refused for missing one of them and refused again for
+having one they lacked. Three things are wrong with that, and the first is the worst:
 
 - **The policy is set by accident.** Whoever seeds a world decides, for its lifetime, what every
-  later player must run. Nobody chose it and nothing but a new world changes it.
+  later player must run -- unless `mods` is set, which is the half of this that shipped.
 - **It is ids only, so a version is invisible.** Two players running different builds of one mod are
   indistinguishable to the server, which is the same hole that lets channel names skew.
 - **It is all-or-nothing.** There is no way to say "this one is required", "this one is welcome",
@@ -635,10 +641,11 @@ is useless in a hand-written pin because it changes on every rebuild, so it belo
 pairs, which roughly doubles it, and that field is clipped by **characters** rather than bytes — the
 hazard `Wire`'s own notes on `Owners` spell out — so it wants a byte budget at the same time.
 
-`Welcome.Refused` is a `Text(200)`, and 200 characters cannot say "you need KSArmory 0.10.0 and have
-0.9.1, and FastAndPurrious is not allowed here" for more than one mod at a time. A refusal nobody
-can act on is the failure mode this whole feature exists to prevent, so `Refused` should become a
-`LongText` in the same change. Both are protocol changes and belong in the single version bump.
+`Welcome.Refused` was a `Text(200)`, and 200 characters cannot say "you need KSArmory 0.10.0 and
+have 0.9.1, and FastAndPurrious is not allowed here" for more than one mod at a time. A refusal
+nobody can act on is the failure mode this whole feature exists to prevent. That part is done:
+`Refused` is a `LongText` of 600 characters as of protocol 23. `Hello.Mods` still wants a byte
+budget, and that remains a protocol change.
 
 ### How this changes the rest of the plan
 
