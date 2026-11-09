@@ -766,6 +766,19 @@ internal static class Panel
         {
             return;
         }
+        // In the titlebar itself, against its right end. KSA draws that strip with its own draw
+        // calls and then leaves the cursor at the top of the body, so a widget put back up there is
+        // an ordinary widget over the strip rather than anything the modal has to know about.
+        // Playing alone is the other half of what this window is for, and the title is the one row
+        // of it that is about the window rather than about a server.
+        ConsoleStyle.PushWidgetStyle();
+        float2 at = ImGui.GetWindowPos(), box = ImGui.GetWindowSize();
+        float bar = ConsoleStyle.TitlebarHeight, padding = ConsoleStyle.ContentPaddingPx;
+        ImGui.SetCursorScreenPos(new float2(at.X + box.X - ConsoleWidgets.ButtonWidth("PLAY ALONE".AsSpan()) - padding,
+                                            at.Y + ((bar - ConsoleWidgets.ButtonHeight) * 0.5f)));
+        if (ConsoleWidgets.PrimaryButton("PLAY ALONE".AsSpan())) PlayAlone();
+        ConsoleStyle.PopWidgetStyle();
+
         ConsoleStyle.BeginBody();
         ConsoleStyle.PushWidgetStyle();
 
@@ -775,12 +788,6 @@ internal static class Panel
         Browser.Update();
         if (!Browser.Started) Browser.Refresh();
         string typed = AddressText.ToString().Trim();
-
-        // Top right, and in the colour of something worth pressing. Playing alone is the other half
-        // of what this window is for, not an afterthought beside the button that does the opposite.
-        float aloneWide = ConsoleWidgets.ButtonWidth("PLAY ALONE".AsSpan());
-        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - aloneWide);
-        if (ConsoleWidgets.PrimaryButton("PLAY ALONE".AsSpan())) PlayAlone();
 
         // The list gets whatever the two blocks under it do not need. It is what the window is for.
         float spacing = ImGui.GetStyle().ItemSpacing.Y;
