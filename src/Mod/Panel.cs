@@ -801,7 +801,10 @@ internal static class Panel
         // a fact about them and had been nowhere, while the list beside it is full of facts about
         // strangers. It belongs on this side of the window.
         ImGui.PushStyleColor(ImGuiCol.ChildBg, in PanelBackground);
-        ImGui.BeginChild("###KSAMultiplayerYou", new float2(half, PanelTall), ImGuiChildFlags.Borders);
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, in PanelPadding);
+        ImGui.BeginChild("###KSAMultiplayerYou", new float2(half, PanelTall), ImGuiChildFlags.Borders,
+                         ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
+        ImGui.PopStyleVar();
         ImGui.Columns(2, "###KSAMultiplayerYouRows".AsSpan(), false);
         ImGui.SetColumnWidth(0, half * 0.42f);
         edited |= Field("Nickname"u8, "###KSAMultiplayerName", NameText);
@@ -814,7 +817,12 @@ internal static class Panel
 
         // Where that server is, what it wants, and the button that goes to it.
         ImGui.PushStyleColor(ImGuiCol.ChildBg, in PanelBackground);
-        ImGui.BeginChild("###KSAMultiplayerPick", new float2(half, PanelTall), ImGuiChildFlags.Borders);
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, in PanelPadding);
+        // No bar of its own: the button is pinned to the floor of this block, so a block that
+        // scrolls is one whose button slides out from under the pointer.
+        ImGui.BeginChild("###KSAMultiplayerPick", new float2(half, PanelTall), ImGuiChildFlags.Borders,
+                         ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
+        ImGui.PopStyleVar();
         ImGui.Columns(2, "###KSAMultiplayerPickRows".AsSpan(), false);
         ImGui.SetColumnWidth(0, half * 0.30f);
         edited |= Field("Server"u8, "###KSAMultiplayerServer", AddressText);
@@ -850,8 +858,13 @@ internal static class Panel
 
         // Against the floor of the block, so it stays where the player left it while the rows above
         // it grow a mod list or a refusal.
-        float2 pad = ImGui.GetStyle().WindowPadding;
-        ImGui.SetCursorPosY(PanelTall - ConsoleWidgets.ButtonHeight - pad.Y);
+        //
+        // Measured off PanelPadding and not off the style, which is where this went wrong: the
+        // padding is pushed for the child and popped the moment it has begun, so asking the style
+        // for it in here answers with the modal's own, which KSA sets to nothing. The button went a
+        // whole padding too low, the content ran past the floor, and the block grew a scrollbar
+        // with three rows in it.
+        ImGui.SetCursorPosY(PanelTall - ConsoleWidgets.ButtonHeight - PanelPadding.Y);
         bool ready = typed.Length > 0 && NameText.ToString().Trim().Length > 0 && !Sync.AskingAhead && !WouldBeRefused;
         ImGui.BeginDisabled(!ready);
         if (ConsoleWidgets.PrimaryButton("CONNECT".AsSpan(), new float2(ImGui.GetContentRegionAvail().X, ConsoleWidgets.ButtonHeight)))
@@ -890,8 +903,14 @@ internal static class Panel
     /// it must not move as servers answer, because a window whose controls walk out from under the
     /// pointer is worse than one that shows less.
     /// </summary>
-    /// <summary>How tall the two blocks under the list are. Everything above them is the list.</summary>
-    private const float PanelTall = 190f;
+    /// <summary>
+    /// How tall the two blocks under the list are. Everything above them is the list.
+    ///
+    /// <para>Room for a refusal that runs to two lines, which the longer ones do once the mods are
+    /// named. Shorter than that and the block grew a scrollbar beside a button pinned to its
+    /// floor.</para>
+    /// </summary>
+    private const float PanelTall = 220f;
 
     /// <summary>
     /// What the two blocks under the list are filled with: white at an alpha that lifts them off
@@ -903,6 +922,17 @@ internal static class Panel
     /// applied at all rather than ignored.</para>
     /// </summary>
     private static readonly float4 PanelBackground = new(1f, 1f, 1f, 0.20f);
+
+    /// <summary>
+    /// What a cell of the list keeps between its words and the rule beside them, and what the two
+    /// blocks keep between theirs and their own edges.
+    ///
+    /// <para>Both are set because neither comes out right on its own here: KSA empties the modal's
+    /// window padding, which its children then inherit, and a table's own default is close enough
+    /// that a player count sits against the line drawn beside it.</para>
+    /// </summary>
+    private static readonly float2 CellPadding = new(12f, 5f);
+    private static readonly float2 PanelPadding = new(14f, 12f);
 
     /// <summary>
     /// The table heading's own background. KSA's style gives it the same grey a selected row gets,
@@ -926,6 +956,7 @@ internal static class Panel
 
         ImGui.BeginChild("###KSAMultiplayerServers", new float2(0f, tall), ImGuiChildFlags.Borders);
         ImGui.PushStyleColor(ImGuiCol.TableHeaderBg, in HeadingBackground);
+        ImGui.PushStyleVar(ImGuiStyleVar.CellPadding, in CellPadding);
         // Given the height it is to fill rather than left to end with its last row. A table that
         // stops where its rows stop takes the lines between its columns with it, so three servers
         // drew three rows' worth of rule and then nothing, and the box below looked unfinished.
@@ -951,6 +982,7 @@ internal static class Panel
             foreach (Browser.Row r in Browser.Rows) ServerRow(r, typed);
             ImGui.EndTable();
         }
+        ImGui.PopStyleVar();
         ImGui.PopStyleColor();
 
         // Along the floor of the box: what the list is doing on the left, and the button that makes
