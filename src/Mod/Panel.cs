@@ -786,12 +786,16 @@ internal static class Panel
         if (ImGuiHelper.BeginRegion("Server"u8))
         {
             edited |= Field("Server"u8, "###KSAMultiplayerServer", AddressText);
-            // Greyed where the server has said it wants none, which every welcome has said since
-            // protocol 23. Left alone while nothing is known about the address: a field a player
-            // cannot type in is worse than one they did not need.
-            ImGui.BeginDisabled(Known(AddressText.ToString().Trim()) is { Password: false });
-            edited |= Field("Password"u8, "###KSAMultiplayerPassword", PasswordText, ImGuiInputTextFlags.Password);
-            ImGui.EndDisabled();
+            // Said in words where the server has told us it wants none, which every welcome has
+            // said since protocol 23. It was a greyed-out box, and an empty box a player cannot
+            // type in looks very like an empty box they have not typed in yet. A field that is not
+            // there at all cannot be mistaken for one that is.
+            //
+            // Still a field while nothing is known about the address: not knowing is not the same
+            // as knowing there is none, and a player with a password and nowhere to put it is worse
+            // off than one who typed into a box they did not need.
+            if (Known(AddressText.ToString().Trim()) is { Password: false }) Told("Password"u8, "none needed");
+            else edited |= Field("Password"u8, "###KSAMultiplayerPassword", PasswordText, ImGuiInputTextFlags.Password);
 
             // Asked for by the window rather than by the player, and in the same region as the
             // fields: what is over there belongs beside where it was typed, not under a heading of
@@ -999,17 +1003,26 @@ internal static class Panel
             Sync.Forget();
             Save();
         }
+        // Muted against the dark of an ordinary row, plain against the light of the chosen one.
+        // ImGui's disabled grey is a near match for the colour a selected row is filled with, so
+        // picking a server made everything about it but its name disappear.
+        void Cell(string text)
+        {
+            if (chosen) ImGui.Text(text);
+            else ImGui.TextDisabled(text);
+        }
+
         ImGui.TableNextColumn();
-        ImGui.TextDisabled(r.Facts is { } f ? $"{f.Players}/{f.MaxPlayers}" : r.Waiting ? "..." : "-");
+        Cell(r.Facts is { } f ? $"{f.Players}/{f.MaxPlayers}" : r.Waiting ? "..." : "-");
         ImGui.TableNextColumn();
         // Capitalised, because the rest of this column is "Earth and Moon" and a cell that starts
         // small beside one that does not reads as a different kind of thing than it is.
-        ImGui.TextDisabled(r.Facts is { } g ? !g.HasWorld ? "No world yet" : g.System.Length > 0 ? Named(g.System) : "A world"
-                           : r.Waiting ? "..." : "No answer");
+        Cell(r.Facts is { } g ? !g.HasWorld ? "No world yet" : g.System.Length > 0 ? Named(g.System) : "A world"
+             : r.Waiting ? "..." : "No answer");
         ImGui.TableNextColumn();
         // The round trip to the server, which is not the time to join it and is the best guide
         // there is to that before anybody has.
-        ImGui.TextDisabled(double.IsFinite(r.Ping) ? $"{r.Ping * 1000:F0} ms" : "");
+        Cell(double.IsFinite(r.Ping) ? $"{r.Ping * 1000:F0} ms" : "");
     }
 
     /// <summary>
@@ -1226,12 +1239,16 @@ internal static class Panel
         {
             edited |= Field("Server"u8, "###KSAMultiplayerJoinServer", AddressText);
             edited |= Field("Your name"u8, "###KSAMultiplayerJoinName", NameText);
-            // Greyed where the server has said it wants none, which every welcome has said since
-            // protocol 23. Left alone while nothing is known about the address: a field a player
-            // cannot type in is worse than one they did not need.
-            ImGui.BeginDisabled(Known(AddressText.ToString().Trim()) is { Password: false });
-            edited |= Field("Password"u8, "###KSAMultiplayerJoinPassword", PasswordText, ImGuiInputTextFlags.Password);
-            ImGui.EndDisabled();
+            // Said in words where the server has told us it wants none, which every welcome has
+            // said since protocol 23. It was a greyed-out box, and an empty box a player cannot
+            // type in looks very like an empty box they have not typed in yet. A field that is not
+            // there at all cannot be mistaken for one that is.
+            //
+            // Still a field while nothing is known about the address: not knowing is not the same
+            // as knowing there is none, and a player with a password and nowhere to put it is worse
+            // off than one who typed into a box they did not need.
+            if (Known(AddressText.ToString().Trim()) is { Password: false }) Told("Password"u8, "none needed");
+            else edited |= Field("Password"u8, "###KSAMultiplayerJoinPassword", PasswordText, ImGuiInputTextFlags.Password);
 
             string asking = AddressText.ToString().Trim();
             if (edited) _asked = "";
