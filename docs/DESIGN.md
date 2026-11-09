@@ -527,22 +527,28 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   The moment the change exists for -- two launches inside the window before either craft has crossed
   the wire -- has still not been made to happen on purpose.
 
+- **The server browser.** Seen in a game 2026-11-09, against the real directory at
+  `servers.ksarmory.com`. The window listed `mp.ksarmory.com` from the directory and `127.0.0.1`
+  from this player's own remembered addresses, probed both from one socket, and drew the second
+  greyed with `protocol 22, you have 23` -- a genuine mismatch, since that was a server left
+  running from an earlier build. Picking a row filled the address field. The mod's log, from a
+  start at 15:32:46: `1 of 1 directories answered (ksarmory), 1 servers listed, 1 of this player's
+  own`, then 45 ms later `1 of 2 can be joined`. The whole of it -- fetching the list of
+  directories, reading the directory, merging, resolving, probing and judging -- took under a
+  second from the mod loading, on a window that is drawn before KSA has a universe.
+
+  It took two tries to look right. At 440-560 px wide and 460 tall, which is the shape KSA's own
+  configuration is, the third column cut every reason in half and the address field sat below the
+  bottom edge -- the one control that has to work when nothing else does. A table wants width and a
+  column of labelled fields wants none, and the window was built for the second. It is 640-920 wide
+  and 640 tall now, both text columns stretch, and the rows that repeated the server's name, world
+  and mods under the fields are drawn only for an address that is not already a row above.
+
+  **What has not been seen is joining from it.** The row was picked and the address filled, and
+  nothing past that was pressed.
+
 ## What has not been tried
 
-- **The server browser, all of it.** The start window lists servers from one or more *directories*:
-  services that answer `GET /v1/servers` with a JSON document of addresses, specified in
-  `docs/DIRECTORY.md`. A directory publishes only what it has seen for itself -- it sends the game's
-  own cookieless hello to each address it has been told about and lists the server only once that
-  answers -- and the mod then asks every listed server again from its own socket before showing a
-  row as joinable, so what a player sees came from the server and not from the directory. Rows that
-  cannot be joined say which of the three things that must match failed: the protocol version, the
-  KSA build, or the mod set. Duplicates collapse twice, by address written out before anything is
-  asked and by the address that answered afterwards, which is the exact test because a reply comes
-  from a real socket. Driven over loopback by the tests in `ProbesTests` and `RosterTests`, and the
-  directory's endpoints by hand against a running one. **Nothing of it has been drawn in a game**:
-  the table, the scrolling, the row that shows why, and whether a window of this width has room for
-  all of it are unseen, and so is whether fetching a directory at startup costs a frame anybody
-  notices.
 - **`Wire.Version` 23.** The cookie welcome now carries the player count, the most players, a flags
   byte for whether a password is wanted, and the KSA build the world wants -- about twenty bytes,
   taking that answer from roughly 450 to 470 against a 140-byte hello, so its amplification factor

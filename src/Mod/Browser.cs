@@ -62,6 +62,10 @@ internal static class Browser
     private static readonly Dictionary<IPEndPoint, List<Row>> Asked = [];
     private static double _fetchedAt = double.NegativeInfinity;
 
+    // Whether what the asking came to has been written down yet, so it is said once a list and not
+    // once a frame.
+    private static bool _told;
+
     /// <summary>What a fetch of every directory came to.</summary>
     private sealed record Gathered(int Asked, string[] Names, List<(string Name, Listed Server)> Servers);
 
@@ -140,16 +144,23 @@ internal static class Browser
             }
             else if (_probes.Elsewhere.TryGetValue(at, out ushort version))
             {
-                foreach (Row r in rows) r.Trouble = $"speaks protocol {version}, this game speaks {Wire.Version}";
+                foreach (Row r in rows) r.Trouble = $"protocol {version}, you have {Wire.Version}";
             }
             else if (_probes.Silent.Contains(at))
             {
-                foreach (Row r in rows) r.Trouble = "no answer from here";
+                foreach (Row r in rows) r.Trouble = "no answer";
             }
             else continue;
             Asked.Remove(at);
             Collapse();
         }
+        // Said once each time a list settles, because a list that will not say what it found leaves
+        // nothing to go on when a player reports that it was empty: a directory that answered
+        // nothing and a directory that could not be reached look identical on the screen.
+        if (_told || Asked.Count > 0 || Listed.Count == 0) return;
+        _told = true;
+        Log.Info($"server list: {Joinable} of {Listed.Count} can be joined"
+                 + string.Concat(Listed.Select(r => $"; {r.Where} {(Why(r) is { Length: > 0 } why ? why : "ok")}")));
     }
 
     /// <summary>
@@ -215,6 +226,10 @@ internal static class Browser
     private static void Take(Gathered got)
     {
         Directories = (got.Asked, got.Names.Length);
+        _told = false;
+        Log.Info($"server list: {got.Names.Length} of {got.Asked} directories answered"
+                 + (got.Names.Length > 0 ? $" ({string.Join(", ", got.Names)})" : "")
+                 + $", {got.Servers.Count} servers listed, {Remembered.Length} of this player's own");
         Dictionary<string, Row> by = new(StringComparer.OrdinalIgnoreCase);
         foreach (Row had in Listed) by[$"{had.Host}:{had.Port}"] = had;
 

@@ -719,8 +719,8 @@ internal static class Panel
     {
         float2 screen = float2.Unpack(Program.GetWindow().Size);
         float scale = GameSettings.GetInterfaceScale();
-        float wide = float.Clamp(screen.X * (0.36f / scale), 440f, 560f);
-        float tall = MathF.Min(screen.Y - 60f, 460f);
+        float wide = float.Clamp(screen.X * (0.50f / scale), 640f, 920f);
+        float tall = MathF.Min(screen.Y - 60f, 640f);
         if (!ConsoleStyle.BeginModal("###KSAMultiplayerStart".AsSpan(), "MULTIPLAYER".AsSpan(), new float2(wide, tall),
                                      hasFooter: true, ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoScrollbar))
         {
@@ -757,13 +757,16 @@ internal static class Panel
             // about "l" on the way to "localhost", a datagram a letter.
             string typed = AddressText.ToString().Trim();
             if (edited) _asked = "";
-            if (typed.Length > 0 && _asked.Length == 0 && !Sync.Asking)
+            if (!Browser.Rows.Any(r => string.Equals(r.Where, typed, StringComparison.OrdinalIgnoreCase)))
             {
-                _asked = typed;
-                Sync.Forget();
-                Sync.Look(typed);
+                if (typed.Length > 0 && _asked.Length == 0 && !Sync.Asking)
+                {
+                    _asked = typed;
+                    Sync.Forget();
+                    Sync.Look(typed);
+                }
+                ThisServer(typed);
             }
-            ThisServer(typed);
             ImGuiHelper.EndRegion();
         }
         // Outside the regions, where KSA puts its configuration's own Always Show: a region lays its
@@ -810,7 +813,7 @@ internal static class Panel
     /// it must not move as servers answer, because a window whose controls walk out from under the
     /// pointer is worse than one that shows less.
     /// </summary>
-    private const float ListTall = 146f;
+    private const float ListTall = 230f;
 
     /// <summary>
     /// The servers the directories carry, and the ones this player has been to.
@@ -837,14 +840,23 @@ internal static class Panel
         if (ImGui.BeginTable("###KSAMultiplayerServerRows", 3,
                              ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp | ImGuiTableFlags.NoBordersInBody))
         {
-            ImGui.TableSetupColumn("server"u8, ImGuiTableColumnFlags.WidthStretch);
+            ImGui.TableSetupColumn("server"u8, ImGuiTableColumnFlags.WidthStretch, 1.0f);
             ImGui.TableSetupColumn("players"u8, ImGuiTableColumnFlags.WidthFixed, 46f);
-            ImGui.TableSetupColumn("world"u8, ImGuiTableColumnFlags.WidthFixed, 104f);
+            ImGui.TableSetupColumn("world"u8, ImGuiTableColumnFlags.WidthStretch, 0.95f);
             foreach (Browser.Row r in Browser.Rows) ServerRow(r, typed);
             ImGui.EndTable();
         }
         ImGui.EndChild();
         if (ConsoleWidgets.Button("REFRESH".AsSpan())) Browser.Refresh(anyway: true);
+        // Which directories carry the chosen server, beside the button rather than in a row of its
+        // own. A directory chooses which addresses a player is shown and nothing at all about what
+        // they are called, so where a row was found is the one thing about it worth attributing --
+        // and a player who dislikes what one carries needs to know which to take out of their file.
+        if (Browser.Rows.FirstOrDefault(r => string.Equals(r.Where, typed, StringComparison.OrdinalIgnoreCase)) is { Found.Count: > 0 } found)
+        {
+            ImGui.SameLine();
+            ImGui.TextDisabled($"{found.Where}: listed by {string.Join(", ", found.Found)}");
+        }
     }
 
     /// <summary>
@@ -897,14 +909,6 @@ internal static class Panel
             (string missing, string extra) = Sync.ModsAgainst(there.Mods);
             string[] wants = [.. there.Mods.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
             Told("Server name"u8, there.ServerName.Length > 0 ? there.ServerName : "unnamed");
-            // Which directories carry it, so a player who sees something they do not like knows
-            // which one to take out of their own list. A directory chooses what addresses a player
-            // is shown and nothing about what they are called: every name on a row above came from
-            // the server itself.
-            if (Browser.Rows.FirstOrDefault(r => string.Equals(r.Where, typed, StringComparison.OrdinalIgnoreCase)) is { Found.Count: > 0 } found)
-            {
-                Told("Listed by"u8, string.Join(", ", found.Found));
-            }
             Told("World"u8, !there.HasWorld ? "none yet: yours becomes it"
                           : there.System.Length > 0 ? Named(there.System) : "yes");
             Mods(wants, missing, extra);
