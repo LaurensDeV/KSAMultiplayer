@@ -12,6 +12,21 @@ shipping a new build to everybody.
 **So: expect this project's own directory to be the first to go, and run yours as though it will
 have to carry the list alone.**
 
+## The quickest one that works
+
+A directory does not have to run anything. The read half below is a document, so a file served over
+HTTPS by any host you already have -- a static site, an object store, a web server you keep for
+something else -- is a directory, and the mod cannot tell it from this service. Write out the
+servers you want to vouch for, serve it, and open a pull request to add its URL to
+`directories.txt`.
+
+What you give up is registration: a server cannot announce itself to a file, so the list is whatever
+you put in it and the `players`, `world` and `latency` on each row stay whatever you last wrote. The
+mod probes every address itself before showing a row as joinable, so a stale file is slow rather
+than wrong -- it just cannot grow on its own.
+
+Run the service below when you want servers to be able to add themselves.
+
 ## The read half
 
 ```
@@ -135,10 +150,21 @@ product.
 
 ## Running this one
 
+The image is published and public, so nothing has to be built or cloned:
+
+```bash
+docker run -d --name ksamp-directory -p 8080:8080 \
+    -e KSAMP_DIRECTORY_NAME="your name here" \
+    ghcr.io/laurensdev/ksamp-directory:v0.16.0
+```
+
+Pin the tag to a release rather than tracking `main`. A directory reads a welcome in the protocol
+version it was built against, so which build you run decides which servers you can list at all.
+
+To build it instead, from a checkout:
+
 ```bash
 docker build -f deploy/Dockerfile.directory -t ksamp-directory .
-docker run -d --name ksamp-directory -p 8080:8080 \
-    -e KSAMP_DIRECTORY_NAME="your name here" ksamp-directory
 ```
 
 | | |
