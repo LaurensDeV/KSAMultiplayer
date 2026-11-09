@@ -16,6 +16,16 @@ public sealed record ServerOptions
     /// <summary>The KSA build every player must run; empty to take the build of whoever gave the server its world.</summary>
     public string KsaBuild { get; init; } = "";
 
+    /// <summary>
+    /// The mods every player must have and no more, separated by commas; empty to take those of
+    /// whoever gave the server its world.
+    ///
+    /// <para>Worth pinning because the world's own list follows whoever last handed one over, and a
+    /// server asks a player for a fresh save every few minutes: one player joining with a mod
+    /// enabled writes it into what the world wants, and from then on nobody without it can join.</para>
+    /// </summary>
+    public string Mods { get; init; } = "";
+
     /// <summary>Seconds between asking a player for a fresh save of the world, so a player joining starts near now.</summary>
     public double SnapshotEverySeconds { get; init; } = 300.0;
 
@@ -258,6 +268,11 @@ public sealed class GameServer : IDisposable
     /// world being handed out. Empty when neither is known, and then any build is let in.
     /// </summary>
     public string RequiredBuild => Options.KsaBuild.Length > 0 ? Options.KsaBuild : _worldBuild;
+
+    /// <summary>What a player must have enabled: what the operator pinned, or the world's own list when they pinned nothing.</summary>
+    public string[] RequiredMods => Options.Mods.Length > 0
+        ? [.. Options.Mods.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)]
+        : _worldMods;
 
     /// <summary>Console lines typed in a game by an admin, for the console program to run as its own.</summary>
     public Queue<(Player Who, string Line)> Asked { get; } = new();
@@ -574,7 +589,7 @@ public sealed class GameServer : IDisposable
 
     // Why a player cannot be let in: another build of KSA, or a mod the world may hold parts of that it does not have.
     /// <summary>What this world wants of a game, as a hello says it: empty when it asks nothing.</summary>
-    private string WorldMods => string.Join(",", _worldMods);
+    private string WorldMods => string.Join(",", RequiredMods);
 
     private string? Refusal(Wire.Hello hello)
     {
@@ -590,14 +605,15 @@ public sealed class GameServer : IDisposable
             return $"this world is {_worldSystem} and you are playing {hello.System}: start a game in {_worldSystem} to join";
         }
         HashSet<string> theirs = [.. hello.Mods.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
-        string[] missing = [.. _worldMods.Where(m => !theirs.Contains(m)).Order()];
+        string[] wanted = RequiredMods;
+        string[] missing = [.. wanted.Where(m => !theirs.Contains(m)).Order()];
         if (missing.Length > 0) return $"the server's world needs mods you do not have enabled: {string.Join(", ", missing)}";
         // And none the others lack. A mod that adds parts makes craft nobody else can put together,
         // and the first they hear of it is a craft arriving that their game refuses to build, which
         // reads as the mod being broken rather than as somebody running something extra. Nothing is
         // asked of the player whose world this is about to become: they are the ones who set it.
-        if (_worldMods.Length == 0) return null;
-        HashSet<string> world = [.. _worldMods];
+        if (wanted.Length == 0) return null;
+        HashSet<string> world = [.. wanted];
         string[] extra = [.. theirs.Where(m => !world.Contains(m)).Order()];
         return extra.Length > 0
             ? $"you are running mods this world does not have ({string.Join(", ", extra)}): turn them off to join"

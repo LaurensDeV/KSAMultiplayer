@@ -20,6 +20,9 @@ const string Usage = """
                              replacing any world kept in --data
       --ksa-build <build>    the KSA build players must run (default: that of
                              whoever gave the server its world)
+      --mods <a,b,c>         the mods players must have (default: those of whoever
+                             gave the server its world, which follows whoever last
+                             handed one over)
       --snapshot-every <s>   seconds between fresh saves of the world (default 300)
       --warp-answer <s>      seconds everyone has to answer a warp (default 30)
       --keep-time            let universe time run with nobody playing
