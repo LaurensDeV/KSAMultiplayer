@@ -846,12 +846,17 @@ internal static class Panel
 
         ImGui.BeginChild("###KSAMultiplayerServers", new float2(0f, ListTall), ImGuiChildFlags.Borders);
         if (ImGui.BeginTable("###KSAMultiplayerServerRows", 4,
-                             ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp | ImGuiTableFlags.NoBordersInBody))
+                             ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp | ImGuiTableFlags.BordersInnerV))
         {
-            ImGui.TableSetupColumn("server"u8, ImGuiTableColumnFlags.WidthStretch, 1.0f);
-            ImGui.TableSetupColumn("players"u8, ImGuiTableColumnFlags.WidthFixed, 46f);
-            ImGui.TableSetupColumn("ping"u8, ImGuiTableColumnFlags.WidthFixed, 62f);
-            ImGui.TableSetupColumn("world"u8, ImGuiTableColumnFlags.WidthStretch, 0.95f);
+            // The count rides on the first header, as a server browser puts it there. Past the ###
+            // is the column's id, which has to stay the same while the count in front of it changes
+            // or the table forgets what it knew about the column every time a server answers.
+            ImGui.TableSetupColumn($"Servers ({Browser.Rows.Count})###server", ImGuiTableColumnFlags.WidthStretch, 1.0f);
+            ImGui.TableSetupColumn("Players###players"u8, ImGuiTableColumnFlags.WidthFixed, 72f);
+            ImGui.TableSetupColumn("World###world"u8, ImGuiTableColumnFlags.WidthStretch, 0.95f);
+            // Last, where a server browser puts it: it is the least of what decides whether to join.
+            ImGui.TableSetupColumn("Latency###ping"u8, ImGuiTableColumnFlags.WidthFixed, 78f);
+            ImGui.TableHeadersRow();
             foreach (Browser.Row r in Browser.Rows) ServerRow(r, typed);
             ImGui.EndTable();
         }
@@ -892,10 +897,6 @@ internal static class Panel
         ImGui.TableNextColumn();
         ImGui.TextDisabled(r.Facts is { } f ? $"{f.Players}/{f.MaxPlayers}" : r.Waiting ? "..." : "-");
         ImGui.TableNextColumn();
-        // The round trip to the server, which is not the time to join it and is the best guide
-        // there is to that before anybody has.
-        ImGui.TextDisabled(double.IsFinite(r.Ping) ? $"{r.Ping * 1000:F0} ms" : "");
-        ImGui.TableNextColumn();
         if (why.Length > 0)
         {
             ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.Pending);
@@ -904,6 +905,10 @@ internal static class Panel
         }
         else if (r.Facts is { } g) ImGui.TextDisabled(!g.HasWorld ? "no world yet" : g.System.Length > 0 ? Named(g.System) : "a world");
         else ImGui.TextDisabled("");
+        ImGui.TableNextColumn();
+        // The round trip to the server, which is not the time to join it and is the best guide
+        // there is to that before anybody has.
+        ImGui.TextDisabled(double.IsFinite(r.Ping) ? $"{r.Ping * 1000:F0} ms" : "");
     }
 
     /// <summary>

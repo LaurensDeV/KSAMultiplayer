@@ -563,6 +563,12 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   to being asked, and said `0 of 2` with one row already good. Names being resolved are counted as
   outstanding now.
 
+  The columns are headed, and carry the count of servers on the first of them: `Servers (2)`,
+  `Players`, `World`, `Latency`. Latency sits last because it is the least of what decides whether
+  to join -- the build, the mods and whether anybody is on it all come first -- and that is where
+  every server browser worth copying puts it. The header's id is held apart from its text with a
+  `###`, since a count that changes as servers answer would otherwise be a new column each time.
+
   **What has not been seen is joining from it.** The row was picked and the address filled, and
   nothing past that was pressed.
 
