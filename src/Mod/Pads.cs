@@ -33,7 +33,10 @@ internal static class Pads
     /// neighbour's. That disc is the widest thing a pad draws by a long way -- 81.9 m to the mesh's
     /// rim and 82.5 m to the corners of the boxes that collide it, against 62.1 m for the circular
     /// road and 14.9 m for the concrete -- so two of them want 165 m between centres and this
-    /// leaves them four metres apart.</para>
+    /// leaves them four metres apart. The least this may be is twice that disc over the footprint,
+    /// 165 / 108.3; <see cref="Ring"/> turns whatever is set here into both distances that follow
+    /// from it, neighbours in the ring ending up exactly this many footprints apart and the ring
+    /// standing 1.152 times that from the site's own pad.</para>
     ///
     /// <para>1.2 was read off a picture, and put the centres 130 m apart: those discs overlapped by
     /// 35 m on every side. Nothing showed while the ground still sloped, the overlaps being buried
@@ -143,17 +146,25 @@ internal static class Pads
                     .ThenBy(l => l.Key, StringComparer.Ordinal)];
 
     /// <summary>
-    /// The site's own pad first, so a quiet site launches from where it always did; the rest in an
-    /// order of this player's own, so that two games picking at the same moment, before either has
-    /// heard of the other's craft, are unlikely to pick the same one.
+    /// The pads of a site in the order this game tries them: as they are while this game is its own,
+    /// so a world nobody else is in launches from the pad it always did, and turned by this player's
+    /// id while it is in a world with others, so that no two games start at the same pad.
+    ///
+    /// <para>The site's own pad used to be put first whatever else was turned, which left the
+    /// turning doing nothing: every game's first choice was the same slab, and two players launching
+    /// at a quiet site -- before either's craft or state had crossed the wire for <see cref="Free"/>
+    /// to count -- both stood on it. The pads of a site are the same concrete as each other, sharing
+    /// the site's own <c>StaticObjectReference</c>, so there is nothing to prefer about any of
+    /// them. An id past the number of pads wraps onto one an earlier player starts at, and from
+    /// there the craft and states <see cref="Free"/> counts are what keeps them apart; this only
+    /// covers the moment before the first of them arrives.</para>
     /// </summary>
     private static List<LandmarkReference> Ordered(List<LandmarkReference> pads)
     {
-        if (pads.Count < 3 || Sync.Client is not { Joined: true } c) return pads;
-        int ring = pads.Count - 1;
-        int from = c.Id % ring;
-        List<LandmarkReference> mine = [pads[0]];
-        for (int i = 0; i < ring; i++) mine.Add(pads[1 + ((from + i) % ring)]);
+        if (pads.Count < 2 || Sync.Client is not { Joined: true } c) return pads;
+        int from = c.Id % pads.Count;
+        List<LandmarkReference> mine = new(pads.Count);
+        for (int i = 0; i < pads.Count; i++) mine.Add(pads[(from + i) % pads.Count]);
         return mine;
     }
 
@@ -183,7 +194,8 @@ internal static class Pads
     ///
     /// <para>Taken is KSA's own test for whether a craft is on a pad: within the pad's footprint of
     /// its centre, measured as an angle at the body and turned back into metres. The footprint is
-    /// 108 m and the pads are 130 m apart, so no craft can hold two of them at once.</para>
+    /// 108 m, neighbours in the ring stand 169 m apart and the ring 195 m out from the site's own
+    /// pad, so a craft standing on one pad is outside every other's.</para>
     /// </summary>
     public static LandmarkReference? Free(Celestial celestial, string siteId)
     {

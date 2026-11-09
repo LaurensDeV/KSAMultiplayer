@@ -484,3 +484,34 @@ the ring, so it widened to 303 m on its own.
 Both flown at VSFB LC-4, the worst case of the two: all eight pads at one height on flat ground,
 every ring road whole, grass between the aprons, nothing to walk in under, and the hillside still
 behind the site rather than levelled with it.
+
+## 2026-11-09 -- a rocket launched from the editor stands in one game only
+
+Found by reading rather than by being hit, and the symptom was never named as such: a craft launched
+from the vehicle editor is claimed, its name is in everybody's roster and its states are relayed to
+everybody, and no other game can build it. Players already in the world see the name flying and no
+rocket. A player who joins afterwards is fine, because the world they are handed holds the craft.
+
+`Sync.Made` is called as the editor closes, to say that the craft the editor just made is this
+game's own whatever the server makes of its name. It marked the craft in two sets, and only one of
+them was wanted:
+
+- `MadeHere` is the one it needed. Two games both launch a `NewRocket_1`, because KSA steps N against
+  this world alone; without `MadeHere` the second player's own rocket read as the first player's and
+  control was taken off them.
+- `Seen` means the craft was in the world this game loaded. Not being in it is the whole of how
+  `ClaimFlown` and `Adopt` recognise a craft made here -- one that wants a name of its own and a
+  definition the others can build it from.
+
+Marked seen, the craft took the other branch everywhere. `ClaimFlown` claimed it with `made` false,
+`Adopt` passed over it, and the only path left into `Owned` pre-set the shape it would be described
+at to the shape it already had, so the re-describe never fired either. The craft reached everything
+except `Define`.
+
+The claim is the second half of it. A claim with `made` false and a name another player holds is
+refused outright by the server, with no rename and nothing sent back -- which is the exact case the
+two lines were added to fix. `ClaimFlown` then resent that same refused claim every two seconds for
+the rest of the session.
+
+Fixed by marking only `MadeHere`. The launch menu does not go through `Sync.Made` and was never
+affected, which is why three releases went out with it.

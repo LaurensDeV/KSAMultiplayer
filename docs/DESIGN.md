@@ -440,7 +440,9 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   `Vehicle.GetInitialKinematicStateForLocation`, not at the `Celestial.GetLocation` that reads the
   site: that one is a single line forwarding to the body template, the JIT inlines it into the
   editor's exit, and a prefix on it never ran -- which is why every craft landed on the middle pad
-  while the picker was choosing the right one and being ignored.
+  while the picker was choosing the right one and being ignored. Those two landed on `MP2` and `MP3`
+  because every game then tried the site's own pad first and the ring after it; a game in a world
+  with others now starts at a pad of its own, so the names in a run like that one would differ.
 - **The vehicle editor, which asks nobody to stop.** KSA pauses the world to open the editor and
   runs it again on the way out, and the mod's speed prefix turned each into a speed put to the
   whole room: opening the VAB asked everybody else to pause. Watched working: with the editor open
@@ -500,6 +502,30 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   stand at one height on flat ground, every ring road is whole, there is grass between the aprons
   rather than a patchwork, and the hillside still rises behind the site instead of the mountain
   being levelled with it.
+- **A craft launched from the editor, built by a player already in the world.** Both games launched
+  from the VAB nineteen seconds apart, and each had the other's rocket standing on its pad within
+  three tenths of a second:
+
+  ```
+  B 10:57:24.022  launching from CCSFS LC-39A MP3 instead: the site's own pad is taken
+  B 10:57:24.071  sent the server how NewRocket_2 is built, 3681 bytes
+  A 10:57:24.338  built NewRocket_2, Bravo's
+  ```
+
+  Before this, neither definition was sent at all. A craft the editor made was marked as one the
+  world had loaded, which is the whole of how a craft made here is recognised, so it was claimed as
+  though it had always been there and nothing ever wrote it down: the name was in everybody's
+  roster, the states were relayed to everybody, and no other game could build it. Only `MadeHere` is
+  marked now. `errors.md` has the mechanism, and why three releases went out with it. A kitten on
+  EVA (`Babean`) crossed in the same run, so the adoption path that the old marking also sat on
+  still answers.
+- **Two games choosing different launchpads.** Player 1 took `CCSFS LC-39A MP2` and player 2 took
+  `MP3`, each the pad its own id picks out of the eight. The site's own pad used to be every game's
+  first choice whatever else was turned, which left the turning doing nothing. Not the whole of it:
+  those two launches were nineteen seconds apart, so the craft and states `Pads.Free` counts would
+  have kept them apart anyway. What was watched is that each game's *first* choice is now its own.
+  The moment the change exists for -- two launches inside the window before either craft has crossed
+  the wire -- has still not been made to happen on purpose.
 
 ## What has not been tried
 

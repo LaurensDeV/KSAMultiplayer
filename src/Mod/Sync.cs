@@ -587,12 +587,17 @@ internal static class Sync
     /// flying another player's craft -- the only thing standing between a new craft and that reading
     /// is whether it is known to have been made here, and nothing knew yet. They were told somebody
     /// else was flying their own rocket, control was taken off them, and no claim was ever sent.</para>
+    ///
+    /// <para>Marked made here and nothing else. <see cref="Seen"/> means the craft was in the world
+    /// this game loaded, and not being in it is what <see cref="ClaimFlown"/> and <see cref="Adopt"/>
+    /// read as a craft made here: one that wants a name of its own, and a definition the others can
+    /// build it from. Marked seen as well, a craft launched from the editor is claimed with made
+    /// false -- which the server refuses outright where another player holds the name, leaving the
+    /// same refused claim resent every two seconds for the rest of the session -- and is never
+    /// written down for anybody. Nobody else already in the world could build it, so the rocket
+    /// stood on its pad in one game only. The launch menu does not come through here.</para>
     /// </summary>
-    public static void Made(Vehicle v)
-    {
-        Seen.Add(v);
-        MadeHere.Add(v);
-    }
+    public static void Made(Vehicle v) => MadeHere.Add(v);
 
     /// <summary>Whether any game in this world has claimed a name.</summary>
     public static bool SomebodyOwns(string key) => _client is { Joined: true } c && c.OwnerOf(key) != 0;
