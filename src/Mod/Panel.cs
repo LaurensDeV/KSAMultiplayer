@@ -851,7 +851,8 @@ internal static class Panel
         ConsoleStyle.PopWidgetStyle();
         ConsoleStyle.EndBody();
 
-        bool ready = AddressText.ToString().Trim().Length > 0 && NameText.ToString().Trim().Length > 0 && !Sync.AskingAhead;
+        bool ready = AddressText.ToString().Trim().Length > 0 && NameText.ToString().Trim().Length > 0
+                     && !Sync.AskingAhead && !WouldBeRefused;
         ConsoleStyle.BeginFooter();
         ConsoleStyle.FooterRightAlign(ConsoleWidgets.ButtonWidth("PLAY ALONE".AsSpan())
                                       + ConsoleWidgets.ButtonWidth("CONNECT".AsSpan())
@@ -1048,6 +1049,18 @@ internal static class Panel
         return "";
     }
 
+    /// <summary>
+    /// Whether the server in the address field would turn this game away, as far as this game knows.
+    ///
+    /// <para>Only the three a player cannot do anything about without starting KSA again: the build,
+    /// mods they have not got and mods they have that the world has not. A server that is full and
+    /// one that did not answer are left alone on purpose -- the first changes between looking and
+    /// clicking, and the second is as likely to be a lost datagram as a dead server. Greying the
+    /// button over either would lock a player out of a server that is fine on the strength of a
+    /// guess this game made two seconds ago.</para>
+    /// </summary>
+    private static bool WouldBeRefused => Known(AddressText.ToString().Trim()) is { } f && Refused(f).Length > 0;
+
     /// <summary>"it" for one mod in a list and "them" for more.</summary>
     private static string One(string mods) => mods.Contains(',') ? "them" : "it";
 
@@ -1243,7 +1256,7 @@ internal static class Panel
                               $"This world is in {Named(there.System)}; you are in {Named(World.System)}. Restart KSA to join it.");
         }
 
-        bool ready = typed.Length > 0 && NameText.ToString().Trim().Length > 0 && !Sync.AskingAhead;
+        bool ready = typed.Length > 0 && NameText.ToString().Trim().Length > 0 && !Sync.AskingAhead && !WouldBeRefused;
         ImGui.BeginDisabled(!ready);
         if (BottomRight("CONNECT".AsSpan()))
         {

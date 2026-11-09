@@ -196,8 +196,11 @@ internal static class Browser
         }
         if (f.KsaBuild.Length > 0 && World.KsaBuild.Length > 0 && f.KsaBuild != World.KsaBuild) return "wrong KSA build";
         (string missing, string extra) = Sync.ModsAgainst(f.Mods);
-        if (missing.Length > 0) return "needs mods";
-        if (f.Mods.Length > 0 && extra.Length > 0) return "extra mods";
+        // What to do rather than what is wrong, for the two that have one thing to do. "extra mods"
+        // did not say whose they were, and read as the server having some that a player would need
+        // -- which is backwards.
+        if (missing.Length > 0) return "turn mods on";
+        if (f.Mods.Length > 0 && extra.Length > 0) return "turn mods off";
         if (f.Full) return "full";
         return "";
     }
