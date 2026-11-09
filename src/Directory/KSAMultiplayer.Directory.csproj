@@ -18,7 +18,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
-    <Version>0.13.1</Version>
+    <Version>0.13.2</Version>
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
