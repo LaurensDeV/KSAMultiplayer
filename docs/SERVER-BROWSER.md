@@ -30,7 +30,7 @@ The read side is deliberately dumb enough that **a static file is a valid implem
   "servers": [ { "host": "mp.ksarmory.com", "port": 50100, "name": "KSArmory",
                  "protocol": 23, "ksa": "2026.11.10.5801", "players": 3, "max": 16,
                  "password": false, "system": "Sol", "mods": "...",
-                 "seen": 1762689600 } ] }
+                 "seen": 1794233842 } ] }
 ```
 
 So a directory can be this project's VPS with live heartbeats, or a clan's three servers in a

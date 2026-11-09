@@ -26,11 +26,7 @@ public sealed record Listed(
     bool Password = false,
     string System = "",
     string Mods = "",
-    long Seen = 0)
-{
-    /// <summary>How a row is spelled, and how two listings of one server are told apart before anybody has asked either of them anything.</summary>
-    public string Where => Port == Wire.DefaultPort ? Host : $"{Host}:{Port}";
-}
+    long Seen = 0);
 
 /// <summary>
 /// What a directory answers, and the whole of what one has to be able to do.

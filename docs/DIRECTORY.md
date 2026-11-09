@@ -34,7 +34,7 @@ GET https://your.directory/v1/servers
       "password": false,
       "system": "Sol",
       "mods": "Core,KSAMultiplayer",
-      "seen": 1762689600
+      "seen": 1794233842
     }
   ]
 }
