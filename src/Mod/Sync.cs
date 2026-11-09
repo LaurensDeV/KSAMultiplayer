@@ -1300,7 +1300,11 @@ internal static class Sync
             if (Owned.ContainsKey(key) || !here.TryGetValue(key, out Vehicle? taken)) continue;
             // The server gave this player a craft it took control of: it is no puppet now.
             Puppets.Remove(taken);
-            Owned[key] = new Mine(taken);
+            // A shape of 0 is one no craft has, so the sending round writes this one down before it
+            // starts sending states for it. Taken rather than claimed, it may never have been
+            // described by this game, and a Mine starting at the craft's shape as it stands never
+            // notices: the shape it compares against is already the answer.
+            Owned[key] = new Mine(taken) { Shape = 0 };
         }
         double now = Wall();
         foreach ((string key, Mine entry) in Owned.ToArray())

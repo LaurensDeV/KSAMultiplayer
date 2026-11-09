@@ -237,17 +237,23 @@ internal static class Pads
         return null;
     }
 
-    // The editor's chosen body and site, which it keeps to itself. Read rather than guessed at: the
-    // list it offers is the one this mod filtered, so the name in it is a site's and the pads of
-    // that site are what matter.
-    private static readonly System.Reflection.FieldInfo? ChosenBody = AccessTools.Field(typeof(VehicleEditor), "_selectedCelestial");
-    private static readonly System.Reflection.FieldInfo? ChosenSite = AccessTools.Field(typeof(VehicleEditor), "_selectedLocation");
+    // The chosen body and site of whichever menu is asking, which each keeps to itself. Read rather
+    // than guessed at: the list it offers is the one this mod filtered, so the name in it is a
+    // site's and the pads of that site are what matter. By the menu's own type, because the vehicle
+    // editor and the launch menu hold these under the same two names and both must be asked -- and
+    // kept, because the editor asks every frame it is open.
+    private static readonly Dictionary<Type, (System.Reflection.FieldInfo? Body, System.Reflection.FieldInfo? Site)> Asked = [];
 
-    /// <summary>Which body and which launch site the editor is pointed at, as far as it will say.</summary>
-    public static (Celestial? Body, string Site) Chosen(VehicleEditor editor)
+    /// <summary>Which body and which launch site a menu is pointed at, as far as it will say.</summary>
+    public static (Celestial? Body, string Site) Chosen(object menu)
     {
-        object? body = ChosenBody?.GetValue(editor);
-        object? site = ChosenSite?.GetValue(editor);
+        Type kind = menu.GetType();
+        if (!Asked.TryGetValue(kind, out (System.Reflection.FieldInfo? Body, System.Reflection.FieldInfo? Site) found))
+        {
+            Asked[kind] = found = (AccessTools.Field(kind, "_selectedCelestial"), AccessTools.Field(kind, "_selectedLocation"));
+        }
+        object? body = found.Body?.GetValue(menu);
+        object? site = found.Site?.GetValue(menu);
         Celestial? where = body is null
             ? null
             : (AccessTools.Field(body.GetType(), "Celestial")?.GetValue(body)
@@ -257,14 +263,14 @@ internal static class Pads
     }
 
     /// <summary>
-    /// Whether the site the editor is pointed at has a pad to put a craft on. True whenever it
-    /// cannot be told: a launch is never refused over a question this mod could not answer.
+    /// Whether the site a menu is pointed at has a pad to put a craft on. True whenever it cannot be
+    /// told: a launch is never refused over a question this mod could not answer.
     /// </summary>
-    public static bool Room(VehicleEditor editor)
+    public static bool Room(object menu)
     {
         try
         {
-            (Celestial? body, string site) = Chosen(editor);
+            (Celestial? body, string site) = Chosen(menu);
             return body is null || site.Length == 0 || Free(body, site) is not null;
         }
         catch (Exception e)

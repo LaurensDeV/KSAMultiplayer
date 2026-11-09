@@ -603,9 +603,18 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   one kitten sent out: it was built as the other's puppet from the new window, no patch warning, no
   `Update task failed` in either game. That shows nothing broken, not the race cured -- the failures
   were seen with three players and two rockets in pieces, which is a load no rig here can make.
+- **A craft the server hands over, written down.** A craft this game is given control of without
+  having claimed it reaches `Owned` by a path of its own, and that path used to record the shape it
+  would next be described at as the shape it already had -- so the re-describe never fired and a
+  craft taken this way was never written down. It starts at a shape no craft has now, as the rebuild
+  path beside it already did. The editor launch that shared this fault has been flown; this one has
+  not, there being no way from here to make the server hand a craft over on purpose.
 - **A full site refusing a launch.** Nobody has filled all eight pads to see the refusal and the
   line drawn over the editor. What has been watched is the other side of it: the warning rightly
-  absent and nothing refused while pads are free.
+  absent and nothing refused while pads are free. The launch menu for a craft already built refuses
+  one too, which is newer still: it had no refusal at all and stacked onto the site's own pad, and it
+  answers with KSA's own timed alert rather than with the mod's line, which is drawn over the editor
+  and not over that menu.
 - **A craft described over and over while it comes apart.** A game adopts a craft it has not seen,
   and `Seen` holds Vehicle objects: when KSA destroys and remakes a stack under the same Id, as it
   does while a rocket breaks up, the new object is unseen and the craft is described again. Watched

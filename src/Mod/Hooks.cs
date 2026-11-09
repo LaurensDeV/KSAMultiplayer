@@ -242,7 +242,7 @@ internal static class Hooks
             Patch(AccessTools.Method(typeof(Vehicle), nameof(Vehicle.GetInitialKinematicStateForLocation)), nameof(BeforeInitialState),
                   "a craft launched from the editor goes to the pad the site was given, taken or not");
             Patch(AccessTools.Method(typeof(VehicleLaunchMenu), "LaunchVehicle"), nameof(BeforeMenuLaunch),
-                  "a vehicle launched from the launch menu goes to the pad the site was given, taken or not");
+                  "a vehicle launched from the launch menu stacks onto a pad somebody is standing on");
             PatchAfter(AccessTools.Method(typeof(VehicleLaunchMenu), "LaunchVehicle"), nameof(AfterMenuLaunch),
                   "every location lookup after the launch menu is answered with a launchpad");
             PatchAfter(AccessTools.Method(typeof(VehicleEditingSpace), nameof(VehicleEditingSpace.GenerateNewVehicleId)),
@@ -454,7 +454,31 @@ internal static class Hooks
     // The other way a craft is launched: the menu for one already built, which places it the same
     // way the editor does and so wants the same pad chosen for it. Without this, everything sent up
     // from that menu went to the site's own pad however many craft were standing on it.
-    private static void BeforeMenuLaunch() => _launching = true;
+    //
+    // Refused here where the site is full, as the editor's launch is refused in RequestExit. This is
+    // the only gate: the menu asks about a crewless launch after the click and calls straight back
+    // into this, so a refusal anywhere earlier would be walked past. KSA's own alert says why rather
+    // than the panel, which is drawn over the editor and not over this menu, and a click is the
+    // moment to answer a click.
+    private static bool BeforeMenuLaunch(VehicleLaunchMenu __instance)
+    {
+        try
+        {
+            if (!Pads.Room(__instance))
+            {
+                string site = Pads.Chosen(__instance).Site;
+                Log.Info($"refused a launch from the launch menu: every pad at {site} is taken");
+                TimedAlert.CreateWarning($"Every pad at {site} has a craft on it: move or recover something, or pick another site.");
+                return false;
+            }
+        }
+        catch (Exception e)
+        {
+            Complain("telling the launch menu whether a pad is free", e);
+        }
+        _launching = true;
+        return true;
+    }
 
     private static void AfterMenuLaunch() => _launching = false;
 
