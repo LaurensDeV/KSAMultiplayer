@@ -153,8 +153,19 @@ public static class Wire
     /// place every craft at a launch site against ground of a different shape, and at Vandenberg,
     /// where the levelling is 52 m deep, another player's rocket would stand buried in a hillside
     /// that is not there for anybody else.</para>
+    ///
+    /// <para>23 has a welcome carry how many players are on a server, the most it takes, whether it
+    /// wants a password and which KSA build it wants. All of it was already known to a server and
+    /// said nowhere a game could read it before joining: the player count only in its own console,
+    /// the most players only in the refusal for being the one over it, and the build only by being
+    /// refused for the wrong one. A list of servers is unreadable without them -- a row with no
+    /// player count is half a row, and a row that cannot say "needs KSA 2026.11.10.5801" sends a
+    /// player to find that out by being thrown out.</para>
     /// </summary>
-    public const ushort Version = 22;
+    public const ushort Version = 23;
+
+    /// <summary>The port a server listens on unless it is given another, and what an address with no port in it means.</summary>
+    public const int DefaultPort = 50100;
 
     public const int BufferBytes = 8192;
     public const int NameChars = 24;
@@ -179,9 +190,14 @@ public static class Wire
     ///
     /// <para>The welcome that carries it is the cookie's, answered to an address the server has not
     /// heard from before, so its size is an amplifier aimed at whoever a datagram claims to be from.
-    /// A hello is about 140 bytes; this keeps the answer near 450 rather than 4,400, which is a
+    /// A hello is about 140 bytes; this keeps the answer near 470 rather than 4,400, which is a
     /// reflector nobody wants. Twenty mod ids fit, the authoritative comparison happens at the real
     /// handshake, and a list longer than this is clipped rather than refused.</para>
+    ///
+    /// <para>The player count, the most players, the flags and the build added in version 23 come to
+    /// about twenty bytes of that, taking the factor from roughly 3.2 to 3.4. Anything further put
+    /// in a welcome is spent out of the same budget, and a field worth fewer bytes than it costs
+    /// reflection belongs in a datagram only a joined player gets.</para>
     /// </summary>
     public const int ProbeModsChars = 300;
 
@@ -247,6 +263,16 @@ public static class Wire
         Running = 2,
     }
 
+    /// <summary>What a server says of itself in a welcome past the plain fields, so the next one of these costs no bytes.</summary>
+    [Flags]
+    public enum WelcomeFlags : byte
+    {
+        None = 0,
+
+        /// <summary>A password is wanted: a list of servers says so on the row rather than letting a player find out by being refused.</summary>
+        Password = 1,
+    }
+
     public abstract record Message(Kind Kind);
 
     /// <param name="Mods">Every mod the game has enabled, comma separated: a world holding a part of one it lacks does not load.</param>
@@ -263,7 +289,10 @@ public static class Wire
     /// <param name="Cookie">A word to say again in the next hello, when the server has not yet heard
     /// anything from this address that it chose itself. Empty on a welcome that admits or refuses.</param>
     /// <param name="Mods">The mods the server's world wants, comma separated; empty when it asks none.</param>
-    public sealed record Welcome(byte Id, string Refused, string ServerName, bool HasWorld, string Cookie = "", string System = "", string Mods = "") : Message(Kind.Welcome);
+    /// <param name="Players">How many players are on the server now, and <paramref name="MaxPlayers"/> the most it takes. Both are nothing to a game that has joined, which has a roster; they are what a list of servers is read for.</param>
+    /// <param name="KsaBuild">The build this server's world wants, empty when it wants whichever it is given. On a row of a list because a game cannot change its own build without being started again, so this is the one thing a player has to act on before clicking rather than after.</param>
+    public sealed record Welcome(byte Id, string Refused, string ServerName, bool HasWorld, string Cookie = "", string System = "", string Mods = "",
+                                 byte Players = 0, byte MaxPlayers = 0, WelcomeFlags Flags = WelcomeFlags.None, string KsaBuild = "") : Message(Kind.Welcome);
 
     /// <param name="Rtt">The player's round trip to the server, s, as that player last measured it; negative until it has.</param>
     /// <param name="Can">The speed that player's game is managing, as a multiple of real time:
@@ -491,6 +520,10 @@ public static class Wire
                 w.Text(m.Cookie, CookieChars);
                 w.Text(m.System, NameChars);
                 w.LongText(m.Mods, ProbeModsChars);
+                w.U8(m.Players);
+                w.U8(m.MaxPlayers);
+                w.U8((byte)m.Flags);
+                w.Text(m.KsaBuild, 64);
                 break;
             case Roster r:
                 w.U8((byte)Math.Min(r.Players.Length, 64));
@@ -637,7 +670,8 @@ public static class Wire
             Message m = (Kind)data[6] switch
             {
                 Kind.Hello => new Hello(r.Text(NameChars), r.Text(64), r.LongText(4000), r.Text(NameChars), r.Text(64), r.Text(TokenChars), r.Text(CookieChars)),
-                Kind.Welcome => new Welcome(r.U8(), r.LongText(RefusedChars), r.Text(64), r.U8() != 0, r.Text(CookieChars), r.Text(NameChars), r.LongText(ProbeModsChars)),
+                Kind.Welcome => new Welcome(r.U8(), r.LongText(RefusedChars), r.Text(64), r.U8() != 0, r.Text(CookieChars), r.Text(NameChars), r.LongText(ProbeModsChars),
+                                            r.U8(), r.U8(), (WelcomeFlags)r.U8(), r.Text(64)),
                 Kind.Roster => ReadRoster(ref r),
                 Kind.Bye => new Bye(r.Text(200)),
                 Kind.Alive => new Alive(),

@@ -22,7 +22,7 @@ namespace KSAMultiplayer;
 /// </summary>
 internal static class Sync
 {
-    public const int DefaultPort = 50100;
+    public const int DefaultPort = Wire.DefaultPort;
 
     // The craft being flown is sent this often, and any other owned craft this often.
     private const double ControlledEverySeconds = 1.0 / 20.0, OwnedEverySeconds = 0.5;
@@ -385,7 +385,7 @@ internal static class Sync
     public static bool AskingAhead => _ahead is not null;
 
     /// <summary>What the last server asked answered about itself, and the address that was asked.</summary>
-    public static (string ServerName, string System, bool HasWorld, string Mods)? Server { get; private set; }
+    public static ServerFacts? Server { get; private set; }
 
     public static string ServerAsked { get; private set; } = "";
 

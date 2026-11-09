@@ -40,6 +40,19 @@ public sealed record ServerOptions
     /// <c>fresh</c> puts in place of the one there is.
     /// </summary>
     public string EmptyWorld { get; init; } = "";
+
+    /// <summary>
+    /// Whether this server is announced to directories, so players can find it without being told its
+    /// address. Off unless an operator says so: being listed publishes the address the server is
+    /// reached at, which is a decision for whoever runs the machine and not for whoever wrote this.
+    /// </summary>
+    public bool Advertise { get; init; }
+
+    /// <summary>The name to be listed under, empty to be listed at whatever address a directory sees an announcement arrive from.</summary>
+    public string AdvertiseAs { get; init; } = "";
+
+    /// <summary>Where to announce to, separated by commas; empty for the built-in list.</summary>
+    public string Directories { get; init; } = "";
 }
 
 /// <summary>
@@ -484,7 +497,14 @@ public sealed class GameServer : IDisposable
             // it has a universe, and nothing a stranger could not learn by being refused for the
             // wrong one. The mods matter most here of anywhere, because KSA reads its own once at
             // startup: a player told after a world has loaded has to restart to act on it.
-            _udp.Send(new Wire.Welcome(0, "", Options.Name, _world is not null, Cookie(from, (long)(now / CookieSeconds)), _worldSystem, WorldMods), from);
+            //
+            // So do the counts and the build, for the same reason one step further out: this is the
+            // answer a list of servers is built from, and a row that cannot say "3/16" or "needs
+            // KSA 2026.11.10.5801" sends a player to learn both by being refused. Only this welcome
+            // carries them. The two that admit and refuse go to somebody who is past needing them.
+            _udp.Send(new Wire.Welcome(0, "", Options.Name, _world is not null, Cookie(from, (long)(now / CookieSeconds)), _worldSystem, WorldMods,
+                                       (byte)Math.Min(_players.Count, 255), (byte)Math.Min(Options.MaxPlayers, 255),
+                                       Options.Password.Length > 0 ? Wire.WelcomeFlags.Password : Wire.WelcomeFlags.None, RequiredBuild), from);
             return;
         }
         string? refused = _players.Count >= Options.MaxPlayers ? $"the server is full: {Options.MaxPlayers} players"

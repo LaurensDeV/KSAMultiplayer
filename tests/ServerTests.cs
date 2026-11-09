@@ -394,15 +394,20 @@ public class ServerTests
         rig.Clients.Add(early);
         early.Probe(server);
         rig.Until(() => early.Probed is not null, what: "an answer about a server with no world");
-        Assert.Equal(("KSA server", "", false, ""), early.Probed!.Value);
+        // The counts and the build come with it from version 23, so a list of servers can be drawn
+        // from this answer alone: nobody on it, room for sixteen, no password, and no build wanted
+        // because a server with no world takes whichever build brings it one.
+        Assert.Equal(new ServerFacts("KSA server", "", false, "", 0, 16, false, ""), early.Probed);
 
         rig.Server.SetWorld(new Blob(BlobKind.World, "", 0, 0.0, Rig.FakeWorld()), "B1", ["Core", "KSArmory"], "SolLite", timeKnown: false);
         Client later = new(rig.Now);
         rig.Clients.Add(later);
         later.Probe(server);
         rig.Until(() => later.Probed is not null, what: "an answer about a server with a world");
-        // The mods come with it, so a player is told what to turn on before KSA has read its own.
-        Assert.Equal(("KSA server", "SolLite", true, "Core,KSArmory"), later.Probed!.Value);
+        // The mods come with it, so a player is told what to turn on before KSA has read its own,
+        // and so does the build the world was made by, which a player cannot change without
+        // starting KSA again -- the one thing on a row worth acting on before clicking it.
+        Assert.Equal(new ServerFacts("KSA server", "SolLite", true, "Core,KSArmory", 0, 16, false, "B1"), later.Probed);
 
         // Asking is not joining: nothing held on the roster, nothing said to anybody.
         rig.For(0.3);
