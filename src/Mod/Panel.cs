@@ -892,10 +892,15 @@ internal static class Panel
     private const float PanelTall = 190f;
 
     /// <summary>
-    /// What the two blocks under the list are filled with. A touch of white rather than a colour of
-    /// its own, so it lifts off whatever KSA's own background is rather than guessing at it.
+    /// What the two blocks under the list are filled with: white at an alpha that lifts them off
+    /// whatever KSA's own background is, rather than a colour of this window's own choosing.
+    ///
+    /// <para>Higher than it looks like it should be. Something scales this down on the way to the
+    /// screen -- at 0.04 and again at 0.09 the blocks were not distinguishable from the window
+    /// behind them, and only a value that could not possibly be missed proved the colour was being
+    /// applied at all rather than ignored.</para>
     /// </summary>
-    private static readonly float4 PanelBackground = new(1f, 1f, 1f, 0.04f);
+    private static readonly float4 PanelBackground = new(1f, 1f, 1f, 0.20f);
 
     /// <summary>Whether the address field should take the keyboard, which "Add server" asks for.</summary>
     private static bool _focusAddress;
@@ -922,8 +927,16 @@ internal static class Panel
 
         ImGui.BeginChild("###KSAMultiplayerServers", new float2(0f, tall), ImGuiChildFlags.Borders);
         ImGui.PushStyleColor(ImGuiCol.TableHeaderBg, in HeadingBackground);
+        // Given the height it is to fill rather than left to end with its last row. A table that
+        // stops where its rows stop takes the lines between its columns with it, so three servers
+        // drew three rows' worth of rule and then nothing, and the box below looked unfinished.
+        // Scrolling comes with the fixed height, and takes the headings with it as it goes.
+        float2 pad = ImGui.GetStyle().WindowPadding;
+        float rowsTall = MathF.Max(80f, tall - ConsoleWidgets.ButtonHeight - (pad.Y * 2f) - ImGui.GetStyle().ItemSpacing.Y);
         if (ImGui.BeginTable("###KSAMultiplayerServerRows", 4,
-                             ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp | ImGuiTableFlags.BordersInnerV))
+                             ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp | ImGuiTableFlags.BordersInnerV
+                             | ImGuiTableFlags.ScrollY,
+                             new float2(0f, rowsTall)))
         {
             ImGui.TableSetupColumn("Server###server"u8, ImGuiTableColumnFlags.WidthStretch, 1.0f);
             ImGui.TableSetupColumn("Players###players"u8, ImGuiTableColumnFlags.WidthFixed, 72f);
@@ -951,7 +964,6 @@ internal static class Panel
 
         // Along the floor of the box: what the list is doing on the left, and the button that makes
         // it do it again on the right.
-        float2 pad = ImGui.GetStyle().WindowPadding;
         ImGui.SetCursorPosY(tall - ConsoleWidgets.ButtonHeight - pad.Y);
         ImGui.SetCursorPosY(ImGui.GetCursorPosY() + ((ConsoleWidgets.ButtonHeight - ImGui.GetTextLineHeight()) * 0.5f));
         string note =
