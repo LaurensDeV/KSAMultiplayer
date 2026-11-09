@@ -791,7 +791,7 @@ internal static class Panel
 
         // The list gets whatever the two blocks under it do not need. It is what the window is for.
         float spacing = ImGui.GetStyle().ItemSpacing.Y;
-        float below = PanelTall + (spacing * 2f) + (ahead ? ImGui.GetFrameHeight() + spacing : 0f);
+        float below = PanelTall + (spacing * 2f);
         Servers(typed, MathF.Max(150f, ImGui.GetContentRegionAvail().Y - below));
 
         bool edited = false;
@@ -810,6 +810,17 @@ internal static class Panel
         edited |= Field("Nickname"u8, "###KSAMultiplayerName", NameText);
         Told("MP protocol"u8, $"Version {Wire.Version}");
         ImGui.Columns(1);
+        // On this block's floor, as CONNECT is on the other's. What KSA shows before it starts is
+        // something about this game and not about any server, so it belongs on this side.
+        if (ahead)
+        {
+            ImGui.SetCursorPosY(PanelTall - ImGui.GetFrameHeight() - PanelPadding.Y);
+            // The gap between a checkbox and its words is the same one ImGui puts between any two
+            // things on a line, which beside a box reads as the label leaning on it.
+            ImGui.PushStyleVarX(ImGuiStyleVar.ItemInnerSpacing, 10f);
+            ImGui.Checkbox("Display settings before starting", ref _settingsFirst);
+            ImGui.PopStyleVar();
+        }
         ImGui.EndChild();
         ImGui.PopStyleColor();
 
@@ -878,14 +889,6 @@ internal static class Panel
         ImGui.EndChild();
         ImGui.PopStyleColor();
 
-        if (ahead)
-        {
-            // The gap between a checkbox and its words is the same one ImGui puts between any two
-            // things on a line, which beside a box reads as the label leaning on it.
-            ImGui.PushStyleVarX(ImGuiStyleVar.ItemInnerSpacing, 10f);
-            ImGui.Checkbox("Display settings before starting", ref _settingsFirst);
-            ImGui.PopStyleVar();
-        }
         // Kept as soon as a field is done with, not only on connecting: a name typed before a server
         // refuses, or before the player thinks better of it, is still the name they want next time.
         if (edited) Save();
