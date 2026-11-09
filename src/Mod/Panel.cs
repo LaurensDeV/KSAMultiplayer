@@ -1060,16 +1060,17 @@ internal static class Panel
         string[] spare = [.. extra.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                                   .Where(m => !Given.Contains(m, StringComparer.OrdinalIgnoreCase))];
 
-        // Counted together, because the count is read as "how much stands between me and this
-        // server" and a mod to turn off stands there exactly as firmly as one to turn on. Counting
-        // only the first said "Mods (0)" to a player the server was refusing over the second.
-        ImGui.Text($"Mods ({shown.Length + spare.Length})");
+        // No count on the label. A bare number beside the word Mods reads as a number the server
+        // wants, so "Mods (1)" against one mod to turn off said the opposite of the truth -- and
+        // said it twice, the row beside it already being "1 to turn off". The number goes where its
+        // meaning is and nowhere else.
+        ImGui.Text("Mods"u8);
         ImGui.NextColumn();
-        // And the node says which it is. It read "Required mods" over a list of mods to turn off,
-        // so the one thing in the way was filed under a word meaning the opposite.
+        // Which the number is, in the same breath. This read "Required mods" over a list of mods to
+        // turn off, filing the one thing in the way under a word meaning the opposite.
         string what = absent.Count > 0 ? $"{absent.Count} to turn on"
                     : spare.Length > 0 ? $"{spare.Length} to turn off"
-                    : $"{shown.Length} this world uses";
+                    : $"{shown.Length} needed";
         if (shown.Length == 0 && spare.Length == 0)
         {
             ImGui.TextDisabled("none needed");
