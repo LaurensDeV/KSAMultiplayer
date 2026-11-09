@@ -916,15 +916,15 @@ internal static class Panel
     private const float PanelTall = 220f;
 
     /// <summary>
-    /// What the two blocks under the list are filled with: white at an alpha that lifts them off
-    /// whatever KSA's own background is, rather than a colour of this window's own choosing.
+    /// What the two blocks under the list are filled with: white at an alpha that lifts them a
+    /// little off the body behind them, rather than a colour of this window's own choosing.
     ///
-    /// <para>Higher than it looks like it should be. Something scales this down on the way to the
-    /// screen -- at 0.04 and again at 0.09 the blocks were not distinguishable from the window
-    /// behind them, and only a value that could not possibly be missed proved the colour was being
-    /// applied at all rather than ignored.</para>
+    /// <para>Measured off the screen rather than judged by eye, which got it wrong twice. The alpha
+    /// arrives exactly as written -- the body sits at 18 and the blocks land on 18 + a*237, so 0.08
+    /// is the small step the wireframe has and 0.20, which looked right in a screenshot, was three
+    /// times it.</para>
     /// </summary>
-    private static readonly float4 PanelBackground = new(1f, 1f, 1f, 0.20f);
+    private static readonly float4 PanelBackground = new(1f, 1f, 1f, 0.08f);
 
     /// <summary>
     /// What a cell of the list keeps between its words and the rule beside them, and what the two
