@@ -25,6 +25,12 @@ const string Usage = """
       --keep-time            let universe time run with nobody playing
       --speed <x>            how fast universe time runs (default 1)
       --lapse-within <s>     seconds a craft stays its owner's while they are not near it (default 10)
+      --advertise            list this server in the public directories so players can find it.
+                             Off by default: being listed publishes the address this server is
+                             reached at, which is a decision for whoever runs the machine
+      --advertise-as <host>  the hostname to be listed under (default: the address a directory
+                             sees the announcement arrive from)
+      --directories <urls>   where to announce, separated by commas (default: the built-in list)
       --config <path>        the settings file (default: ksamp-server.toml beside the server)
       --help                 this
 
@@ -176,12 +182,20 @@ catch (Exception e) when (e is IOException or InvalidDataException or Unauthoriz
 }
 
 string Version = typeof(GameServer).Assembly.GetName().Version?.ToString(3) ?? "unknown";
+// So a directory's log says which build asked it anything.
+Listings.Agent = $"ksamp-server/{Version}";
+// Made after the socket, which is where the port it is really on comes from: a server started on
+// port 0 picks one, and the one it announces has to be the one it answers on.
+Announcer announcer = new(options, server.Port, Now);
 
 while (server.Said.TryDequeue(out string? early)) Say(early);
 Say($"ksamp-server {Version}, speaking protocol {Wire.Version}");
 Say($"settings: {configPath}");
 Say($"{options.Name}: listening on UDP {(bind?.ToString() ?? "*")}:{server.Port}, up to {options.MaxPlayers} players{(options.Password.Length > 0 ? ", with a password" : "")}");
 Say(server.HasWorld ? "a world is ready to hand out" : "no world yet: the first player to join gives the server theirs");
+// Said at every start whichever way it is set, so an operator reading the log at least learns that
+// the setting is there. A list nobody opts into is an empty list.
+Say(Announcer.Standing(options));
 
 CancellationTokenSource stop = new();
 Console.CancelKeyPress += (_, e) =>
@@ -398,6 +412,7 @@ void Reapply((Settings.Setting Setting, string Value)? change)
         Say(s.Live ? $"{s.Key} is now '{value}'" : $"{s.Key} is '{value}' in the file; a restart takes it up");
     }
     server.Reconfigure(nextOptions);
+    announcer.Reconfigure(nextOptions);
     foreach ((string key, (string Value, string From) v) in next) if (Settings.Find(key)!.Live) started[key] = v;
 }
 
@@ -431,7 +446,9 @@ while (!stop.IsCancellationRequested)
         while (commands.TryDequeue(out string? c)) Command(c);
         while (server.Asked.TryDequeue(out (GameServer.Player Who, string Line) a)) Command(a.Line, a.Who);
         server.Tick();
+        announcer.Tick();
         while (server.Said.TryDequeue(out string? s)) Say(s);
+        while (announcer.Said.TryDequeue(out string? s)) Say(s);
     }
     catch (Exception e)
     {
@@ -442,5 +459,7 @@ while (!stop.IsCancellationRequested)
 }
 
 Say("shutting down");
+announcer.Dispose();
+while (announcer.Said.TryDequeue(out string? last)) Say(last);
 server.Dispose();
 return 0;

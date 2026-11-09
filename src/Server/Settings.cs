@@ -36,6 +36,9 @@ public static class Settings
         new("keep-time", Kind.Flag, "false", "let universe time run with nobody playing", true),
         new("speed", Kind.Number, "1", "how fast universe time runs, 0 to 100", true),
         new("empty-world", Kind.Text, "", "start with an empty world of this system rather than waiting for a player to bring one, and the world 'fresh' puts in place of the one there is; empty to wait", true),
+        new("advertise", Kind.Flag, "false", "list this server in the public directories so players can find it; its address becomes public", true),
+        new("advertise-as", Kind.Text, "", "the hostname to be listed under; empty to be listed at the address a directory sees", true),
+        new("directories", Kind.Text, "", "where to announce, separated by commas; empty for the built-in list", true),
     ];
 
     public const string FileName = "ksamp-server.toml";
@@ -115,6 +118,9 @@ public static class Settings
             KeepTime = Flag("keep-time"),
             Speed = Math.Clamp(Number("speed"), 0.0, 100.0),
             EmptyWorld = Empty(),
+            Advertise = Flag("advertise"),
+            AdvertiseAs = Text("advertise-as").Trim(),
+            Directories = Text("directories").Trim(),
         };
         IPAddress? bind = Text("bind").Trim() is { Length: > 0 } b
             ? IPAddress.TryParse(b, out IPAddress? at) ? at : throw new FormatException($"bind is '{b}', which is not an address")
