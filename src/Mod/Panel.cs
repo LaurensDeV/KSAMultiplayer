@@ -918,6 +918,9 @@ internal static class Panel
             bool mine = found.Found.Contains(Browser.Yours);
             string[] directories = [.. found.Found.Where(n => n != Browser.Yours)];
             ImGui.SameLine();
+            // Down by half of what the button is taller than a line of text. Beside a framed widget
+            // the cursor sits at the top of the line, so the text rode along the button's top edge.
+            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + ((ConsoleWidgets.ButtonHeight - ImGui.GetTextLineHeight()) * 0.5f));
             ImGui.TextDisabled(
                 directories.Length == 0 ? $"{found.Where}: you have connected here before"
                 : mine ? $"{found.Where}: you have connected here before, and it is listed by {string.Join(", ", directories)}"
