@@ -916,7 +916,9 @@ internal static class Panel
             : asked == 0 ? "   no directories to ask; type an address below"
             : answered == 0 ? $"   couldn't reach {(asked == 1 ? "the directory" : "any directory")}; type an address below"
             : rows == 0 ? "   none listed; type an address below"
-            : $"   {Browser.Joinable} of {rows} you can join");
+            // "joinable" rather than "compatible", which this is not quite counting: a server that
+            // is full is compatible and still cannot be got into, and it is left out of this.
+            : $"   {Browser.Joinable} of {rows} joinable");
         ImGui.PopStyleColor();
         ImGui.SameLine();
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - ConsoleWidgets.ButtonWidth("REFRESH".AsSpan()));
@@ -1000,8 +1002,10 @@ internal static class Panel
         ImGui.TableNextColumn();
         ImGui.TextDisabled(r.Facts is { } f ? $"{f.Players}/{f.MaxPlayers}" : r.Waiting ? "..." : "-");
         ImGui.TableNextColumn();
-        ImGui.TextDisabled(r.Facts is { } g ? !g.HasWorld ? "no world yet" : g.System.Length > 0 ? Named(g.System) : "a world"
-                           : r.Waiting ? "..." : "no answer");
+        // Capitalised, because the rest of this column is "Earth and Moon" and a cell that starts
+        // small beside one that does not reads as a different kind of thing than it is.
+        ImGui.TextDisabled(r.Facts is { } g ? !g.HasWorld ? "No world yet" : g.System.Length > 0 ? Named(g.System) : "A world"
+                           : r.Waiting ? "..." : "No answer");
         ImGui.TableNextColumn();
         // The round trip to the server, which is not the time to join it and is the best guide
         // there is to that before anybody has.
