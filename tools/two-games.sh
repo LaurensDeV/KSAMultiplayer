@@ -89,8 +89,14 @@ import os, re, sys
 source, target, name = sys.argv[1:]
 s = open(source).read()
 light = {
+    # Windowed first of all. A size is only a size while the game is in a window: left at the
+    # player's own Fullscreen, both copies came up at the monitor's own resolution, one exactly on
+    # top of the other -- so the pair looked like one game, and two 2560x1440 swapchains and their
+    # shadow maps is the memory this whole file exists to stay inside of.
+    "mode": '"Windowed"',
     "width": "800", "height": "500", "posX": "0" if name == "A" else "820", "posY": "40",
-    "vsync": "false", "fpslimit": "40", "antialiasing": '"None"',
+    # KSA's AntiAliasing has no None; a value it cannot parse leaves the player's own setting.
+    "vsync": "false", "fpslimit": "40", "antialiasing": '"Disabled"',
     "terrainShadowMapSize": "1024", "cascadedShadowMapSize": "1024", "LightAtlasShadowMapSize": "1024",
     "cascadedShadowMapFilter": '"Pcf"', "lightSystemShadowSlots": '"Low"', "cloudShadows": '"Off"',
     "clouds": "false", "cloudUpscale": '"Low"', "oceanSimQuality": '"Low"', "ocean": "false",
@@ -111,8 +117,18 @@ light = {
     "thinFilmInterference": "false", "specularAntiAliasing": "false", "showDistantGlints": "false",
     "crewPortraitCameras": "false", "masterVolume": "0",
 }
+# Counted, not hoped for. A key KSA has renamed matches nothing and is written nowhere, and the
+# profile then runs at whatever the player plays at: the one setting that went missing this way cost
+# both copies full-screen resolution, which is the difference between this fitting in the card and
+# not. Every name here is checked against the game's own GameSettings fields.
+missing = []
 for key, value in light.items():
-    s = re.sub(rf"(?m)^{key} = .*$", f"{key} = {value}", s, count=1)
+    s, hits = re.subn(rf"(?m)^{key} = .*$", f"{key} = {value}", s, count=1)
+    if hits == 0:
+        missing.append(key)
+if missing:
+    sys.exit(f"error: {source} has no {', '.join(missing)}: renamed by a KSA update, and these\n"
+             f"       profiles would run at the player's own settings. Fix the names in two-games.sh.")
 open(target, "w").write(s)
 PY
 done

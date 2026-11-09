@@ -515,3 +515,23 @@ the rest of the session.
 
 Fixed by marking only `MadeHere`. The launch menu does not go through `Sync.Made` and was never
 affected, which is why three releases went out with it.
+
+## 2026-11-09 -- two games come up as one, and the card runs out of memory
+
+`tools/two-games.sh` writes each profile a `settings.toml` with the graphics turned well down, which
+is the only reason two copies fit on one card. Both copies came up at 2560x1440 instead, one exactly
+on top of the other, so the pair looked like a single game that had been started at full resolution.
+
+The script sets `width`, `height`, `posX` and `posY`, and never set `mode`. A size is only a size
+while the game is in a window: the player's own `[display] mode = "Fullscreen"` was copied through
+with everything else, and both profiles honoured it. Two full-resolution swapchains and their shadow
+maps is the memory the whole settings block exists to stay inside of.
+
+`antialiasing` was wrong in the same place and had never once applied: the script wrote `"None"` and
+KSA's `AntiAliasing` is `{Disabled, Cmaa2, MultisampleX2, MultisampleX4, MultisampleX8}`. Both games
+had been antialiasing at whatever the player plays at for as long as the script has existed.
+
+What let both hide is that the rewrite used `re.sub(..., count=1)` and never looked at the result. A
+key KSA has renamed, or one that was never right, matches nothing, is written nowhere, and the
+profile silently runs at the player's own setting. It counts with `re.subn` now and exits naming
+every key it could not place, which is checked against the game's own `GameSettings` fields.
