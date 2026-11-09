@@ -95,3 +95,53 @@ variable "worlds" {
     error_message = "A world is on ${var.port}, which is the first server's port."
   }
 }
+
+# ------------------------------------------------------------------ the directory
+
+# Immutable, like the server's, so the machine runs what was built. The Directory image workflow
+# prints the line to paste.
+variable "directory_image" {
+  description = "Image by digest, ghcr.io/<owner>/ksamp-directory@sha256:... Empty means not deployed."
+  type        = string
+  default     = ""
+}
+
+# Shown on a row of the mod's server list, so a player who does not like what a directory carries
+# knows which one to take out of their own list.
+variable "directory_name" {
+  description = "What the directory calls itself in a listing."
+  type        = string
+  default     = "ksarmory"
+}
+
+# This machine's Caddy belongs to the KSArmory repository and nothing here can edit its config.
+# Named: the container joins this network and Caddy reaches it as ksamp-directory:8080, which needs
+# the network to be attachable. Empty: the container publishes directory_port on the loopback and
+# Caddy reaches it at the bridge gateway instead.
+variable "directory_network" {
+  description = "An existing Docker network for Caddy to reach the directory by name on. Empty to publish a port instead."
+  type        = string
+  default     = "ksarmory"
+}
+
+# On the loopback only, because the firewall allows 22, 80 and 443 and a published port would go
+# round it through Docker's own DNAT.
+variable "directory_port" {
+  description = "Host port on 127.0.0.1, when directory_network is empty."
+  type        = number
+  default     = 8090
+}
+
+# A header is the sender's to choose, so this is believed only from a hop that cannot be a stranger.
+# Caddy is the one hop in front of this; the defaults are the private ranges Docker puts it on.
+variable "directory_trust_proxy" {
+  description = "Networks whose X-Forwarded-For the directory believes, comma separated."
+  type        = string
+  default     = "127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+}
+
+variable "directory_memory_mb" {
+  description = "Memory ceiling for the directory container, MB. Kilobytes of state and one socket."
+  type        = number
+  default     = 128
+}

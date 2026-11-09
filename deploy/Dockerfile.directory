@@ -1,0 +1,44 @@
+# A directory in a container. From the repository root:
+#
+#   docker build -f deploy/Dockerfile.directory -t ksamp-directory .
+#   docker run -d --name ksamp-directory -p 8080:8080 ksamp-directory
+#
+# Nothing is kept. Every entry is listed only while a probe of it answered in the last few minutes,
+# so a directory that restarts is refilled by the next round of heartbeats and is wrong for one
+# heartbeat interval. There is no volume because there is nothing a volume would be right about: a
+# database here would bring back rows for servers that stopped while it was down, which is the one
+# thing a list of servers must not do.
+#
+# It needs outbound UDP, which is how it finds out whether anything it was told about is really
+# there. Nothing inbound but HTTP.
+#
+#   KSAMP_DIRECTORY_NAME   what it calls itself on a row, so a player knows which to switch off
+#   KSAMP_TRUST_PROXY      networks whose X-Forwarded-For is believed, comma separated
+#   ASPNETCORE_URLS        where it listens (default http://0.0.0.0:8080)
+
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+COPY src/Protocol/ src/Protocol/
+COPY src/Directory/ src/Directory/
+COPY global.json Directory.Build.props ./
+RUN dotnet publish src/Directory/KSAMultiplayer.Directory.csproj -c Release -o /out -p:DebugType=none
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0
+WORKDIR /app
+COPY --from=build /out /app
+# Nothing here writes a file, so it owns none of them.
+RUN useradd --system --no-create-home ksamp
+USER ksamp
+ENV ASPNETCORE_URLS=http://0.0.0.0:8080
+# A line per request, with a health check every thirty seconds, is tens of thousands of lines a day
+# saying that this is still up. What is worth reading is what this says itself.
+ENV Logging__LogLevel__Default=Information
+ENV Logging__LogLevel__Microsoft.AspNetCore=Warning
+ENV Logging__LogLevel__Microsoft.Hosting.Lifetime=Information
+EXPOSE 8080/tcp
+
+# The program asking itself, because the image carries no curl and no wget.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["dotnet", "/app/ksamp-directory.dll", "--healthcheck", "http://127.0.0.1:8080/health"]
+
+ENTRYPOINT ["dotnet", "/app/ksamp-directory.dll"]
