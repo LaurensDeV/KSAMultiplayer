@@ -828,6 +828,13 @@ internal static class Panel
         // refuses, or before the player thinks better of it, is still the name they want next time.
         if (edited) Save();
 
+        // The refusal this window can see coming, in front of the player rather than in the log.
+        if (Known(AddressText.ToString().Trim()) is { } about && Refused(about) is { Length: > 0 } no)
+        {
+            ImGui.NewLine();
+            ImGui.TextColored(in ConsoleStyle.Danger, no);
+        }
+
         ConsoleStyle.PopWidgetStyle();
         ConsoleStyle.EndBody();
 
@@ -906,8 +913,15 @@ internal static class Panel
         // and a player who dislikes what one carries needs to know which to take out of their file.
         if (Browser.Rows.FirstOrDefault(r => string.Equals(r.Where, typed, StringComparison.OrdinalIgnoreCase)) is { Found.Count: > 0 } found)
         {
+            // The player's own remembered servers are a source of rows but not a directory, and
+            // saying "listed by yours" about their own history is not English. Said apart.
+            bool mine = found.Found.Contains(Browser.Yours);
+            string[] directories = [.. found.Found.Where(n => n != Browser.Yours)];
             ImGui.SameLine();
-            ImGui.TextDisabled($"{found.Where}: listed by {string.Join(", ", found.Found)}");
+            ImGui.TextDisabled(
+                directories.Length == 0 ? $"{found.Where}: you have connected here before"
+                : mine ? $"{found.Where}: you have connected here before, and it is listed by {string.Join(", ", directories)}"
+                : $"{found.Where}: listed by {string.Join(", ", directories)}");
         }
     }
 
@@ -969,6 +983,30 @@ internal static class Panel
         (Starting ? Browser.Rows.FirstOrDefault(r => string.Equals(r.Where, typed, StringComparison.OrdinalIgnoreCase))?.Facts : null)
         ?? (Sync.ServerAsked == typed ? Sync.Server : null);
 
+    /// <summary>
+    /// Why this game would be turned away by that server, in a line to put in front of the player,
+    /// or empty where it would not be.
+    ///
+    /// <para>Said beside the button and not left to the list of mods, which is a tree a player has
+    /// to open. A refusal that is only in the log is a CONNECT that does nothing.</para>
+    /// </summary>
+    private static string Refused(ServerFacts f)
+    {
+        if (f.KsaBuild.Length > 0 && World.KsaBuild.Length > 0 && f.KsaBuild != World.KsaBuild)
+        {
+            return $"This world is KSA {f.KsaBuild} and you run {World.KsaBuild}: joining needs the same build.";
+        }
+        (string missing, string extra) = Sync.ModsAgainst(f.Mods);
+        // One or several, because "turn it off" about two mods reads as badly as "turn them off"
+        // about one, and this is the line a player acts on.
+        if (missing.Length > 0) return $"This server needs {missing}: turn {One(missing)} on in KSA's Mods and start again.";
+        if (f.Mods.Length > 0 && extra.Length > 0) return $"This server doesn't run {extra}: turn {One(extra)} off and start again.";
+        return "";
+    }
+
+    /// <summary>"it" for one mod in a list and "them" for more.</summary>
+    private static string One(string mods) => mods.Contains(',') ? "them" : "it";
+
     private static void ThisServer(string typed)
     {
         // Always these three rows, answered or not: a window that grows a section when an answer
@@ -1019,13 +1057,21 @@ internal static class Panel
         string[] spare = [.. extra.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                                   .Where(m => !Given.Contains(m, StringComparer.OrdinalIgnoreCase))];
 
-        ImGui.Text($"Mods ({shown.Length})");
+        // Counted together, because the count is read as "how much stands between me and this
+        // server" and a mod to turn off stands there exactly as firmly as one to turn on. Counting
+        // only the first said "Mods (0)" to a player the server was refusing over the second.
+        ImGui.Text($"Mods ({shown.Length + spare.Length})");
         ImGui.NextColumn();
+        // And the node says which it is. It read "Required mods" over a list of mods to turn off,
+        // so the one thing in the way was filed under a word meaning the opposite.
+        string what = absent.Count > 0 ? $"{absent.Count} to turn on"
+                    : spare.Length > 0 ? $"{spare.Length} to turn off"
+                    : $"{shown.Length} this world uses";
         if (shown.Length == 0 && spare.Length == 0)
         {
             ImGui.TextDisabled("none needed");
         }
-        else if (ImGui.TreeNode("Required mods###KSAMultiplayerMods"))
+        else if (ImGui.TreeNode($"{what}###KSAMultiplayerMods"))
         {
             foreach (string mod in shown)
             {

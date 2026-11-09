@@ -492,14 +492,19 @@ internal static class Sync
         // at startup, so a player who learns here has a start screen to act from and one who learns
         // after the join has a restart ahead of them either way.
         (string missing, string extra) = ModsAgainst(p.Mods);
+        // Into the window as well as the log. Said alone, this reached a player through the chat
+        // they have not opened and a file they have no reason to read, so pressing CONNECT looked
+        // like pressing nothing.
         if (missing.Length > 0)
         {
-            Say($"{name}'s world wants mods this game does not have: {missing}. Turn them on in KSA's mods and start again.");
+            ServerTrouble = $"needs mods you have not got: {missing}";
+            Say($"{name} needs mods you have not got: {missing}. Turn them on in KSA's Mods and start again.");
             return null;
         }
         if (extra.Length > 0)
         {
-            Say($"{name}'s world does not have mods this game is running: {extra}. Turn them off and start again.");
+            ServerTrouble = $"doesn't run mods you have enabled: {extra}";
+            Say($"{name} doesn't run mods you have enabled: {extra}. Turn them off and start again.");
             return null;
         }
         // Nothing said about the system: the window has a World row that says it already, in the name

@@ -184,8 +184,13 @@ internal static class Browser
     {
         if (r.Facts is not { } f) return r.Trouble;
         if (f.KsaBuild.Length > 0 && World.KsaBuild.Length > 0 && f.KsaBuild != World.KsaBuild) return $"needs KSA {f.KsaBuild}";
-        (string missing, _) = Sync.ModsAgainst(f.Mods);
+        (string missing, string extra) = Sync.ModsAgainst(f.Mods);
         if (missing.Length > 0) return $"needs {missing}";
+        // And mods this game has that the world has not. A server refuses those too, for the reason
+        // it refuses the others: a mod that adds parts makes craft nobody else can build. Only when
+        // the world says what it wants at all -- a server that asks for nothing refuses nothing, so
+        // reading its silence as "and nothing else" would grey out every row on a modded game.
+        if (f.Mods.Length > 0 && extra.Length > 0) return $"turn off {extra}";
         // Last, because it is the only one of these that fixes itself.
         if (f.Full) return "full";
         return "";
