@@ -63,7 +63,13 @@ internal static class Panel
     // What Tab could not settle on its own, shown under the line until the next one is typed.
     private static string _choices = "";
 
-    private sealed record Settings(string Name, string Address, string Password, bool Visible);
+    /// <param name="Recent">Where this player has connected before, most recent first. Shown in the server list and asked about like anything else, so a server they have played on says whether anybody is on it now.</param>
+    private sealed record Settings(string Name, string Address, string Password, bool Visible, string[]? Recent = null);
+
+    /// <summary>How many addresses are remembered. Enough for the servers somebody actually plays on, few enough that the list is not mostly history.</summary>
+    private const int MostRecent = 8;
+
+    private static string[] _recent = [];
 
     private static readonly ImInputString NameText = new(Wire.NameChars * 4, ""u8);
     private static readonly ImInputString AddressText = new(128, ""u8);
@@ -730,6 +736,14 @@ internal static class Panel
             : "You'll be given the server's world. If it hasn't got one yet, yours becomes it.");
         ImGui.PopStyleColor();
 
+        // Asked for once, when a player first sees this window, and never on the way to anywhere:
+        // the fetching and the asking happen on their own and are only ever looked at for having
+        // finished.
+        Browser.Update();
+        if (!Browser.Started) Browser.Refresh();
+        Servers(AddressText.ToString().Trim());
+        ImGui.NewLine();
+
         bool edited = false;
         if (ImGuiHelper.BeginRegion("Server"u8))
         {
@@ -779,6 +793,7 @@ internal static class Panel
         if (ConsoleWidgets.PrimaryButton("CONNECT".AsSpan()))
         {
             Save();
+            Remember(AddressText.ToString());
             if (ahead) Sync.AskAhead(AddressText.ToString());
             else Sync.Connect(AddressText.ToString(), NameText.ToString(), PasswordText.ToString());
         }
@@ -789,6 +804,82 @@ internal static class Panel
 
     // The address the window has asked about, so it asks once a server and again when the field changes.
     private static string _asked = "";
+
+    /// <summary>
+    /// How tall the list of servers is. Fixed, and scrolled inside: the fields and the buttons below
+    /// it must not move as servers answer, because a window whose controls walk out from under the
+    /// pointer is worse than one that shows less.
+    /// </summary>
+    private const float ListTall = 146f;
+
+    /// <summary>
+    /// The servers the directories carry, and the ones this player has been to.
+    ///
+    /// <para>Picking one fills the address field rather than connecting, so there is one way into a
+    /// server however it was found: the player can see what they are about to connect to, change it,
+    /// and press the same button either way. Nothing here is on the connect path -- a directory that
+    /// is down costs a player who has an address nothing at all.</para>
+    /// </summary>
+    private static void Servers(string typed)
+    {
+        (int asked, int answered) = Browser.Directories;
+        int rows = Browser.Rows.Count;
+        ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.TextMuted);
+        ImGui.Text(
+            Browser.Fetching && rows == 0 ? "Looking for servers..."
+            : asked == 0 ? "No server directories to ask. Type an address below."
+            : answered == 0 ? $"Couldn't reach {(asked == 1 ? "the server directory" : "any server directory")}. Type an address below."
+            : rows == 0 ? "No servers listed. Type an address below."
+            : $"{Browser.Joinable} of {rows} you can join, from {answered} of {asked} director{(asked == 1 ? "y" : "ies")}.");
+        ImGui.PopStyleColor();
+
+        ImGui.BeginChild("###KSAMultiplayerServers", new float2(0f, ListTall), ImGuiChildFlags.Borders);
+        if (ImGui.BeginTable("###KSAMultiplayerServerRows", 3,
+                             ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp | ImGuiTableFlags.NoBordersInBody))
+        {
+            ImGui.TableSetupColumn("server"u8, ImGuiTableColumnFlags.WidthStretch);
+            ImGui.TableSetupColumn("players"u8, ImGuiTableColumnFlags.WidthFixed, 46f);
+            ImGui.TableSetupColumn("world"u8, ImGuiTableColumnFlags.WidthFixed, 104f);
+            foreach (Browser.Row r in Browser.Rows) ServerRow(r, typed);
+            ImGui.EndTable();
+        }
+        ImGui.EndChild();
+        if (ConsoleWidgets.Button("REFRESH".AsSpan())) Browser.Refresh(anyway: true);
+    }
+
+    /// <summary>
+    /// One server. The reason it cannot be joined is on the row rather than behind a click: three
+    /// things have to match before a join works, and a row that will not say which of them failed
+    /// sends a player to find out by trying.
+    /// </summary>
+    private static void ServerRow(Browser.Row r, string typed)
+    {
+        string why = Browser.Why(r);
+        bool chosen = typed.Length > 0 && string.Equals(typed, r.Where, StringComparison.OrdinalIgnoreCase);
+        ImGui.TableNextRow();
+        ImGui.TableNextColumn();
+        string locked = r.Facts is { Password: true } ? "  (password)" : "";
+        // The id is the address and the label is the name, so a server that renames itself mid-list
+        // does not become a different row and lose what the player had picked.
+        if (ImGui.Selectable($"{r.Title}{locked}###KSAMultiplayerRow{r.Where}", chosen, ImGuiSelectableFlags.SpanAllColumns))
+        {
+            AddressText.SetValue(r.Where);
+            _asked = "";
+            Sync.Forget();
+            Save();
+        }
+        ImGui.TableNextColumn();
+        ImGui.TextDisabled(r.Facts is { } f ? $"{f.Players}/{f.MaxPlayers}" : r.Waiting ? "..." : "-");
+        ImGui.TableNextColumn();
+        if (why.Length > 0)
+        {
+            ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.Pending);
+            ImGui.Text(why);
+            ImGui.PopStyleColor();
+        }
+        else if (r.Facts is { } g) ImGui.TextDisabled(!g.HasWorld ? "no world yet" : g.System.Length > 0 ? Named(g.System) : "a world");
+        else ImGui.TextDisabled("");
+    }
 
     /// <summary>
     /// What the server over there said of itself, before anybody has joined it: its name, whether it
@@ -806,6 +897,14 @@ internal static class Panel
             (string missing, string extra) = Sync.ModsAgainst(there.Mods);
             string[] wants = [.. there.Mods.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
             Told("Server name"u8, there.ServerName.Length > 0 ? there.ServerName : "unnamed");
+            // Which directories carry it, so a player who sees something they do not like knows
+            // which one to take out of their own list. A directory chooses what addresses a player
+            // is shown and nothing about what they are called: every name on a row above came from
+            // the server itself.
+            if (Browser.Rows.FirstOrDefault(r => string.Equals(r.Where, typed, StringComparison.OrdinalIgnoreCase)) is { Found.Count: > 0 } found)
+            {
+                Told("Listed by"u8, string.Join(", ", found.Found));
+            }
             Told("World"u8, !there.HasWorld ? "none yet: yours becomes it"
                           : there.System.Length > 0 ? Named(there.System) : "yes");
             Mods(wants, missing, extra);
@@ -971,6 +1070,7 @@ internal static class Panel
         if (BottomRight("CONNECT".AsSpan()))
         {
             Save();
+            Remember(AddressText.ToString());
             if (ahead) Sync.AskAhead(AddressText.ToString());
             else Sync.Connect(AddressText.ToString(), NameText.ToString(), PasswordText.ToString());
         }
@@ -1033,6 +1133,21 @@ internal static class Panel
     /// </summary>
     private static string Callsign() => $"Kitten {Random.Shared.Next(1000, 10000)}";
 
+    /// <summary>
+    /// Keeps an address the player has just gone to, at the front. Kept on the attempt rather than on
+    /// arriving: a server that refused this player for the wrong mods is one they will want to find
+    /// again once they have them, and a name typed and then thought better of is still the last place
+    /// they meant to go.
+    /// </summary>
+    private static void Remember(string address)
+    {
+        address = address.Trim();
+        if (address.Length == 0) return;
+        _recent = [address, .. _recent.Where(a => !string.Equals(a, address, StringComparison.OrdinalIgnoreCase)).Take(MostRecent - 1)];
+        Browser.Remembered = _recent;
+        Save();
+    }
+
     private static void Load()
     {
         _loaded = true;
@@ -1052,6 +1167,10 @@ internal static class Panel
         AddressText.SetValue(s.Address);
         PasswordText.SetValue(s.Password);
         Visible = s.Visible;
+        // A settings file written before there was a list of these has none, which is not a problem
+        // to report: it means this player has been nowhere yet as far as anybody here knows.
+        _recent = [.. (s.Recent ?? []).Where(a => a.Trim().Length > 0).Take(MostRecent)];
+        Browser.Remembered = _recent;
     }
 
     /// <summary>Keeps what was typed, for the next session. Nothing to keep until the panel has read what there is.</summary>
@@ -1061,7 +1180,7 @@ internal static class Panel
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
-            File.WriteAllText(SettingsPath, JsonSerializer.Serialize(new Settings(NameText.ToString().Trim(), AddressText.ToString().Trim(), PasswordText.ToString(), Visible)));
+            File.WriteAllText(SettingsPath, JsonSerializer.Serialize(new Settings(NameText.ToString().Trim(), AddressText.ToString().Trim(), PasswordText.ToString(), Visible, _recent)));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {

@@ -30,6 +30,8 @@ public sealed class MultiplayerMod
     public void OnImmediateLoad(Mod mod)
     {
         Log.Info($"KSA Multiplayer {typeof(MultiplayerMod).Assembly.GetName().Version} loading (mod id {mod.Id}), protocol {Wire.Version}, KSA {World.KsaBuild}");
+        // So a directory's log says which build asked it for a list.
+        Listings.Agent = $"KSAMultiplayer/{typeof(MultiplayerMod).Assembly.GetName().Version?.ToString(3) ?? "unknown"}";
         // Here and not with the rest: KSA's configuration at start comes before StarMap's AllModsLoaded.
         Hooks.InstallEarly();
     }
@@ -114,6 +116,7 @@ public sealed class MultiplayerMod
     {
         try { _menuItem?.Dispose(); } catch (Exception e) { Log.Warn($"could not take the Mods menu entry away: {e.Message}"); }
         try { Panel.Save(); } catch (Exception e) { Log.Warn($"could not keep the panel's settings: {e.Message}"); }
+        try { Browser.Stop(); } catch (Exception e) { Log.Warn($"could not put the server list down: {e.Message}"); }
         try { Sync.Shutdown(); } catch (Exception e) { Log.Error("leaving the server", e); }
         Hooks.Remove();
         Log.Info("unloaded");
