@@ -720,7 +720,7 @@ internal static class Panel
         float2 screen = float2.Unpack(Program.GetWindow().Size);
         float scale = GameSettings.GetInterfaceScale();
         float wide = float.Clamp(screen.X * (0.50f / scale), 640f, 920f);
-        float tall = MathF.Min(screen.Y - 60f, 640f);
+        float tall = MathF.Min(screen.Y - 60f, 720f);
         if (!ConsoleStyle.BeginModal("###KSAMultiplayerStart".AsSpan(), "MULTIPLAYER".AsSpan(), new float2(wide, tall),
                                      hasFooter: true, ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoScrollbar))
         {
@@ -749,7 +749,12 @@ internal static class Panel
         {
             edited |= Field("Server"u8, "###KSAMultiplayerServer", AddressText);
             edited |= Field("Your name"u8, "###KSAMultiplayerName", NameText);
+            // Greyed where the server has said it wants none, which every welcome has said since
+            // protocol 23. Left alone while nothing is known about the address: a field a player
+            // cannot type in is worse than one they did not need.
+            ImGui.BeginDisabled(Known(AddressText.ToString().Trim()) is { Password: false });
             edited |= Field("Password"u8, "###KSAMultiplayerPassword", PasswordText, ImGuiInputTextFlags.Password);
+            ImGui.EndDisabled();
 
             // Asked for by the window rather than by the player, and in the same region as the
             // fields: what is over there belongs beside where it was typed, not under a heading of
@@ -757,16 +762,19 @@ internal static class Panel
             // about "l" on the way to "localhost", a datagram a letter.
             string typed = AddressText.ToString().Trim();
             if (edited) _asked = "";
-            if (!Browser.Rows.Any(r => string.Equals(r.Where, typed, StringComparison.OrdinalIgnoreCase)))
+            // Asked only where the list has not asked already: a row carries this game's own
+            // answer to the same question, and probing a server it has just probed spends a
+            // datagram on an answer it has. Described either way, because the mods it wants are the
+            // one thing a row has no room for and the one thing a player has to act on before KSA
+            // reads its own -- after a world has loaded, acting on it costs them a restart.
+            if (!Browser.Rows.Any(r => string.Equals(r.Where, typed, StringComparison.OrdinalIgnoreCase))
+                && typed.Length > 0 && _asked.Length == 0 && !Sync.Asking)
             {
-                if (typed.Length > 0 && _asked.Length == 0 && !Sync.Asking)
-                {
-                    _asked = typed;
-                    Sync.Forget();
-                    Sync.Look(typed);
-                }
-                ThisServer(typed);
+                _asked = typed;
+                Sync.Forget();
+                Sync.Look(typed);
             }
+            ThisServer(typed);
             ImGuiHelper.EndRegion();
         }
         // Outside the regions, where KSA puts its configuration's own Always Show: a region lays its
@@ -813,7 +821,7 @@ internal static class Panel
     /// it must not move as servers answer, because a window whose controls walk out from under the
     /// pointer is worse than one that shows less.
     /// </summary>
-    private const float ListTall = 230f;
+    private const float ListTall = 170f;
 
     /// <summary>
     /// The servers the directories carry, and the ones this player has been to.
@@ -837,11 +845,12 @@ internal static class Panel
         ImGui.PopStyleColor();
 
         ImGui.BeginChild("###KSAMultiplayerServers", new float2(0f, ListTall), ImGuiChildFlags.Borders);
-        if (ImGui.BeginTable("###KSAMultiplayerServerRows", 3,
+        if (ImGui.BeginTable("###KSAMultiplayerServerRows", 4,
                              ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp | ImGuiTableFlags.NoBordersInBody))
         {
             ImGui.TableSetupColumn("server"u8, ImGuiTableColumnFlags.WidthStretch, 1.0f);
             ImGui.TableSetupColumn("players"u8, ImGuiTableColumnFlags.WidthFixed, 46f);
+            ImGui.TableSetupColumn("ping"u8, ImGuiTableColumnFlags.WidthFixed, 62f);
             ImGui.TableSetupColumn("world"u8, ImGuiTableColumnFlags.WidthStretch, 0.95f);
             foreach (Browser.Row r in Browser.Rows) ServerRow(r, typed);
             ImGui.EndTable();
@@ -883,6 +892,10 @@ internal static class Panel
         ImGui.TableNextColumn();
         ImGui.TextDisabled(r.Facts is { } f ? $"{f.Players}/{f.MaxPlayers}" : r.Waiting ? "..." : "-");
         ImGui.TableNextColumn();
+        // The round trip to the server, which is not the time to join it and is the best guide
+        // there is to that before anybody has.
+        ImGui.TextDisabled(double.IsFinite(r.Ping) ? $"{r.Ping * 1000:F0} ms" : "");
+        ImGui.TableNextColumn();
         if (why.Length > 0)
         {
             ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.Pending);
@@ -899,12 +912,20 @@ internal static class Panel
     /// nobody can press rather than a character, because a font that has no tick draws a box instead
     /// and the one thing this must not be is ambiguous.
     /// </summary>
+    /// <summary>
+    /// What this game knows about the address in the field, from the list where it is a row there
+    /// and from the window's own asking otherwise. Null while it knows nothing.
+    /// </summary>
+    private static ServerFacts? Known(string typed) =>
+        Browser.Rows.FirstOrDefault(r => string.Equals(r.Where, typed, StringComparison.OrdinalIgnoreCase))?.Facts
+        ?? (Sync.ServerAsked == typed ? Sync.Server : null);
+
     private static void ThisServer(string typed)
     {
         // Always these three rows, answered or not: a window that grows a section when an answer
         // arrives moves its own buttons out from under the pointer.
         bool mine = Sync.ServerAsked == typed;
-        if (mine && Sync.Server is { } there)
+        if (Known(typed) is { } there)
         {
             (string missing, string extra) = Sync.ModsAgainst(there.Mods);
             string[] wants = [.. there.Mods.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
@@ -1040,7 +1061,12 @@ internal static class Panel
         {
             edited |= Field("Server"u8, "###KSAMultiplayerJoinServer", AddressText);
             edited |= Field("Your name"u8, "###KSAMultiplayerJoinName", NameText);
+            // Greyed where the server has said it wants none, which every welcome has said since
+            // protocol 23. Left alone while nothing is known about the address: a field a player
+            // cannot type in is worse than one they did not need.
+            ImGui.BeginDisabled(Known(AddressText.ToString().Trim()) is { Password: false });
             edited |= Field("Password"u8, "###KSAMultiplayerJoinPassword", PasswordText, ImGuiInputTextFlags.Password);
+            ImGui.EndDisabled();
 
             string asking = AddressText.ToString().Trim();
             if (edited) _asked = "";

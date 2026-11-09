@@ -544,6 +544,25 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   and 640 tall now, both text columns stretch, and the rows that repeated the server's name, world
   and mods under the fields are drawn only for an address that is not already a row above.
 
+  A row also says the round trip to the server, which cost nothing to know: the probe is a question
+  and its answer, so the time between them was already being measured and simply not written down.
+  It is taken from the hello that was answered rather than the first one sent, so a server that
+  needed asking twice is not charged for the lost datagram.
+
+  The rows under the fields that say what a server is came back after that, for a server in the
+  list as well as one typed. Taking them away took the mod list with them, and the list has no room
+  for a mod list -- which is the one thing on the window a player has to act on *before* KSA
+  starts, since it reads its own mods once and a player told after a world has loaded is a player
+  who has to restart. They are drawn from the row's own answer now rather than from a second probe
+  of a server this game has just probed. The password field is greyed where a server has said it
+  wants none, which it has said in every welcome since protocol 23.
+
+  One fault worth recording because the screen would never have shown it: a row still being looked
+  up in DNS is in no state at all -- not answered, not given up on, and not among the probes
+  outstanding -- so the count of what could be joined was taken while a server was still on its way
+  to being asked, and said `0 of 2` with one row already good. Names being resolved are counted as
+  outstanding now.
+
   **What has not been seen is joining from it.** The row was picked and the address filled, and
   nothing past that was pressed.
 

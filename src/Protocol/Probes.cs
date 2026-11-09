@@ -32,7 +32,8 @@ public sealed class Probes : IDisposable
 
     private readonly Udp _udp;
     private readonly Func<double> _clock;
-    private readonly Dictionary<IPEndPoint, (double Next, double Until)> _asking = [];
+    private readonly Dictionary<IPEndPoint, (double Next, double Until, double Sent)> _asking = [];
+    private readonly Dictionary<IPEndPoint, double> _rtt = [];
     private readonly Dictionary<IPEndPoint, ServerFacts> _answered = [];
     private readonly Dictionary<IPEndPoint, ushort> _elsewhere = [];
     private readonly HashSet<IPEndPoint> _silent = [];
@@ -45,6 +46,16 @@ public sealed class Probes : IDisposable
 
     /// <summary>What answered, by the address it answered from, which is what two listings of one server have in common when nothing else about them does.</summary>
     public IReadOnlyDictionary<IPEndPoint, ServerFacts> Answered => _answered;
+
+    /// <summary>
+    /// How long each answer took to come back, s. Measured from the hello that was answered rather
+    /// than the first one sent, so a server that needed asking twice is not charged for the wait.
+    ///
+    /// <para>One sample, because one is what a question and its answer give. It is the round trip to
+    /// the server and not the time to join it, and it costs nothing to know: the probe was a round
+    /// trip already.</para>
+    /// </summary>
+    public IReadOnlyDictionary<IPEndPoint, double> Rtt => _rtt;
 
     /// <summary>What answered in a protocol this game cannot read, and which version it said.</summary>
     public IReadOnlyDictionary<IPEndPoint, ushort> Elsewhere => _elsewhere;
@@ -64,7 +75,7 @@ public sealed class Probes : IDisposable
     {
         if (_asking.ContainsKey(at) || _answered.ContainsKey(at) || _elsewhere.ContainsKey(at) || _silent.Contains(at)) return;
         double now = _clock();
-        _asking[at] = (now + AskEverySeconds, now + WaitSeconds);
+        _asking[at] = (now + AskEverySeconds, now + WaitSeconds, now);
         _udp.Send(Question, at);
     }
 
@@ -84,6 +95,7 @@ public sealed class Probes : IDisposable
         _answered.Clear();
         _elsewhere.Clear();
         _silent.Clear();
+        _rtt.Clear();
     }
 
     /// <summary>Drained by whoever runs the window or the tick: nothing here is touched from two threads but the socket's own reader.</summary>
@@ -99,6 +111,9 @@ public sealed class Probes : IDisposable
             if (m is Wire.Welcome w)
             {
                 _answered[d.From] = ServerFacts.Of(w);
+                // Never negative: an answer to the hello before last arrives after the last one went
+                // out, and a round trip measured through that is a number from nowhere.
+                _rtt[d.From] = Math.Max(0.0, d.Arrived - _asking[d.From].Sent);
                 _asking.Remove(d.From);
             }
             else if (m is null && version != 0 && version != Wire.Version)
@@ -111,7 +126,7 @@ public sealed class Probes : IDisposable
         }
         foreach (IPEndPoint at in _asking.Keys.ToArray())
         {
-            (double next, double until) = _asking[at];
+            (double next, double until, _) = _asking[at];
             if (now > until)
             {
                 _silent.Add(at);
@@ -120,7 +135,7 @@ public sealed class Probes : IDisposable
             }
             if (now < next) continue;
             _udp.Send(Question, at);
-            _asking[at] = (now + AskEverySeconds, until);
+            _asking[at] = (now + AskEverySeconds, until, now);
         }
     }
 

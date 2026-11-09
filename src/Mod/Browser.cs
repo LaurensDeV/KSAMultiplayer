@@ -42,6 +42,9 @@ internal static class Browser
         /// <summary>Where it answered from, which is how two rows that are secretly one server are found out.</summary>
         public IPEndPoint? At { get; set; }
 
+        /// <summary>The round trip to it, s, or not a number until it has answered.</summary>
+        public double Ping { get; set; } = double.NaN;
+
         /// <summary>Why it cannot be reached or joined, empty while it can.</summary>
         public string Trouble { get; set; } = "";
 
@@ -65,6 +68,11 @@ internal static class Browser
     // Whether what the asking came to has been written down yet, so it is said once a list and not
     // once a frame.
     private static bool _told;
+
+    // How many names are still being looked up. A row waiting on one is in no other state: not
+    // answered, not given up on, and not among the probes outstanding -- so without this the asking
+    // reads as finished while a server is still on its way to being asked.
+    private static int _resolving;
 
     /// <summary>What a fetch of every directory came to.</summary>
     private sealed record Gathered(int Asked, string[] Names, List<(string Name, Listed Server)> Servers);
@@ -140,7 +148,8 @@ internal static class Browser
         {
             if (_probes.Answered.TryGetValue(at, out ServerFacts? facts))
             {
-                foreach (Row r in rows) (r.Facts, r.At, r.Trouble) = (facts, at, "");
+                double rtt = _probes.Rtt.TryGetValue(at, out double took) ? took : double.NaN;
+                foreach (Row r in rows) (r.Facts, r.At, r.Trouble, r.Ping) = (facts, at, "", rtt);
             }
             else if (_probes.Elsewhere.TryGetValue(at, out ushort version))
             {
@@ -157,10 +166,10 @@ internal static class Browser
         // Said once each time a list settles, because a list that will not say what it found leaves
         // nothing to go on when a player reports that it was empty: a directory that answered
         // nothing and a directory that could not be reached look identical on the screen.
-        if (_told || Asked.Count > 0 || Listed.Count == 0) return;
+        if (_told || Asked.Count > 0 || _resolving > 0 || Listed.Count == 0) return;
         _told = true;
         Log.Info($"server list: {Joinable} of {Listed.Count} can be joined"
-                 + string.Concat(Listed.Select(r => $"; {r.Where} {(Why(r) is { Length: > 0 } why ? why : "ok")}")));
+                 + string.Concat(Listed.Select(r => $"; {r.Where} {(r.Waiting ? "no answer yet" : Why(r) is { Length: > 0 } why ? why : "ok")}")));
     }
 
     /// <summary>
@@ -282,6 +291,7 @@ internal static class Browser
             Ask(new IPEndPoint(literal.MapToIPv4(), row.Port), row);
             return;
         }
+        _resolving++;
         Task<IPAddress[]> finding = Dns.GetHostAddressesAsync(row.Host, AddressFamily.InterNetwork);
         _ = finding.ContinueWith(t =>
         {
@@ -305,6 +315,9 @@ internal static class Browser
     {
         while (Pending.TryDequeue(out (Row Row, IPEndPoint? At) r))
         {
+            // Counted down before anything else, including for a row the list no longer has: a
+            // lookup that is finished is finished whatever became of what asked for it.
+            _resolving--;
             if (!Listed.Contains(r.Row)) continue;
             if (r.At is null) r.Row.Trouble = "that name does not resolve";
             else Ask(r.At, r.Row);
