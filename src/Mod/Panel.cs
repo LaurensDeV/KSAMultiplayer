@@ -757,114 +757,102 @@ internal static class Panel
     {
         float2 screen = float2.Unpack(Program.GetWindow().Size);
         float scale = GameSettings.GetInterfaceScale();
-        float wide = float.Clamp(screen.X * (0.50f / scale), 640f, 920f);
-        float tall = MathF.Min(screen.Y - 60f, 720f);
-        if (!ConsoleStyle.BeginModal("###KSAMultiplayerStart".AsSpan(), "MULTIPLAYER".AsSpan(), new float2(wide, tall),
-                                     hasFooter: true, ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoScrollbar))
+        float wide = float.Clamp(screen.X * (0.62f / scale), 820f, 1180f);
+        float tall = MathF.Min(screen.Y - 60f, 900f);
+        // No footer. The two things a player came here to press are where the things they press them
+        // about are: PLAY ALONE beside the title, and CONNECT under the server it would connect to.
+        if (!ConsoleStyle.BeginModal("###KSAMultiplayerStart".AsSpan(), "PLAY MULTIPLAYER".AsSpan(), new float2(wide, tall),
+                                     hasFooter: false, ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoScrollbar))
         {
             return;
         }
         ConsoleStyle.BeginBody();
         ConsoleStyle.PushWidgetStyle();
 
-        // Said to a player, so it is shorter than the rest of this and sounds like it.
-        ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.TextMuted);
-        ImGui.TextWrapped(ahead
-            ? "KSA will start in the server's system and join once it's loaded."
-            : "You'll be given the server's world. If it hasn't got one yet, yours becomes it.");
-        ImGui.PopStyleColor();
-
         // Asked for once, when a player first sees this window, and never on the way to anywhere:
         // the fetching and the asking happen on their own and are only ever looked at for having
         // finished.
         Browser.Update();
         if (!Browser.Started) Browser.Refresh();
-        Servers(AddressText.ToString().Trim());
-        ImGui.NewLine();
+        string typed = AddressText.ToString().Trim();
+
+        // Top right, and in the colour of something worth pressing. Playing alone is the other half
+        // of what this window is for, not an afterthought beside the button that does the opposite.
+        float aloneWide = ConsoleWidgets.ButtonWidth("PLAY ALONE".AsSpan());
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - aloneWide);
+        if (ConsoleWidgets.PrimaryButton("PLAY ALONE".AsSpan())) PlayAlone();
+
+        // The list gets whatever the two blocks under it do not need. It is what the window is for.
+        float spacing = ImGui.GetStyle().ItemSpacing.Y;
+        float below = PanelTall + (spacing * 2f) + (ahead ? ImGui.GetFrameHeight() + spacing : 0f);
+        Servers(typed, MathF.Max(150f, ImGui.GetContentRegionAvail().Y - below));
 
         bool edited = false;
-        if (ImGuiHelper.BeginRegion("Server"u8))
-        {
-            edited |= Field("Server"u8, "###KSAMultiplayerServer", AddressText);
-            // Said in words where the server has told us it wants none, which every welcome has
-            // said since protocol 23. It was a greyed-out box, and an empty box a player cannot
-            // type in looks very like an empty box they have not typed in yet. A field that is not
-            // there at all cannot be mistaken for one that is.
-            //
-            // Still a field while nothing is known about the address: not knowing is not the same
-            // as knowing there is none, and a player with a password and nowhere to put it is worse
-            // off than one who typed into a box they did not need.
-            if (Known(AddressText.ToString().Trim()) is { Password: false }) Told("Password"u8, "none needed");
-            else edited |= Field("Password"u8, "###KSAMultiplayerPassword", PasswordText, ImGuiInputTextFlags.Password);
+        float half = (ImGui.GetContentRegionAvail().X - ImGui.GetStyle().ItemSpacing.X) * 0.5f;
 
-            // Asked for by the window rather than by the player, and in the same region as the
-            // fields: what is over there belongs beside where it was typed, not under a heading of
-            // its own. Once the field is done with and not as it is typed, or a server is asked
-            // about "l" on the way to "localhost", a datagram a letter.
-            string typed = AddressText.ToString().Trim();
-            if (edited) _asked = "";
-            // Asked only where the list has not asked already: a row carries this game's own
-            // answer to the same question, and probing a server it has just probed spends a
-            // datagram on an answer it has. Described either way, because the mods it wants are the
-            // one thing a row has no room for and the one thing a player has to act on before KSA
-            // reads its own -- after a world has loaded, acting on it costs them a restart.
-            if (!Browser.Rows.Any(r => string.Equals(r.Where, typed, StringComparison.OrdinalIgnoreCase))
-                && typed.Length > 0 && _asked.Length == 0 && !Sync.Asking)
-            {
-                _asked = typed;
-                Sync.Forget();
-                Sync.Look(typed);
-            }
-            ThisServer(typed);
-            ImGuiHelper.EndRegion();
-        }
+        // Who is playing, and what this game is. Beik's reading: a player's own protocol version is
+        // a fact about them and had been nowhere, while the list beside it is full of facts about
+        // strangers. It belongs on this side of the window.
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, in PanelBackground);
+        ImGui.BeginChild("###KSAMultiplayerYou", new float2(half, PanelTall), ImGuiChildFlags.Borders);
+        ImGui.Columns(2, "###KSAMultiplayerYouRows".AsSpan(), false);
+        ImGui.SetColumnWidth(0, half * 0.42f);
+        edited |= Field("Nickname"u8, "###KSAMultiplayerName", NameText);
+        Told("MP protocol"u8, $"Version {Wire.Version}");
+        ImGui.Columns(1);
+        ImGui.EndChild();
+        ImGui.PopStyleColor();
 
-        // Who is playing, which is nothing about the server and was sitting in the middle of the
-        // things that are -- between the address and the password, under a heading saying Server.
-        // Before the keeping below, not after it: a name typed into a field read after `edited` has
-        // already been acted on is a name this window never writes down.
-        if (ImGuiHelper.BeginRegion("You"u8))
-        {
-            edited |= Field("Your name"u8, "###KSAMultiplayerName", NameText);
-            ImGuiHelper.EndRegion();
-        }
-        // Outside the regions, where KSA puts its configuration's own Always Show: a region lays its
-        // rows out in two columns and sizes the label one to the region, so a label of more than a
-        // word or two is cut -- "Change settings first" arrived as "Settings fir". A checkbox with
-        // its text beside it takes the width it needs.
-        if (ahead)
-        {
-            ImGui.NewLine();
-            // The gap between a checkbox and its words is the same one ImGui puts between any two
-            // things on a line, which beside a box reads as the label leaning on it.
-            ImGui.PushStyleVarX(ImGuiStyleVar.ItemInnerSpacing, 10f);
-            ImGui.Checkbox("Change settings before starting", ref _settingsFirst);
-            ImGui.PopStyleVar();
-        }
-        // Kept as soon as a field is done with, not only on connecting: a name typed before a server
-        // refuses, or before the player thinks better of it, is still the name they want next time.
-        if (edited) Save();
-
-        // The refusal this window can see coming, in front of the player rather than in the log.
-        if (Known(AddressText.ToString().Trim()) is { } about && Refused(about) is { Length: > 0 } no)
-        {
-            ImGui.NewLine();
-            ImGui.TextColored(in ConsoleStyle.Danger, no);
-        }
-
-        ConsoleStyle.PopWidgetStyle();
-        ConsoleStyle.EndBody();
-
-        bool ready = AddressText.ToString().Trim().Length > 0 && NameText.ToString().Trim().Length > 0
-                     && !Sync.AskingAhead && !WouldBeRefused;
-        ConsoleStyle.BeginFooter();
-        ConsoleStyle.FooterRightAlign(ConsoleWidgets.ButtonWidth("PLAY ALONE".AsSpan())
-                                      + ConsoleWidgets.ButtonWidth("CONNECT".AsSpan())
-                                      + ImGui.GetStyle().ItemSpacing.X);
-        if (ConsoleWidgets.Button("PLAY ALONE".AsSpan())) PlayAlone();
         ImGui.SameLine();
+
+        // Where that server is, what it wants, and the button that goes to it.
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, in PanelBackground);
+        ImGui.BeginChild("###KSAMultiplayerPick", new float2(half, PanelTall), ImGuiChildFlags.Borders);
+        ImGui.Columns(2, "###KSAMultiplayerPickRows".AsSpan(), false);
+        ImGui.SetColumnWidth(0, half * 0.30f);
+        if (_focusAddress)
+        {
+            _focusAddress = false;
+            ImGui.SetKeyboardFocusHere();
+        }
+        edited |= Field("Server"u8, "###KSAMultiplayerServer", AddressText);
+        // Said in words where the server has told us it wants none, which every welcome has said
+        // since protocol 23. It was a greyed-out box, and an empty box a player cannot type in looks
+        // very like an empty box they have not typed in yet. Still a box while nothing is known
+        // about the address: not knowing is not knowing there is none.
+        if (Known(typed) is { Password: false }) Told("Password"u8, "none needed");
+        else edited |= Field("Password"u8, "###KSAMultiplayerPassword", PasswordText, ImGuiInputTextFlags.Password);
+
+        // Asked only where the list has not asked already: a row carries this game's own answer to
+        // the same question, and probing a server it has just probed spends a datagram on an answer
+        // it has.
+        if (edited) _asked = "";
+        if (!Browser.Rows.Any(r => string.Equals(r.Where, typed, StringComparison.OrdinalIgnoreCase))
+            && typed.Length > 0 && _asked.Length == 0 && !Sync.Asking)
+        {
+            _asked = typed;
+            Sync.Forget();
+            Sync.Look(typed);
+        }
+        ThisServer(typed);
+        ImGui.Columns(1);
+
+        // The refusal this window can see coming, between what the server wants and the button that
+        // would go there anyway.
+        if (Known(typed) is { } about && Refused(about) is { Length: > 0 } no)
+        {
+            ImGui.PushTextWrapPos(0f);
+            ImGui.TextColored(in ConsoleStyle.Danger, no);
+            ImGui.PopTextWrapPos();
+        }
+
+        // Against the floor of the block, so it stays where the player left it while the rows above
+        // it grow a mod list or a refusal.
+        float2 pad = ImGui.GetStyle().WindowPadding;
+        ImGui.SetCursorPosY(PanelTall - ConsoleWidgets.ButtonHeight - pad.Y);
+        bool ready = typed.Length > 0 && NameText.ToString().Trim().Length > 0 && !Sync.AskingAhead && !WouldBeRefused;
         ImGui.BeginDisabled(!ready);
-        if (ConsoleWidgets.PrimaryButton("CONNECT".AsSpan()))
+        if (ConsoleWidgets.PrimaryButton("CONNECT".AsSpan(), new float2(ImGui.GetContentRegionAvail().X, ConsoleWidgets.ButtonHeight)))
         {
             Save();
             Remember(AddressText.ToString());
@@ -872,7 +860,23 @@ internal static class Panel
             else Sync.Connect(AddressText.ToString(), NameText.ToString(), PasswordText.ToString());
         }
         ImGui.EndDisabled();
-        ConsoleStyle.EndFooter();
+        ImGui.EndChild();
+        ImGui.PopStyleColor();
+
+        if (ahead)
+        {
+            // The gap between a checkbox and its words is the same one ImGui puts between any two
+            // things on a line, which beside a box reads as the label leaning on it.
+            ImGui.PushStyleVarX(ImGuiStyleVar.ItemInnerSpacing, 10f);
+            ImGui.Checkbox("Display settings before starting", ref _settingsFirst);
+            ImGui.PopStyleVar();
+        }
+        // Kept as soon as a field is done with, not only on connecting: a name typed before a server
+        // refuses, or before the player thinks better of it, is still the name they want next time.
+        if (edited) Save();
+
+        ConsoleStyle.PopWidgetStyle();
+        ConsoleStyle.EndBody();
         ConsoleStyle.EndModal();
     }
 
@@ -884,7 +888,17 @@ internal static class Panel
     /// it must not move as servers answer, because a window whose controls walk out from under the
     /// pointer is worse than one that shows less.
     /// </summary>
-    private const float ListTall = 170f;
+    /// <summary>How tall the two blocks under the list are. Everything above them is the list.</summary>
+    private const float PanelTall = 190f;
+
+    /// <summary>
+    /// What the two blocks under the list are filled with. A touch of white rather than a colour of
+    /// its own, so it lifts off whatever KSA's own background is rather than guessing at it.
+    /// </summary>
+    private static readonly float4 PanelBackground = new(1f, 1f, 1f, 0.04f);
+
+    /// <summary>Whether the address field should take the keyboard, which "Add server" asks for.</summary>
+    private static bool _focusAddress;
 
     /// <summary>
     /// The table heading's own background. KSA's style gives it the same grey a selected row gets,
@@ -901,35 +915,12 @@ internal static class Panel
     /// and press the same button either way. Nothing here is on the connect path -- a directory that
     /// is down costs a player who has an address nothing at all.</para>
     /// </summary>
-    private static void Servers(string typed)
+    private static void Servers(string typed, float tall)
     {
         (int asked, int answered) = Browser.Directories;
         int rows = Browser.Rows.Count;
 
-        // Above the table and across from the button that acts on it: what this list is, and how
-        // much of it is any use to this game. How many directories answered is a footnote and sits
-        // under the table with the rest of the small print.
-        float top = ImGui.GetCursorPosY();
-        float middle = (ConsoleWidgets.ButtonHeight - ImGui.GetTextLineHeight()) * 0.5f;
-        ImGui.SetCursorPosY(top + middle);
-        ImGui.Text("Servers to join"u8);
-        ImGui.SameLine();
-        ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.TextMuted);
-        ImGui.Text(
-            Browser.Fetching && rows == 0 ? "   looking..."
-            : asked == 0 ? "   no directories to ask; type an address below"
-            : answered == 0 ? $"   couldn't reach {(asked == 1 ? "the directory" : "any directory")}; type an address below"
-            : rows == 0 ? "   none listed; type an address below"
-            // "joinable" rather than "compatible", which this is not quite counting: a server that
-            // is full is compatible and still cannot be got into, and it is left out of this.
-            : $"   {Browser.Joinable} of {rows} joinable");
-        ImGui.PopStyleColor();
-        ImGui.SameLine();
-        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - ConsoleWidgets.ButtonWidth("REFRESH".AsSpan()));
-        ImGui.SetCursorPosY(top);
-        if (ConsoleWidgets.Button("REFRESH".AsSpan())) Browser.Refresh(anyway: true);
-
-        ImGui.BeginChild("###KSAMultiplayerServers", new float2(0f, ListTall), ImGuiChildFlags.Borders);
+        ImGui.BeginChild("###KSAMultiplayerServers", new float2(0f, tall), ImGuiChildFlags.Borders);
         ImGui.PushStyleColor(ImGuiCol.TableHeaderBg, in HeadingBackground);
         if (ImGui.BeginTable("###KSAMultiplayerServerRows", 4,
                              ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp | ImGuiTableFlags.BordersInnerV))
@@ -940,34 +931,52 @@ internal static class Panel
             // Last, where a server browser puts it: it is the least of what decides whether to join.
             ImGui.TableSetupColumn("Latency###ping"u8, ImGuiTableColumnFlags.WidthFixed, 78f);
             ImGui.TableHeadersRow();
+
+            // The way in for an address no directory carries, at the top of the list rather than in
+            // a field of its own somewhere else: typing one in and picking one out are the same
+            // thing to a player, so they live in the same place.
+            ImGui.TableNextRow();
+            ImGui.TableNextColumn();
+            if (ImGui.Selectable("Add server###KSAMultiplayerAdd"u8, false, ImGuiSelectableFlags.SpanAllColumns))
+            {
+                AddressText.SetValue("");
+                _asked = "";
+                Sync.Forget();
+                _focusAddress = true;
+            }
             foreach (Browser.Row r in Browser.Rows) ServerRow(r, typed);
             ImGui.EndTable();
         }
         ImGui.PopStyleColor();
-        ImGui.EndChild();
 
-        // The small print, under the table rather than over it: how many directories answered, and
-        // where the chosen server was found. A directory chooses which addresses a player is shown
-        // and nothing at all about what they are called, so where a row came from is the one thing
-        // about it worth attributing -- and a player who dislikes what one carries needs to know
-        // which to take out of their file.
-        string note = asked > 0 && rows > 0 ? $"From {answered} of {asked} director{(asked == 1 ? "y" : "ies")}." : "";
-        if (Browser.Rows.FirstOrDefault(r => string.Equals(r.Where, typed, StringComparison.OrdinalIgnoreCase)) is { Found.Count: > 0 } found)
+        // Along the floor of the box: what the list is doing on the left, and the button that makes
+        // it do it again on the right.
+        float2 pad = ImGui.GetStyle().WindowPadding;
+        ImGui.SetCursorPosY(tall - ConsoleWidgets.ButtonHeight - pad.Y);
+        ImGui.SetCursorPosY(ImGui.GetCursorPosY() + ((ConsoleWidgets.ButtonHeight - ImGui.GetTextLineHeight()) * 0.5f));
+        string note =
+            Browser.Fetching && rows == 0 ? "Refreshing list..."
+            : asked == 0 ? "No directories to ask. Add a server above."
+            : answered == 0 ? $"Couldn't reach {(asked == 1 ? "the directory" : "any directory")}. Add a server above."
+            : rows == 0 ? "No servers listed. Add a server above."
+            : $"{Browser.Joinable} of {rows} joinable, from {answered} of {asked} director{(asked == 1 ? "y" : "ies")}.";
+        // Where the chosen one came from. A directory chooses which addresses a player is shown and
+        // nothing at all about what they are called, so that is the one thing worth attributing --
+        // and somebody who dislikes what one carries needs to know which to take out of their file.
+        if (Browser.Rows.FirstOrDefault(r => string.Equals(r.Where, typed, StringComparison.OrdinalIgnoreCase)) is { Found.Count: > 0 } found
+            && found.Found.Where(n => n != Browser.Yours).ToArray() is { Length: > 0 } directories)
         {
-            // The player's own remembered servers are a source of rows but not a directory, and
-            // saying "listed by yours" about their own history is not English. Said apart.
-            bool mine = found.Found.Contains(Browser.Yours);
-            string[] directories = [.. found.Found.Where(n => n != Browser.Yours)];
-            note += directories.Length == 0 ? $" {found.Where}: you have connected here before."
-                  : mine ? $" {found.Where} is listed by {string.Join(", ", directories)}, and you have connected here before."
-                  : $" {found.Where} is listed by {string.Join(", ", directories)}.";
+            note += $"  {found.Where} is listed by {string.Join(", ", directories)}.";
         }
-        if (note.Length > 0)
-        {
-            ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.TextMuted);
-            ImGui.TextWrapped(note.Trim());
-            ImGui.PopStyleColor();
-        }
+        ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.TextMuted);
+        ImGui.Text(note);
+        ImGui.PopStyleColor();
+
+        ImGui.SameLine();
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - ConsoleWidgets.ButtonWidth("REFRESH".AsSpan()));
+        ImGui.SetCursorPosY(tall - ConsoleWidgets.ButtonHeight - pad.Y);
+        if (ConsoleWidgets.Button("REFRESH".AsSpan())) Browser.Refresh(anyway: true);
+        ImGui.EndChild();
     }
 
     /// <summary>
@@ -981,21 +990,24 @@ internal static class Panel
     /// </summary>
     private static void ServerRow(Browser.Row r, string typed)
     {
-        bool blocked = Browser.Why(r).Length > 0;
         bool chosen = typed.Length > 0 && string.Equals(typed, r.Where, StringComparison.OrdinalIgnoreCase);
         ImGui.TableNextRow();
         ImGui.TableNextColumn();
         string locked = r.Facts is { Password: true } ? "  (password)" : "";
-        // Short enough to sit beside a name: which of the things that must match did not. The
-        // sentence saying what to do about it is beside the button that would act on it.
-        string tag = Browser.Short(r) is { Length: > 0 } t ? $"   {t}" : "";
-        // Only the name, which is the one thing on the row drawn at full strength: the rest is
-        // already muted, so dimming this is what makes a row read as not being for this game.
-        if (blocked) ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.TextMuted);
         // The id is the address and the label is the name, so a server that renames itself mid-list
         // does not become a different row and lose what the player had picked.
-        bool picked = ImGui.Selectable($"{r.Title}{locked}{tag}###KSAMultiplayerRow{r.Where}", chosen, ImGuiSelectableFlags.SpanAllColumns);
-        if (blocked) ImGui.PopStyleColor();
+        bool picked = ImGui.Selectable($"{r.Title}{locked}###KSAMultiplayerRow{r.Where}", chosen, ImGuiSelectableFlags.SpanAllColumns);
+        // One marker, against the right of the server's own column: why this game cannot go there,
+        // or that the player has been before. Short enough to read without stopping, with the whole
+        // of it in the block below where there is room for a sentence.
+        string mark = Browser.Short(r) is { Length: > 0 } why ? $"[{why}]"
+                    : r.Found.Contains(Browser.Yours) ? "[recent]" : "";
+        if (mark.Length > 0)
+        {
+            ImGui.SameLine();
+            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - ImGui.CalcTextSize(mark).X);
+            ImGui.Text(mark);
+        }
         if (picked)
         {
             AddressText.SetValue(r.Where);
@@ -1003,14 +1015,11 @@ internal static class Panel
             Sync.Forget();
             Save();
         }
-        // Muted against the dark of an ordinary row, plain against the light of the chosen one.
-        // ImGui's disabled grey is a near match for the colour a selected row is filled with, so
-        // picking a server made everything about it but its name disappear.
-        void Cell(string text)
-        {
-            if (chosen) ImGui.Text(text);
-            else ImGui.TextDisabled(text);
-        }
+        // Every row at full strength, and the marker beside the name is what says a server is not
+        // for this game. Dimming a whole row did that before there was a marker, and it fought the
+        // colour a row is filled with when it is chosen or merely under the pointer: muted grey on
+        // that grey is nothing at all, so a server could vanish from its own list by being hovered.
+        void Cell(string text) => ImGui.Text(text);
 
         ImGui.TableNextColumn();
         Cell(r.Facts is { } f ? $"{f.Players}/{f.MaxPlayers}" : r.Waiting ? "..." : "-");
