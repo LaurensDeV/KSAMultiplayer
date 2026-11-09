@@ -312,3 +312,11 @@ be reached -- `tmux` or `screen` is the way to keep one for a service.
 | `deploy/` | a systemd unit and a Dockerfile |
 | `infra/` | `mp.ksarmory.com` and the server behind it, as OpenTofu |
 | `docs/DESIGN.md` | how it works, and what it cannot do yet |
+
+## Thanks
+
+The Multiplayer window is laid out to a design by **Beik**, who drew the wireframe it follows and
+made the point the whole thing now turns on: every column of the server list is a fact about the
+server, and whether your game can join one is the state of the row rather than a value written over
+the top of a column. The things either side of it -- what you are on the left, where you are going
+on the right -- are his too.
