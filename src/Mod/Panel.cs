@@ -786,7 +786,6 @@ internal static class Panel
         if (ImGuiHelper.BeginRegion("Server"u8))
         {
             edited |= Field("Server"u8, "###KSAMultiplayerServer", AddressText);
-            edited |= Field("Your name"u8, "###KSAMultiplayerName", NameText);
             // Greyed where the server has said it wants none, which every welcome has said since
             // protocol 23. Left alone while nothing is known about the address: a field a player
             // cannot type in is worse than one they did not need.
@@ -815,6 +814,16 @@ internal static class Panel
             ThisServer(typed);
             ImGuiHelper.EndRegion();
         }
+
+        // Who is playing, which is nothing about the server and was sitting in the middle of the
+        // things that are -- between the address and the password, under a heading saying Server.
+        // Before the keeping below, not after it: a name typed into a field read after `edited` has
+        // already been acted on is a name this window never writes down.
+        if (ImGuiHelper.BeginRegion("You"u8))
+        {
+            edited |= Field("Your name"u8, "###KSAMultiplayerName", NameText);
+            ImGuiHelper.EndRegion();
+        }
         // Outside the regions, where KSA puts its configuration's own Always Show: a region lays its
         // rows out in two columns and sizes the label one to the region, so a label of more than a
         // word or two is cut -- "Change settings first" arrived as "Settings fir". A checkbox with
@@ -822,7 +831,11 @@ internal static class Panel
         if (ahead)
         {
             ImGui.NewLine();
+            // The gap between a checkbox and its words is the same one ImGui puts between any two
+            // things on a line, which beside a box reads as the label leaning on it.
+            ImGui.PushStyleVarX(ImGuiStyleVar.ItemInnerSpacing, 10f);
             ImGui.Checkbox("Change settings before starting", ref _settingsFirst);
+            ImGui.PopStyleVar();
         }
         // Kept as soon as a field is done with, not only on connecting: a name typed before a server
         // refuses, or before the player thinks better of it, is still the name they want next time.
@@ -869,6 +882,13 @@ internal static class Panel
     private const float ListTall = 170f;
 
     /// <summary>
+    /// The table heading's own background. KSA's style gives it the same grey a selected row gets,
+    /// so the heading and the row the player had picked read as one block of grey with no telling
+    /// which was which. Darker, so the heading sits behind the list rather than in it.
+    /// </summary>
+    private static readonly float4 HeadingBackground = new(0f, 0f, 0f, 0.40f);
+
+    /// <summary>
     /// The servers the directories carry, and the ones this player has been to.
     ///
     /// <para>Picking one fills the address field rather than connecting, so there is one way into a
@@ -880,23 +900,34 @@ internal static class Panel
     {
         (int asked, int answered) = Browser.Directories;
         int rows = Browser.Rows.Count;
+
+        // Above the table and across from the button that acts on it: what this list is, and how
+        // much of it is any use to this game. How many directories answered is a footnote and sits
+        // under the table with the rest of the small print.
+        float top = ImGui.GetCursorPosY();
+        float middle = (ConsoleWidgets.ButtonHeight - ImGui.GetTextLineHeight()) * 0.5f;
+        ImGui.SetCursorPosY(top + middle);
+        ImGui.Text("Servers to join"u8);
+        ImGui.SameLine();
         ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.TextMuted);
         ImGui.Text(
-            Browser.Fetching && rows == 0 ? "Looking for servers..."
-            : asked == 0 ? "No server directories to ask. Type an address below."
-            : answered == 0 ? $"Couldn't reach {(asked == 1 ? "the server directory" : "any server directory")}. Type an address below."
-            : rows == 0 ? "No servers listed. Type an address below."
-            : $"{Browser.Joinable} of {rows} you can join, from {answered} of {asked} director{(asked == 1 ? "y" : "ies")}.");
+            Browser.Fetching && rows == 0 ? "   looking..."
+            : asked == 0 ? "   no directories to ask; type an address below"
+            : answered == 0 ? $"   couldn't reach {(asked == 1 ? "the directory" : "any directory")}; type an address below"
+            : rows == 0 ? "   none listed; type an address below"
+            : $"   {Browser.Joinable} of {rows} you can join");
         ImGui.PopStyleColor();
+        ImGui.SameLine();
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - ConsoleWidgets.ButtonWidth("REFRESH".AsSpan()));
+        ImGui.SetCursorPosY(top);
+        if (ConsoleWidgets.Button("REFRESH".AsSpan())) Browser.Refresh(anyway: true);
 
         ImGui.BeginChild("###KSAMultiplayerServers", new float2(0f, ListTall), ImGuiChildFlags.Borders);
+        ImGui.PushStyleColor(ImGuiCol.TableHeaderBg, in HeadingBackground);
         if (ImGui.BeginTable("###KSAMultiplayerServerRows", 4,
                              ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp | ImGuiTableFlags.BordersInnerV))
         {
-            // The count rides on the first header, as a server browser puts it there. Past the ###
-            // is the column's id, which has to stay the same while the count in front of it changes
-            // or the table forgets what it knew about the column every time a server answers.
-            ImGui.TableSetupColumn($"Servers ({Browser.Rows.Count})###server", ImGuiTableColumnFlags.WidthStretch, 1.0f);
+            ImGui.TableSetupColumn("Server###server"u8, ImGuiTableColumnFlags.WidthStretch, 1.0f);
             ImGui.TableSetupColumn("Players###players"u8, ImGuiTableColumnFlags.WidthFixed, 72f);
             ImGui.TableSetupColumn("World###world"u8, ImGuiTableColumnFlags.WidthStretch, 0.95f);
             // Last, where a server browser puts it: it is the least of what decides whether to join.
@@ -905,44 +936,60 @@ internal static class Panel
             foreach (Browser.Row r in Browser.Rows) ServerRow(r, typed);
             ImGui.EndTable();
         }
+        ImGui.PopStyleColor();
         ImGui.EndChild();
-        if (ConsoleWidgets.Button("REFRESH".AsSpan())) Browser.Refresh(anyway: true);
-        // Which directories carry the chosen server, beside the button rather than in a row of its
-        // own. A directory chooses which addresses a player is shown and nothing at all about what
-        // they are called, so where a row was found is the one thing about it worth attributing --
-        // and a player who dislikes what one carries needs to know which to take out of their file.
+
+        // The small print, under the table rather than over it: how many directories answered, and
+        // where the chosen server was found. A directory chooses which addresses a player is shown
+        // and nothing at all about what they are called, so where a row came from is the one thing
+        // about it worth attributing -- and a player who dislikes what one carries needs to know
+        // which to take out of their file.
+        string note = asked > 0 && rows > 0 ? $"From {answered} of {asked} director{(asked == 1 ? "y" : "ies")}." : "";
         if (Browser.Rows.FirstOrDefault(r => string.Equals(r.Where, typed, StringComparison.OrdinalIgnoreCase)) is { Found.Count: > 0 } found)
         {
             // The player's own remembered servers are a source of rows but not a directory, and
             // saying "listed by yours" about their own history is not English. Said apart.
             bool mine = found.Found.Contains(Browser.Yours);
             string[] directories = [.. found.Found.Where(n => n != Browser.Yours)];
-            ImGui.SameLine();
-            // Down by half of what the button is taller than a line of text. Beside a framed widget
-            // the cursor sits at the top of the line, so the text rode along the button's top edge.
-            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + ((ConsoleWidgets.ButtonHeight - ImGui.GetTextLineHeight()) * 0.5f));
-            ImGui.TextDisabled(
-                directories.Length == 0 ? $"{found.Where}: you have connected here before"
-                : mine ? $"{found.Where}: you have connected here before, and it is listed by {string.Join(", ", directories)}"
-                : $"{found.Where}: listed by {string.Join(", ", directories)}");
+            note += directories.Length == 0 ? $" {found.Where}: you have connected here before."
+                  : mine ? $" {found.Where} is listed by {string.Join(", ", directories)}, and you have connected here before."
+                  : $" {found.Where} is listed by {string.Join(", ", directories)}.";
+        }
+        if (note.Length > 0)
+        {
+            ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.TextMuted);
+            ImGui.TextWrapped(note.Trim());
+            ImGui.PopStyleColor();
         }
     }
 
     /// <summary>
-    /// One server. The reason it cannot be joined is on the row rather than behind a click: three
-    /// things have to match before a join works, and a row that will not say which of them failed
-    /// sends a player to find out by trying.
+    /// One server. Every column is something about the server; whether this game can join it is the
+    /// state of the row.
+    ///
+    /// <para>The reason used to be written into the World column, which put this game's own verdict
+    /// in among the server's facts -- and lost the world exactly when something was wrong with it,
+    /// which is when a player most wants to compare one server against another. A row that cannot
+    /// be joined is dimmed, and the reason is said beside the button that would do the joining.</para>
     /// </summary>
     private static void ServerRow(Browser.Row r, string typed)
     {
-        string why = Browser.Why(r);
+        bool blocked = Browser.Why(r).Length > 0;
         bool chosen = typed.Length > 0 && string.Equals(typed, r.Where, StringComparison.OrdinalIgnoreCase);
         ImGui.TableNextRow();
         ImGui.TableNextColumn();
         string locked = r.Facts is { Password: true } ? "  (password)" : "";
+        // Short enough to sit beside a name: which of the things that must match did not. The
+        // sentence saying what to do about it is beside the button that would act on it.
+        string tag = Browser.Short(r) is { Length: > 0 } t ? $"   {t}" : "";
+        // Only the name, which is the one thing on the row drawn at full strength: the rest is
+        // already muted, so dimming this is what makes a row read as not being for this game.
+        if (blocked) ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.TextMuted);
         // The id is the address and the label is the name, so a server that renames itself mid-list
         // does not become a different row and lose what the player had picked.
-        if (ImGui.Selectable($"{r.Title}{locked}###KSAMultiplayerRow{r.Where}", chosen, ImGuiSelectableFlags.SpanAllColumns))
+        bool picked = ImGui.Selectable($"{r.Title}{locked}{tag}###KSAMultiplayerRow{r.Where}", chosen, ImGuiSelectableFlags.SpanAllColumns);
+        if (blocked) ImGui.PopStyleColor();
+        if (picked)
         {
             AddressText.SetValue(r.Where);
             _asked = "";
@@ -952,14 +999,8 @@ internal static class Panel
         ImGui.TableNextColumn();
         ImGui.TextDisabled(r.Facts is { } f ? $"{f.Players}/{f.MaxPlayers}" : r.Waiting ? "..." : "-");
         ImGui.TableNextColumn();
-        if (why.Length > 0)
-        {
-            ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.Pending);
-            ImGui.Text(why);
-            ImGui.PopStyleColor();
-        }
-        else if (r.Facts is { } g) ImGui.TextDisabled(!g.HasWorld ? "no world yet" : g.System.Length > 0 ? Named(g.System) : "a world");
-        else ImGui.TextDisabled("");
+        ImGui.TextDisabled(r.Facts is { } g ? !g.HasWorld ? "no world yet" : g.System.Length > 0 ? Named(g.System) : "a world"
+                           : r.Waiting ? "..." : "no answer");
         ImGui.TableNextColumn();
         // The round trip to the server, which is not the time to join it and is the best guide
         // there is to that before anybody has.
@@ -1015,13 +1056,21 @@ internal static class Panel
         // Always these three rows, answered or not: a window that grows a section when an answer
         // arrives moves its own buttons out from under the pointer.
         bool mine = Sync.ServerAsked == typed;
+        // Not said twice. A server picked out of the list has its name and its world on the row up
+        // there, so repeating them here is the same answer in two places and pushes the one thing
+        // the row has no room for -- the mods -- further down the window. An address typed by hand
+        // is in no list and has nothing else saying what it is, so it gets all three.
+        bool listed = Starting && Browser.Rows.Any(r => string.Equals(r.Where, typed, StringComparison.OrdinalIgnoreCase));
         if (Known(typed) is { } there)
         {
             (string missing, string extra) = Sync.ModsAgainst(there.Mods);
             string[] wants = [.. there.Mods.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
-            Told("Server name"u8, there.ServerName.Length > 0 ? there.ServerName : "unnamed");
-            Told("World"u8, !there.HasWorld ? "none yet: yours becomes it"
-                          : there.System.Length > 0 ? Named(there.System) : "yes");
+            if (!listed)
+            {
+                Told("Server name"u8, there.ServerName.Length > 0 ? there.ServerName : "unnamed");
+                Told("World"u8, !there.HasWorld ? "none yet: yours becomes it"
+                              : there.System.Length > 0 ? Named(there.System) : "yes");
+            }
             Mods(wants, missing, extra);
             return;
         }

@@ -180,6 +180,24 @@ internal static class Browser
     /// the three it failed leaves a player clicking through rows to learn one at a time which of
     /// them were never for them.</para>
     /// </summary>
+    /// <summary>
+    /// A word or two for the row, where <see cref="Why"/> is a sentence for the detail: enough to
+    /// glance down a list and see which servers are not for this game and roughly why, without
+    /// clicking each one to find out.
+    /// </summary>
+    public static string Short(Row r)
+    {
+        if (r.Facts is not { } f)
+        {
+            return r.Trouble.Length == 0 ? "" : r.Trouble.StartsWith("protocol", StringComparison.Ordinal) ? "protocol" : "no answer";
+        }
+        if (f.KsaBuild.Length > 0 && World.KsaBuild.Length > 0 && f.KsaBuild != World.KsaBuild) return "KSA build";
+        (string missing, string extra) = Sync.ModsAgainst(f.Mods);
+        if (missing.Length > 0 || (f.Mods.Length > 0 && extra.Length > 0)) return "mods";
+        if (f.Full) return "full";
+        return "";
+    }
+
     public static string Why(Row r)
     {
         if (r.Facts is not { } f) return r.Trouble;
