@@ -817,11 +817,6 @@ internal static class Panel
         ImGui.BeginChild("###KSAMultiplayerPick", new float2(half, PanelTall), ImGuiChildFlags.Borders);
         ImGui.Columns(2, "###KSAMultiplayerPickRows".AsSpan(), false);
         ImGui.SetColumnWidth(0, half * 0.30f);
-        if (_focusAddress)
-        {
-            _focusAddress = false;
-            ImGui.SetKeyboardFocusHere();
-        }
         edited |= Field("Server"u8, "###KSAMultiplayerServer", AddressText);
         // Said in words where the server has told us it wants none, which every welcome has said
         // since protocol 23. It was a greyed-out box, and an empty box a player cannot type in looks
@@ -909,9 +904,6 @@ internal static class Panel
     /// </summary>
     private static readonly float4 PanelBackground = new(1f, 1f, 1f, 0.20f);
 
-    /// <summary>Whether the address field should take the keyboard, which "Add server" asks for.</summary>
-    private static bool _focusAddress;
-
     /// <summary>
     /// The table heading's own background. KSA's style gives it the same grey a selected row gets,
     /// so the heading and the row the player had picked read as one block of grey with no telling
@@ -949,21 +941,13 @@ internal static class Panel
             ImGui.TableSetupColumn("Players###players"u8, ImGuiTableColumnFlags.WidthFixed, 72f);
             ImGui.TableSetupColumn("World###world"u8, ImGuiTableColumnFlags.WidthStretch, 0.95f);
             // Last, where a server browser puts it: it is the least of what decides whether to join.
-            ImGui.TableSetupColumn("Latency###ping"u8, ImGuiTableColumnFlags.WidthFixed, 78f);
+            // As wide as the REFRESH button under it, so the rule down its left lands on that
+            // button's left edge instead of somewhere across its face, where it read as a line
+            // running into the button.
+            ImGui.TableSetupColumn("Latency###ping"u8, ImGuiTableColumnFlags.WidthFixed,
+                                   ConsoleWidgets.ButtonWidth("REFRESH".AsSpan()));
             ImGui.TableHeadersRow();
 
-            // The way in for an address no directory carries, at the top of the list rather than in
-            // a field of its own somewhere else: typing one in and picking one out are the same
-            // thing to a player, so they live in the same place.
-            ImGui.TableNextRow();
-            ImGui.TableNextColumn();
-            if (ImGui.Selectable("Add server###KSAMultiplayerAdd"u8, false, ImGuiSelectableFlags.SpanAllColumns))
-            {
-                AddressText.SetValue("");
-                _asked = "";
-                Sync.Forget();
-                _focusAddress = true;
-            }
             foreach (Browser.Row r in Browser.Rows) ServerRow(r, typed);
             ImGui.EndTable();
         }
@@ -975,9 +959,9 @@ internal static class Panel
         ImGui.SetCursorPosY(ImGui.GetCursorPosY() + ((ConsoleWidgets.ButtonHeight - ImGui.GetTextLineHeight()) * 0.5f));
         string note =
             Browser.Fetching && rows == 0 ? "Refreshing list..."
-            : asked == 0 ? "No directories to ask. Add a server above."
-            : answered == 0 ? $"Couldn't reach {(asked == 1 ? "the directory" : "any directory")}. Add a server above."
-            : rows == 0 ? "No servers listed. Add a server above."
+            : asked == 0 ? "No directories to ask. Type an address below."
+            : answered == 0 ? $"Couldn't reach {(asked == 1 ? "the directory" : "any directory")}. Type an address below."
+            : rows == 0 ? "No servers listed. Type an address below."
             : $"{Browser.Joinable} of {rows} joinable, from {answered} of {asked} director{(asked == 1 ? "y" : "ies")}.";
         // Where the chosen one came from. A directory chooses which addresses a player is shown and
         // nothing at all about what they are called, so that is the one thing worth attributing --
