@@ -24,8 +24,10 @@ internal static class Panel
 
 
     // Where the player list's columns start, from the left of its window.
-    private const float PingColumn = 150f, FlyingColumn = 215f;
-    private const float BoardWidth = 330f;
+    // The scoreboard's columns size themselves to what is in them, so there is nothing here to be
+    // outgrown. Fixed offsets were: a name longer than 150 px ran under the ping beside it, and
+    // "Kitten 6985 (you)" is longer than 150 px.
+
 
     private static readonly float2 ChatFirstSize = new(420f, 190f);
 
@@ -77,11 +79,18 @@ internal static class Panel
     private static readonly ImInputString ChatText = new(Wire.ChatChars * 4, ""u8);
     private static bool _loaded;
 
+    // Said when it changes and not otherwise. A window that is drawing off the edge of the game
+    // looks exactly like a window that is not drawing at all, and only one line told them apart.
+    private static bool _drewWas;
+
     public static bool Visible = true;
 
     /// <summary>Shown, and kept shown: what KSA's Mods menu asks for, and the only way back to a shut window.</summary>
     public static void Show()
     {
+        // Written down because the one thing that cannot be told apart from outside is a menu entry
+        // that was never reached: a panel that does not appear looks the same whether this ran or not.
+        Log.Info($"Mods menu: Multiplayer chosen (visible was {Visible}, starting {Starting}, stage {Sync.Now})");
         Visible = true;
         Save();
     }
@@ -152,14 +161,30 @@ internal static class Panel
         if (!Visible) return;
 
         ImGuiViewportPtr screen = ImGui.GetMainViewport();
-        // Clear of KSA's own instruments down the right edge, which are drawn over this window.
-        float2 at = new(screen.WorkPos.X + screen.WorkSize.X - (FirstSize.X + 140f), screen.WorkPos.Y + 80f);
+        // Placed off the game's own window and not off the viewport's work area. With a second
+        // monitor the work area spans both, so "the right edge, less the width of this window" was
+        // 500 px beyond the edge of the game: the window opened every time, drew every time, and
+        // sat on a monitor the game is not on. A nineteen-pixel sliver of it was all that was ever
+        // on screen, which reads exactly like a menu entry that does nothing.
+        //
+        // Clear of KSA's own instruments down that edge, which are drawn over this window.
+        float2 room = float2.Unpack(Program.GetWindow().Size);
+        float wide = MathF.Min(room.X, screen.WorkSize.X);
+        float2 at = new(screen.WorkPos.X + MathF.Max(20f, wide - (FirstSize.X + 140f)), screen.WorkPos.Y + 80f);
         ImGui.SetNextWindowPos(in at, ImGuiCond.FirstUseEver, null);
         ImGui.SetNextWindowSize(in FirstSize, ImGuiCond.FirstUseEver);
         ImGui.SetNextWindowSizeConstraints(in SmallestSize, in LargestSize);
 
         bool open = true;
-        if (ImGui.Begin("Multiplayer###KSAMultiplayer", ref open, Flags))
+        bool drew = ImGui.Begin("Multiplayer###KSAMultiplayer", ref open, Flags);
+        if (drew != _drewWas)
+        {
+            _drewWas = drew;
+            float2 where = ImGui.GetWindowPos(), size = ImGui.GetWindowSize();
+            Log.Info($"panel: drew={drew} at {where.X:F0},{where.Y:F0} size {size.X:F0}x{size.Y:F0} "
+                     + $"collapsed={ImGui.IsWindowCollapsed()} starting={Starting} visible={Visible}");
+        }
+        if (drew)
         {
             // 0: wrap at the edge of the window, so nothing a server says runs off the side.
             ImGui.PushTextWrapPos(0f);
@@ -379,7 +404,11 @@ internal static class Panel
         int count = Sync.Client is { Joined: true } joined ? joined.Players.Length : 0;
         // "(2 players)" rather than "(2)", which beside an address reads as a port or a version as
         // readily as it does a count of anybody.
+        // Joining, seeding, waiting for the world and loading it are all one thing to somebody
+        // watching the corner of the screen: it has not finished yet. The badge said only the
+        // address through all of them, which reads the same as being in the world.
         string where = off ? "disconnected"
+                           : !here ? $"{Sync.ServerAddress} (connecting...)"
                            : count > 0 ? $"{Sync.ServerAddress} ({count} player{(count == 1 ? "" : "s")})"
                            : Sync.ServerAddress;
         if (where.Length == 0) return;
@@ -428,8 +457,10 @@ internal static class Panel
         if (!World.KeyDown(GlfwKey.Tab) && Sync.Wall() >= BoardUntil) return;
 
         ImGuiViewportPtr screen = ImGui.GetMainViewport();
-        float2 at = new(screen.WorkPos.X + ((screen.WorkSize.X - BoardWidth) * 0.5f), screen.WorkPos.Y + AltimeterClear);
-        ImGui.SetNextWindowPos(in at, ImGuiCond.Always, null);
+        // Centred by its middle rather than by a width written down here, since the width is now
+        // whatever the longest name in the room makes it.
+        float2 at = new(screen.WorkPos.X + (screen.WorkSize.X * 0.5f), screen.WorkPos.Y + AltimeterClear);
+        ImGui.SetNextWindowPos(in at, ImGuiCond.Always, new float2(0.5f, 0f));
         ImGui.SetNextWindowBgAlpha(0.85f);
 
         const ImGuiWindowFlags board = ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoTitleBar
@@ -438,20 +469,27 @@ internal static class Panel
                                        | ImGuiWindowFlags.NoNav | ImGuiWindowFlags.NoInputs;
         if (ImGui.Begin("###KSAMultiplayerPlayers", board))
         {
-            ImGui.Text(c.ServerName.Length > 0 ? c.ServerName : "Multiplayer");
-            ImGui.SameLine(PingColumn, -1f);
-            ImGui.TextDisabled("Ping");
-            ImGui.SameLine(FlyingColumn, -1f);
-            ImGui.TextDisabled("Flying");
-            ImGui.Separator();
-            foreach (Wire.Player p in c.Players.OrderBy(p => p.Id))
+            // A table, so a column is as wide as the widest thing in it and two of them can never
+            // land on each other. The server's name heads the first, and the id behind the ### keeps
+            // the column the same one while that name is being learned.
+            if (ImGui.BeginTable("###KSAMultiplayerBoardRows", 3, ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.PadOuterX))
             {
-                ImGui.Text(p.Id == c.Id ? $"{p.Name} (you)" : p.Name);
-                ImGui.SameLine(PingColumn, -1f);
-                // Every game measures its own and tells the server, so this is each player's own line.
-                ImGui.TextDisabled(p.Rtt >= 0f ? $"{p.Rtt * 1000f:F0} ms" : "--");
-                ImGui.SameLine(FlyingColumn, -1f);
-                ImGui.TextDisabled(!p.Loaded ? "joining" : p.Controlling.Length > 0 ? p.Controlling : "--");
+                ImGui.TableSetupColumn($"{(c.ServerName.Length > 0 ? c.ServerName : "Multiplayer")}###who");
+                ImGui.TableSetupColumn("Ping###ping"u8);
+                ImGui.TableSetupColumn("Flying###flying"u8);
+                ImGui.TableHeadersRow();
+                foreach (Wire.Player p in c.Players.OrderBy(p => p.Id))
+                {
+                    ImGui.TableNextRow();
+                    ImGui.TableNextColumn();
+                    ImGui.Text(p.Id == c.Id ? $"{p.Name} (you)" : p.Name);
+                    ImGui.TableNextColumn();
+                    // Every game measures its own and tells the server, so this is each player's own line.
+                    ImGui.TextDisabled(p.Rtt >= 0f ? $"{p.Rtt * 1000f:F0} ms" : "--");
+                    ImGui.TableNextColumn();
+                    ImGui.TextDisabled(!p.Loaded ? "joining" : p.Controlling.Length > 0 ? p.Controlling : "--");
+                }
+                ImGui.EndTable();
             }
         }
         ImGui.End();
@@ -921,8 +959,14 @@ internal static class Panel
     /// What this game knows about the address in the field, from the list where it is a row there
     /// and from the window's own asking otherwise. Null while it knows nothing.
     /// </summary>
+    /// <remarks>
+    /// The list only while the start window is up, because only there is it being kept: nothing
+    /// refreshes it once the game is running, so in a game its rows are an answer from whenever the
+    /// window was last open. A server whose world has changed since would be described by what it
+    /// used to be.
+    /// </remarks>
     private static ServerFacts? Known(string typed) =>
-        Browser.Rows.FirstOrDefault(r => string.Equals(r.Where, typed, StringComparison.OrdinalIgnoreCase))?.Facts
+        (Starting ? Browser.Rows.FirstOrDefault(r => string.Equals(r.Where, typed, StringComparison.OrdinalIgnoreCase))?.Facts : null)
         ?? (Sync.ServerAsked == typed ? Sync.Server : null);
 
     private static void ThisServer(string typed)
