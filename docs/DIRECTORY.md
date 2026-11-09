@@ -87,6 +87,14 @@ proves reachability — the probe does that — but because without it you have 
 with a public front door: anybody could point your prober at any host and port. With it, a server
 can only ever aim your probes at itself.
 
+One exception, and you need it: **a server sharing a machine with your directory has no address of
+its own to compare.** Its announcement is turned back by the host before it is given one, so what
+arrives is a bridge address like `172.19.0.1`. Such a server gives a name and is held to that
+instead, and the name must resolve to something a player could reach. Nothing is lost, because an
+announcement from an address no player can reach is one only your own machine could have sent — a
+stranger's arrives from a public address, and `X-Forwarded-For` is believed from nowhere but your
+proxy's network.
+
 **3. Expire by comparing timestamps when you build the list.** No sweep to schedule, no TTL to get
 wrong. This project's directory lists a server while a probe answered within 180 s *and* it
 announced itself within 300 s. The second condition matters because a withdrawal can be lost, and

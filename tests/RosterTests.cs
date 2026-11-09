@@ -57,6 +57,34 @@ public class RosterTests
     }
 
     [Fact]
+    public void AServerOnTheDirectorysOwnMachineIsHeldToTheNameItGives()
+    {
+        Roster roster = new();
+        // A server sharing a machine with a directory never gets an address of its own: the host
+        // turns its announcement back, so what arrives is the bridge it left by. With a name to be
+        // listed under that is enough, because an address no player can reach is one only this
+        // machine could have sent -- a stranger's announcement arrives from a public address.
+        IPAddress bridge = IPAddress.Parse("172.19.0.1");
+        Noted named = roster.Announce("mp.example.com", 50100, bridge, 0.0);
+        Assert.True(named.Ok);
+        Assert.False(named.Listed);
+        Assert.Equal("172.19.0.1", named.Seen);
+        Assert.Equal((1, 0), roster.Count(0.0));
+
+        // With no name there is nothing to go on, and the refusal says which of the two cases this
+        // is rather than leaving an operator to guess.
+        Noted anonymous = roster.Announce("", 50101, bridge, 0.0);
+        Assert.False(anonymous.Ok);
+        Assert.Contains("say which name to list it under", anonymous.Say);
+
+        // It is still listed only once a probe of the name has answered.
+        roster.Heard(Roster.Key("mp.example.com", 50100), Said(players: 2), 1.0);
+        Listed row = Assert.Single(roster.Snapshot("d", 1.0, DateTimeOffset.UnixEpoch).Servers);
+        Assert.Equal("mp.example.com", row.Host);
+        Assert.Equal(2, row.Players);
+    }
+
+    [Fact]
     public void NothingIsListedUntilAProbeOfItHasAnswered()
     {
         Roster roster = new();

@@ -12,6 +12,12 @@ public sealed class Entry
     /// <summary>The address the announcement arrived from, which is the one thing about it the sender did not choose.</summary>
     public required IPAddress From { get; init; }
 
+    /// <summary>
+    /// Whether that address is one no player could reach, which means the announcement never left
+    /// the machine this directory runs on. Such a server is held to the name it gave instead.
+    /// </summary>
+    public required bool FromHere { get; init; }
+
     /// <summary>When this was last announced, and when a probe of it last answered. Zero for never.</summary>
     public double Announced { get; set; }
     public double Answered { get; set; }
@@ -102,16 +108,23 @@ public sealed class Roster
     public Noted Announce(string host, int port, IPAddress from, double now)
     {
         if (port is < 1 or > 65535) return new Noted(false, from.ToString(), Say: $"{port} is not a port");
-        if (!Reachable(from))
-        {
-            // Said plainly, because this is what an operator behind carrier-grade NAT or a server
-            // announcing over a private network will hit, and "not listed" alone sends them to
-            // check a firewall that is fine.
-            return new Noted(false, from.ToString(),
-                             Say: $"this announcement came from {from}, which is not an address players on the internet can reach: "
-                                + "a server behind carrier-grade NAT or on a private network cannot be listed");
-        }
         host = Wire.Clip(host, 100);
+        // An address no player can reach is one this directory can only have been handed by the
+        // machine it runs on, or by whatever stands in front of it: a stranger's announcement
+        // arrives from a public address, and the header that could claim otherwise is believed from
+        // nowhere else. So a server announcing from one is allowed to name itself and is held to
+        // the name -- which is what a server sharing a machine with a directory has to do, since
+        // its own announcement is turned back by the host and never gets an address of its own.
+        bool here = !Reachable(from);
+        if (here && host.Length == 0)
+        {
+            // Said plainly, because this is what an operator behind carrier-grade NAT will hit, and
+            // "not listed" alone sends them to check a firewall that is fine.
+            return new Noted(false, from.ToString(),
+                             Say: $"this announcement came from {from}, which is no address players can reach: a server behind "
+                                + "carrier-grade NAT or on a private network cannot be listed, and one on this directory's own "
+                                + "machine has to say which name to list it under");
+        }
         // No name given means be listed at whatever address this arrived from, which is the case
         // that cannot be got wrong.
         if (host.Length == 0) host = from.ToString();
@@ -132,7 +145,7 @@ public sealed class Roster
             {
                 return new Noted(false, from.ToString(), Say: $"{from} already has {mine} servers listed here, which is as many as one address may");
             }
-            _entries[key] = new Entry { Host = host, Port = port, From = from, Announced = now, Ask = now };
+            _entries[key] = new Entry { Host = host, Port = port, From = from, FromHere = here, Announced = now, Ask = now };
             return new Noted(true, from.ToString(), false, "being asked about now; it is listed once it answers");
         }
     }

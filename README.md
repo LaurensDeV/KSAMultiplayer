@@ -135,6 +135,10 @@ A server behind carrier-grade NAT cannot be listed, and is told so.
 pointing at the server, since a directory checks that the name it is given is the machine that gave
 it. With no name the server is listed at the address its announcement arrived from.
 
+A server sharing a machine with a directory has to give a name, and is told so. Its announcement
+never gets out to the internet and back, so what the directory sees is an address inside the
+machine, and the name is the only thing left to go on.
+
 `--directories` points somewhere else -- a group's own directory, or one for testing. The default is
 the list in `directories.txt`, fetched at startup and remembered, so a directory can be retired
 without anybody updating anything. `docs/DIRECTORY.md` is what running one takes.

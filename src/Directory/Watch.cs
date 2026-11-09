@@ -16,6 +16,12 @@ namespace KSAMultiplayer.Directories;
 /// proves anything about reachability -- the probe does that -- but because without it this
 /// directory would send UDP to any host and port anybody named, which is a scanner with a public
 /// front door. With it, a server can only ever point this at itself.</para>
+///
+/// <para>The exception is a server whose announcement never left this machine, which has no address
+/// of its own to be compared against: the host turns such a request back before it is given one.
+/// That server is held to its name instead, and the name has to resolve to something a player could
+/// reach. Nothing is lost by it, because an announcement from an address no player can reach is one
+/// only this machine could have sent.</para>
 /// </summary>
 public sealed class Watch(Roster roster, Ticker clock, ILogger<Watch> log) : BackgroundService
 {
@@ -148,9 +154,11 @@ public sealed class Watch(Roster roster, Ticker clock, ILogger<Watch> log) : Bac
 
         if (IPAddress.TryParse(e.Host, out IPAddress? literal))
         {
+            if (!Roster.Reachable(literal)) return (nowhere, key, $"{literal} is not an address players can reach");
             // An address rather than a name: it has to be the one the announcement came from, which
-            // for an entry made without a name it always is.
-            if (!literal.Equals(e.From))
+            // for an entry made without a name it always is. A server on this machine had no
+            // address of its own to compare, so there is nothing to hold it to but the one it gave.
+            if (!e.FromHere && !literal.Equals(e.From))
             {
                 return (nowhere, key, $"it asked to be listed at {literal} but announced itself from {e.From}: a server is listed at its own address");
             }
@@ -168,6 +176,14 @@ public sealed class Watch(Roster roster, Ticker clock, ILogger<Watch> log) : Bac
             return (nowhere, key, $"{e.Host} does not resolve to an IPv4 address");
         }
         if (found.Length == 0) return (nowhere, key, $"{e.Host} does not resolve to an IPv4 address");
+        if (e.FromHere)
+        {
+            if (found.FirstOrDefault(Roster.Reachable) is not { } usable)
+            {
+                return (nowhere, key, $"{e.Host} resolves only to {string.Join(", ", found.Select(ip => ip.ToString()))}, which no player can reach");
+            }
+            return (new IPEndPoint(usable, e.Port), key, "");
+        }
         if (!found.Any(ip => ip.Equals(e.From)))
         {
             return (nowhere, key,
