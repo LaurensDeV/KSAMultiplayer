@@ -187,13 +187,17 @@ internal static class Browser
     /// </summary>
     public static string Short(Row r)
     {
+        // Each says which way it points. A bare noun -- "mods", "KSA build" -- names the subject
+        // and settles nothing: a player reading it still has to open the server to learn whether
+        // they have too few or too many.
         if (r.Facts is not { } f)
         {
-            return r.Trouble.Length == 0 ? "" : r.Trouble.StartsWith("protocol", StringComparison.Ordinal) ? "protocol" : "no answer";
+            return r.Trouble.Length == 0 ? "" : r.Trouble.StartsWith("protocol", StringComparison.Ordinal) ? "wrong version" : "no answer";
         }
-        if (f.KsaBuild.Length > 0 && World.KsaBuild.Length > 0 && f.KsaBuild != World.KsaBuild) return "KSA build";
+        if (f.KsaBuild.Length > 0 && World.KsaBuild.Length > 0 && f.KsaBuild != World.KsaBuild) return "wrong KSA build";
         (string missing, string extra) = Sync.ModsAgainst(f.Mods);
-        if (missing.Length > 0 || (f.Mods.Length > 0 && extra.Length > 0)) return "mods";
+        if (missing.Length > 0) return "needs mods";
+        if (f.Mods.Length > 0 && extra.Length > 0) return "extra mods";
         if (f.Full) return "full";
         return "";
     }

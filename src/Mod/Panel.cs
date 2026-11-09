@@ -1131,11 +1131,11 @@ internal static class Panel
                 float4 how = absent.Contains(mod) ? ConsoleStyle.Danger : ConsoleStyle.Positive;
                 ImGui.TextColored(in how, mod);
             }
-            if (spare.Length > 0)
-            {
-                ImGui.TextDisabled("turn these off:");
-                foreach (string mod in spare) ImGui.TextColored(in ConsoleStyle.Danger, mod);
-            }
+            // The caption only where there are two lists to tell apart. With nothing above them
+            // the node already says "1 to turn off", and saying it again over the one name under it
+            // is the same instruction twice.
+            if (spare.Length > 0 && shown.Length > 0) ImGui.TextDisabled("turn these off:");
+            foreach (string mod in spare) ImGui.TextColored(in ConsoleStyle.Danger, mod);
             ImGui.TreePop();
         }
         ImGui.NextColumn();

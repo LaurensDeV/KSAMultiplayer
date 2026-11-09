@@ -36,7 +36,7 @@ variable "port" {
 variable "server_name" {
   description = "What the server calls itself in the mod's panel and its player list."
   type        = string
-  default     = "mp.ksarmory.com"
+  default     = "Multiplayer test server"
 }
 
 variable "max_players" {
