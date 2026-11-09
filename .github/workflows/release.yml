@@ -289,6 +289,46 @@ jobs:
               gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md assets/*
           fi
 
+  directory:
+    name: The directory as an image
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Built here rather than taken from the Directory image workflow, for the reason the server's
+      # is: that one runs on pushes to main and only when its own files change, so the commit a tag
+      # sits on may have no image. It is also built from the same tree as the server, which matters
+      # more here than anywhere -- a directory reads a welcome in the protocol version it was built
+      # against, so one built from another commit lists nothing and says so in every server's log.
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/ksamp-directory
+          tags: |
+            type=ref,event=tag
+            type=sha,format=long
+
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile.directory
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   # Whether the server behind mp.ksarmory.com updates itself. A job of its own because a job's `if`
   # cannot read secrets, and a release must not fail on a repository that has none of these set: a
   # fork, or this one before the secrets were added.
@@ -310,7 +350,7 @@ jobs:
   # another way would leave that state describing a container that is no longer there.
   deploy:
     name: The server behind mp.ksarmory.com
-    needs: [image, publish, deployable]
+    needs: [image, directory, publish, deployable]
     if: needs.deployable.outputs.ok == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -346,17 +386,24 @@ jobs:
         env:
           OWNER: ${{ github.repository_owner }}
           DIGEST: ${{ needs.image.outputs.digest }}
+          DIRECTORY_DIGEST: ${{ needs.directory.outputs.digest }}
           TF_VAR_ssh_private_key: ~/.ssh/deploy
           TF_IN_AUTOMATION: "1"
         run: |
           owner=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
           export TF_VAR_server_image="ghcr.io/$owner/ksamp-server@$DIGEST"
+          # The two go up together on purpose: a directory lists a server only in the protocol
+          # version it was itself built against, so a release that moved one and not the other is a
+          # directory that lists nothing.
+          export TF_VAR_directory_image="ghcr.io/$owner/ksamp-directory@$DIRECTORY_DIGEST"
           tofu init -backend-config=backend.hcl
           tofu apply -auto-approve
           {
               echo "### Deployed"
               echo
               echo "\`$(tofu output -raw address)\` now runs \`$TF_VAR_server_image\`."
+              echo
+              echo "The directory runs \`$TF_VAR_directory_image\` at $(tofu output -raw directory)."
               echo
               echo "Players need a mod of this release: a game of another version is refused by name."
           } >> "$GITHUB_STEP_SUMMARY"
