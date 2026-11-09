@@ -68,11 +68,19 @@ resource "docker_container" "server" {
   # Long enough for SIGTERM to be answered: the server says goodbye to every player before it closes.
   stop_timeout = 20
 
-  # The default is unbounded, and a busy server writes a line per join, leave and chat.
-  log_driver = "json-file"
+  # The host's journal, not the container's own file. Docker throws a json-file log away with the
+  # container that wrote it, and a release replaces this container every time: every line since the
+  # last deploy went with it, which is exactly when the lines before it are worth reading. A question
+  # as ordinary as who joined and left yesterday could not be answered the morning after a release.
+  #
+  # `docker logs` reads a journald container as it always did. `journalctl CONTAINER_TAG=ksamp` reads
+  # it without Docker, and reads what the container before this one said. How much is kept is the
+  # host journal's business now (SystemMaxUse), so there is no per-container cap here -- and if that
+  # journal is volatile, the lines still last until the machine reboots rather than until the next
+  # release.
+  log_driver = "journald"
   log_opts = {
-    max-size = "10m"
-    max-file = "3"
+    tag = "ksamp"
   }
 }
 
@@ -134,9 +142,9 @@ resource "docker_container" "other_world" {
 
   stop_timeout = 20
 
-  log_driver = "json-file"
+  # The host's journal, for the reason the first server's is: a release replaces these containers too.
+  log_driver = "journald"
   log_opts = {
-    max-size = "10m"
-    max-file = "3"
+    tag = "ksamp-${each.key}"
   }
 }
