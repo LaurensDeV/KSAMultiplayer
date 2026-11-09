@@ -158,10 +158,10 @@ to copy exactly.
 Three sources, unioned:
 
 1. `directories.txt` in this repository, fetched over HTTPS, with the last good copy cached on disk
-   in `directories-seen.txt`. Commenting out a line is a sufficient fix for a dead directory *for
-   players*; a server announces to the list compiled into its build and reads this file never, which
-   the plan did not foresee. As built the list is re-read whenever it has been more than a minute,
-   and only while the window is open, rather than on a 15-minute timer.
+   in `directories-seen.txt`. Commenting out a line is a sufficient fix for a dead directory, for
+   servers as well as players. Neither side runs the 15-minute timer guessed at here: the mod
+   re-reads when the list is more than a minute old and its window is open, and an advertising server
+   re-reads hourly.
 2. `Documents/KSAMultiplayer/directories.json`, beside the `tokens.json` already kept there, so a
    player can add a clan's directory or strike one out.
 3. A compiled-in default, as the last resort only.

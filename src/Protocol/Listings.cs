@@ -86,7 +86,7 @@ public static class Listings
     public static readonly string[] BuiltIn = ["https://servers.ksarmory.com/v1/servers"];
 
     /// <summary>Where the list of directories is kept, so that retiring one is a commented-out line rather than a release.</summary>
-    public const string KnownAt = "https://raw.githubusercontent.com/LaurensDeV/KSAMultiplayer/main/directories.txt";
+    public static string KnownAt { get; set; } = "https://raw.githubusercontent.com/LaurensDeV/KSAMultiplayer/main/directories.txt";
 
     /// <summary>The most directories read from that list, since it is fetched over the internet like anything else.</summary>
     public const int MostKnown = 16;

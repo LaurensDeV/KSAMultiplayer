@@ -8,7 +8,7 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
 
 > **Status: played, not finished.** Two games on one machine have flown in one world through it,
 > against KSA `2026.11.10.5801`, and the server and the protocol are tested headlessly besides
-> (160 tests, real UDP over loopback, a lossy line included). An 89-part rocket has been flown in a
+> (166 tests, real UDP over loopback, a lossy line included). An 89-part rocket has been flown in a
 > shared world and staged while the other game watched, which rebuilt the dropped stage as its own
 > craft. What two games across the internet do is not known.
 > See [docs/DESIGN.md](docs/DESIGN.md#what-has-not-been-tried).
@@ -174,10 +174,14 @@ never gets out to the internet and back, so what the directory sees is an addres
 machine, and the name is the only thing left to go on.
 
 `--directories` points somewhere else -- a group's own directory, or one for testing. With none
-given, a server announces to the list compiled into its own build. It does not read
-`directories.txt`: that file is what the *mod* reads, so a directory added there becomes visible to
-players, and gets servers as their operators point them at it. `docs/DIRECTORY.md` is what running
-one takes.
+given, the server reads the shared list in `directories.txt` once an hour and announces to every
+directory in it, so a directory retired from that file stops being asked within the hour and a new
+one is picked up without anybody installing anything. The last list read is kept in `--data`, so a
+restart with no internet still knows yesterday's directories.
+
+That read happens only while `advertise` is on. A server nobody opted in fetches nothing and asks
+nobody, which is the same decision as the setting itself. `docs/DIRECTORY.md` is what running a
+directory takes.
 
 On another port, players have to type `host:50101` -- unless the zone holds an SRV record, which the
 mod reads when no port is typed:
@@ -229,7 +233,7 @@ like `quit`.
 | `--empty-world` | `KSAMP_EMPTY_WORLD` | | start with an empty world of this system (`SolLite` or `Sol`) instead of waiting for a player; also what `fresh` puts in place |
 | `--advertise` | `KSAMP_ADVERTISE` | off | list this server publicly so players can find it, which publishes its address |
 | `--advertise-as` | `KSAMP_ADVERTISE_AS` | the address seen | the hostname to be listed under |
-| `--directories` | `KSAMP_DIRECTORIES` | the built-in list | where to announce, separated by commas |
+| `--directories` | `KSAMP_DIRECTORIES` | the shared list | where to announce, separated by commas; the shared list in `directories.txt` otherwise, read hourly while advertising |
 
 Commands typed into the server's console: `help`, `players`, `say <text>`, `kick <name> [why]`, `op <name>`, `deop <name>`, `admins`,
 `clear [name]`, `reload` (or `reset`), `save`, `status`, `version`, `fresh`, `set [key value]`,

@@ -39,7 +39,7 @@ public static class Settings
         new("empty-world", Kind.Text, "", "start with an empty world of this system rather than waiting for a player to bring one, and the world 'fresh' puts in place of the one there is; empty to wait", true),
         new("advertise", Kind.Flag, "false", "list this server in the public directories so players can find it; its address becomes public", true),
         new("advertise-as", Kind.Text, "", "the hostname to be listed under; empty to be listed at the address a directory sees", true),
-        new("directories", Kind.Text, "", "where to announce, separated by commas; empty for the built-in list", true),
+        new("directories", Kind.Text, "", "where to announce, separated by commas; empty to read the shared list, which only an advertising server does", true),
     ];
 
     public const string FileName = "ksamp-server.toml";

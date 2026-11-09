@@ -169,10 +169,14 @@ that file every time it refreshes its list, so adding one is a pull request and 
 commented-out line. Neither is a release, which is the point. The URL has to be `https://`; an
 `http://` line is skipped without a word.
 
-**That gets you players, not servers.** A server does not read `directories.txt`: it announces to
-the list compiled into its own build, or to whatever `directories` names in its settings. So servers
-reach your list once their operators point them at it, or once a release carries you in that
-built-in list — until then, serve a list you curate yourself.
+**Servers find you too, without anybody installing anything.** A server with `advertise` on reads
+the same file once an hour and announces to every directory in it, so a merged pull request reaches
+running servers within the hour, and a line commented out stops them asking within the hour as well.
+A server that names its own `directories` announces to those alone.
+
+A server reads it *only* while advertising. One nobody opted in fetches nothing and asks nobody,
+which is the same reason the setting exists at all: publishing an address is a decision for whoever
+runs the machine, and so is telling anybody that the machine is there.
 
 Publish an abuse address and what you will and will not list. A directory with no stated policy
 and no way to complain to it becomes an advertising board, and then the ranking becomes the

@@ -189,7 +189,7 @@ string Version = typeof(GameServer).Assembly.GetName().Version?.ToString(3) ?? "
 Listings.Agent = $"ksamp-server/{Version}";
 // Made after the socket, which is where the port it is really on comes from: a server started on
 // port 0 picks one, and the one it announces has to be the one it answers on.
-Announcer announcer = new(options, server.Port, Now);
+Announcer announcer = new(options, server.Port, Now, Path.Combine(dataFolder, "directories-seen.txt"));
 
 while (server.Said.TryDequeue(out string? early)) Say(early);
 Say($"ksamp-server {Version}, speaking protocol {Wire.Version}");
@@ -198,7 +198,7 @@ Say($"{options.Name}: listening on UDP {(bind?.ToString() ?? "*")}:{server.Port}
 Say(server.HasWorld ? "a world is ready to hand out" : "no world yet: the first player to join gives the server theirs");
 // Said at every start whichever way it is set, so an operator reading the log at least learns that
 // the setting is there. A list nobody opts into is an empty list.
-Say(Announcer.Standing(options));
+Say(announcer.Standing());
 
 CancellationTokenSource stop = new();
 Console.CancelKeyPress += (_, e) =>

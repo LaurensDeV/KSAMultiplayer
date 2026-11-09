@@ -610,6 +610,13 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
 
 ## What has not been tried
 
+- **A server reading the shared list of directories.** An advertising server reads
+  `directories.txt` once an hour, announces to every directory in it, and withdraws from any that
+  has left the list -- so retiring one is a commented-out line for servers and not only for players.
+  A server with `advertise` off reads nothing and asks nobody, which is the half worth testing and
+  is tested: the read is pointed at a loopback server and a day of ticking leaves it never asked.
+  All of it over loopback, so what has not been seen is an hour going by on a real machine and the
+  real file being picked up.
 - **A server being told its port is shut.** `advertise` is off by default, and a server that is
   advertising says every sixty seconds that it is still there and withdraws when it stops or when
   the setting goes back to `false`. That much has been watched end to end: `mp.ksarmory.com`
@@ -621,9 +628,7 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   it needed holds: this repository owns the container, the KSArmory repository owns the hostname and
   the Caddy site block in front of it. What the whole design turns on and nobody has done is a
   second directory, on different hardware and under a different person -- which is the case that
-  decides whether retiring this one ever costs a player anything. A server does not even read
-  `directories.txt` today: it announces to the list compiled into its own build, so a new directory
-  reaches players by that file and reaches servers only as their operators point them at it.
+  decides whether retiring this one ever costs a player anything.
 - **Grass and rocks kept off the extra launchpads.** KSA keeps four circles of ground clear of
   ground clutter for a whole planet -- the cap is in the clutter compute shader as much as in the
   struct handed to it, so a mod cannot raise it -- and spends one on each of the first four
