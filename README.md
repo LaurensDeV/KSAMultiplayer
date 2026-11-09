@@ -29,6 +29,25 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
    game has loaded. Tick **Change settings before starting** to get KSA's configuration first, with
    the server's system chosen, for graphics and the rest; **Start KSA** then joins. Once in a game,
    KSA's **Mods** menu has an entry that brings the window back if you shut it.
+   The window lists the servers it can find, with how many players are on each and, for one you
+   cannot join, why -- the KSA build it wants, or a mod you have not got. Picking one fills the
+   address in; servers you have connected to before are in the list too, so you can see whether
+   anybody is on them. **Refresh** asks again. Nothing about the list is on the way in: typing an
+   address and pressing **Connect** works whether or not the list came up at all.
+
+   What the list costs you: the mod fetches `directories.txt` from this repository and then each
+   directory's list over HTTPS, and asks every server on it the same question your game asks before
+   joining one. So the operators of the servers listed see a request from your address, as they
+   would if you typed the address yourself -- a few dozen of them rather than one. Nothing about
+   you goes with it: no name, no account, nothing but the request. Put a `directories.json` beside
+   your settings in `Documents/KSAMultiplayer` to use different directories, or none:
+
+   ```json
+   { "use": ["https://a.directory.example/v1/servers"] }
+   ```
+
+   `use` replaces the list, `add` extends it, and `remove` drops one by URL.
+
    Enter the server's address (a host on its own, or `host:port`), your name and the
    password if there is one, and press **Connect**. There is a server at **`mp.ksarmory.com`** to
    try it on. The name starts as something like `Kitten 4821` rather than your Windows account name,
@@ -94,6 +113,32 @@ Keep an address record on the name beside it, both so the name resolves for ever
 ask about SRV and so a player whose resolver drops the record can still get in by typing the port.
 `infra/` makes both from one line of configuration.
 
+### Letting players find it
+
+Off by default. Turning it on publishes the address this server is reached at, which for a machine
+at home is a household's address, so it is a decision for whoever runs the machine:
+
+```toml
+# list this server in the public directories so players can find it; its address becomes public
+advertise = true
+```
+
+The server then says so at every start -- listed, or not listed and why, in words you can act on.
+Nothing is listed on being asked: a directory sends the game's own pre-join query to the address and
+lists the server only once it answers, so a port that is closed or forwarded wrongly reads as
+exactly that in the log rather than as a server nobody joins. Announcing stops the moment
+`advertise` goes back to `false`, without a restart.
+
+A server behind carrier-grade NAT cannot be listed, and is told so.
+
+`--advertise-as` is for a server with a name of its own: the name has to have an address record
+pointing at the server, since a directory checks that the name it is given is the machine that gave
+it. With no name the server is listed at the address its announcement arrived from.
+
+`--directories` points somewhere else -- a group's own directory, or one for testing. The default is
+the list in `directories.txt`, fetched at startup and remembered, so a directory can be retired
+without anybody updating anything. `docs/DIRECTORY.md` is what running one takes.
+
 ### Giving it a world
 
 - **Let the first player bring one.** With no world, the first player to connect gives the server
@@ -152,6 +197,9 @@ like `quit`.
 | `--lapse-within` | `KSAMP_LAPSE_WITHIN` | `10` | seconds a craft stays its owner's once another player is watching it and they are neither in it nor looking at it |
 | `--speed` | `KSAMP_SPEED` | `1` | how fast universe time runs |
 | `--empty-world` | `KSAMP_EMPTY_WORLD` | | start with an empty world of this system (`SolLite` or `Sol`) instead of waiting for a player; also what `fresh` puts in place |
+| `--advertise` | `KSAMP_ADVERTISE` | off | list this server publicly so players can find it, which publishes its address |
+| `--advertise-as` | `KSAMP_ADVERTISE_AS` | the address seen | the hostname to be listed under |
+| `--directories` | `KSAMP_DIRECTORIES` | the built-in list | where to announce, separated by commas |
 
 Commands typed into the server's console: `players`, `say <text>`, `kick <name> [why]`,
 `op <name>`, `deop <name>`, `admins`, `clear [name]`, `reload` (or `reset`), `save`, `status`,

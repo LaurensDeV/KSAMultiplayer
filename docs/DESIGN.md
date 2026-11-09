@@ -529,6 +529,36 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
 
 ## What has not been tried
 
+- **The server browser, all of it.** The start window lists servers from one or more *directories*:
+  services that answer `GET /v1/servers` with a JSON document of addresses, specified in
+  `docs/DIRECTORY.md`. A directory publishes only what it has seen for itself -- it sends the game's
+  own cookieless hello to each address it has been told about and lists the server only once that
+  answers -- and the mod then asks every listed server again from its own socket before showing a
+  row as joinable, so what a player sees came from the server and not from the directory. Rows that
+  cannot be joined say which of the three things that must match failed: the protocol version, the
+  KSA build, or the mod set. Duplicates collapse twice, by address written out before anything is
+  asked and by the address that answered afterwards, which is the exact test because a reply comes
+  from a real socket. Driven over loopback by the tests in `ProbesTests` and `RosterTests`, and the
+  directory's endpoints by hand against a running one. **Nothing of it has been drawn in a game**:
+  the table, the scrolling, the row that shows why, and whether a window of this width has room for
+  all of it are unseen, and so is whether fetching a directory at startup costs a frame anybody
+  notices.
+- **`Wire.Version` 23.** The cookie welcome now carries the player count, the most players, a flags
+  byte for whether a password is wanted, and the KSA build the world wants -- about twenty bytes,
+  taking that answer from roughly 450 to 470 against a 140-byte hello, so its amplification factor
+  goes from about 3.2 to 3.4. Round-tripped in the tests and read back off a real server over
+  loopback. Not seen between a game and a server.
+- **A server listing itself.** `advertise` is off by default, and a server that is advertising says
+  every sixty seconds that it is still there and withdraws when it stops or when the setting goes
+  back to `false`. What a directory answers goes into the log whatever it says, including why a
+  server was not listed. Never run against a directory on another machine, so what has not been
+  seen is the case that matters most: a server whose port is closed or forwarded wrongly being told
+  so in terms its operator acts on.
+- **The directory on the machine that runs the world.** `infra/server/directory.tf` makes the
+  container, and nothing in this repository can finish it: the hostname and the Caddy site block
+  belong to the KSArmory repository, which owns this machine's reverse proxy. Neither has been
+  applied, so `servers.ksarmory.com` does not exist yet and the built-in directory list points at
+  nothing.
 - **Grass and rocks kept off the extra launchpads.** KSA keeps four circles of ground clear of
   ground clutter for a whole planet -- the cap is in the clutter compute shader as much as in the
   struct handed to it, so a mod cannot raise it -- and spends one on each of the first four
