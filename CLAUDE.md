@@ -5,6 +5,10 @@ dedicated server (`ksamp-server`) that runs on Linux with no game installed.
 
 - `README.md` is how to play and run a server; `docs/DESIGN.md` is how it works and **what has not been
   tried in game**, which is all of the mod. Keep both true in the same change that makes them untrue.
+- Testing it with two games starts at `docs/HANDOFF-TESTING.md`: what the rig and the bridge can
+  drive, the traps that cost hours, and what to do next. `docs/TWO-GAMES.md` ranks what is worth
+  testing, `docs/WARP-AND-WIRE.md` covers the clock and testing off loopback, and `errors.md` is what
+  has actually gone wrong, with measurements.
 - `src/Protocol` and `src/Server` must never reference KSA: the server runs without the game, and the
   tests drive both over loopback. Only `src/Mod` touches KSA, and `src/Mod/World.cs` holds nearly all of it.
 - The mod compiles `src/Protocol/*.cs` into its own DLL, so a player installs one assembly.
