@@ -24,10 +24,24 @@ both games sat 130 universe-seconds behind the server, which at 1000x is 0.13 *r
 entirely healthy. `EndWarp` then dropped the server's clock to 1x without reconciling the gap, and
 the same few hundred universe-seconds became a few hundred *real* seconds ahead -- past
 `ClockFollow.Speed`'s dead stop at three. Both games froze: A for about eight minutes, B for six. The
-whole room, not just whoever asked. `errors.md` 2026-11-09 has the measurement and the fix.
+whole room, not just whoever asked. `errors.md` 2026-11-09 has the measurement.
 
-That bug is invisible to every test this repository has, and it was one minute's work to find once
-the sequence was walked deliberately.
+**Fixed**, by `Server.FollowTheRoom`: where every game says it is further past the clock than a
+nudge can close, the clock keeps up. It moves to the *least*-ahead game, so it passes nobody and one
+game cannot drag the room. Three tests in `ServerTests` hold it.
+
+**And the first fix was wrong, which only a game showed.** It reconciled the lead inside `EndWarp`,
+on the theory that the gap existed before the rate fell. Measured mid-warp, both games were a
+hundred universe-seconds *behind*: the lead is **made by** the ending, in the window between the
+server dropping its rate and each game learning of it, which at 1000x is the round trip plus a frame
+-- several hundred universe-seconds. So there was nothing to reconcile at that instant, both games
+froze exactly as before on a server carrying the fix, and its unit test passed the whole time
+because it set the lead by hand and tested the theory rather than the game. This is the second time
+in two days that a test written to a plausible story would have passed and been read as a fix
+working; `docs/TWO-GAMES.md` has the first.
+
+That bug was invisible to every test this repository had, and it was one minute's work to find once
+the sequence was walked deliberately. Which is the argument for the trace.
 
 ## The seams, named
 
@@ -118,21 +132,40 @@ objection kills a relay written in Python under WSL: a Windows game cannot reach
 inside WSL's own network stack, which is why `two-games.sh` publishes a Windows server in the first
 place.
 
-**A relay mode on the server binary.** `ksamp-server --relay 127.0.0.1:50100 --port 50200
---latency 25 --jitter 5 --loss 0.01 --reorder 0.02`: one socket facing the games, one endpoint per
-client, a delay queue in each direction, and the games pointed at the relay instead of the server.
-It reuses `Udp`, `publish-server.sh win-x64` and the Windows build the rig already makes, and it
-serves no world, so a real server's session grows no test-only knob an operator could trip. `Udp`
-already has `Loss` for exactly this purpose, used only in-process by the tests.
+**A relay mode on the server binary, which exists now.**
 
-Holding a datagram for `d` in both directions at the relay gives a client-to-server round trip of
-`2d` and a game-to-game path of `2d`, which is what a real server `d` away from each player does.
-Jitter means datagrams can pass each other, which is the reordering, so the queue has to be ordered
-by ready-time rather than by arrival -- that is the whole implementation.
+```bash
+ksamp-server --relay 127.0.0.1:50100 --port 50200 --latency 25 --jitter 5 --drop 0.01
+KSAMP_LAG_MS=25 KSAMP_LAG_JITTER_MS=5 ./tools/two-games.sh --test   # the rig, behind one
+```
+
+One socket faces the games and one more per game, because the port a reply comes back on is what
+says which game it belongs to -- the same trick a NAT uses, and the reason the server needs no part
+in this. It forwards raw bytes and parses nothing, so a `Wire.Version` bump cannot break it. It
+serves no world and takes none of the server's settings, reads and writes no settings file, and adds
+no key to `ksamp-server.toml`: a real server's session grows nothing an operator could trip.
+
+Holding a datagram for `d` in both directions gives a game-to-server round trip of `2d` and a
+game-to-game path of `2d`, which is what a real server `d` from each player does. Jitter is what
+makes datagrams pass each other, so reordering is not a knob of its own -- it is what a delay that
+varies already means -- and the queue is therefore ordered by when each datagram is *due* rather than
+by when it arrived.
+
+Two things it cost to get right, both worth knowing:
+
+- **The relay has to be the Windows build.** The first attempt ran it under WSL and the game could
+  not reach it at all -- which is the constraint written three paragraphs above, confirmed the hard
+  way. `two-games.sh` publishes it with `publish-server.sh win-x64`, as it already does the server.
+- **Windows naps in whatever its timer resolution is, 15.6 ms by default.** A one-millisecond sleep
+  in the pump loop therefore overshot a 25 ms delay by a third: the games measured a 62 ms round trip
+  where 50 was asked for. `timeBeginPeriod(1)` brings it to 55 ms measured, about 2.6 ms of overshoot
+  per hop. The relay reports the delay it actually applied, per interval rather than cumulatively --
+  a whole-run mean is dominated by the burst that hands a game the world -- so a run never has to
+  take the asked-for number on trust, and `breakup.sh` prints the round trip it ran at for the same
+  reason it prints which server build served the games.
 
 Run the warp trace and `breakup.sh` at 0 ms, 25 ms, 50 ms and 150 ms. A claim that holds at 0 and
-fails at 50 is the interesting result, and the report should print the latency it ran at for the same
-reason it already prints which server build served the games.
+fails at 50 is the interesting result.
 
 ## What none of this reaches
 
@@ -140,3 +173,9 @@ Load: the failures that shipped were found with three or four players and rocket
 third game is ruled out by this card's memory. Two machines, and so each player's own line, NAT and
 MTU. And where anything is -- neither `status` nor `craft` reports a position, so whether a puppet is
 where its owner says it is still cannot be asked by a test at all.
+
+Nor anything a craft carries that is not a part and not a name. A kitten was found on 2026-11-10
+that is drawn with hardware standing out of it in the game that loaded it and clean in the game that
+rebuilt it from this mod's definition, while both report one part: the two worlds agree on every
+number a test here compares, and the players are looking at different things. `docs/DESIGN.md` has
+it. A picture is the only instrument that found it, and the harness takes none.

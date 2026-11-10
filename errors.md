@@ -560,48 +560,59 @@ then repaid at one. And the server's clock never follows a player forward once i
 `OnLoaded` only while `!Known`, and by `HoldTimeAtTheWorld`, which runs only when nobody is loaded.
 So nothing moves the clock a game ahead of the server is measured against.
 
-**How he got ahead is confirmed, and it is not latency, not a lone player and not an overshoot.**
-Being a few hundred universe-seconds off the server *during a 1000x warp* is being a fraction of a
-real second off, which is healthy and expected -- `Speed` divides by the rate for exactly that
-reason, so `late` is in real seconds and a 400-second gap at 1000x reads as 0.4. Ending the warp
-drops the server's clock to 1x **without reconciling the gap**, and the same 400 universe-seconds is
-now 400 *real* seconds ahead. `late < -3` and the world stops, for as long as the server's 1x clock
-takes to close a gap a 1000x warp opened: up to a thousand times longer to undo than to make.
+**How the gap gets there: the ending makes it.** This took two goes to get right, and the first was
+wrong in a way only a game could show.
+
+Being a few hundred universe-seconds off the server *during* a 1000x warp would be a fraction of a
+real second, which is healthy -- `Speed` divides by the rate for exactly that reason. But that is
+not even what happens. Measured mid-warp, both games were a hundred universe-seconds **behind**.
+The lead appears only at the ending: a game cannot learn the warp has stopped until the word
+reaches it, and it runs at the old speed until then, so the round trip plus a frame at 1000x is
+several hundred universe-seconds of overshoot. Then `ClockFollow.Speed` reads that same gap in
+seconds of the rate now running -- 0.4 s at 1000x, 400 s at 1x -- and 400 is past the standstill at
+three. The world stops until a 1x clock has closed a gap a 1000x warp opened.
 
 Reproduced on loopback with `two-games.sh --test`, in a minute, on 2026-11-10:
 
 ```
 A asks for 1000x, B votes yes
-  A universe=83500.6  speed=1026  behind_s=+132.6   warp=1000/Running
-  B universe=83700.4  speed=1026  behind_s=+129.3   warp=1000/Running     <- 0.13 real seconds. healthy.
+  A universe=84750.0  speed=1019  behind_s=+94.4    warp=1000/Running   <- behind, not ahead
+  B universe=84832.6  speed=1023  behind_s=+113.8   warp=1000/Running
 A ends the warp
-  A universe=101911.8 speed=0     behind_s=-469.4   warp=None/None
-  B universe=101810.1 speed=0     behind_s=-367.6   warp=None/None
-  ... 24 s later, both still frozen at the same universe time, behind_s closing at 1 s per second
+  A universe=85496.1  speed=0     behind_s=-401.3   warp=None/None      <- the ending made this
+  B universe=85475.5  speed=0     behind_s=-380.4   warp=None/None
+  ... both frozen at the same universe time, behind_s closing at 1 s per second
 ```
 
-A was stopped for about eight minutes and B for about six, and the recovery was confirmed at exactly
-one second per second over the following 200 s: A went from -469 to -270 while its universe time did
-not move at all. **The warp itself had run for about half a minute.** Thirty seconds of warp bought
-eight minutes of a game that would not run, which is the ratio between the two ceilings -- a gap
-opened at up to 1000x and repaid at 1x.
+A was stopped for about eight minutes and B for about six, confirmed at one second per second over
+200 s with the universe time not moving at all. **The warp itself had run for about half a minute.**
+Thirty seconds of warp bought eight minutes of a game that would not run. It hits **everyone in the
+room**, not only whoever asked: Goddchen being alone only meant nobody else was there to report it.
 
-Note that it hits **everyone in the room**, not only whoever asked: Goddchen being alone only meant nobody else was there to report it.
-Note also that the two games ended the warp 100 universe-seconds apart, so the size of each player's
-stop is whatever their own frame timing happened to leave them with.
+**Fixed** by `Server.FollowTheRoom`: where every game says it is further past the clock than a nudge
+can close, the clock keeps up, checked twice a second. It moves to the **least**-ahead game, so it
+passes nobody and no game is ever asked to rewind, and one game's runaway clock cannot drag the room
+-- it takes all of them. Ordinary wobble is left alone, since the threshold is the same
+`CatchUpAboveSeconds` the standstill uses. The jump is checked against `SaneUniverse` like any
+number off the wire, and each player's recorded lateness is corrected by what was taken on, so the
+same lead is not spent twice a second later. The time is the room's to keep: the games really did
+simulate those seconds, and it is the clock, carried on wall time, that is behind.
 
-**The fix the server already has the parts for.** Every player sends its own `Late` on every ping
-and `Losing()` already divides it by the rate to read it in real seconds, so at `EndWarp` the server
-knows how far ahead the furthest-ahead player is. Advancing the clock by that lead before dropping
-the rate leaves nobody ahead, and is what the room honestly simulated: the games did that time, and
-the server's wall-clock-driven time is the thing that is behind. The alternative -- keeping the
-server's clock and holding every game at a standstill -- is what happens today.
+**The first attempt did nothing, and only a game showed it.** It reconciled the lead inside
+`EndWarp`, on the theory that the gap existed before the rate fell. It does not -- there is nothing
+to reconcile at that instant, which is why both games froze exactly as before on a server carrying
+the "fix". Its unit test passed, because the test set the lead by hand and so tested the theory
+rather than the game. `A behaviour fix is not a fix until it has been seen in game` earned its place
+in `CLAUDE.md` here.
 
-What that costs, and the reason this is a choice rather than a one-liner: the world's time would
-jump forward at the end of every warp, by up to the whole lead. Craft states already timestamped in
-the past stay valid, since `Track` keeps a window and interpolates, but anything keyed to the
-server's clock being monotonic *and* smooth would see a step. Worth checking `SaveMarginSeconds` and
-the definition-pruning in `Prune` against a jump before shipping it.
+Three tests hold the real one: `TheClockKeepsUpWhenTheWholeRoomHasRunPastIt`,
+`TheClockIgnoresOneGameThatHasRunAhead` and `TheClockLeavesAnOrdinaryWobbleAlone`. The first times
+out on the old code waiting for a clock that never moves.
+
+What it costs: the world's time steps forward, by up to the least-ahead game's lead. That is safe
+where it was feared -- `Prune` is given `_world.Universe`, the last snapshot's time, and never the
+clock, so nothing is pruned early by a jump; and `Track` keeps a window and interpolates, so puppets
+sit at their newest state for a moment, which is already what the end of a warp looks like.
 
 Worth fixing in passing either way: the mod tells the player nothing useful while this happens.
 `Sync.Now`'s line is `Math.Abs(b) > CatchUpAboveSeconds ? $"catching up: {b:F0} s behind"`, so a

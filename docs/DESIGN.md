@@ -744,6 +744,20 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   everybody else's. The names are the live server's own (`LS Test MK I_1` off `LS Test MK I`) and the
   walk over them is covered in `WireTests`, but nothing in the suite reaches `src/Mod`, so the frame
   where a crash sheds twelve pieces has not been watched.
+- **A kitten does not arrive whole, and no number here would say so.** Seen on 2026-11-10 with two
+  games. The kitten `Niric`, which came out of the save one game loaded, is drawn in that game with
+  several dark blade-like shapes standing out of it; in the game that built it from this mod's
+  definition it is a clean kitten. Three things were checked and rule out the obvious causes. It is
+  there in the loading game whether that game owns the kitten or holds it as the other's puppet, so
+  it is neither the ownership path nor the puppet path. A fresh kitten sent out with `eva` in the
+  same game is clean, so it is not that game's rendering. And **both copies report one part**, so
+  whatever it is is not a part at all.
+  That last point is what makes it worth writing down. `World.Define` carries a kitten's
+  `Character` and `World.Build` restores it through `KittenEva.CreateKittenFromSaveData`, so the cat
+  itself crosses; something else a kitten carries does not. And because it is not a part and not a
+  name, the two things `tools/breakup.sh` compares, no check in this repository can see it -- the
+  worlds agree on every number while the two players are looking at different things. What the
+  shapes actually are has not been identified.
 - **Debris off a craft this world had to rename.** The name rule above reads a piece's ancestry in
   the names the room shares, while KSA builds a shed piece's name out of its parent's local
   `Vehicle.Id`. Those differ for every craft this world renamed -- one built here under a free name
