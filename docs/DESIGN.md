@@ -73,7 +73,9 @@ another version is refused by name rather than misread.
   out after `--warp-answer` seconds, thirty by default. A pause is a warp like any other, since stopping the world stops it for
   everyone. The warp is then the asker's to steer and theirs to stop, ends if they leave, and another
   cannot be asked for within five seconds of one ending. What makes the games warp together is that
-  the server warps *its own clock*, which is the thing they all follow anyway.
+  the server warps *its own clock*, which is the thing they all follow anyway. It gets to the speed
+  agreed by climbing, half as much again every second from a step above normal, and comes down
+  from it at once; the clock says its speed the moment it changes, and a game takes that as said.
 - **A name for every craft.** Craft Ids are KSA's own, so two games that make a craft the same way
   make one Id: two players who each send a kitten out of the same capsule both call it what KSA calls
   it. A game says, with each claim, whether it made the craft or found it in the world everyone
@@ -143,10 +145,20 @@ shared one.
      and nothing else, handing back a craft that is in no lookup -- never listed, never stepped,
      never swept, and another player's puppet standing here for ever. With physics here it is pulled to its owner's state in `Vehicle.PrepareWorker`, the
      one window where a write to a craft's state survives the frame: put there outright from more than
-     5 m, drawn there over 0.15 s nearer. Without physics it is placed once a second at most, and only
-     if 25 m out: set down on the ground with `TeleportToLocation`, or given its owner's orbit.
-     `Track` draws each 0.15 s in the past between the two states either side, since every world keeps
-     the same universe time. The one a player is in carries their name, within 2,000 km and in front
+     5 m, drawn there over 0.15 s nearer. A kitten on the ground is drawn there no faster than
+     0.15 m/s while its owner has it standing, because the speed it is drawn at is the speed KSA
+     animates its legs at, and by as much as half the speed its owner says while it is being
+     walked: its legs are moving already, and held to the standing correction its copy fell 0.18 m
+     further behind every second of a walk. A copy is put where it is told at its first step
+     after being built, before it is drawn, having been built where it stood when it was described. That takes only on a craft something is pushing. One that
+     is coasting is stepped along its own orbit by KSA whatever is written into it, which is right to
+     the millimetre while that orbit is its owner's; where it is not, the craft is given its owner's
+     orbit through KSA's own mover, in the frame's quiet window, and at once when its owner stops
+     pushing it or when the pull has had to put it anywhere outright. Without physics it is placed once a second at most, and only if 25 m out.
+     `Track` says where each is at this world's own universe time, since every world keeps the same
+     one: carried on from its newest state by the speed it had and the way that speed was changing.
+     Not a little in the past, which is smooth and at orbital speed is a kilometre away from every
+     craft this game steps for itself; `errors.md`, 2026-11-10. The one a player is in carries their name, within 2,000 km and in front
      of the camera; the rest of what they own carries a faint `Alice's Lander` within 20 km, which
      is also why it will not let you aboard. A name over the world says where somebody is, and a
      player is in one place: ownership is sticky and a player is not, so naming every hull somebody
@@ -173,7 +185,10 @@ shared one.
      The editor is the exception, because nothing is being flown there: the clock is let go of at
      real time and not at whatever this world was last run at, or the catch-up warp from a join goes
      on running in the editor with nothing holding it to the server, and the world comes back further
-     ahead than it went. A warp key
+     ahead than it went. **Being at no craft is not an exception.** A game whose camera is on a
+     planet, or whose kitten has died, flies and watches nothing and still draws everybody else's
+     craft at its own universe time, so it is held to the server's like any other: let go of there,
+     a warp of fifty for twelve seconds left it 229 s behind the room for good. A warp key
      pressed from a menu that has stopped this world is taken and ignored, the same as one at either
      end of the ladder: nobody is in this player's menu, and asking the room to warp while not
      running at it oneself is not a question worth putting.
@@ -193,6 +208,25 @@ A puppet is spared when a crash in this world would wreck it -- a prefix on
 that go with it -- and is taken away only when its owner's game says it is gone. Otherwise one game's
 collision would wreck a craft that is fine in its owner's world, and the pieces would be taken for
 this player's.
+
+A craft waiting to be taken out of this world is spared the same way. One its owner says has
+crashed is no puppet for the frame it is told in, and the crash this world's own physics had ready
+for it went through in that frame: its pieces were shed here under the names its owner's pieces
+have, and stood in for them.
+
+Docking is the same rule. KSA docks two craft in the world whose physics saw their ports touch, by
+taking the lighter into the heavier, or from a port's own menu when two are within 2 m; both end in
+`DockingPort.Dock`, and a prefix there refuses it where either is another player's, as one on
+`DockingPort.Undock` refuses to take another player's craft apart: let through, one player's rocket went into a copy of the other's and was gone
+from every world, while its owner flew on with the parts they had. A craft docked with one nobody
+flies is docked, and the craft that went into it is claimed so it can be said gone -- only its
+owner may say so, and it had none.
+
+A craft a game made is never taken on another player's word while its name is unanswered, because
+another player's craft can be standing under that name; once the server has said the craft is this
+player's, the name is the craft's, and whoever is given it next is followed like any other owner.
+And the server gives a name that has gone to a craft a game has just made, and to nothing else:
+KSA hands a destroyed piece's name to the next piece shed.
 
 That prefix covers one of KSA's two ways to wreck a craft, and not the one a crash takes, so there
 is a second on `PartFailureEvent.Apply`. Parts past their crash tolerance on contact fail there, and
@@ -396,6 +430,51 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   refused by the player who did not start it, ended by the one who did; and a pause voted through,
   with both worlds stopped at the same universe time and still there five seconds later. Coming out
   of a warp overshoots by about two seconds and is nudged off at 0.9x.
+- **Where another player's craft is, against where its owner has it.** `tools/motion.py` has each
+  game write down every craft as each frame is drawn and at every physics step, and lays the two
+  accounts side by side on universe time. On loopback: a craft in orbit at 7.2 km/s is drawn 3 mm
+  from where its owner has it while coasting and within 5 cm while burning; a kitten out of its
+  hatch is 3.64 m from the capsule in both games, to 4 mm; two craft put 40 m apart are 40 m apart
+  in both, to 8 mm; a kitten falling 150 m is followed to 3 mm and one landing from 3 m to 81 cm
+  for a moment; a game that has just joined draws it all to 3 mm while its clock catches up; and
+  nothing is put anywhere outright and nothing steps a metre between two frames. Two craft meeting
+  with one of them burning agree in the two games to 30 cm at 50 ms each way and to 1.7 m at 150.
+  Every one of those was a kilometre before, or two. A kitten walking 38 m is followed to 5 cm.
+  A rocket burning 35 s off a pad to 214 m/s is followed to 2 mm, and to 4 cm coming down from
+  6 km on an engine lit and shut; one hopped to 200 m and landed on its engine, to 15 cm over a
+  wire of 50 ms each way that loses one datagram in fifty. The same wire carries the meeting, to
+  12 mm.
+- **A game at no craft through a warp.** Its camera on the planet while the other game flew and
+  warped at fifty: 9 ms from the other game's universe time when it ended, and never more than
+  half a second through it. `tools/motion.py --scene nocraft-warp`.
+- **A docking, flown and undone.** A capsule flown onto a rocket's port on its thrusters, lined
+  up by its flight computer, docks on contact: 110 parts in both worlds and the capsule in
+  neither. Undocked, it is 21 and 89 in both, under the names they had. The other game draws the
+  capsule within 22 cm through the approach, 8 cm over a wire of 50 ms each way that loses one
+  datagram in fifty. Docked with the capsule the other game was flying, nothing happens in either
+  world and the player is told why; the bridge's own `dock` is the control, and docks when nobody
+  flies it. `tools/motion.py --scene fly-dock`.
+- **A craft whose shape changes** -- a stage dropped, a docking -- is the new shape in every
+  other world within a frame or two of its being described, and not gone for five seconds first.
+- **A craft one player launched and another took over** is built again in its maker's world as
+  its new owner's and follows it there, through a burn to 3 cm.
+- **A rocket falling over into thirty pieces** leaves the same thirty in both worlds, each drawn
+  within 0.8 m of where its owner has it while it tumbles, with no step of a metre between two
+  frames and nothing put anywhere outright; 1.9 m and one step of 1.5 m over the lossy wire. The
+  hull is in a shape its owner has left for two seconds at the longest.
+- **A walk of warps, sampled.** `tools/warp-trace.py` asks both games what they are doing twice a
+  second while the server writes its own clock down, and judges the whole series: nine steps from
+  nobody asking to 1000x and back. Seen holding on loopback, every claim: no game stopped while
+  the clock ran, no time went backwards, the games and the server never named different rates, an
+  ask refused or unanswered never ran, the other player could neither steer nor end a warp, a speed
+  written by a program never reached the room and a speed picked by a player did, three presses of
+  the faster key in a second raised what was asked three times, a warp asked at 1000x climbed
+  there in seventeen seconds and held it with both games within 0.02 s of the clock, and at its
+  end both were about twenty seconds past a clock that went on to them, and neither stood still.
+  It took a day of that walk failing to get there; `errors.md` has each failure and
+  `docs/WARP-AND-WIRE.md` what is walked and what is not. The same walk held at 25, 50 and 150 ms
+  each way through the server's own relay, and over a wire holding datagrams 50 ms give or take
+  20 and dropping one in fifty, once what each of those found had been put right.
 - **Another player's engines, burning.** Alpha lit an 89-part rocket in orbit, 7,576 km from the
   craft Bravo was standing by. Bravo's game was not stepping it in physics and KSA gave it no duty
   cycle at all, so the mod wrote one: Bravo's bridge reported `engine_duty 1` with
@@ -744,20 +823,18 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   everybody else's. The names are the live server's own (`LS Test MK I_1` off `LS Test MK I`) and the
   walk over them is covered in `WireTests`, but nothing in the suite reaches `src/Mod`, so the frame
   where a crash sheds twelve pieces has not been watched.
-- **A kitten does not arrive whole, and no number here would say so.** Seen on 2026-11-10 with two
-  games. The kitten `Niric`, which came out of the save one game loaded, is drawn in that game with
-  several dark blade-like shapes standing out of it; in the game that built it from this mod's
-  definition it is a clean kitten. Three things were checked and rule out the obvious causes. It is
-  there in the loading game whether that game owns the kitten or holds it as the other's puppet, so
-  it is neither the ownership path nor the puppet path. A fresh kitten sent out with `eva` in the
-  same game is clean, so it is not that game's rendering. And **both copies report one part**, so
-  whatever it is is not a part at all.
-  That last point is what makes it worth writing down. `World.Define` carries a kitten's
-  `Character` and `World.Build` restores it through `KittenEva.CreateKittenFromSaveData`, so the cat
-  itself crosses; something else a kitten carries does not. And because it is not a part and not a
-  name, the two things `tools/breakup.sh` compares, no check in this repository can see it -- the
-  worlds agree on every number while the two players are looking at different things. What the
-  shapes actually are has not been identified.
+- **A kitten drawn torn open was the rig's own doing.** Seen on 2026-11-10 with two games: the
+  kitten `Niric`, out of the save `two-games.sh` loads, drawn in one game with its helmet whole and
+  its body in long dark blades, and clean in the other, while both count one part and agree on its
+  name. It is not anything a kitten carries and not anything this mod sends. The bridge's `load`
+  read the save on the pass KSA's fresh world first said it was up, which is still the start
+  popup's own pass and before KSA has drawn a frame of that world, and a kitten built then keeps a
+  mangled skinned mesh for as long as it lives. The game that showed it is the one that never loads
+  another world; the other reloads on joining and builds the kitten again. `load` now waits for the
+  world to be drawn first, and `errors.md` has the runs. A player cannot reach it: a hand gets to
+  Load frames later, and a server's world is loaded from the frame hook, which does not run until
+  frames are being drawn. What stands from it is the gap it fell through -- nothing here compares
+  anything about a craft but its part count and its name, and only a picture found this.
 - **Debris off a craft this world had to rename.** The name rule above reads a piece's ancestry in
   the names the room shares, while KSA builds a shed piece's name out of its parent's local
   `Vehicle.Id`. Those differ for every craft this world renamed -- one built here under a free name
@@ -768,6 +845,18 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   a breakup makes this the common case rather than the odd one: both games shed their own copy's
   pieces under the same names, so whoever receives the other's definition second has to rename.
   Never watched -- `tools/breakup.sh` is the run that would show it.
+- **A piece lying still that is struck.** A craft that is under way and not flown is said ten
+  times a second; one at rest, twice, and it stays twice until its owner's game has it moving. A
+  piece of an earlier crash that a rocket fell on was drawn 9 m out for the last second and a half
+  before it was destroyed. Not fixed.
+- **A game building thirty pieces at once runs behind.** Half a second at worst and a fifth of
+  one for the half minute after, measured against the game that owns them. Not fixed.
+- **A craft nobody owns, docked with.** What nobody owns is each world's own, and after a walk of
+  warps a rocket nobody flew was 3.4 m from itself in the two games: one saw the capsule dock that
+  far from the port. Targeting a port could claim the craft; it does not. Not fixed.
+- **Debris nobody owns.** Its owner's game says when a piece has gone; a piece whose owner has
+  left, or every piece after the rig swaps the server under two games, is expired by each world
+  when that world likes. Thirteen stood on in one world of two. Not fixed.
 - **Two games on different machines.** The *server* has been remote -- `mp.ksarmory.com` on a VPS,
   reached across the internet, with a craft described to two other players in its world -- so that
   path is exercised. What has not happened is two games behind two different connections, where each
@@ -816,24 +905,54 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
 
 ## What it does not do
 
-- **No docking, no shared craft.** A craft is flown by one player at a time. Docking two players' craft
-  is untried and probably wrong.
+- **No docking between two players, no shared craft.** A craft is flown by one player at a time, and
+  two players' craft that touch port to port are not docked. A craft docks with one nobody flies,
+  and undocks.
 - **No authority over physics.** Each game is trusted for its own craft; the server only checks a state
   comes from the craft's owner.
 - **The world is never warped past what the slowest machine can fly.** Every game measures what it
   is managing -- universe seconds a real second, over a couple of seconds so a hitch does not speak
   for it, floored by what KSA says it achieved of what it asked -- and tells the server with each
-  ping. A warp is put to the room at that floor rather than at what was asked, falls to it within a
-  second of a machine giving out, and climbs back a step at a time while everyone is clear of it --
-  but never again to a speed a machine has been found not to fly. A game comfortable at the speed it
-  is running at says nothing at all, so reading everybody's silence as room had the world climb into
-  the same ceiling and fall out of it once a second for as long as the warp lasted. The ceiling is
-  that one machine's, and lifts when that machine says it can fly past it or leaves.
-  Lateness is a consequence; what a machine can do is the cause, and it can be known before the gap
-  opens rather than after. A window nobody is looking at is left out of the floor: Windows throttles
-  it, so what it manages measures Windows and not the machine, and that player is an absent one
-  rather than a slow one. A pause or a world in slow motion asks nothing of anybody and is never
-  held back.
+  ping. A game comfortable at the speed it is running at says nothing at all, which at normal speed
+  is every game there is, and silence is not room. So a warp is put to a room that has said
+  nothing a step above normal and climbs, half as much again each second: the only way a machine's
+  limit is found is by asking it for a little more. Run at the ask at once, the first second of
+  1000x was a thousand universe-seconds no game was near, and the room spent nineteen seconds
+  making them up at 1x. Only where every watching machine has said what it flies is a warp run
+  there directly.
+  It falls to what a machine says it can fly within a second of one giving out, and climbs back a
+  step at a time -- but never again to a speed a machine has been found not to fly, or the world
+  climbs into the same ceiling and falls out of it once a second for as long as the warp lasts.
+  The ceiling is that one machine's, and lifts when that machine says it can fly past it or leaves.
+  A climb is never a fall: a machine saying it flies a little less than the world is running at
+  holds the world where it is and sets no ceiling.
+  The server also watches each game's lateness from one ping to the next, as a share of what the
+  clock ran in between, which reads the same at every speed. A game losing a quarter of it while
+  behind stops the climb before that game has measured anything. And a game behind is backed off
+  for once and then left alone while it is catching up fast enough to be level within fifteen
+  seconds: its gap is longer in the seconds of a slower clock, so backing off again for the same
+  gap makes the case for backing off a third time, and a room that could fly sixty times real
+  time ended at one. `errors.md`, 2026-11-10.
+  A window nobody is looking at is left out of the floor: Windows throttles it, so what it manages
+  measures Windows and not the machine, and that player is an absent one rather than a slow one. A
+  pause or a world in slow motion asks nothing of anybody and is never held back.
+- **The clock is never left behind the room.** A game cannot rewind, and one more than three of its
+  own seconds past the clock stands still until the clock reaches it. So where every watching game
+  is past the clock by more than a nudge closes, the clock goes on to the nearest of them; and
+  where the clock's own speed has just fallen, which leaves every game past it by however long
+  each took to hear, it goes on to the furthest, by no more than two seconds of the speed lost.
+  The games it passes have that to catch up, which is what a game does best, where the other way
+  round the furthest stood still for the difference, a second for a second. What a game says of
+  its lateness for a round trip after the clock has gone on is about the clock as it was, and is
+  read as that much less: taken as said, the same lead was followed twice at 150 ms each way.
+- **What a session turns on is said until it is heard.** A craft's state goes out twenty times a
+  second and every missing piece of a world is asked for again, so loss costs those nothing. Three
+  words were said once and cost a session when lost: the server's ask for the first player's world,
+  which it now repeats every three seconds while none of it has come; the end of a warp, which it
+  now goes on saying for five seconds; and a game's word that it is in the world, which it now
+  repeats until the roster shows the server knows. That a craft has gone is said three times by
+  the server while its name stays gone, and again by its owner's game for as long as the roster
+  still gives it the craft. Still said once: a line of chat, an ask for a warp and a vote on one.
 - **A world with nothing in physics closes a gap in a moment.** KSA works a craft on rails or
   sitting still out in closed form, so a step of an hour costs what a step of a frame costs, while a
   craft being stepped through physics costs an hour of stepping. So how far a world may be warped to

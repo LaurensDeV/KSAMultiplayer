@@ -25,6 +25,10 @@ namespace KSAMultiplayer;
 /// parts off a craft that lives, which the first cannot express. Not
 /// <c>Universe.DestroyVehicle</c>, which they share and which this mod needs
 /// (see <see cref="BeforeDelete"/>).</item>
+/// <item><see cref="DockingPort.Dock"/>, where KSA takes one craft into another at a docking port,
+/// from two ports touching or from the port's own menu: refused where either is another player's,
+/// and followed, where it is let, by saying gone the craft that went. And
+/// <see cref="DockingPort.Undock"/>, refused on another player's craft.</item>
 /// <item><see cref="Vehicle.AddVolumetricExhaustInstances"/> and
 /// <see cref="Vehicle.UpdatePlumeTrailEmitters"/>, where the game turns a craft's engines into a
 /// plume, an exhaust and a light: all three off a number only a physics step leaves behind, so
@@ -234,6 +238,12 @@ internal static class Hooks
                   "another player's craft can be wrecked in this world alone");
             Patch(AccessTools.Method(typeof(PartFailureEvent), nameof(PartFailureEvent.Apply)), nameof(BeforePartFailure),
                   "another player's craft can have its parts blown off in this world alone");
+            Patch(AccessTools.Method(typeof(DockingPort), nameof(DockingPort.Dock)), nameof(BeforeDocking),
+                  "a craft can dock with another player's in this world alone");
+            PatchAfter(AccessTools.Method(typeof(DockingPort), nameof(DockingPort.Dock)), nameof(AfterDocking),
+                  "a craft nobody flies that is docked with stays behind in every other world");
+            Patch(AccessTools.Method(typeof(DockingPort), nameof(DockingPort.Undock)), nameof(BeforeUndocking),
+                  "another player's craft can be undocked in this world alone");
             Patch(AccessTools.Method(typeof(InputEvents.VehicleDestroyData), nameof(InputEvents.VehicleDestroyData.Apply)),
                   nameof(BeforeDelete),
                   "another player's craft can be deleted from the universe manifest in this world alone");
@@ -690,6 +700,7 @@ internal static class Hooks
     {
         try
         {
+            World.PointAsAsked(__instance);
             Sync.Physics(__instance, simStep.DeltaTime);
         }
         catch (Exception e)
@@ -770,7 +781,7 @@ internal static class Hooks
     {
         try
         {
-            return !Sync.IsPuppet(vehicle);
+            return !Sync.Spared(vehicle);
         }
         catch (Exception e)
         {
@@ -803,11 +814,71 @@ internal static class Hooks
     {
         try
         {
-            return !Sync.IsPuppet(vehicle);
+            return !Sync.Spared(vehicle);
         }
         catch (Exception e)
         {
             Complain("sparing another player's craft from a part failure", e);
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// False refuses the docking. KSA docks two craft by taking the lighter into the heavier in the
+    /// world whose physics saw the two ports touch, and a craft is one player's: docked with another
+    /// player's here, this player's rocket went into a copy of theirs and was gone from every world,
+    /// while its owner flew on with the 89 parts they had and this world held 178 under the same
+    /// name, put back where it was told every frame. So neither of two players' craft is taken into
+    /// the other's, the same rule as for <see cref="BeforePartFailure"/>: what this world's physics
+    /// does to another player's craft stays undone.
+    /// </summary>
+    private static bool BeforeDocking(Vehicle thisVehicle, Vehicle otherVehicle, ref Vehicle? __result, ref PoseChange consumedToCombined)
+    {
+        try
+        {
+            if (!Sync.IsPuppet(thisVehicle) && !Sync.IsPuppet(otherVehicle)) return true;
+            Sync.DockingRefused(thisVehicle, otherVehicle);
+            (__result, consumedToCombined) = (null, PoseChange.Identity);
+            return false;
+        }
+        catch (Exception e)
+        {
+            Complain("keeping two players' craft from docking", e);
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// After KSA has docked two craft, which takes the first into the second and leaves one: the
+    /// one that went is nobody's to say gone unless somebody does. See <see cref="Sync.Docked"/>.
+    /// </summary>
+    private static void AfterDocking(Vehicle thisVehicle, Vehicle otherVehicle)
+    {
+        try
+        {
+            Sync.Docked(thisVehicle, otherVehicle);
+        }
+        catch (Exception e)
+        {
+            Complain("saying a docked craft is gone", e);
+        }
+    }
+
+    /// <summary>
+    /// False refuses the undocking: another player's craft comes apart when their game says it
+    /// has, and its port's menu is on this player's screen as well.
+    /// </summary>
+    private static bool BeforeUndocking(Vehicle oldVehicle, ref Vehicle? __result, ref PoseChange combinedToSplit)
+    {
+        try
+        {
+            if (!Sync.IsPuppet(oldVehicle)) return true;
+            (__result, combinedToSplit) = (null, PoseChange.Identity);
+            return false;
+        }
+        catch (Exception e)
+        {
+            Complain("keeping another player's craft docked", e);
             return true;
         }
     }

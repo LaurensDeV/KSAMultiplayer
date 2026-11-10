@@ -54,6 +54,9 @@ Once you're in:
   fly. Their name is over the craft they're in; their other craft carry a faint `Alice's Lander`.
 - **Launch as usual.** A craft you launch, a stage you drop and a kitten you send on EVA show up for
   everyone else.
+- **Dock with what nobody is flying.** Your craft and one nobody is in become one craft, for
+  everyone, and two again when you undock. Two players' craft do not dock: the ports touch,
+  nothing happens, and you are told why.
 - **Time is shared.** Every world keeps the server's time, so changing speed is put to everyone
   first: a warp runs only if all agree, and only whoever asked can end it. Pause is a speed like any
   other. The world is never warped past what the slowest machine in it is managing, and slows to
@@ -339,7 +342,10 @@ be reached -- `tmux` or `screen` is the way to keep one for a service.
 | `./tools/run.sh` | deploy and launch the game, showing the mod's log |
 | `./tools/play.sh` | the game with this mod and nothing else, in a profile of its own |
 | `./tools/two-games.sh --test` | two games and a server on this machine, joined to one world |
+| `./tools/two-games.sh --server` | this tree's server put under those two games as they stand |
 | `./tools/breakup.sh` | fly one game's rocket apart and count what it did to both worlds |
+| `./tools/motion.py` | record where every craft is in both games as each frame is drawn, and lay the two accounts side by side; `--scene` sets up an orbit, an EVA, a meeting, a walk or a drop |
+| `./tools/warp-trace.py` | walk both games through a script of warps, sampling them and the server together, and judge the series |
 
 | Path | |
 | --- | --- |

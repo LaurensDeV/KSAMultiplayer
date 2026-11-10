@@ -244,6 +244,19 @@ internal static class World
     /// that did not ask the same question hands on whatever save was last written as the world now,
     /// or counts its frames over a world it never loaded and says it is in the shared one.</para>
     /// </summary>
+    /// <summary>
+    /// Whether a craft is being stepped through physics and is not one KSA has put on rails: a
+    /// craft something is pushing, or that is still moving from having been.
+    /// </summary>
+    public static bool UnderWay(Vehicle v)
+    {
+        try { return v.HasPhysicsBubble && !v.Situation.IsOnRails(); }
+        catch (Exception) { return false; }
+    }
+
+    /// <summary>Whether the vehicle editor is open, which is where KSA stops the world.</summary>
+    public static bool InEditor => Program.IsEditorOpen;
+
     public static string Refuses() => Program.IsEditorOpen ? "the vehicle editor is open, and KSA saves and loads nothing while it is" : "";
 
     /// <summary>
@@ -437,6 +450,9 @@ internal static class World
     /// of those has to ask this first.
     /// </summary>
     public static bool Loaded => Program.IsLoaded;
+
+    /// <summary>How many frames KSA has drawn of a world. None at the configuration popup at start, where only the interface is drawn.</summary>
+    public static ulong Frames => Program.FrameNumber;
 
     /// <summary>
     /// What KSA has standing open, by the name of each popup's own type. A tool driving the game is
@@ -834,23 +850,32 @@ internal static class World
     /// which is the trade: a kitten standing four centimetres from where its owner says is nobody's
     /// problem, and <see cref="SnapM"/> still answers for a real distance. A rocket keeps the fast
     /// pull, having no legs to move.</para>
+    ///
+    /// <para>That is for a kitten its owner has standing. One being walked has its legs moving
+    /// already, and the servo brakes it all the same: held to the standing correction, the copy of
+    /// a kitten walking at 1.8 m/s went at 1.6 and fell behind by 0.18 m every second its owner
+    /// kept walking -- 1.6 m after nine seconds. So the correction may be as much as
+    /// <see cref="KittenKeepsUp"/> of the speed its owner says, which is a kitten walking a little
+    /// faster than it was and never one sent past <see cref="KittenTripsMetresPerSecond"/>.</para>
     /// </summary>
-    private const double KittenPullMetresPerSecond = 0.15, KittenRestM = 0.25;
+    private const double KittenPullMetresPerSecond = 0.15, KittenRestM = 0.25, KittenKeepsUp = 0.5, KittenTripsMetresPerSecond = 6.0;
 
     /// <summary>
     /// Another player's craft written where its game says it is, from the physics window: turned as
     /// told, moving as told, and drawn onto its place. Nothing in it may throw.
     /// </summary>
-    public static void Pull(Vehicle v, Wire.State s, double dt)
+    /// <returns>What it found and did, for a run that records it; null where there was nothing to measure.</returns>
+    /// <param name="first">Whether this is the first time the craft is pulled since it was built here: it is put where it is told however near, having been built where it stood when it was described and not drawn yet.</param>
+    public static Pulled? Pull(Vehicle v, Wire.State s, double dt, bool first = false)
     {
-        if (!v.HasPhysicsBubble || dt <= 0.0 || dt > 0.25) return;
+        if (!v.HasPhysicsBubble || dt <= 0.0 || dt > 0.25) return null;
         // Across a change of body the two frames differ, so there is nothing to write. Nothing
         // takes this over either: the analytic placing is only for a craft with no bubble, and this
         // craft has one -- it runs on its own physics with its owner's engines until the two games
         // agree on what it is going round, which is a moment at an SOI boundary.
-        if ((v.Parent as Astronomical)?.Id is { } body && body != s.Body) return;
+        if ((v.Parent as Astronomical)?.Id is { } body && body != s.Body) return null;
         PhysicsStates states = v.GetPhysicsStatesMutable();
-        PhysicsStates.GetStatesCcf(in states.Origin, in states.Kinematic, out double3 positionCcf, out _, out doubleQuat body2Ccf);
+        PhysicsStates.GetStatesCcf(in states.Origin, in states.Kinematic, out double3 positionCcf, out double3 velocityCcf, out doubleQuat body2Ccf);
         doubleQuat body2Phys = states.Kinematic.Body2Phys;
         doubleQuat ccf2Body = body2Ccf.Inverse();
         double3 off = D(s.PositionCcf) - positionCcf;
@@ -861,7 +886,10 @@ internal static class World
         bool walks = v is KittenEva && v.Situation.HasAnyContact();
         double rest = walks ? KittenRestM : 0.05;
         // Standing where it is told to stand, it is left on KSA's rails: woken every step, its physics is built again every step.
-        if (v.Situation.IsOnRails() && Vec(D(s.VelocityCcf)) < 0.05 && Vec(off) < rest) return;
+        if (v.Situation.IsOnRails() && Vec(D(s.VelocityCcf)) < 0.05 && Vec(off) < rest)
+        {
+            return new Pulled(V(positionCcf), V(velocityCcf), Vec(off), Snap: false, Held: false, Rest: true);
+        }
 
         // Nothing heard for long enough that the state has stopped moving: Track carries a craft on
         // past its newest word for a second and then holds it where it got to, and chasing that held
@@ -869,8 +897,11 @@ internal static class World
         // orbit, for as long as four seconds, or fifty behind a warp. The craft is better left
         // coasting on the velocity it was last given. True only when the carrying-on was cut short,
         // because Track stamps the time it actually drew at.
-        bool held = Universe - Track.DelaySeconds - s.Universe > 0.0;
-        bool snap = !held && Vec(off) > SnapM;
+        // Or told of a time that is not now at all: this world is further behind its states than
+        // any of them is kept, and the oldest is where the craft will be, not where it is.
+        bool held = Math.Abs(Universe - s.Universe) > 1e-6;
+        bool born = first && !held && Vec(off) <= SnapM && Vec(off) > 0.05;
+        bool snap = !held && (Vec(off) > SnapM || born);
         if (snap) states.Kinematic.PositionPhys += off.Transform(ccf2Body).Transform(body2Phys);
         doubleQuat wantedBody2Ccf = new(s.Body2Ccf.X, s.Body2Ccf.Y, s.Body2Ccf.Z, s.Body2Ccf.W);
         states.Kinematic.Body2Phys = body2Phys * (ccf2Body * wantedBody2Ccf);
@@ -879,9 +910,11 @@ internal static class World
         double3 draw = snap || held ? double3.Zero : off / Math.Max(PullSeconds, dt);
         // Held to a walk, not to a distance: what matters to a kitten's legs is how fast this says
         // it is going, and the distance was already answered by the snap above.
-        if (walks && Vec(draw) > KittenPullMetresPerSecond)
+        if (walks)
         {
-            draw = draw.Normalized() * KittenPullMetresPerSecond;
+            double said = Vec(D(s.VelocityCcf));
+            double most = Math.Max(KittenPullMetresPerSecond, Math.Min(said * KittenKeepsUp, KittenTripsMetresPerSecond - said));
+            if (Vec(draw) > most) draw = draw.Normalized() * most;
         }
         double3 wanted = D(s.VelocityCcf) + draw;
         states.Kinematic.VelocityPhys += (wanted - nowVelocity).Transform(nowBody2Ccf.Inverse()).Transform(states.Kinematic.Body2Phys);
@@ -892,7 +925,16 @@ internal static class World
         // unconditionally latched every landed craft off rails on its first frame, and the standing
         // still path above could never be reached again.
         if (!held && Vec(off) >= rest && v.Situation.IsOnRails()) v.TakeOffRails();
+        return new Pulled(V(positionCcf), V(velocityCcf), Vec(off), snap && !born, held, Rest: false);
     }
+
+    /// <summary>What one pull found and did.</summary>
+    /// <param name="At">Where the craft stood before anything was written, in its body's fixed frame, and <paramref name="Moving"/> how.</param>
+    /// <param name="Off">How far that was from where it was told to stand, m.</param>
+    /// <param name="Snap">Whether it was put there outright, which is the teleport.</param>
+    /// <param name="Held">Whether the place it was told to stand had stopped moving, and it was left to coast.</param>
+    /// <param name="Rest">Whether it stood near enough, on rails, to be left alone.</param>
+    public readonly record struct Pulled(Vec3 At, Vec3 Moving, double Off, bool Snap, bool Held, bool Rest);
 
     /// <summary>
     /// Every exhaust plume, smoke trail and explosion cloud in this world taken away.
@@ -939,7 +981,14 @@ internal static class World
         try
         {
             if (KSA.Universe.CurrentSystem?.Get(s.Body) is not Celestial body) return false;
-            Orbit orbit = Orbit.CreateFromStateCci(body, new UniverseTime(s.Universe), D(s.PositionCci), D(s.VelocityCci), v.OrbitColor);
+            // The orbit its owner's word puts it on, and then that orbit as of now. KSA stands a
+            // craft at the place its new orbit was made from until the next step carries it on,
+            // and a word is a twentieth of a second old at the least: handed the orbit as said,
+            // the craft was drawn for one frame where it had been then, 350 to 650 m back in low
+            // orbit, every time it was put right.
+            Orbit said = Orbit.CreateFromStateCci(body, new UniverseTime(s.Universe), D(s.PositionCci), D(s.VelocityCci), v.OrbitColor);
+            StateVectors now = said.GetStateVectorsAt(new UniverseTime(Universe));
+            Orbit orbit = Orbit.CreateFromStateCci(body, new UniverseTime(Universe), now.PositionCci, now.VelocityCci, v.OrbitColor);
             // Refused rather than thrown when the trajectory cannot be worked out, so this is asked
             // again rather than taken as done.
             v.Teleport(orbit, null, null);
@@ -952,6 +1001,296 @@ internal static class World
         {
             Log.Warn($"could not put {s.Key} round {s.Body}: {e.GetBaseException().Message}");
             return false;
+        }
+    }
+
+    /// <summary>
+    /// A craft's translation keys held down or let go, as the keyboard holds them: what walks a
+    /// kitten across the ground and fires a craft's thrusters sideways. KSA sets these on a key going
+    /// down and clears them on its coming up, so written once they stay until written again.
+    /// </summary>
+    public static bool Move(Vehicle v, int forward, int right, int up, bool sprint)
+    {
+        if (EngineInputs is not { } inputs) return false;
+        const ThrusterMapFlags Every = ThrusterMapFlags.TranslateForward | ThrusterMapFlags.TranslateBackward | ThrusterMapFlags.TranslateRight
+                                     | ThrusterMapFlags.TranslateLeft | ThrusterMapFlags.TranslateUp | ThrusterMapFlags.TranslateDown;
+        ThrusterMapFlags held = ThrusterMapFlags.None;
+        if (forward != 0) held |= forward > 0 ? ThrusterMapFlags.TranslateForward : ThrusterMapFlags.TranslateBackward;
+        if (right != 0) held |= right > 0 ? ThrusterMapFlags.TranslateRight : ThrusterMapFlags.TranslateLeft;
+        if (up != 0) held |= up > 0 ? ThrusterMapFlags.TranslateUp : ThrusterMapFlags.TranslateDown;
+        ref ManualControlInputs now = ref inputs(v);
+        now.ThrusterCommandFlags = (now.ThrusterCommandFlags & ~Every) | held;
+        now.Sprint = sprint;
+        return true;
+    }
+
+    /// <summary>
+    /// How high a craft is above the ground under it and how fast it is rising, m and m/s. The
+    /// height is its centre's, so a craft standing on the ground reads its own height and not zero.
+    /// </summary>
+    public static (double Radar, double Up) Descent(Vehicle v)
+    {
+        try
+        {
+            double3 from = v.Orbit.StateVectors.PositionCci;
+            double far = Vec(from);
+            return far > 0.0 ? (v.GetRadarAltitude(), double3.Dot(v.GetSurfaceVelocityCci(), from) / far) : (0.0, 0.0);
+        }
+        catch (Exception)
+        {
+            return (0.0, 0.0);
+        }
+    }
+
+    /// <summary>
+    /// What a craft's flight computer points it at, set as the buttons on KSA's own panel set it:
+    /// one of <see cref="FlightComputerAttitudeTrackTarget"/> by name, or nothing to hand the craft
+    /// back to its pilot. Null if it was done.
+    /// </summary>
+    public static string? Track(Vehicle v, string target)
+    {
+        if (target.Length == 0 || target.Equals("none", StringComparison.OrdinalIgnoreCase))
+        {
+            ToPoint[v] = null;
+            return null;
+        }
+        if (!Enum.TryParse(target, ignoreCase: true, out FlightComputerAttitudeTrackTarget track))
+        {
+            return $"no such thing to point at as '{target}': one of {string.Join(", ", Enum.GetNames<FlightComputerAttitudeTrackTarget>())}";
+        }
+        ToPoint[v] = track;
+        return null;
+    }
+
+    // What each craft's flight computer has been asked to point at and has not been told yet.
+    // Told where a physics step is prepared and nowhere else: KSA hands the step a copy of the
+    // flight computer and takes the copy back when it is done, so what is written to it from a
+    // frame hook is written over a moment later, every time -- twenty seconds of asking a craft
+    // to line up with a port left it in Manual with nothing to track.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Vehicle, FlightComputerAttitudeTrackTarget?> ToPoint = new();
+
+    /// <summary>Called as a craft's physics step is prepared, for every craft.</summary>
+    public static void PointAsAsked(Vehicle v)
+    {
+        if (ToPoint.IsEmpty || !ToPoint.TryRemove(v, out FlightComputerAttitudeTrackTarget? asked)) return;
+        if (asked is { } track) v.SetEnum(track);
+        else v.SetEnum(FlightComputerAttitudeMode.Manual);
+    }
+
+    /// <summary>How many docking ports a craft has with nothing on them.</summary>
+    public static int FreePorts(Vehicle v)
+    {
+        try
+        {
+            int free = 0;
+            foreach (DockingPort port in v.Parts.Modules.Get<DockingPort>()) if (!port.Docked) free++;
+            return free;
+        }
+        catch (Exception)
+        {
+            return 0;
+        }
+    }
+
+    private static DockingPort? FreePort(Vehicle v)
+    {
+        foreach (DockingPort port in v.Parts.Modules.Get<DockingPort>()) if (!port.Docked) return port;
+        return null;
+    }
+
+    /// <summary>
+    /// Where a craft's free docking port is from another's, in the frame KSA's own port menu
+    /// measures in: what an approach is steered by.
+    /// </summary>
+    /// <param name="Apart">From their port to this craft's, m.</param>
+    /// <param name="Axis">The way their port faces, and <paramref name="Mine"/> the way this craft's does.</param>
+    /// <param name="Closing">This craft's velocity less theirs, m/s.</param>
+    /// <param name="Body2Cce">This craft's own frame, which is what its thrusters push in.</param>
+    public readonly record struct PortsApart(double3 Apart, double3 Axis, double3 Mine, double3 Closing, doubleQuat Body2Cce);
+
+    public static PortsApart? Ports(Vehicle craft, Vehicle target)
+    {
+        try
+        {
+            if (FreePort(craft) is not { } mine || FreePort(target) is not { } theirs) return null;
+            return new(PortAt(craft, mine) - PortAt(target, theirs), Facing(target, theirs), Facing(craft, mine),
+                craft.GetVelocityCce() - target.GetVelocityCce(), craft.Body2Cce);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    // As DockingPort.DrawUi works them out for its Dock item: a port's place, and the way it faces.
+    private static double3 PortAt(Vehicle v, DockingPort port) =>
+        v.GetPositionCce() + (port.Connector.PositionVehicleAsmb - v.CenterOfMassAsmb).Transform(v.Body2Cce);
+
+    private static double3 Facing(Vehicle v, DockingPort port) =>
+        new double3(1.0, 0.0, 0.0).Transform(port.Connector.Asmb2VehicleAsmb.Concatenate(v.Asmb2Cce));
+
+    /// <summary>
+    /// A craft set up to dock with another as a player sets it up: their port targeted, this
+    /// craft controlled from its own, and the flight computer told to line the two up. Null if done.
+    /// </summary>
+    public static string? AimAtPort(Vehicle craft, Vehicle target)
+    {
+        try
+        {
+            if (CannotDock(craft, target) is { } why) return why;
+            DockingPort mine = FreePort(craft)!, theirs = FreePort(target)!;
+            InputEvents.ChangeTargetBuffer.Add(new InputEvents.ChangeTargetData { Vehicle = craft, Target = target, TargetPart = theirs.Parent.FullPart });
+            craft.SetControlPart(mine.Parent.FullPart, mine.Connector);
+            ToPoint[craft] = FlightComputerAttitudeTrackTarget.Align;
+            return null;
+        }
+        catch (Exception e)
+        {
+            return e.GetBaseException().Message;
+        }
+    }
+
+    /// <summary>What a craft's flight computer is doing about where it points, for a tool that cannot see the panel.</summary>
+    public static Dictionary<string, object?> Pointing(Vehicle v)
+    {
+        try
+        {
+            FlightComputer fc = v.FlightComputer;
+            return new()
+            {
+                ["mode"] = fc.AttitudeMode.ToString(), ["track"] = fc.AttitudeTrackTarget.ToString(), ["frame"] = fc.AttitudeFrame.ToString(),
+                ["rcs"] = fc.RCSMode.ToString(), ["has_rcs"] = fc.VehicleConfig?.HasRcs, ["has_gimbals"] = fc.VehicleConfig?.HasGimbals,
+                ["by"] = $"{fc.ActiveControlSystem.X}/{fc.ActiveControlSystem.Y}/{fc.ActiveControlSystem.Z}",
+                ["rcs_torque"] = Math.Round(Math.Sqrt((fc.RcsTorqueAuthority.X * fc.RcsTorqueAuthority.X) + (fc.RcsTorqueAuthority.Y * fc.RcsTorqueAuthority.Y) + (fc.RcsTorqueAuthority.Z * fc.RcsTorqueAuthority.Z)), 3),
+                ["error_deg"] = Math.Round(Math.Sqrt((fc.ErrorAngles.X * fc.ErrorAngles.X) + (fc.ErrorAngles.Y * fc.ErrorAngles.Y) + (fc.ErrorAngles.Z * fc.ErrorAngles.Z)) * 180.0 / Math.PI, 1),
+                ["target"] = (v.Target as Vehicle)?.Id, ["target_part"] = v.TargetPart is not null,
+                ["control_part"] = v.ControlPart is not null, ["controllable"] = v.IsControllable,
+            };
+        }
+        catch (Exception e)
+        {
+            return new() { ["error"] = e.GetBaseException().Message };
+        }
+    }
+
+    /// <summary>Whether a craft's flight computer is holding it lined up with the port it has targeted.</summary>
+    public static bool Aligning(Vehicle v) =>
+        v.FlightComputer.AttitudeMode == FlightComputerAttitudeMode.Auto && v.FlightComputer.AttitudeTrackTarget == FlightComputerAttitudeTrackTarget.Align
+        && v.ControlPart is not null && v.TargetPart is not null;
+
+    /// <summary>
+    /// A craft put in front of another's free docking port, so many metres out along the way the
+    /// port faces and moving as that craft moves. Null if it was done.
+    /// </summary>
+    public static string? PutBeforePort(Vehicle v, Vehicle other, double metres)
+    {
+        try
+        {
+            if (FreePort(other) is not { } port) return $"{other.Id} has no docking port free";
+            PhysicsStates states = other.GetPhysicsStatesMutable();
+            if (states.Origin.Parent is not Astronomical parent || KSA.Universe.CurrentSystem?.Get(parent.Id) is not Celestial body)
+            {
+                return $"{other.Id} is going round nothing";
+            }
+            PhysicsStates.GetStatesCci(in states.Origin, in states.Kinematic, out double3 positionCci, out double3 velocityCci, out _);
+            double3 out_ = PortAt(other, port) - other.GetPositionCce() + (Facing(other, port) * metres);
+            Orbit orbit = Orbit.CreateFromStateCci(body, new UniverseTime(Universe), positionCci + out_.Transform(body.GetCce2Cci()), velocityCci, v.OrbitColor);
+            v.Teleport(orbit, null, null);
+            v.UpdatePerFrameData();
+            return null;
+        }
+        catch (Exception e)
+        {
+            return e.GetBaseException().Message;
+        }
+    }
+
+    /// <summary>
+    /// A craft undocked at its first docked port, through the input KSA's own port menu puts in:
+    /// applied where KSA applies a player's. Null if it was asked.
+    /// </summary>
+    public static string? Undock(Vehicle v)
+    {
+        try
+        {
+            foreach (DockingPort port in v.Parts.Modules.Get<DockingPort>())
+            {
+                if (!port.Docked) continue;
+                InputEvents.VehicleDockingInputBuffer.Add(new InputEvents.VehicleDockingInputData { Vehicle = v, DockingPort = port, Undock = true });
+                return null;
+            }
+            return $"{v.Id} has nothing docked";
+        }
+        catch (Exception e)
+        {
+            return e.GetBaseException().Message;
+        }
+    }
+
+    /// <summary>Why two craft cannot be docked, or null if they can.</summary>
+    public static string? CannotDock(Vehicle a, Vehicle b)
+    {
+        try
+        {
+            if (FreePort(a) is null) return $"{a.Id} has no docking port free";
+            return FreePort(b) is null ? $"{b.Id} has no docking port free" : null;
+        }
+        catch (Exception e)
+        {
+            return e.GetBaseException().Message;
+        }
+    }
+
+    /// <summary>
+    /// Two craft docked, port to port, wherever they are: the lighter is taken into the heavier,
+    /// which is the one that is left. Empty if it was done.
+    ///
+    /// <para>This is the same <see cref="DockingEvent.Apply"/> KSA's contact solver raises when two
+    /// ports touch closely and slowly enough, and it raises it on the lighter craft as this does, so
+    /// what follows a docking is reached as it would be. What is not reached is the flying: nothing
+    /// here brings the two ports together, and KSA moves the lighter craft onto the port.</para>
+    ///
+    /// <para>Asked for from the frame's quiet window, because it takes a craft out of the world.</para>
+    /// </summary>
+    public static string Dock(Vehicle a, Vehicle b)
+    {
+        try
+        {
+            (Vehicle from, Vehicle into) = a.TotalMass <= b.TotalMass ? (a, b) : (b, a);
+            if (FreePort(from) is not { } port || FreePort(into) is not { } other) return CannotDock(a, b) ?? "no port";
+            new DockingEvent { OtherVehicle = into, OtherDockingPort = other, DockingPort = port }.Apply(from);
+            return "";
+        }
+        catch (Exception e)
+        {
+            return e.GetBaseException().Message;
+        }
+    }
+
+    /// <summary>
+    /// A craft put beside another, so many metres further from the body they go round and moving as
+    /// it moves: two craft in one place without anybody flying a rendezvous. Beside itself, it is a
+    /// craft lifted that far off the ground and let go. Null if it was done.
+    /// </summary>
+    public static string? PutBeside(Vehicle v, Vehicle other, double metres)
+    {
+        try
+        {
+            PhysicsStates states = other.GetPhysicsStatesMutable();
+            if (states.Origin.Parent is not Astronomical parent || KSA.Universe.CurrentSystem?.Get(parent.Id) is not Celestial body)
+            {
+                return $"{other.Id} is going round nothing";
+            }
+            PhysicsStates.GetStatesCci(in states.Origin, in states.Kinematic, out double3 positionCci, out double3 velocityCci, out _);
+            double3 further = positionCci * (metres / Vec(positionCci));
+            Orbit orbit = Orbit.CreateFromStateCci(body, new UniverseTime(Universe), positionCci + further, velocityCci, v.OrbitColor);
+            v.Teleport(orbit, null, null);
+            v.UpdatePerFrameData();
+            return null;
+        }
+        catch (Exception e)
+        {
+            return e.GetBaseException().Message;
         }
     }
 
@@ -1292,6 +1631,25 @@ internal static class World
     public static Vehicle? Watched => Program.GetMainCamera()?.Following as Vehicle;
 
     /// <summary>
+    /// The camera put on a planet or a moon, as picking one in the map puts it. KSA's camera takes
+    /// control of whatever it follows, and a planet is no craft: the craft being flown is let go of.
+    /// </summary>
+    public static bool WatchBody(string id)
+    {
+        try
+        {
+            if (Program.GetMainCamera() is not { } camera || KSA.Universe.CurrentSystem?.Get(id) is not Celestial body) return false;
+            camera.SetFollow(body, tidalLocking: false);
+            return ReferenceEquals(camera.Following, body);
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"could not watch {id}: {e.GetBaseException().Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
     /// The camera put on a craft without taking it over. KSA's camera takes control of whatever it
     /// follows unless told not to, and control of another player's craft is refused, so following
     /// and flying have to be asked for separately.
@@ -1352,5 +1710,5 @@ internal static class World
 
     private static Vec3 V(double3 v) => new(v.X, v.Y, v.Z);
     private static double3 D(Vec3 v) => new(v.X, v.Y, v.Z);
-    private static double Vec(double3 v) => Math.Sqrt((v.X * v.X) + (v.Y * v.Y) + (v.Z * v.Z));
+    public static double Vec(double3 v) => Math.Sqrt((v.X * v.X) + (v.Y * v.Y) + (v.Z * v.Z));
 }
