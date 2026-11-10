@@ -13,6 +13,9 @@ namespace KSAMultiplayer;
 public sealed class Client : IDisposable
 {
     private const double HelloEverySeconds = 0.5, JoinWithinSeconds = 15.0;
+
+    // How often a game says again that it is in the world, until the server's roster shows it knows.
+    private const double LoadedEverySeconds = 2.0;
     private const double PingEverySeconds = 1.0, SilentSeconds = 10.0;
 
     /// <summary>
@@ -50,7 +53,8 @@ public sealed class Client : IDisposable
     /// </summary>
     private const double OffsetStaleSeconds = 20.0;
 
-    // How much of each new measure of the server's rate is taken.
+    // How much of each new measure of the server's rate is taken, while the server says its speed
+    // is what it was.
     private const double RateSmoothing = 0.3;
 
     private readonly Udp _udp;
@@ -81,6 +85,8 @@ public sealed class Client : IDisposable
     private volatile bool _stopped;
     private (double Universe, double Sent, double Rate)? _serverClock;
     private double _serverRate;
+    private double? _loadedSaid;
+    private double _loadedNext;
     private uint _sequence;
 
     public Client(Func<double> clock, int port = 0)
@@ -234,6 +240,8 @@ public sealed class Client : IDisposable
         _hello = new Wire.Hello(Wire.Clip(name, Wire.NameChars), ksaBuild, mods, system, password, Wire.Clip(token, Wire.TokenChars));
         (_helloNext, _joinUntil, _heardAt) = (0.0, _clock() + JoinWithinSeconds, _clock());
         (_bestRtt, _lastRtt, ServerOffset, _serverClock, _serverRate) = (double.PositiveInfinity, double.NaN, 0.0, null, 0.0);
+        _saidGone.Clear();
+        _loadedSaid = null;
         _offsetAt = double.NegativeInfinity;
         Warp = null;
         _owners.Clear();
@@ -269,7 +277,10 @@ public sealed class Client : IDisposable
     /// <param name="made">Whether this game made the craft, rather than finding it in the world everyone loaded.</param>
     public void Claim(string key, bool controlling, bool made = false)
     {
-        if (Joined && key.Length > 0) Send(new Wire.Claim(key, controlling, made));
+        if (!Joined || key.Length == 0) return;
+        // Asked for again, so whatever was said gone under this name is not this craft.
+        _saidGone.Remove(key);
+        Send(new Wire.Claim(key, controlling, made));
     }
 
     public void SayGone(string key)
@@ -277,6 +288,27 @@ public sealed class Client : IDisposable
         if (!Joined) return;
         Send(new Wire.Gone(key));
         _owners.Remove(key);
+        _saidGone[key] = _clock();
+    }
+
+    // What this game has said is gone, and when. Said again for as long as the roster goes on
+    // giving the craft to this player, which is the server never having heard: lost on the way, a
+    // craft that had gone stayed in every world but its owner's.
+    private readonly Dictionary<string, double> _saidGone = [];
+    private const double SaidGoneForSeconds = 10.0;
+
+    private void SayGoneAgain(double now)
+    {
+        if (_saidGone.Count == 0) return;
+        foreach ((string key, double at) in _saidGone.ToArray())
+        {
+            if (now - at > SaidGoneForSeconds) _saidGone.Remove(key);
+            else if (OwnerOf(key) == Id)
+            {
+                Send(new Wire.Gone(key));
+                _owners.Remove(key);
+            }
+        }
     }
 
     public void Upload(Blob blob)
@@ -284,9 +316,17 @@ public sealed class Client : IDisposable
         if (Joined) _link.Send(blob.Encode(), _clock());
     }
 
+    /// <summary>
+    /// Tells the server this game is in the world, and goes on telling it until the roster says so.
+    ///
+    /// <para>Said once, it is one datagram between a player and everything: lost, the game is in a
+    /// world the server does not count it in, sent nothing and asked nothing, with no word of why.</para>
+    /// </summary>
     public void SayLoaded(double universe)
     {
-        if (Joined) Send(new Wire.Loaded(universe));
+        if (!Joined) return;
+        (_loadedSaid, _loadedNext) = (universe, _clock() + LoadedEverySeconds);
+        Send(new Wire.Loaded(universe));
     }
 
     /// <summary>Asks for the shared world to run at this speed, 0 being a pause. Everyone has to agree.</summary>
@@ -360,6 +400,16 @@ public sealed class Client : IDisposable
                                double.IsFinite(Late) ? (float)Late : 0f,
                                double.IsFinite(Can) ? (float)Math.Max(Can, 0.0) : 0f, Here, Watching));
             _pingNext = now + PingEverySeconds;
+        }
+        SayGoneAgain(now);
+        if (_loadedSaid is { } said && now >= _loadedNext)
+        {
+            if (Players.Any(p => p.Id == Id && p.Loaded)) _loadedSaid = null;
+            else
+            {
+                Send(new Wire.Loaded(said));
+                _loadedNext = now + LoadedEverySeconds;
+            }
         }
         _link.Pump(now, Send);
         if (now - _heardAt > SilentSeconds) Leave("the server has not been heard from for ten seconds");
@@ -448,7 +498,13 @@ public sealed class Client : IDisposable
                 return;
             case Wire.Clock c when Joined:
                 if (c.Speed <= 0.0) _serverRate = 0.0;
-                else if (_serverClock is { } last && c.Sent - last.Sent > 0.05 && last.Rate > 0.0)
+                // Only while the speed it says is the speed it said. A warp is the server changing
+                // its speed a thousandfold between two words, and a rate eased towards that at
+                // three tenths a word is a game still running at 240x a second after the warp
+                // ended -- most of the overshoot that stood every game still, on a wire with no
+                // delay in it at all -- and one a third of a second behind every step of a climb.
+                else if (_serverClock is { } last && c.Sent - last.Sent > 0.05 && last.Rate > 0.0
+                         && Math.Abs(c.Speed - last.Rate) <= 0.001 * c.Speed)
                 {
                     double rate = Math.Clamp((c.Universe - last.Universe) / (c.Sent - last.Sent), 0.0, 2.0 * c.Speed);
                     _serverRate = _serverRate > 0.0 ? _serverRate + (RateSmoothing * (rate - _serverRate)) : rate;
@@ -499,7 +555,12 @@ public sealed class Client : IDisposable
                 Leave(b.Why.Length > 0 ? $"the server closed the connection: {b.Why}" : "the server closed the connection");
                 return;
             case Wire.Chunk or Wire.Need or Wire.Got when Joined:
-                if (_link.Handle(message, arrived, Send) is { } bytes && Blob.Decode(bytes) is { } blob) Blobs.Enqueue(blob);
+                if (_link.Handle(message, arrived, Send) is { } bytes && Blob.Decode(bytes) is { } blob)
+                {
+                    // A world on its way in is a world this game is not in yet, whatever it said of the last.
+                    if (blob.Kind == BlobKind.World) _loadedSaid = null;
+                    Blobs.Enqueue(blob);
+                }
                 return;
         }
     }

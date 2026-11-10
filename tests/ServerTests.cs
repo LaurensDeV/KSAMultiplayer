@@ -314,6 +314,57 @@ public class ServerTests
     }
 
     [Fact]
+    public void ACraftThatIsGoneIsSaidGoneMoreThanOnce()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        a.Claim("Debris", controlling: false, made: false);
+        rig.Until(() => b.OwnerOf("Debris") == a.Id, what: "Bob to hear of the debris");
+        a.SayGone("Debris");
+        rig.Until(() => b.Gone.Count(k => k == "Debris") >= 2, what: "Bob to be told twice that it is gone");
+    }
+
+    [Fact]
+    public void ANameGivenToANewCraftIsNotSaidGoneAgain()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        a.Claim("Piece", controlling: false, made: true);
+        rig.Until(() => b.OwnerOf("Piece") == a.Id, what: "Bob to hear of the piece");
+        a.SayGone("Piece");
+        rig.Until(() => b.Gone.Contains("Piece"), what: "Bob to hear it is gone");
+        a.Claim("Piece", controlling: false, made: true);
+        rig.Until(() => b.OwnerOf("Piece") == a.Id, what: "the piece that took the name to be Alice's");
+        rig.For(1.5);
+        Assert.Equal(1, b.Gone.Count(k => k == "Piece"));
+        Assert.Equal(a.Id, b.OwnerOf("Piece"));
+    }
+
+    [Fact]
+    public void ACraftMadeUnderANameThatHasGoneIsANewCraft()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        a.Claim("Rocket_4", controlling: false, made: true);
+        rig.Until(() => b.OwnerOf("Rocket_4") == a.Id, what: "Bob to hear of the piece");
+        a.SayGone("Rocket_4");
+        rig.Until(() => b.Gone.Contains("Rocket_4"), what: "Bob to hear it is gone");
+
+        // Speaking of the one that went does not bring it back.
+        b.Claim("Rocket_4", controlling: false, made: false);
+        a.Claim("Marker", controlling: false, made: true);
+        rig.Until(() => b.OwnerOf("Marker") == a.Id, what: "a claim made after it to be answered");
+        Assert.Equal(0, a.OwnerOf("Rocket_4"));
+
+        // KSA hands a destroyed piece's name to the next piece shed, which is another craft.
+        a.Claim("Rocket_4", controlling: false, made: true);
+        rig.Until(() => b.OwnerOf("Rocket_4") == a.Id, what: "the piece that took the name to be Alice's");
+    }
+
+    [Fact]
     public void APlayerWhoLeavesLetsGoOfWhatTheyFlew()
     {
         using Rig rig = new();
@@ -757,6 +808,125 @@ public class ServerTests
     }
 
     [Fact]
+    public void AServerAsksAgainForAWorldItWasNeverSent()
+    {
+        using Rig rig = new();
+        Client a = rig.Join("Alice");
+        rig.Until(() => a.Joined && a.SnapshotWanted is not null, what: "the server to ask for a world");
+        Assert.False(a.ServerHasWorld);
+
+        // As a game that never heard the ask: it is one datagram, sent on the heels of the welcome,
+        // and one lost or arriving ahead of that welcome is gone. Said once, the game sits at
+        // "sending your world" with nothing to send it for and the server waits on it for good.
+        a.SnapshotWanted = null;
+        rig.Until(() => a.SnapshotWanted is not null, seconds: 8.0, what: "the server to ask again for a world");
+
+        // And not once more after the world has come.
+        a.SnapshotWanted = null;
+        a.Upload(new Blob(BlobKind.World, "", a.Id, 5000, Rig.FakeWorld()));
+        rig.Until(() => rig.Server.HasWorld, what: "the world to arrive");
+        rig.For(4.0);
+        Assert.Null(a.SnapshotWanted);
+    }
+
+    [Fact]
+    public void TheEndOfAWarpIsSaidMoreThanOnce()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+
+        a.AskWarp(5.0);
+        rig.Until(() => b.WarpWantsAnswer, what: "Bob to be asked");
+        b.VoteWarp(true);
+        rig.Until(() => b.Warp is { Phase: Wire.WarpPhase.Running }, what: "Bob to be told it runs");
+
+        // Whatever the server says as the warp ends is lost.
+        rig.Server.Socket.Loss = 1.0;
+        a.AskWarp(1.0);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.None, what: "the warp to end");
+        rig.For(0.3);
+        rig.Server.Socket.Loss = 0.0;
+
+        // A game that missed it is told again, rather than left showing a warp nobody is in.
+        rig.Until(() => b.Warp is null, seconds: 4.0, what: "Bob to hear that the warp has ended");
+    }
+
+    [Fact]
+    public void AGameSaysItIsInTheWorldUntilTheServerKnows()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = rig.Join("Bob");
+        rig.Until(() => b.Blobs.Any(x => x.Kind == BlobKind.World), seconds: 20, what: "Bob to get the world");
+
+        // The one datagram that says so is lost.
+        b.Socket.Loss = 1.0;
+        b.SayLoaded(5000.0);
+        rig.For(0.3);
+        b.Socket.Loss = 0.0;
+        rig.Until(() => rig.Server.Players.First(p => p.Id == b.Id).Loaded, seconds: 8.0, what: "the server to hear that Bob is in the world");
+    }
+
+    [Fact]
+    public void AfterAWarpEndsTheClockGoesOnToTheGameFurthestPastIt()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        (a.Can, b.Can) = (2000.0, 2000.0);
+        rig.Until(() => rig.Server.Players.All(p => p.Can > 1000.0), seconds: 10.0, what: "both to say what they can fly");
+
+        a.AskWarp(1000.0);
+        rig.Until(() => b.WarpWantsAnswer, what: "Bob to be asked");
+        b.VoteWarp(true);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Running, what: "the warp to run");
+        a.AskWarp(1.0);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.None, what: "the warp to end");
+
+        // As two games were measured at the end of one: each ran on at 1000x until it heard, and
+        // one heard a sixth of a second after the other. To the nearer of them, and Alice stands
+        // still for 158 seconds while a clock at normal speed walks up to her. To the further, and
+        // Bob has 158 seconds to catch up, which on rails is a moment.
+        (double began, double before) = (rig.Now(), rig.Server.UniverseClock.Now(rig.Now()));
+        double on = 0.0;
+        while (rig.Now() - began < 4.0)
+        {
+            // What the clock has gone on by, past what its own speed carried it: each game is that
+            // much less far past it, and says so, as a game working its lateness out afresh does.
+            on = rig.Server.UniverseClock.Now(rig.Now()) - before - (rig.Now() - began);
+            (a.Late, b.Late) = (-(359.0 - on), -(201.0 - on));
+            rig.Tick();
+            Thread.Sleep(1);
+        }
+        Assert.InRange(on, 350.0, 365.0);
+    }
+
+    [Fact]
+    public void AGameTakesAChangeOfTheServersSpeedAsSaid()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        a.Can = 2000.0;
+        rig.Until(() => rig.Server.Players.All(p => p.Can > 1000.0), seconds: 10.0, what: "Alice to say what she can fly");
+        rig.Until(() => a.ServerUniverse is not null, seconds: 10.0, what: "Alice to know the server's clock");
+
+        // Up: within a word or two of the server saying so, and not eased towards over a second.
+        a.AskWarp(1000.0);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Running, what: "the warp to run");
+        rig.For(0.5);
+        Assert.InRange(a.ServerUniverse!.Value.Rate, 900.0, 1100.0);
+
+        // And down, which is the one that matters: a game that goes on believing in a warp that
+        // has ended runs on at it, and is then that far past a clock at normal speed.
+        rig.For(1.5);
+        a.AskWarp(1.0);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.None, what: "the warp to end");
+        rig.For(0.5);
+        Assert.InRange(a.ServerUniverse!.Value.Rate, 0.5, 2.5);
+    }
+
+    [Fact]
     public void TheClockLeavesAnOrdinaryWobbleAlone()
     {
         using Rig rig = new();
@@ -788,8 +958,10 @@ public class ServerTests
 
         b.VoteWarp(true);
         rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Running, what: "the warp to run");
-        Assert.Equal(5.0, rig.Server.UniverseClock.Speed, 3);
+        Assert.Equal(5.0, rig.Server.WarpWanted, 3);
         rig.Until(() => a.Warp is { Phase: Wire.WarpPhase.Running }, what: "Alice to be told");
+        // Nobody had said what they can fly, so it gets there by climbing.
+        rig.Until(() => Math.Abs(rig.Server.UniverseClock.Speed - 5.0) < 0.001, seconds: 15.0, what: "the warp to reach what was agreed");
     }
 
     [Fact]
@@ -810,7 +982,7 @@ public class ServerTests
 
         // Alice's warp, and Alice is all there is: hers to speed up and hers to end.
         a.AskWarp(10.0);
-        rig.Until(() => Math.Abs(rig.Server.UniverseClock.Speed - 10.0) < 0.001, what: "the warp to change");
+        rig.Until(() => Math.Abs(rig.Server.UniverseClock.Speed - 10.0) < 0.001, seconds: 20.0, what: "the warp to change");
 
         a.AskWarp(1.0);
         rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.None, what: "the warp to end");
@@ -860,7 +1032,8 @@ public class ServerTests
         // And what he agrees to is the number in front of him.
         b.VoteWarp(true);
         rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Running, what: "the warp to run");
-        Assert.Equal(4.0, rig.Server.UniverseClock.Speed, 3);
+        Assert.Equal(4.0, rig.Server.WarpWanted, 3);
+        rig.Until(() => Math.Abs(rig.Server.UniverseClock.Speed - 4.0) < 0.001, seconds: 15.0, what: "the warp to reach the number he agreed to");
     }
 
     [Fact]
@@ -899,6 +1072,10 @@ public class ServerTests
 
         b.VoteWarp(true);
         rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Running, what: "the warp to run");
+
+        // Alice has said nothing of what she can fly, so it climbs to the six and stops there.
+        rig.Until(() => Math.Abs(rig.Server.UniverseClock.Speed - 6.0) < 0.1, seconds: 15.0, what: "the warp to reach six");
+        rig.For(2.5);
         Assert.Equal(6.0, rig.Server.UniverseClock.Speed, 1);
     }
 
@@ -1099,7 +1276,8 @@ public class ServerTests
         b.AskWarp(50.0);
         rig.For(0.5);
         Assert.Equal(Wire.WarpPhase.Running, rig.Server.Warp.Phase);
-        Assert.Equal(5.0, rig.Server.UniverseClock.Speed, 3);
+        Assert.Equal(5.0, rig.Server.WarpWanted, 3);
+        Assert.InRange(rig.Server.UniverseClock.Speed, 1.0, 5.0);
 
         a.AskWarp(1.0);
         rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.None, what: "Alice to end her warp");
@@ -1124,6 +1302,52 @@ public class ServerTests
         b.AskWarp(8.0);
         rig.For(0.5);
         Assert.Equal(Wire.WarpPhase.None, rig.Server.Warp.Phase);
+    }
+
+    [Fact]
+    public void ATraceWritesAChangeOfRateFromBothSides()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        // A machine that has said what it can fly, so the warp is run at what is asked in one change.
+        a.Can = 60.0;
+        rig.Until(() => rig.Server.Players.All(p => p.Can > 50.0), seconds: 10.0, what: "Alice to say what she can fly");
+
+        // Nothing written for being due, past the first line: what is left is what a change writes.
+        StringWriter written = new();
+        ClockTrace trace = new(written, everySeconds: 1000.0);
+        void Tick()
+        {
+            trace.Before(rig.Server, rig.Now(), rig.Now());
+            rig.Server.Tick();
+            trace.After(rig.Server, rig.Now(), rig.Now());
+            foreach (Client c in rig.Clients) c.Update();
+            Thread.Sleep(1);
+        }
+
+        for (int i = 0; i < 50; i++) Tick();
+        // Alone in the room, so asking is everybody agreeing.
+        a.AskWarp(50.0);
+        double until = rig.Now() + 5.0;
+        while (rig.Server.Warp.Phase != Wire.WarpPhase.Running && rig.Now() < until) Tick();
+        for (int i = 0; i < 50; i++) Tick();
+
+        System.Text.Json.JsonElement[] lines = [.. written.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(l => System.Text.Json.JsonDocument.Parse(l).RootElement)];
+        Assert.Equal(3, lines.Length);
+        (System.Text.Json.JsonElement before, System.Text.Json.JsonElement after) = (lines[1], lines[2]);
+        Assert.Equal("None", before.GetProperty("phase").GetString());
+        Assert.Equal(1.0, before.GetProperty("rate").GetDouble());
+        Assert.Equal("Running", after.GetProperty("phase").GetString());
+        Assert.Equal(50.0, after.GetProperty("rate").GetDouble());
+        Assert.Equal("Alice", after.GetProperty("who").GetString());
+        // A tick apart, so the clock is known to within a tick of the faster rate across the change:
+        // sampled on a timer alone, the two lines either side of it would be a quarter of a second
+        // of 50x apart, with nothing to say where in it the rate changed.
+        double apart = after.GetProperty("t").GetDouble() - before.GetProperty("t").GetDouble();
+        Assert.InRange(apart, 0.0, 0.05);
+        Assert.InRange(after.GetProperty("universe").GetDouble() - before.GetProperty("universe").GetDouble(), 0.0, (apart * 50.0) + 0.01);
+        Assert.Equal("Alice", after.GetProperty("players")[0].GetProperty("name").GetString());
     }
 
     [Fact]
@@ -1364,5 +1588,136 @@ public class ServerTests
         Assert.Equal(Wire.WarpPhase.Running, rig.Server.Warp.Phase);
         Assert.InRange(rig.Server.UniverseClock.Speed, 1.0, 8.5);
     }
-}
 
+    [Fact]
+    public void AWarpPutToARoomThatHasSaidNothingStartsAStepAboveNormalAndClimbs()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+
+        // Neither machine has said what it can fly, which is what every machine says at normal speed.
+        double before = rig.Server.UniverseClock.Now(rig.Now());
+        a.AskWarp(1000.0);
+        rig.Until(() => b.WarpWantsAnswer, what: "Bob to be asked");
+        b.VoteWarp(true);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Running, what: "the warp to run");
+        Assert.InRange(rig.Server.UniverseClock.Speed, 1.0, 2.0);
+
+        // A second in, the clock is seconds on and not a thousand of them: run at what was asked,
+        // that second was the whole of the gap no game ever closed while the warp was worth having.
+        rig.For(1.0);
+        Assert.InRange(rig.Server.UniverseClock.Now(rig.Now()) - before, 0.0, 10.0);
+
+        // And it gets there, a step at a time, with nobody asking again.
+        rig.Until(() => rig.Server.UniverseClock.Speed > 5.0, seconds: 10.0, what: "the warp to climb");
+        Assert.Equal(Wire.WarpPhase.Running, rig.Server.Warp.Phase);
+    }
+
+    [Fact]
+    public void AWarpIsNotCutAgainWhileTheGameBehindIsCatchingUp()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        (a.Can, b.Can) = (60.0, 60.0);
+        rig.Until(() => rig.Server.Players.All(p => p.Can > 50.0), seconds: 10.0, what: "both to say what they can fly");
+
+        a.AskWarp(50.0);
+        rig.Until(() => b.WarpWantsAnswer, what: "Bob to be asked");
+        b.VoteWarp(true);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Running, what: "the warp to run");
+        Assert.Equal(50.0, rig.Server.UniverseClock.Speed, 1);
+
+        // Bob is two thousand universe-seconds behind, forty of his own, and making up three hundred
+        // of them every second. Falling behind is worth one step back. Catching up is worth none:
+        // the gap he has left is longer in the seconds of a slower clock, so a second step back
+        // makes the case for a third, and the room ends at normal speed still waiting for him.
+        for (int i = 0; i < 6; i++)
+        {
+            b.Late = 2000.0 - (300.0 * i);
+            rig.For(1.0);
+        }
+        Assert.Equal(Wire.WarpPhase.Running, rig.Server.Warp.Phase);
+        Assert.InRange(rig.Server.UniverseClock.Speed, 29.0, 50.0);
+    }
+
+    [Fact]
+    public void AGameGainingTooSlowlyToEverBeLevelIsStillBackedOffFor()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        (a.Can, b.Can) = (60.0, 60.0);
+        rig.Until(() => rig.Server.Players.All(p => p.Can > 50.0), seconds: 10.0, what: "both to say what they can fly");
+
+        a.AskWarp(50.0);
+        rig.Until(() => b.WarpWantsAnswer, what: "Bob to be asked");
+        b.VoteWarp(true);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Running, what: "the warp to run");
+
+        // A hundred of his own seconds behind and gaining three universe-seconds a second: at that
+        // pace he is level in half an hour. That is a machine at its limit, not one catching up,
+        // and the only thing that helps it is a slower clock.
+        for (int i = 0; i < 6; i++)
+        {
+            b.Late = 5000.0 - (3.0 * i);
+            rig.For(1.0);
+        }
+        Assert.InRange(rig.Server.UniverseClock.Speed, 1.0, 20.0);
+    }
+
+    [Fact]
+    public void AWarpClimbsNoFurtherWhileSomebodyIsBeingLeftBehind()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+
+        a.AskWarp(100.0);
+        rig.Until(() => b.WarpWantsAnswer, what: "Bob to be asked");
+        b.VoteWarp(true);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Running, what: "the warp to run");
+
+        // Bob loses a universe-second every second, which at this speed is most of what he is being
+        // asked for, and has said nothing of what he can fly: a game finds that out over a couple of
+        // seconds, and the server can see it in two pings. Not yet far enough behind to back off
+        // for, and no reason to ask him for more.
+        for (int i = 1; i <= 5; i++)
+        {
+            b.Late = i;
+            rig.For(1.0);
+        }
+        Assert.Equal(Wire.WarpPhase.Running, rig.Server.Warp.Phase);
+        // One step is allowed for: the first look may come before his first word.
+        Assert.InRange(rig.Server.UniverseClock.Speed, 1.0, 2.3);
+    }
+
+    [Fact]
+    public void AMachineSayingItFliesALittleLessIsNoCeiling()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        (a.Can, b.Can) = (10.0, 10.0);
+        rig.Until(() => rig.Server.Players.All(p => p.Can > 9.5), seconds: 10.0, what: "both to say what they can fly");
+
+        // Twenty asked, ten flown, because ten is what the room says it flies.
+        a.AskWarp(20.0);
+        rig.Until(() => b.WarpWantsAnswer, what: "Bob to be asked");
+        b.VoteWarp(true);
+        rig.Until(() => rig.Server.Warp.Phase == Wire.WarpPhase.Running, what: "the warp to run");
+        Assert.Equal(10.0, rig.Server.UniverseClock.Speed, 1);
+
+        // Bob says nine. That is not a machine giving out, and the world stays where it is.
+        b.Can = 9.0;
+        rig.For(2.5);
+        Assert.Equal(10.0, rig.Server.UniverseClock.Speed, 1);
+
+        // Then both are comfortable and say nothing, and there is twenty still to climb to. Read as
+        // a fall, the nine left a ceiling at eight that was nobody's to lift, and each look after
+        // it stepped down to the ceiling the last one had left.
+        (a.Can, b.Can) = (0.0, 0.0);
+        rig.Until(() => rig.Server.UniverseClock.Speed > 12.0, seconds: 10.0, what: "the warp to climb on");
+    }
+}

@@ -97,6 +97,26 @@ public sealed class GameServer : IDisposable
         /// <summary>How far behind the server's time this player's world was when it last said, s.</summary>
         public double Late { get; set; }
 
+        /// <summary>When it last said, on the server's clock, and what universe time the server had then; zero until it has.</summary>
+        public double LateAt { get; set; }
+        public double LateUniverse { get; set; }
+
+        /// <summary>
+        /// What share of the clock's advance between the last two times it said this game failed to
+        /// keep: 0.3 is a world run at seven tenths of what it was asked for, negative is one
+        /// catching up, and zero is one keeping pace or nothing to go on. A share of what the clock
+        /// did rather than seconds of either kind, so it reads the same at every speed and through
+        /// a change of speed.
+        /// </summary>
+        public double Slip { get; set; }
+
+        /// <summary>
+        /// The times the clock has gone on to the room that this game cannot yet have heard of, and
+        /// by how much each: what it says of its lateness until then is said about a clock that is
+        /// gone.
+        /// </summary>
+        public List<(double At, double By)> Unheard { get; } = [];
+
         /// <summary>The speed this player's game is managing, a multiple of real time; zero until it says.</summary>
         public double Can { get; set; }
 
@@ -119,6 +139,10 @@ public sealed class GameServer : IDisposable
         /// the mods its sender claimed, which everybody else is then held to.
         /// </summary>
         public bool WorldAsked { get; set; }
+
+        /// <summary>When it was last asked, and in what words, so it can be asked again.</summary>
+        public double WorldAskedAt { get; set; }
+        public string WorldAskedWhy { get; set; } = "";
 
         /// <summary>Whether the world has been handed to this player: nobody is in a world they were never given.</summary>
         public bool WorldGiven => !Seeding && !WaitingForWorld;
@@ -191,6 +215,11 @@ public sealed class GameServer : IDisposable
     private readonly Dictionary<byte, Player> _players = [];
     private readonly Dictionary<string, Craft> _crafts = [];
     private readonly Dictionary<string, double> _gone = [];
+
+    // A craft that has gone, to be said again, and when: one datagram is one chance, and a game
+    // that never hears it keeps the craft, and takes it for its own if it is watching.
+    private readonly List<(string Key, byte From, double At)> _goneAgain = [];
+    private static readonly double[] GoneAgainAfterSeconds = [0.3, 1.0];
     private Blob? _world;
     private string _worldBuild = "", _worldSystem = "";
 
@@ -209,6 +238,10 @@ public sealed class GameServer : IDisposable
     private float _warpSpeed = 1f, _warpWanted = 1f;
     private Wire.WarpPhase _warpPhase;
     private double _warpAskedAt, _warpNext, _warpQuietSince = double.NegativeInfinity, _governNext, _followNext;
+
+    // How far the clock's own speed has lately fallen and when: what a game being past the clock is
+    // explained by.
+    private double _fellBy, _fellAt = double.NegativeInfinity;
 
     // The fastest a running warp has been found not to work, and whose machine it was found on.
     // Nothing climbs back to it, or the world climbs into the same ceiling and falls out of it once a
@@ -280,6 +313,9 @@ public sealed class GameServer : IDisposable
     /// <summary>Whose warp it is, how fast, and whether it is asked for or running.</summary>
     public (byte Who, double Speed, Wire.WarpPhase Phase) Warp => (_warpWho, _warpSpeed, _warpPhase);
 
+    /// <summary>The speed the running warp is on its way to: what its asker asked for, which it is held below by what the room can fly.</summary>
+    public double WarpWanted => _warpWanted;
+
     /// <summary>What has happened, for the console.</summary>
     public Queue<string> Said { get; } = new();
 
@@ -316,6 +352,8 @@ public sealed class GameServer : IDisposable
         UniverseClock.Run(Options.KeepTime || anyone, now);
         if (!anyone) HoldTimeAtTheWorld(now);
 
+        AskAgainForTheWorld(now);
+
         // Players waiting on a fresh save are sent the one there is once it comes, or after a while without.
         if (_world is not null)
         {
@@ -342,7 +380,11 @@ public sealed class GameServer : IDisposable
         Govern(now);
         FollowTheRoom(now);
         Lapse(now);
-        if (_warpPhase != Wire.WarpPhase.None && now >= _warpNext)
+        SayGoneAgain(now);
+        // Said again for a while after one has ended, as it is while one runs. The end of a warp
+        // was said once, and a game that missed it went on showing a warp at 8x for as long as
+        // nobody started another, with its keys stepping from a speed the world was not at.
+        if ((_warpPhase != Wire.WarpPhase.None || now - _warpQuietSince < WarpQuietSeconds) && now >= _warpNext)
         {
             Broadcast(WarpState(), p => p.Loaded);
             _warpNext = now + WarpEverySeconds;
@@ -401,7 +443,25 @@ public sealed class GameServer : IDisposable
                 return;
             case Wire.Ping ping:
                 player.Rtt = ping.Rtt;
-                player.Late = float.IsFinite(ping.Late) ? ping.Late : 0.0;
+                double late = float.IsFinite(ping.Late) ? ping.Late : 0.0, heard = _clock(), universe = UniverseClock.Now(heard);
+                // A word that set out before its game could have heard the clock had gone on is
+                // about the clock as it was: the game is that much less far past it now. Taken as
+                // said, the same lead is followed twice -- at 150 ms each way a clock that went on
+                // 177 s to one game went on 182 s more a half second later, for a game that had
+                // five left, and both then had three minutes to catch up. A round trip is how long
+                // that takes: the word of the clock out, and the ping that left just before it in.
+                double round = ping.Rtt > 0f && ping.Rtt < MostRoundTripSeconds ? ping.Rtt : 0.0;
+                foreach ((double at, double by) in player.Unheard)
+                {
+                    if (heard < at + round + HeardWithinSeconds) late += by;
+                }
+                player.Unheard.RemoveAll(u => heard >= u.At + MostRoundTripSeconds + HeardWithinSeconds);
+                double apart = heard - player.LateAt, ran = universe - player.LateUniverse;
+                // Between two words close enough together to be about the same stretch of flying:
+                // a first word, or one after a silence, says where a game is and nothing of which
+                // way it is going. Nor does any word while the clock stands still.
+                player.Slip = player.LateAt > 0.0 && apart is > SlipOverAtLeast and < SlipOverAtMost && ran > 1e-6 ? (late - player.Late) / ran : 0.0;
+                (player.Late, player.LateAt, player.LateUniverse) = (late, heard, universe);
                 player.Can = float.IsFinite(ping.Can) && ping.Can > 0f ? ping.Can : 0.0;
                 player.Here = ping.Here;
                 player.Watching = ping.Watching;
@@ -437,6 +497,7 @@ public sealed class GameServer : IDisposable
                 _gone[gone.Key] = UniverseClock.Now(_clock());
                 if (player.Controlling == gone.Key) Flying(player, "");
                 Broadcast(gone, p => p.Loaded && p != player);
+                foreach (double after in GoneAgainAfterSeconds) _goneAgain.Add((gone.Key, player.Id, _clock() + after));
                 return;
             case Wire.NoWorld no:
                 OnNoWorld(player, Wire.Clip(no.Why, 200));
@@ -717,7 +778,12 @@ public sealed class GameServer : IDisposable
     {
         if (!_crafts.TryGetValue(key, out Craft? craft))
         {
-            if (_gone.ContainsKey(key) && !taking) return null;
+            // A name that has gone is not claimed back, or a game that has not heard yet would
+            // bring the craft back by speaking of it. But a craft a game has just made is another
+            // craft: KSA hands a destroyed piece's name to the next piece shed, and refused the name,
+            // that piece stood in its maker's world as nobody's and in no other world at all --
+            // three of the twenty-eight a rocket falling over broke into, and six of fifty.
+            if (_gone.ContainsKey(key) && !taking && !made) return null;
             _crafts[key] = craft = new Craft();
         }
         if (craft.Owner == p.Id) return key;
@@ -776,7 +842,8 @@ public sealed class GameServer : IDisposable
             // Their own ask, so whatever ceiling the governor had found is let go of; if the new speed
             // cannot be flown either it will have found it again within the second.
             (_warpWanted, _warpCeiling, _warpCeilingWho) = (speed, double.PositiveInfinity, 0);
-            RunWarp((float)Flyable(speed), now);
+            RunWarp((float)Reached(_warpSpeed, Flyable(speed)), now);
+            _governNext = now + GovernEverySeconds;
             return;
         }
         if (_warpPhase == Wire.WarpPhase.Asking)
@@ -784,17 +851,16 @@ public sealed class GameServer : IDisposable
             // Whoever is asking may still reach for another speed while the rest answer: it is the
             // same question at a different number, so the answers already given stand. Nobody else
             // gets a word in, since two warps put at once is a room that agrees to neither.
-            if (p.Id != _warpWho || normal || Math.Abs(speed - _warpSpeed) < 0.001f) return;
-            _warpSpeed = speed;
+            if (p.Id != _warpWho || normal || Math.Abs(speed - _warpWanted) < 0.001f) return;
+            (_warpWanted, _warpSpeed) = (speed, (float)Flyable(speed));
             Log($"{Named(_warpWho)} now asks for {speed:0.##}x");
             Broadcast(WarpState(), q => q.Loaded);
             return;
         }
         if (normal) return;
-        // Just ended: whoever had it keeps it until the world has been at normal speed this long, so
-        // that stepping down through normal and back up is one warp and not two votes. Anybody else
-        // waits out the quiet, since a warp another player can pick up the instant it ends is a warp
-        // nobody can get out of.
+        // Just ended: nobody's ask is taken until the world has been at normal speed this long, the
+        // asker's own included, since a warp another player can pick up the instant it ends is a
+        // warp nobody can get out of.
         if (now - _warpQuietSince < WarpQuietSeconds) return;
 
         // Put at what the room can fly, not at what was asked: agreeing to a speed somebody's
@@ -828,16 +894,26 @@ public sealed class GameServer : IDisposable
         if (_warpPhase != Wire.WarpPhase.Asking) return;
         if (_players.Values.Any(q => q.Loaded && !_warpVotes.ContainsKey(q.Id))) return;
         _warpPhase = Wire.WarpPhase.Running;
-        RunWarp(_warpSpeed, now);
-        Log($"everyone agreed: the world runs at {_warpSpeed:0.##}x for {Named(_warpWho)}");
-        Broadcast(new Wire.Chat(0, $"the world is warping at {_warpSpeed:0.##}x, {Named(_warpWho)}'s"), q => q.Loaded);
+        float agreed = _warpSpeed, from = (float)Reached(UniverseClock.Speed, agreed);
+        RunWarp(from, now);
+        // A whole look away, or the first step of the climb is taken on the tick this one is.
+        _governNext = now + GovernEverySeconds;
+        Log($"everyone agreed: the world runs at {agreed:0.##}x for {Named(_warpWho)}");
+        Broadcast(new Wire.Chat(0, from < agreed
+            ? $"the world is climbing to {agreed:0.##}x, {Named(_warpWho)}'s"
+            : $"the world is warping at {agreed:0.##}x, {Named(_warpWho)}'s"), q => q.Loaded);
     }
 
     private void RunWarp(float speed, double now)
     {
         // The server's own clock is what every game follows, so warping it warps all of them together.
         (_warpSpeed, _warpQuietSince, _warpNext) = (speed, now, 0.0);
+        Fell(UniverseClock.Speed, speed, now);
         UniverseClock.SetSpeed(speed, now);
+        // The clock's own word is what a game takes its speed from, and it is said five times a
+        // second: left to its turn, a change of speed is up to a fifth of a second of every game
+        // running at the old one, which coming down from 1000x is two hundred universe-seconds.
+        _clockNext = 0.0;
         Broadcast(WarpState(), p => p.Loaded);
     }
 
@@ -855,35 +931,59 @@ public sealed class GameServer : IDisposable
     /// warp opened -- half a minute of warp bought eight minutes of frozen game, for everyone and
     /// not just whoever asked. `errors.md` 2026-11-09.</para>
     ///
-    /// <para>The <em>least</em>-ahead game is what the clock moves to, so it never passes anybody
-    /// and no game is ever asked to rewind, and one game's runaway clock cannot drag the room: it
-    /// takes every one of them being ahead. A game that is not at a craft is not keeping the clock
-    /// and does not count.</para>
+    /// <para>No game is ever asked to rewind, and one game's runaway clock cannot drag the room: it
+    /// takes every one of them being ahead, and then the <em>least</em>-ahead is what the clock
+    /// moves to. Except just after the clock's own speed has fallen, when it goes on to the game
+    /// furthest past it, by no more than that fall explains. A game that is not at a craft is not
+    /// keeping the clock and does not count.</para>
     /// </summary>
     private void FollowTheRoom(double now)
     {
         if (!UniverseClock.Running || now < _followNext) return;
         _followNext = now + FollowEverySeconds;
         double rate = Math.Max(UniverseClock.Rate, 0.001);
-        double least = double.PositiveInfinity;
+        (double least, double most) = (double.PositiveInfinity, double.NegativeInfinity);
         foreach (Player p in _players.Values)
         {
-            if (p.Loaded && p.Here && double.IsFinite(p.Late)) least = Math.Min(least, -p.Late);
+            if (!p.Loaded || !p.Here || !double.IsFinite(p.Late)) continue;
+            (least, most) = (Math.Min(least, -p.Late), Math.Max(most, -p.Late));
         }
-        // Nobody keeping the clock, or somebody still behind it: there is nothing here to follow.
-        if (!double.IsFinite(least) || least <= 0.0) return;
+        if (!double.IsFinite(least)) return;
+        // Every game being past it is the clock being behind, whatever the cause. One game being
+        // past it is that game's affair -- unless the clock's own speed has just fallen, when
+        // being past it is what every game is, by however long the word took to reach it. Those
+        // differ: at the end of a warp at 1000x one game was 359 s past and the other 201 s, and
+        // a clock that went to the nearer left the further standing still for the difference,
+        // a second for a second. The other way round costs the nearer game a moment of catching
+        // up, which is what a game does best. Held to what the fall explains, so it is still not
+        // one game's word that moves a room.
+        double explained = now - _fellAt < FollowAFallSeconds ? _fellBy * FollowLeadSeconds : 0.0;
+        double by = Math.Max(least, Math.Min(most, explained));
         // Only past what the nudge band closes on its own, so ordinary play is left alone and this
         // is the standstill being avoided rather than a clock chasing every wobble.
-        if (least / rate <= ClockFollow.CatchUpAboveSeconds) return;
-        double to = UniverseClock.Now(now) + least;
+        if (by <= 0.0 || by / rate <= ClockFollow.CatchUpAboveSeconds) return;
+        double to = UniverseClock.Now(now) + by;
         // A lead is a number off the wire like any other.
         if (!ClockFollow.SaneUniverse(to)) return;
         UniverseClock.Set(to, now);
-        // Said about the clock as it stood, and the clock has just moved out from under them: every
-        // game is that much less ahead now, whether or not its next ping has arrived to say so.
-        // Without this the same lead is taken on again a second later, a step at a time.
-        foreach (Player p in _players.Values) p.Late += least;
-        Log($"every game is {least:F0} s past the clock, so the clock keeps up");
+        // Said at once, so the next thing a game says of its lateness is said about this clock.
+        _clockNext = 0.0;
+        foreach (Player p in _players.Values)
+        {
+            (p.Late, p.LateUniverse) = (p.Late + by, p.LateUniverse + by);
+            p.Unheard.Add((now, by));
+        }
+        Log(by > least + 0.5
+            ? $"a game is {by:F0} s past the clock that has just slowed, so the clock goes on to it"
+            : $"every game is {by:F0} s past the clock, so the clock keeps up");
+    }
+
+    /// <summary>Notes a fall in the clock's own speed, which is what leaves games past it: each ran at the old speed until it heard.</summary>
+    private void Fell(double from, double to, double now)
+    {
+        if (!(to < from)) return;
+        _fellBy = (now - _fellAt < FollowAFallSeconds ? _fellBy : 0.0) + (from - to);
+        _fellAt = now;
     }
 
     private void EndWarp(double now, string why)
@@ -892,7 +992,9 @@ public sealed class GameServer : IDisposable
         (_warpPhase, _warpSpeed, _warpWanted, _warpQuietSince, _warpNext) = (Wire.WarpPhase.None, 1f, 1f, now, 0.0);
         (_warpCeiling, _warpCeilingWho) = (double.PositiveInfinity, 0);
         _warpVotes.Clear();
+        Fell(UniverseClock.Speed, Options.Speed, now);
         UniverseClock.SetSpeed(Options.Speed, now);
+        _clockNext = 0.0;
         Log(why);
         Broadcast(new Wire.Chat(0, why), p => p.Loaded);
         Broadcast(WarpState(), p => p.Loaded);
@@ -916,9 +1018,33 @@ public sealed class GameServer : IDisposable
     // server's to keep: a world is written only for a player this was called for.
     private void AskWorldOf(Player p, string why)
     {
-        p.WorldAsked = true;
+        (p.WorldAsked, p.WorldAskedAt, p.WorldAskedWhy) = (true, _clock(), why);
         _udp.Send(new Wire.Snapshot(why), p.At);
     }
+
+    /// <summary>
+    /// Asks again the player whose world this server is waiting to be given, while nothing of it
+    /// has come.
+    ///
+    /// <para>The ask is one datagram, and it leaves on the heels of the welcome. Lost, or arriving
+    /// ahead of that welcome at a game that is not yet anybody, it is never heard: the game sits
+    /// at "sending your world to the server" with nothing asking it to, the server has no world
+    /// and no clock, and everybody who joins after waits behind them for good. A wire that held
+    /// datagrams 50 ms give or take 20 did it on the first join it was tried on.</para>
+    /// </summary>
+    private void AskAgainForTheWorld(double now)
+    {
+        foreach (Player p in _players.Values)
+        {
+            if (p.Seeding && p.WorldAsked && p.Link.Arriving is null && now - p.WorldAskedAt > AskAgainSeconds)
+            {
+                AskWorldOf(p, p.WorldAskedWhy);
+            }
+        }
+    }
+
+    // Long enough for a game to have written a save and begun sending it, which is what stops the asking.
+    private const double AskAgainSeconds = 3.0;
 
     /// <summary>
     /// A game that will not hand its world over, because what it holds would not load anywhere.
@@ -948,7 +1074,30 @@ public sealed class GameServer : IDisposable
     /// <summary>How often the clock checks whether the whole room has run past it.</summary>
     private const double FollowEverySeconds = 0.5;
 
+    // How long after the clock's speed falls a game past it is taken to be past it for that reason,
+    // and how many seconds of the speed lost such a lead may be.
+    private const double FollowAFallSeconds = 6.0, FollowLeadSeconds = 2.0;
+
+    // How long past a round trip a game is given to have taken the clock's word up, which is a
+    // frame of its own, and the longest round trip a game's own word for it is believed.
+    private const double HeardWithinSeconds = 0.05, MostRoundTripSeconds = 2.0;
+
     private const double GovernEverySeconds = 1.0, GovernFall = 0.8, GovernStep = 1.5, GovernBackOff = 0.6;
+
+    // How far apart two of a game's words on its lateness may be and still say which way it is going.
+    private const double SlipOverAtLeast = 0.2, SlipOverAtMost = 3.0;
+
+    // A game losing this share of what the clock ran, while already this far behind in its own
+    // seconds, is being left. A step up costs a game about a sixth of the second it happens in --
+    // the word has to reach it and KSA has to wind up -- so being left is set clear of that, and
+    // still inside what a step too far looks like: a machine asked for half as much again as it
+    // can fly loses a third.
+    private const double GovernSlipping = 0.25, GovernBehindSeconds = 0.25;
+
+    // A game behind is catching up if, at the pace of its last two words, it is level again within
+    // this long. Not merely gaining: one a minute and a half behind and gaining a twentieth of a
+    // second a second is a machine at its limit, and a slower clock is the only help it will get.
+    private const double GovernRepaySeconds = 15.0;
 
     // How far behind a game may be before the world stops asking more of it. In its own seconds, so
     // it means the same at every speed.
@@ -987,6 +1136,45 @@ public sealed class GameServer : IDisposable
     /// </summary>
     private double Flyable(double speed) => speed <= 1.0 ? speed : Math.Max(1.0, Math.Min(speed, Room().Can));
 
+    /// <summary>Whether every watching player's machine has said what it can fly, so the room's limit is a measurement and not a silence.</summary>
+    private bool Measured()
+    {
+        bool anyone = false;
+        foreach (Player p in _players.Values)
+        {
+            if (!p.Loaded || !p.Here) continue;
+            if (!(p.Can > 0.0)) return false;
+            anyone = true;
+        }
+        return anyone;
+    }
+
+    /// <summary>
+    /// The speed a warp is run at on its way from <paramref name="at"/> to <paramref name="to"/>:
+    /// down at once, and up at once only to a speed the room has measured itself against.
+    ///
+    /// <para>A game comfortable at the speed it is running says nothing of what it can fly, and at
+    /// normal speed that is every game there is. So an ask is put to a room that has said nothing,
+    /// and run at in full it is a second of the clock at that speed before anybody can say they
+    /// cannot keep up: at 1000x, a thousand universe-seconds no game was near, and the room then
+    /// nineteen seconds making them up. Silence is not room. Up, a warp starts a step above normal
+    /// and climbs the way it climbs back from a fall, which is the only way a machine's limit is
+    /// ever found.</para>
+    /// </summary>
+    private double Reached(double at, double to) =>
+        to <= at || Measured() ? to : Math.Min(to, Math.Max(at, GovernStep));
+
+    /// <summary>Whether any watching player is behind and falling further behind: asked for more than it is managing, whatever it says.</summary>
+    private bool Slipping()
+    {
+        double rate = Math.Max(UniverseClock.Rate, 1.0);
+        foreach (Player p in _players.Values)
+        {
+            if (p.Loaded && p.Here && p.Late > GovernBehindSeconds * rate && p.Slip > GovernSlipping) return true;
+        }
+        return false;
+    }
+
     /// <summary>
     /// The running warp held to what the room can fly. It falls as soon as a machine says it cannot
     /// keep up and climbs back a step at a time while everyone is comfortably ahead of it, so a warp
@@ -1018,12 +1206,25 @@ public sealed class GameServer : IDisposable
             (_warpCeiling, _warpCeilingWho) = (double.PositiveInfinity, 0);
         }
 
-        if (double.IsFinite(room) && room < at * GovernFall) (next, limits) = (Math.Max(1.0, room), roomWho);
+        // Behind, and still making it up at this speed: this speed is one it can fly. Backing off
+        // for a gap that is closing only reads the same gap in slower seconds, where it is longer,
+        // so the next look backs off again and the one after, down to normal speed with the gap
+        // not yet repaid -- a room that could fly sixty times real time sat at one.
+        bool closing = _players.TryGetValue(lateWho, out Player? behind) && behind.Slip < 0.0 && late / -behind.Slip < GovernRepaySeconds;
+
+        string why = "";
+        if (double.IsFinite(room) && room < at * GovernFall) (next, limits, why) = (Math.Max(1.0, room), roomWho, $"the room can fly {room:0.##}x");
         // Nobody has hit a ceiling, but somebody is losing ground all the same: back off and watch.
-        else if (late > GovernLateSeconds) (next, limits) = (Math.Max(1.0, at * GovernBackOff), lateWho);
+        else if (late > GovernLateSeconds && !closing) (next, limits, why) = (Math.Max(1.0, at * GovernBackOff), lateWho, $"somebody is {late:0.#} s behind");
         // Room to try: a machine's limit is only found by asking it for a little more, and never
-        // again for as much as has already been found not to work.
-        else if (at < _warpWanted && late < GovernLateSeconds * 0.5) next = Math.Min(Math.Min(_warpWanted, at * GovernStep), Math.Min(room, _warpCeiling));
+        // again for as much as has already been found not to work. Not while anybody is being left,
+        // which the server sees a second or two before the game has measured it. And never down:
+        // a machine saying it flies a little less than this is no ceiling, and reading it as one
+        // held a warp to four fifths of where it stood for good.
+        else if (at < _warpWanted && late < GovernLateSeconds * 0.5 && !Slipping())
+        {
+            next = Math.Max(at, Math.Min(Math.Min(_warpWanted, at * GovernStep), Math.Min(room, _warpCeiling)));
+        }
         if (Math.Abs(next - at) < 0.01) return;
 
         // What it fell from is as fast as this warp goes from here, unless the machine it fell for
@@ -1031,7 +1232,7 @@ public sealed class GameServer : IDisposable
         if (next < at) (_warpCeiling, _warpCeilingWho) = (Math.Max(1.0, at * GovernFall), limits);
         RunWarp((float)next, now);
         Log(next < at
-            ? $"the world falls to {next:0.##}x: {(double.IsFinite(room) ? $"the room can fly {room:0.##}x" : $"somebody is {late:0.#} s behind")}"
+            ? $"the world falls to {next:0.##}x: {why}"
             : $"the world rises to {next:0.##}x of {_warpWanted:0.##}x");
     }
 
@@ -1040,6 +1241,19 @@ public sealed class GameServer : IDisposable
     /// roster: a name still hanging over the craft its player has just stepped out of is the whole
     /// of what anybody notices.
     /// </summary>
+    // Only while the name is still gone. One given since to a craft somebody has just made is that
+    // craft's, and saying it gone again would take the new craft out of every world.
+    private void SayGoneAgain(double now)
+    {
+        for (int i = _goneAgain.Count - 1; i >= 0; i--)
+        {
+            (string key, byte from, double at) = _goneAgain[i];
+            if (now < at) continue;
+            _goneAgain.RemoveAt(i);
+            if (_gone.ContainsKey(key) && !_crafts.ContainsKey(key)) Broadcast(new Wire.Gone(key), p => p.Loaded && p.Id != from);
+        }
+    }
+
     /// <summary>
     /// Craft their owners have walked away from, given back. Ownership is sticky so that two games
     /// never pull one hull in two directions -- but sticky for ever meant the first player to touch
