@@ -1,3 +1,4 @@
+using Brutal.Numerics;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -33,6 +34,10 @@ internal sealed class Bridge
     // a cold load of a system, and two games on one machine take turns over the disk.
     private const double StartWithinSeconds = 180.0;
 
+    // How many frames KSA draws of the world Start makes before a save is read over it. One is
+    // what was seen to be enough; the rest is margin, and a quarter of a second.
+    private const ulong StartedFrames = 10;
+
     private double _sincePoll;
     private Func<double, Reply?>? _running;
     private BridgeCommand? _current;
@@ -65,6 +70,11 @@ internal sealed class Bridge
     {
         _framed = true;
         _open?.Update(dtPlayer);
+        if (_open is not null)
+        {
+            FlyDown();
+            FlyToPort();
+        }
     }
 
     /// <summary>
@@ -230,6 +240,13 @@ internal sealed class Bridge
             "start" => BeginStart(command),
             "load" => BeginLoad(command),
             "capture" => BeginCapture(command),
+            "motion" => RecordMotion(command),
+            "move" => Move(command),
+            "put" => Put(command),
+            "attitude" => Attitude(command),
+            "land" => Land(command),
+            "dock" => Dock(command),
+            "approach" => Approach(command),
             _ => Failed($"no command '{command.Name}'"),
         };
 
@@ -269,6 +286,11 @@ internal sealed class Bridge
             ["protocol"] = Wire.Version,
             ["loaded"] = World.Loaded,
             ["starting"] = Panel.Starting,
+            // The time of day this was answered at, which is the one clock this game, the other
+            // game and a server on the same machine all read. A tool gets its answer a file and a
+            // poll later, and at 1000x that delay is a hundred universe-seconds of not knowing when
+            // the universe time below was true.
+            ["wall"] = Math.Round((DateTime.UtcNow - DateTime.UnixEpoch).TotalSeconds, 4),
             // What is standing over the game. A picture is taken with the interface hidden, so a
             // popup never shows up in one: this is the only way a tool can see it is being blocked.
             ["popups"] = World.Popups,
@@ -284,6 +306,7 @@ internal sealed class Bridge
         if (!World.Loaded) return Done(data);
 
         data["in_flight"] = World.InFlight;
+        data["at_a_craft"] = World.AtACraft;
         data["craft"] = World.Controlled?.Id;
         data["watching"] = World.Watched?.Id;
         data["map_view"] = World.InMapView;
@@ -380,6 +403,9 @@ internal sealed class Bridge
                 ["puppet"] = Sync.IsPuppet(v),
                 ["owned"] = Sync.OwnedCraft.Contains(key),
                 ["from_flown_m"] = flown is null || ReferenceEquals(v, flown) ? null : Math.Round(World.Between(flown, v), 1),
+                ["radar_m"] = Math.Round(World.Descent(v).Radar, 2),
+                ["up_m_s"] = Math.Round(World.Descent(v).Up, 2),
+                ["ports"] = World.FreePorts(v),
                 // What this game would draw this craft's engines from, and whether that number is
                 // KSA's own or the mod's: the whole of whether another player is seen to burn.
                 ["engine_duty"] = Math.Round(World.DutyOf(v), 3),
@@ -569,8 +595,16 @@ internal sealed class Bridge
     // The camera on a craft without taking it: how another player's is seen close up.
     private static Reply Watch(BridgeCommand command)
     {
+        // The camera on a planet, as a click on one in the map puts it: KSA lets go of the craft
+        // being flown when it does, which is a game that is at no craft at all.
+        if (command.String("body") is { Length: > 0 } body)
+        {
+            return World.WatchBody(body)
+                ? Done(new() { ["body"] = body, ["craft"] = World.Controlled?.Id, ["at_a_craft"] = World.AtACraft })
+                : Failed($"could not put the camera on '{body}'");
+        }
         string id = command.String("craft");
-        if (id.Length == 0) return Failed("watch needs a craft");
+        if (id.Length == 0) return Failed("watch needs a craft or a body");
         if (World.Vehicles().FirstOrDefault(v => v.Id == id) is not { } v) return Failed($"no craft '{id}' in this world");
         return World.Watch(v)
             ? Done(new() { ["craft"] = v.Id, ["owner"] = Sync.OwnerOf(v) })
@@ -635,6 +669,298 @@ internal sealed class Bridge
         double altitude = command.Number("altitude", 100_000.0);
         if (World.SetOrbit(craft, body, altitude) is { } why) return Failed(why);
         return Done(new() { ["craft"] = craft.Id, ["body"] = body, ["altitude"] = altitude });
+    }
+
+    // The translation keys, held or let go: a kitten walked across the ground, or a craft pushed
+    // sideways on its thrusters, with no hand on the keyboard. Held until told otherwise.
+    private static Reply Move(BridgeCommand command)
+    {
+        string id = command.String("craft");
+        Vehicle? craft = id.Length > 0 ? World.Vehicles().FirstOrDefault(v => v.Id == id) : World.Controlled;
+        if (craft is null) return Failed(id.Length > 0 ? $"no craft '{id}' in this world" : "no craft is being flown");
+        if (Sync.IsPuppet(craft)) return Failed($"{craft.Id} is another player's");
+        bool stop = command.Flag("stop", false);
+        int forward = stop ? 0 : (int)command.Number("forward", 0.0), right = stop ? 0 : (int)command.Number("right", 0.0);
+        int up = stop ? 0 : (int)command.Number("up", 0.0);
+        if (!World.Move(craft, forward, right, up, !stop && command.Flag("sprint", false))) return Failed("KSA no longer keeps a craft's keys where this looks");
+        return Done(new() { ["craft"] = craft.Id, ["forward"] = forward, ["right"] = right, ["up"] = up, ["situation"] = craft.Situation.ToString() });
+    }
+
+    // A craft put beside another, or lifted off the ground and let go: the only way two games get
+    // two craft into one place, or a craft into the air, without somebody flying it there.
+    private static Reply Put(BridgeCommand command)
+    {
+        string id = command.String("craft");
+        Vehicle? craft = id.Length > 0 ? World.Vehicles().FirstOrDefault(v => v.Id == id) : World.Controlled;
+        if (craft is null) return Failed(id.Length > 0 ? $"no craft '{id}' in this world" : "no craft is being flown");
+        if (Sync.IsPuppet(craft)) return Failed($"{craft.Id} is another player's");
+        string beside = command.String("beside");
+        Vehicle? other = beside.Length > 0 ? World.Vehicles().FirstOrDefault(v => v.Id == beside) : craft;
+        if (other is null) return Failed($"no craft '{beside}' in this world");
+        double metres = command.Number("metres", 50.0);
+        // In front of its docking port and not above it: where an approach starts from.
+        if ((command.Flag("port", false) ? World.PutBeforePort(craft, other, metres) : World.PutBeside(craft, other, metres)) is { } why) return Failed(why);
+        return Done(new() { ["craft"] = craft.Id, ["beside"] = other.Id, ["metres"] = metres });
+    }
+
+    // The flight computer told what to point a craft at, as its buttons tell it: up, for a craft
+    // coming down on its engine, which no test can steer by hand.
+    private static Reply Attitude(BridgeCommand command)
+    {
+        string id = command.String("craft");
+        Vehicle? craft = id.Length > 0 ? World.Vehicles().FirstOrDefault(v => v.Id == id) : World.Controlled;
+        if (craft is null) return Failed(id.Length > 0 ? $"no craft '{id}' in this world" : "no craft is being flown");
+        if (Sync.IsPuppet(craft)) return Failed($"{craft.Id} is another player's");
+        // With nothing to point at, what the flight computer is doing about it now.
+        if (!command.Has("track")) return Done(World.Pointing(craft));
+        string track = command.String("track");
+        if (World.Track(craft, track) is { } why) return Failed(why);
+        return Done(new() { ["craft"] = craft.Id, ["track"] = track.Length > 0 ? track : "none" });
+    }
+
+    // A craft brought down on its engine. KSA holds a throttle to the engine's minimum, which is
+    // full for the engines a test has, so the engine is lit and shut instead: lit whenever the
+    // craft is falling faster than its height allows. With "climb" it is flown up that far first.
+    // With nothing it answers how the craft being brought down is doing.
+    private static Reply Land(BridgeCommand command)
+    {
+        if (!command.Has("craft") && !command.Has("climb") && !command.Has("stop"))
+        {
+            if (_landing is not { } l || !World.IsAlive(l.Craft)) return Done(new() { ["landing"] = null });
+            (double radar, double up) = World.Descent(l.Craft);
+            return Done(new()
+            {
+                ["landing"] = l.Craft.Id, ["climbed"] = l.Climbed, ["height_m"] = Math.Round(radar - l.Floor, 1),
+                ["up_m_s"] = Math.Round(up, 2), ["situation"] = l.Craft.Situation.ToString(), ["lit"] = World.EngineOf(l.Craft).On,
+            });
+        }
+        string id = command.String("craft");
+        Vehicle? craft = id.Length > 0 ? World.Vehicles().FirstOrDefault(v => v.Id == id) : World.Controlled;
+        if (craft is null) return Failed(id.Length > 0 ? $"no craft '{id}' in this world" : "no craft is being flown");
+        if (Sync.IsPuppet(craft)) return Failed($"{craft.Id} is another player's");
+        if (command.Flag("stop", false))
+        {
+            _landing = null;
+            World.SetEngine(craft, false, 0f);
+            return Done(new() { ["craft"] = craft.Id, ["stopped"] = true });
+        }
+        double floor = command.Has("floor") ? command.Number("floor", 0.0) : World.Descent(craft).Radar;
+        double climb = Math.Max(0.0, command.Number("climb", 0.0));
+        _landing = new Landing(craft, floor, climb, Climbed: climb <= 0.0, Math.Clamp(command.Number("slow", 1.5), 0.1, 50.0),
+            Math.Clamp(command.Number("touch", 1.0), 0.1, 20.0));
+        return Done(new() { ["craft"] = craft.Id, ["floor_m"] = Math.Round(floor, 2), ["climb_m"] = climb });
+    }
+
+    /// <param name="Floor">What the craft's radar altitude reads standing on the ground: its own height, near enough.</param>
+    /// <param name="Slow">The slowing the descent is planned on, m/s^2, which has to be less than the engine gives.</param>
+    /// <param name="Touch">How fast it is let come down the last of the way, m/s.</param>
+    private readonly record struct Landing(Vehicle Craft, double Floor, double Climb, bool Climbed, double Slow, double Touch);
+
+    private static Landing? _landing;
+
+    // Every frame, because a second between two answers is thirty metres of falling.
+    private static void FlyDown()
+    {
+        if (_landing is not { } l) return;
+        if (!World.IsAlive(l.Craft) || Sync.IsPuppet(l.Craft))
+        {
+            _landing = null;
+            return;
+        }
+        (double radar, double up) = World.Descent(l.Craft);
+        double height = radar - l.Floor;
+        if (!l.Climbed)
+        {
+            if (height < l.Climb)
+            {
+                World.SetEngine(l.Craft, true, 1f);
+                return;
+            }
+            _landing = l = l with { Climbed = true };
+        }
+        else if (l.Craft.Situation.HasAnyContact() && height < 1.0)
+        {
+            World.SetEngine(l.Craft, false, 0f);
+            _landing = null;
+            return;
+        }
+        // The speed a craft slowing at Slow from here would be doing, and the engine against any more.
+        double allowed = -(l.Touch + Math.Sqrt(2.0 * l.Slow * Math.Max(height, 0.0)));
+        World.SetEngine(l.Craft, up < allowed, up < allowed ? 1f : 0f);
+    }
+
+    // A craft flown onto another's docking port on its thrusters, as a player flies one: their port
+    // targeted, the craft controlled from its own, the flight computer holding the two lined up, and
+    // the translation keys held and let go. Nothing here docks anything: the two ports touch, and
+    // KSA docks them or does not. With nothing, how the approach is going.
+    private static Reply Approach(BridgeCommand command)
+    {
+        if (!command.Has("craft") && !command.Has("to") && !command.Has("stop")) return Done(Approaching());
+        string id = command.String("craft"), to = command.String("to");
+        Vehicle? craft = id.Length > 0 ? World.Vehicles().FirstOrDefault(v => v.Id == id) : World.Controlled;
+        if (craft is null) return Failed(id.Length > 0 ? $"no craft '{id}' in this world" : "no craft is being flown");
+        if (Sync.IsPuppet(craft)) return Failed($"{craft.Id} is another player's");
+        if (command.Flag("stop", false))
+        {
+            _approach = null;
+            World.Move(craft, 0, 0, 0, false);
+            return Done(new() { ["craft"] = craft.Id, ["stopped"] = true });
+        }
+        if (World.Vehicles().FirstOrDefault(v => v.Id == to) is not { } target) return Failed($"no craft '{to}' in this world");
+        if (World.AimAtPort(craft, target) is { } why) return Failed(why);
+        _approach = new Approach_(craft, target)
+        {
+            Began = Sync.Wall(),
+            Final = Math.Clamp(command.Number("final", 0.3), 0.05, 2.0),
+            Hold = Math.Clamp(command.Number("hold", 4.0), 1.0, 100.0),
+            ForSeconds = Math.Clamp(command.Number("seconds", 300.0), 10.0, 3600.0),
+            Fly = command.Flag("fly", true),
+        };
+        return Done(Approaching());
+    }
+
+    private sealed class Approach_(Vehicle craft, Vehicle target)
+    {
+        public Vehicle Craft { get; } = craft;
+        public Vehicle Target { get; } = target;
+        public string TargetId { get; } = target.Id;
+        public double Began, Final, Hold, ForSeconds;
+        /// <summary>False only measures: the craft is aimed and lined up, and no key is held.</summary>
+        public bool Fly;
+        public string Phase = "turning";
+        /// <summary>Which translation key is being tried, and since when, and what the closing velocity was when it went down.</summary>
+        public int Key;
+        public double KeySince;
+        public double3 Before;
+        /// <summary>What each of forward, right and up does to this craft, m/s^2 in its own frame.</summary>
+        public double3[] Pushes = new double3[3];
+        public string? Ended;
+        public double Along, Across, Closing, Angle;
+    }
+
+    private static Approach_? _approach;
+
+    // How long each key is held to learn what it does, and the least push that counts as one, m/s.
+    private const double TryKeySeconds = 0.4, LeastPush = 0.003;
+
+    // What a key is not held for: less than this short of the speed wanted, m/s.
+    private const double NearEnoughSpeed = 0.02;
+
+    private static Dictionary<string, object?> Approaching()
+    {
+        if (_approach is not { } a) return new() { ["approaching"] = null };
+        return new()
+        {
+            ["approaching"] = a.TargetId, ["craft"] = a.Craft.Id, ["phase"] = a.Phase, ["ended"] = a.Ended,
+            ["along_m"] = Math.Round(a.Along, 2), ["across_m"] = Math.Round(a.Across, 2),
+            ["closing_m_s"] = Math.Round(a.Closing, 3), ["angle_deg"] = Math.Round(a.Angle, 1),
+            ["pushes_m_s2"] = a.Pushes.Select(p => (object?)Math.Round(World.Vec(p), 4)).ToList(),
+            ["for_s"] = Math.Round(Sync.Wall() - a.Began, 1),
+            ["pointing"] = World.IsAlive(a.Craft) ? World.Pointing(a.Craft) : null,
+        };
+    }
+
+    // Every frame. What each key does is found by holding it and watching, because which way a
+    // craft's thrusters push is the craft's business and KSA's, and a guess is a craft flown away.
+    private static void FlyToPort()
+    {
+        if (_approach is not { Ended: null } a) return;
+        void End(string why)
+        {
+            a.Ended = why;
+            if (World.IsAlive(a.Craft)) World.Move(a.Craft, 0, 0, 0, false);
+        }
+        if (!World.IsAlive(a.Craft) || !World.IsAlive(a.Target))
+        {
+            End("one of the two craft is gone, which is what docking does to the lighter");
+            return;
+        }
+        if (World.Ports(a.Craft, a.Target) is not { } at)
+        {
+            End("a port is no longer free");
+            return;
+        }
+        double now = Sync.Wall();
+        a.Along = double3.Dot(at.Apart, at.Axis);
+        double3 across = at.Apart - (at.Axis * a.Along);
+        a.Across = World.Vec(across);
+        a.Closing = double3.Dot(at.Closing, at.Axis);
+        a.Angle = Math.Acos(Math.Clamp(-double3.Dot(at.Mine, at.Axis), -1.0, 1.0)) * 180.0 / Math.PI;
+        if (now - a.Began > a.ForSeconds)
+        {
+            End("ran out of time");
+            return;
+        }
+        // Asked for again until it holds: what is written to a craft's flight computer while a
+        // physics step is out is written over by the copy that step brings back.
+        if (!World.Aligning(a.Craft) && World.AimAtPort(a.Craft, a.Target) is { } why)
+        {
+            End(why);
+            return;
+        }
+        if (!a.Fly) return;
+        doubleQuat cce2Body = at.Body2Cce.Inverse();
+        if (a.Phase == "turning")
+        {
+            if (a.Angle > 5.0 && now - a.Began < 90.0) return;
+            (a.Phase, a.Key, a.KeySince, a.Before) = ("trying", 0, now, at.Closing);
+        }
+        if (a.Phase == "trying")
+        {
+            World.Move(a.Craft, a.Key == 0 ? 1 : 0, a.Key == 1 ? 1 : 0, a.Key == 2 ? 1 : 0, false);
+            if (now - a.KeySince < TryKeySeconds) return;
+            double3 gained = at.Closing - a.Before;
+            if (World.Vec(gained) < LeastPush)
+            {
+                End($"the {new[] { "forward", "right", "up" }[a.Key]} key moved the craft {World.Vec(gained):0.0000} m/s in {TryKeySeconds} s: it has no thrusters that answer it");
+                return;
+            }
+            a.Pushes[a.Key] = gained.Transform(cce2Body) / (now - a.KeySince);
+            (a.Key, a.KeySince, a.Before) = (a.Key + 1, now, at.Closing);
+            if (a.Key < 3) return;
+            a.Phase = "flying";
+        }
+        // Onto the line out of their port first, held off it; then down the line, slowing, and
+        // never slower than the last of it is to be taken at.
+        bool lined = a.Across < Math.Max(0.15, 0.05 * a.Along);
+        double closing = lined ? -Math.Clamp(0.1 * a.Along, a.Final, 1.0) : -Math.Clamp(0.1 * (a.Along - a.Hold), -0.5, 1.0);
+        double3 wanted = at.Axis * closing;
+        if (a.Across > 1e-6 && (lined || a.Along > a.Hold - 1.0)) wanted -= across * (Math.Min(0.2 * a.Across, 0.5) / a.Across);
+        double3 lacking = (wanted - at.Closing).Transform(cce2Body);
+        double3 p0 = a.Pushes[0], p1 = a.Pushes[1], p2 = a.Pushes[2];
+        double det = double3.Dot(p0, double3.Cross(p1, p2));
+        if (Math.Abs(det) < 1e-12)
+        {
+            End("the three keys do not push three ways");
+            return;
+        }
+        // Seconds of each key that would make up what is lacking, and a key held for any worth holding.
+        double forward = double3.Dot(lacking, double3.Cross(p1, p2)) / det;
+        double right = double3.Dot(p0, double3.Cross(lacking, p2)) / det;
+        double up = double3.Dot(p0, double3.Cross(p1, lacking)) / det;
+        static int Held(double seconds, double3 push) => Math.Abs(seconds) * World.Vec(push) < NearEnoughSpeed ? 0 : Math.Sign(seconds);
+        World.Move(a.Craft, Held(forward, p0), Held(right, p1), Held(up, p2), false);
+    }
+
+    // Two craft docked, through the same event KSA's own contact between two docking ports raises:
+    // the one way two craft become one without flying one onto the other's port.
+    private static Reply Dock(BridgeCommand command)
+    {
+        string id = command.String("craft"), to = command.String("to");
+        Vehicle? craft = id.Length > 0 ? World.Vehicles().FirstOrDefault(v => v.Id == id) : World.Controlled;
+        if (craft is null) return Failed(id.Length > 0 ? $"no craft '{id}' in this world" : "no craft is being flown");
+        if (command.Flag("undo", false))
+        {
+            int before = craft.Parts.Count;
+            if (World.Undock(craft) is { } no) return Failed(no);
+            return Done(new() { ["craft"] = craft.Id, ["parts"] = before, ["undocking"] = true });
+        }
+        if (World.Vehicles().FirstOrDefault(v => v.Id == to) is not { } other) return Failed($"no craft '{to}' in this world");
+        if (ReferenceEquals(craft, other)) return Failed("a craft does not dock with itself");
+        if (World.CannotDock(craft, other) is { } why) return Failed(why);
+        Sync.DockLater(craft, other);
+        // Asked, not done, as a part failure is: it takes one craft out of the world's vehicles.
+        return Done(new() { ["craft"] = craft.Id, ["to"] = other.Id, ["parts"] = craft.Parts.Count + other.Parts.Count, ["asked"] = true });
     }
 
     // A craft's engine lit or shut, which is the ignition key and the throttle: for a test that has
@@ -754,6 +1080,7 @@ internal sealed class Bridge
         if (read && Read(save) is { } straight) return straight;
 
         double waited = 0.0;
+        ulong? since = null;
         _running = dtPlayer =>
         {
             waited += dtPlayer;
@@ -761,6 +1088,16 @@ internal sealed class Bridge
             {
                 if (!World.Loaded)
                     return waited > StartWithinSeconds ? Failed($"no world after {StartWithinSeconds:0} s") : null;
+                // And not on the pass that world first says it is up, which is still the popup's own:
+                // KSA has drawn no frame of it yet. A kitten built out of a save read then is drawn
+                // torn open for as long as it lives -- its helmet whole and its body in long dark
+                // blades -- in the one game that never loads another world, while both games count
+                // one part and agree on its name. errors.md has the runs. A player cannot get here:
+                // a hand reaches Load frames later, and a world from a server is loaded from the
+                // frame hook.
+                since ??= World.Frames;
+                if (World.Frames - since.Value < StartedFrames)
+                    return waited > StartWithinSeconds ? Failed($"the world was not drawn in {StartWithinSeconds:0} s") : null;
                 if (Read(save) is { } bad) return bad;
                 (read, waited) = (true, 0.0);
                 return null;
@@ -855,6 +1192,29 @@ internal sealed class Bridge
 
     // Photographs through KSA's own capture, which names files to the second: so each one is moved
     // aside and renamed before the next is asked for, and two can never be one file.
+    // Where every craft stood at every step, written down between a start and a stop: two commands
+    // rather than one that waits, so a run can do things to the craft while they are being recorded.
+    private static Reply RecordMotion(BridgeCommand command)
+    {
+        if (command.Flag("start", false))
+        {
+            Motion.Begin();
+            return Done(new() { ["recording"] = true });
+        }
+        if (!command.Flag("stop", false)) return Done(new() { ["recording"] = Motion.On });
+        string folder = Path.Combine(Outbox, command.Id);
+        Directory.CreateDirectory(folder);
+        string file = Path.Combine(folder, "motion.jsonl");
+        try
+        {
+            return Done(new() { ["file"] = file, ["lines"] = Motion.End(file) });
+        }
+        catch (Exception e)
+        {
+            return Failed($"the recording could not be written: {e.GetBaseException().Message}");
+        }
+    }
+
     private Reply? BeginCapture(BridgeCommand command)
     {
         string label = command.String("label");

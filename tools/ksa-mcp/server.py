@@ -45,9 +45,13 @@ def user_dir() -> Path:
     return _user_dir
 
 
-def bridge() -> Path:
+def bridge_of(profile: Path) -> Path:
     # The mod's own subfolder, so another mod's bridge never answers a command meant for this one.
-    return user_dir() / "Logs" / "bridge" / "KSAMultiplayer"
+    return profile / "Logs" / "bridge" / "KSAMultiplayer"
+
+
+def bridge() -> Path:
+    return bridge_of(user_dir())
 
 
 def game_running() -> bool:
@@ -71,7 +75,12 @@ def wsl(path: str) -> str:
 
 def send(cmd: str, timeout: float = 30.0, **args) -> dict:
     """One command to the mod, and its reply. Raises Refused with the mod's own reason."""
-    inbox, outbox = bridge() / "in", bridge() / "out"
+    return send_to(bridge(), cmd, timeout, **args)
+
+
+def send_to(folder: Path, cmd: str, timeout: float = 30.0, **args) -> dict:
+    """One command to the game whose bridge this folder is, so one process can drive two games."""
+    inbox, outbox = folder / "in", folder / "out"
     inbox.mkdir(parents=True, exist_ok=True)
     ident = f"{time.time_ns()}"
     body = {"id": ident, "cmd": cmd, **{k: v for k, v in args.items() if v is not None}}
@@ -224,8 +233,9 @@ TOOLS = {
                 {"craft": {"type": "string"}, "kitten": {"type": "string"}}, [],
                 lambda a: _dump(send("eva", **a))),
     "ksa_watch": ("Put the camera on a craft without taking it over, which is the only thing anyone can "
-                  "do with a craft another player flies.",
-                  {"craft": {"type": "string"}}, ["craft"],
+                  "do with a craft another player flies. Or on a 'body', as picking a planet in the map does: "
+                  "KSA lets go of the craft being flown, which is a game at no craft at all.",
+                  {"craft": {"type": "string"}, "body": {"type": "string"}}, [],
                   lambda a: _dump(send("watch", **a))),
     "ksa_warpkey": ("Press a warp key: by 1 faster, -1 slower, 0 for normal speed. While connected the "
                     "mod works the speed out from the warp the server is running, not this world's.",
@@ -299,6 +309,49 @@ TOOLS = {
                      "every_frames": _num("frames"), "width": _num("px"),
                      "ui": {"type": "boolean", "description": "keep the interface, to see the mod's window"}}, [],
                     lambda a: capture(**a)),
+    "ksa_motion": ("Record where every craft this game owns or is sent stands, at every frame and physics "
+                   "step: start=true begins, stop=true ends and names the file. tools/motion.py records "
+                   "both games at once and lays the two accounts side by side.",
+                   {"start": {"type": "boolean"}, "stop": {"type": "boolean"}}, [],
+                   lambda a: _dump(send("motion", timeout=60, **a))),
+    "ksa_move": ("Hold a craft's translation keys, or let them go (stop=true): forward, right and up are "
+                 "1, -1 or 0. A kitten on the ground walks, and sprints with sprint=true; a craft "
+                 "fires its thrusters. The named craft, or the flown one. Held until told otherwise.",
+                 {"craft": {"type": "string"}, "forward": _num("1, -1 or 0"), "right": _num("1, -1 or 0"),
+                  "up": _num("1, -1 or 0"), "sprint": {"type": "boolean"}, "stop": {"type": "boolean"}}, [],
+                 lambda a: _dump(send("move", **a))),
+    "ksa_put": ("Put a craft beside another (beside), so many metres further out and moving as it "
+                "moves: two craft in one place with nobody flying a rendezvous. With no beside it is "
+                "lifted that far above where it stands and let go. With 'port' it is put that far out in "
+                "front of the other's free docking port, which is where an approach starts.",
+                {"craft": {"type": "string"}, "beside": {"type": "string"}, "metres": _num("how far out"),
+                 "port": {"type": "boolean"}}, [],
+                lambda a: _dump(send("put", **a))),
+    "ksa_attitude": ("Tell a craft's flight computer what to point at, as the buttons on KSA's panel do: "
+                     "Up, Prograde, Retrograde, RadialOut and the rest, or none to hand it back. The named "
+                     "craft, or the flown one.",
+                     {"craft": {"type": "string"}, "track": {"type": "string"}}, [],
+                     lambda a: _dump(send("attitude", **a))),
+    "ksa_land": ("Bring a craft down on its engine, lighting and shutting it, since KSA holds a throttle to "
+                 "the engine's minimum: 'climb' flies it up that many metres first, 'slow' is the slowing the "
+                 "descent is planned on in m/s^2, 'touch' the last speed. With nothing, how it is doing.",
+                 {"craft": {"type": "string"}, "climb": _num("m"), "slow": _num("m/s^2"), "touch": _num("m/s"),
+                  "stop": {"type": "boolean"}}, [],
+                 lambda a: _dump(send("land", **a))),
+    "ksa_dock": ("Dock two craft port to port wherever they are, through the event KSA's own contact "
+                 "raises: the lighter is taken into the heavier. With 'undo', undock the craft at its first "
+                 "docked port, as the port's own menu does.",
+                 {"craft": {"type": "string"}, "to": {"type": "string"}, "undo": {"type": "boolean"}}, [],
+                 lambda a: _dump(send("dock", **a))),
+    "ksa_approach": ("Fly a craft onto another's docking port on its thrusters: their port targeted, the craft "
+                     "controlled from its own, the flight computer lining the two up, each translation key "
+                     "tried to learn what it does and then held as needed. Nothing here docks them: the ports "
+                     "touch and KSA does. 'final' is the last closing speed in m/s, 'hold' how far out it "
+                     "waits to be on the port's line, 'fly' false only aims and measures. With nothing, how it "
+                     "is going.",
+                     {"craft": {"type": "string"}, "to": {"type": "string"}, "final": _num("m/s"), "hold": _num("m"),
+                      "seconds": _num("s"), "fly": {"type": "boolean"}, "stop": {"type": "boolean"}}, [],
+                     lambda a: _dump(send("approach", **a))),
     "ksa_log": ("The mod's log, filtered.", {"pattern": {"type": "string"}, "lines": _num("count")}, [],
                 lambda a: [_text(log_tail(a.get("pattern", ""), int(a.get("lines", 40))))]),
 }
