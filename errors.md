@@ -580,8 +580,13 @@ A ends the warp
   ... 24 s later, both still frozen at the same universe time, behind_s closing at 1 s per second
 ```
 
-A was stopped for about eight minutes and B for about six. Note that it hits **everyone in the
-room**, not only whoever asked: Goddchen being alone only meant nobody else was there to report it.
+A was stopped for about eight minutes and B for about six, and the recovery was confirmed at exactly
+one second per second over the following 200 s: A went from -469 to -270 while its universe time did
+not move at all. **The warp itself had run for about half a minute.** Thirty seconds of warp bought
+eight minutes of a game that would not run, which is the ratio between the two ceilings -- a gap
+opened at up to 1000x and repaid at 1x.
+
+Note that it hits **everyone in the room**, not only whoever asked: Goddchen being alone only meant nobody else was there to report it.
 Note also that the two games ended the warp 100 universe-seconds apart, so the size of each player's
 stop is whatever their own frame timing happened to leave them with.
 
