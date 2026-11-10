@@ -6,6 +6,7 @@
 #     ./tools/two-games.sh --test     # ...then run a server, join A and B, and say what each sees
 #     ./tools/two-games.sh --dir A    # print a profile's folder
 #     ./tools/two-games.sh --stop     # close both games and the server
+#     ./tools/two-games.sh --priority # ask Windows again not to throttle the game behind
 #
 # KSAMP_TWO_GAMES_PLUMES=1 turns the plume trails on, for watching another player's engine burn.
 # They are off by default because two games with them on have run this card out of memory.
@@ -41,6 +42,29 @@ win() { wslpath -w "$1"; }
 
 if [[ "${1:-}" == "--dir" ]]; then
     echo "$TEST_ROOT/${2:?A or B}"
+    exit 0
+fi
+
+# Windows gives the window in front the processor and throttles the one behind it, and both copies
+# have to keep a clock. Windows sets this per process and does not take it away, but a game touched,
+# relaunched or started beside these two has never had it, so this is worth asking for again.
+unthrottle() {
+    # shellcheck disable=SC2016  # the dollars are PowerShell's
+    powershell.exe -NoProfile -Command '
+Add-Type -TypeDefinition @"
+using System; using System.Runtime.InteropServices;
+public static class Throttle {
+  [StructLayout(LayoutKind.Sequential)] public struct State { public uint Version; public uint ControlMask; public uint StateMask; }
+  [DllImport("kernel32.dll")] public static extern bool SetProcessInformation(IntPtr h, int kind, ref State s, int size);
+  public static bool Off(IntPtr h) { var s = new State { Version = 1, ControlMask = 1, StateMask = 0 }; return SetProcessInformation(h, 4, ref s, Marshal.SizeOf(s)); }
+}
+"@
+Get-Process StarMap | ForEach-Object { $_.PriorityClass = "High"; [void][Throttle]::Off($_.Handle) }' >/dev/null 2>&1 || true
+    echo "both at high priority, unthrottled"
+}
+
+if [[ "${1:-}" == "--priority" ]]; then
+    unthrottle
     exit 0
 fi
 
@@ -155,20 +179,7 @@ for name in A B; do
     echo "launched $name"
 done
 
-# Windows gives the window in front the processor and throttles the one behind it, and both copies
-# have to keep a clock.
-# shellcheck disable=SC2016  # the dollars are PowerShell's
-powershell.exe -NoProfile -Command '
-Add-Type -TypeDefinition @"
-using System; using System.Runtime.InteropServices;
-public static class Throttle {
-  [StructLayout(LayoutKind.Sequential)] public struct State { public uint Version; public uint ControlMask; public uint StateMask; }
-  [DllImport("kernel32.dll")] public static extern bool SetProcessInformation(IntPtr h, int kind, ref State s, int size);
-  public static bool Off(IntPtr h) { var s = new State { Version = 1, ControlMask = 1, StateMask = 0 }; return SetProcessInformation(h, 4, ref s, Marshal.SizeOf(s)); }
-}
-"@
-Get-Process StarMap | ForEach-Object { $_.PriorityClass = "High"; [void][Throttle]::Off($_.Handle) }' >/dev/null 2>&1 || true
-echo "both at high priority, unthrottled"
+unthrottle
 
 [[ "${1:-}" == "--test" ]] || exit 0
 
@@ -192,11 +203,12 @@ fi
 
 rm -rf "$DATA"
 mkdir -p "$DATA"
+echo "$SERVER_ON" > "$HERE/.two-games-server.on"
 if [[ "$SERVER_ON" == "linux" ]]; then
     "$HERE/tools/build.sh" >/dev/null
     echo "starting the Linux server on port $PORT"
     dotnet "$HERE/src/Server/bin/Release/net10.0/ksamp-server.dll" --port "$PORT" --data "$DATA" --name "two-games" \
-        > "$HERE/.two-games-server.log" 2>&1 &
+        --warp-answer 3 > "$HERE/.two-games-server.log" 2>&1 &
 else
     echo "note: WSL is in $(wslinfo --networking-mode 2>/dev/null || echo nat) mode, where the games cannot reach a server inside WSL."
     echo "      Running a Windows build instead. For the Linux server, put networkingMode=mirrored in"
@@ -206,7 +218,7 @@ else
     cp "$HERE/dist/ksamp-server-win-x64/ksamp-server.exe" "$SERVER_EXE"
     echo "starting the Windows server on port $PORT"
     "$SERVER_EXE" --port "$PORT" --data "$(win "$DATA")" --name "two-games" \
-        > "$HERE/.two-games-server.log" 2>&1 &
+        --warp-answer 3 > "$HERE/.two-games-server.log" 2>&1 &
 fi
 SERVER_PID=$!
 disown

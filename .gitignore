@@ -12,6 +12,8 @@ dist/
 # The two-games harness: a scratch world for the test server, and the logs of a run.
 .two-games-data/
 .two-games-server.log
+.two-games-server.on
+.two-games-runs/
 .two-games-run.log
 
 # Infrastructure: credentials and local working files. The provider lock file is committed, so
@@ -32,3 +34,6 @@ infra/**/tfplan
 # per-machine permissions, and real git worktrees for parallel agents.
 .claude/settings.local.json
 .claude/worktrees/
+
+# Python leaves these beside the bridge's driver.
+__pycache__/
