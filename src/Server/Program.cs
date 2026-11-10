@@ -36,6 +36,9 @@ const string Usage = """
                              sees the announcement arrive from)
       --directories <urls>   where to announce, separated by commas (default: the built-in list)
       --config <path>        the settings file (default: ksamp-server.toml beside the server)
+      --trace <path>         write the clock, the warp and how late each player says they are to
+                             this file, a line of JSON at a time, for a test that samples a room
+                             through a warp. A flag only, and no setting
       --help                 this
 
     Or, instead of serving anything, stand between the games and a real server and hold their
@@ -50,9 +53,9 @@ const string Usage = """
                              of its own: it is what a delay that varies already means
       --drop <share>         the share of datagrams thrown away, 0 to 1 (default 0)
 
-    Every option but --config can also be given as an environment variable -- KSAMP_PORT,
+    Every option but --config and --trace can also be given as an environment variable -- KSAMP_PORT,
     KSAMP_NAME, KSAMP_PASSWORD and so on, the option's name in capitals with dashes as
-    underscores -- and every one but --world and --config as a line in the settings file:
+    underscores -- and every one but --world, --config and --trace as a line in the settings file:
     port = 50100. A flag wins over the environment, and the environment over the file. With no
     file, the server writes one with every setting at its default.
 
@@ -170,7 +173,10 @@ if (opts.Remove("relay", out string? passTo))
         // the one it measured, so a run never has to take the asked-for number on trust.
         double next = relay.NextDueIn();
         if (next > 0.0015) Thread.Sleep(next > 0.02 ? 5 : 1);
-        if (relay.Counts() is var now && now.Passed + now.Dropped > 0 && Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency - said > 15.0)
+        // The clock first: counting is what starts the next interval, so asked every pass it
+        // reported the delay of whatever had gone through since the pass before, which was mostly
+        // nothing, and said 0 ms.
+        if (Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency - said > 15.0 && relay.Counts() is var now && now.Passed + now.Dropped > 0)
         {
             said = Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
             Console.WriteLine($"{now.Games} game(s), {now.Passed} through, {now.Dropped} dropped, "
@@ -178,6 +184,10 @@ if (opts.Remove("relay", out string? passTo))
         }
     }
 }
+
+// A test's instrument and not a setting: taken out here, before anything that reads the settings
+// sees it, so the file an operator edits never grows a line for it.
+string? tracePath = opts.Remove("trace", out string? traceTo) ? Path.GetFullPath(traceTo) : null;
 
 string configPath = Path.GetFullPath(opts.Remove("config", out string? asked) ? asked : Settings.DefaultPath);
 
@@ -277,6 +287,24 @@ Say(server.HasWorld ? "a world is ready to hand out" : "no world yet: the first 
 // Said at every start whichever way it is set, so an operator reading the log at least learns that
 // the setting is there. A list nobody opts into is an empty list.
 Say(announcer.Standing());
+
+// Shared for reading, because whatever reads it does so while this is still writing.
+ClockTrace? trace = null;
+if (tracePath is not null)
+{
+    try
+    {
+        trace = new ClockTrace(new StreamWriter(new FileStream(tracePath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete)));
+        Say($"tracing the clock to {tracePath}");
+    }
+    catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+    {
+        Console.Error.WriteLine($"could not start: --trace {tracePath}: {e.Message}");
+        return 1;
+    }
+}
+// The time of day, which is the one clock this process and a game on the same machine both read.
+double Wall() => (DateTime.UtcNow - DateTime.UnixEpoch).TotalSeconds;
 
 CancellationTokenSource stop = new();
 Console.CancelKeyPress += (_, e) =>
@@ -524,9 +552,12 @@ while (!stop.IsCancellationRequested)
 {
     try
     {
+        // Before the commands as well as the tick: a reload moves the clock as surely as a warp does.
+        trace?.Before(server, Now(), Wall());
         while (commands.TryDequeue(out string? c)) Command(c);
         while (server.Asked.TryDequeue(out (GameServer.Player Who, string Line) a)) Command(a.Line, a.Who);
         server.Tick();
+        trace?.After(server, Now(), Wall());
         announcer.Tick();
         while (server.Said.TryDequeue(out string? s)) Say(s);
         while (announcer.Said.TryDequeue(out string? s)) Say(s);
