@@ -129,7 +129,7 @@ public class ClockTests
 
         // Half a second past the newest word, which is where a craft its owner is not flying spends
         // most of its life: the attitude used to be frozen there and the velocity left as it was.
-        Wire.State s = Assert.IsType<Wire.State>(track.At(11.0 + Track.DelaySeconds));
+        Wire.State s = Assert.IsType<Wire.State>(track.At(11.0));
         Assert.Equal(11.0, s.Universe, 6);
 
         // A quarter of a quarter-turn: 22.5 degrees about Z.
@@ -142,7 +142,7 @@ public class ClockTests
         // And carried on at the acceleration the last two words showed, never for longer than the
         // interval they spanned -- a craft that stages changes that all at once.
         Assert.Equal(20.0, s.VelocityCcf.X, 6);
-        Wire.State far = Assert.IsType<Wire.State>(track.At(12.5 + Track.DelaySeconds));
+        Wire.State far = Assert.IsType<Wire.State>(track.At(12.5));
         Assert.Equal(20.0, far.VelocityCcf.X, 6);
     }
 
@@ -169,7 +169,7 @@ public class ClockTests
         track.Add(At(10.0, 100));
         track.Add(At(10.1, 101));
         track.Add(At(10.05, 100.5));
-        Wire.State s = Assert.IsType<Wire.State>(track.At(10.075 + Track.DelaySeconds));
+        Wire.State s = Assert.IsType<Wire.State>(track.At(10.075));
         Assert.Equal(100.75, s.PositionCcf.X, 6);
     }
 
@@ -178,7 +178,7 @@ public class ClockTests
     {
         Track track = new();
         track.Add(At(10.0, 100));
-        Assert.Equal(105, track.At(10.5 + Track.DelaySeconds)!.PositionCcf.X, 6);
+        Assert.Equal(105, track.At(10.5)!.PositionCcf.X, 6);
         Assert.Equal(100 + (10 * Track.MostAheadSeconds), track.At(60)!.PositionCcf.X, 6);
     }
 
@@ -188,20 +188,21 @@ public class ClockTests
         Track track = new();
         track.Add(At(10.0, 100));
         track.Add(At(10.1, 5) with { Body = "Moon" });
-        Assert.Equal("Moon", track.At(10.05 + Track.DelaySeconds)!.Body);
-        Assert.Equal(5, track.At(10.05 + Track.DelaySeconds)!.PositionCcf.X, 6);
+        Assert.Equal("Moon", track.At(10.05)!.Body);
+        Assert.Equal(5, track.At(10.05)!.PositionCcf.X, 6);
     }
 
     [Fact]
     public void AStateOlderThanEverythingKeptTakesNothingElsesPlace()
     {
         Track track = new();
-        for (int i = 0; i < 40; i++) track.Add(At(10.0 + (i * 0.05), i));
+        for (int i = 0; i < 200; i++) track.Add(At(10.0 + (i * 0.05), i));
         double newest = track.Newest!.Universe, oldest = track.At(0.0)!.Universe;
+        Assert.InRange(newest - oldest, Track.KeptSeconds - 0.06, Track.KeptSeconds);
 
-        // There is nothing to put it between and no room for it: what it must not do is go in at the
-        // front and then come off the front again as the oldest, which is what dropping the oldest
-        // comes to when the newcomer is it.
+        // There is nothing to put it between and it is older than anything kept: what it must not do
+        // is go in at the front and then come off the front again as the oldest, which is what
+        // dropping the oldest comes to when the newcomer is it.
         track.Add(At(oldest - 0.5, -1.0));
         Assert.Equal(newest, track.Newest!.Universe, 6);
         Assert.Equal(oldest, track.At(0.0)!.Universe, 6);

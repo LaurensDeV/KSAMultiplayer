@@ -158,19 +158,44 @@ public static class ClockFollow
 }
 
 /// <summary>
-/// Another player's craft as the states it has sent, by the universe time each was at: every world
-/// keeps the same universe time, so a craft is drawn a little in the past, between the two states
-/// either side of then, and carried on by its velocity past the newest for a moment.
+/// Another player's craft as the states it has sent, by the universe time each was at. Every world
+/// keeps the same universe time, so a craft is drawn where it is at this world's own: carried on
+/// from its newest state by the speed it had and the way that speed was changing, or between two
+/// states where this world is behind them.
+///
+/// <para>Not a little in the past, which is how a thing that walks is drawn smoothly and how this
+/// was drawn until it was measured. A craft in low orbit covers 1,083 m in 150 ms, and a game steps
+/// another player's craft itself whenever nothing is pushing it, to the millimetre and at the
+/// present. So a craft coasting stood where it was and a craft burning stood where it had been: it
+/// was put back a kilometre the instant its engine lit, a kitten out of a hatch appeared a
+/// kilometre behind the capsule it had left, and nothing two players flew was ever beside anything
+/// else in orbit. What drawing in the present costs is a guess a round trip long, which the wire
+/// simulation in <c>tests/TrackTests.cs</c> puts at millimetres for anything not turning sharply
+/// and one step of a few tens of centimetres when an engine cuts.</para>
 /// </summary>
 public sealed class Track
 {
-    /// <summary>How far in the past a craft is drawn, s: enough for the next state to have come at 20 a second with some lost.</summary>
-    public const double DelaySeconds = 0.15;
-
     /// <summary>The longest a craft is carried on past its newest state, s.</summary>
     public const double MostAheadSeconds = 1.0;
 
-    private const int Kept = 32;
+    /// <summary>How long past its newest state a craft is taken to go on changing speed as it was, s, where its states come closer together than this.</summary>
+    public const double CarrySeconds = 0.25;
+
+    /// <summary>
+    /// How far back a craft's states are kept, s, and the most of them.
+    ///
+    /// <para>By how long, because a world may be asked where a craft was. One that has just joined
+    /// is two or three seconds behind the world it joined and gives a tenth of a second of that back
+    /// every second, so for half a minute it asks about a time that far before the newest state.
+    /// Thirty-two states were kept, which at twenty a second is a second and a half: a world further
+    /// behind than that was answered with the oldest state there was, up to a second and more ahead
+    /// of the time it had asked about, and told the craft was there -- eight kilometres away in low
+    /// orbit, every step, until it had caught up. This is past what a nudge closes; beyond that a
+    /// world warps to catch up and is behind for moments.</para>
+    /// </summary>
+    public const double KeptSeconds = 4.0;
+
+    private const int MostKept = 512;
 
     private readonly List<Wire.State> _states = [];
 
@@ -194,12 +219,14 @@ public sealed class Track
         }
         int at = _states.Count;
         while (at > 0 && _states[at - 1].Universe >= s.Universe) at--;
-        // Older than everything there is room for. Dropped where it is seen, rather than inserted
-        // at the front and then taken off the front again as the oldest, which is what dropping the
-        // oldest comes to when the newcomer is it.
-        if (at == 0 && _states.Count >= Kept) return;
+        // Older than everything that is kept. Dropped where it is seen, rather than inserted at the
+        // front and then taken off the front again as the oldest, which is what dropping the oldest
+        // comes to when the newcomer is it.
+        if (at == 0 && _states.Count > 0 && (s.Universe < _states[^1].Universe - KeptSeconds || _states.Count >= MostKept)) return;
         _states.Insert(at, s);
-        if (_states.Count > Kept) _states.RemoveAt(0);
+        // Two at least, however far apart: under a warp they are said once in many universe-seconds,
+        // and a craft is carried on from the last two.
+        while (_states.Count > 2 && (_states.Count > MostKept || _states[0].Universe < _states[^1].Universe - KeptSeconds)) _states.RemoveAt(0);
     }
 
     public void Clear() => _states.Clear();
@@ -208,7 +235,7 @@ public sealed class Track
     public Wire.State? At(double universe)
     {
         if (_states.Count == 0) return null;
-        double t = universe - DelaySeconds;
+        double t = universe;
         Wire.State newest = _states[^1];
         if (t >= newest.Universe)
         {
@@ -216,18 +243,34 @@ public sealed class Track
             // Moving as it was last seen to be changing, not as it was. The mod writes this velocity
             // into the craft outright, so a craft past its newest state was commanded at the speed it
             // had up to a second ago -- four metres a second out in freefall. Taken from the two
-            // newest states, and never carried further forward than the interval they span: a craft
-            // that stages or throttles changes its acceleration all at once, and a guess from before
-            // that would run away.
+            // newest states, and carried forward for only so long: a craft that stages or throttles
+            // changes its acceleration all at once, and a guess from before that would run away.
             (Vec3 velocityCcf, Vec3 velocityCci) = (newest.VelocityCcf, newest.VelocityCci);
+            (Vec3 positionCcf, Vec3 positionCci) = (newest.PositionCcf + (newest.VelocityCcf * ahead), newest.PositionCci + (newest.VelocityCci * ahead));
             if (_states.Count > 1 && _states[^2].Body == newest.Body)
             {
                 double span = newest.Universe - _states[^2].Universe;
                 if (span > 1e-6)
                 {
-                    double k = Math.Min(ahead / span, 1.0);
-                    velocityCcf += (newest.VelocityCcf - _states[^2].VelocityCcf) * k;
-                    velocityCci += (newest.VelocityCci - _states[^2].VelocityCci) * k;
+                    // For the interval the two words spanned, or a quarter of a second where that
+                    // is longer. A craft being flown is said twenty times a second, and on a line
+                    // of 150 ms each way it is drawn a fifth of a second past its newest word the
+                    // whole time: three intervals of a rocket's burn left out of where it is.
+                    double changing = Math.Min(ahead, Math.Max(span, CarrySeconds)), k = changing / span;
+                    (Vec3 gainedCcf, Vec3 gainedCci) = (newest.VelocityCcf - _states[^2].VelocityCcf, newest.VelocityCci - _states[^2].VelocityCci);
+                    velocityCcf += gainedCcf * k;
+                    velocityCci += gainedCci * k;
+                    // And moved by the speed it is said to have had on the way. Carried on at the
+                    // speed of its newest word alone, a craft in low orbit was drawn half a metre
+                    // inside its own path by the time the next word came and then put back, twice
+                    // a second, for any craft its owner was not flying -- which is drawn past its
+                    // newest word seven tenths of the time on no wire at all -- and a rocket at
+                    // three g on a long line was drawn 0.6 m behind itself throughout. This is the
+                    // distance covered at a speed changing as above: steadily for as long as that,
+                    // and not at all after it.
+                    double covered = ((0.5 * changing * changing) + (changing * (ahead - changing))) / span;
+                    positionCcf += gainedCcf * covered;
+                    positionCci += gainedCci * covered;
                 }
             }
             // Turned as well as moved. Only the two positions used to be carried on, so a craft past
@@ -238,8 +281,8 @@ public sealed class Track
             return newest with
             {
                 Universe = newest.Universe + ahead,
-                PositionCcf = newest.PositionCcf + (newest.VelocityCcf * ahead),
-                PositionCci = newest.PositionCci + (newest.VelocityCci * ahead),
+                PositionCcf = positionCcf,
+                PositionCci = positionCci,
                 VelocityCcf = velocityCcf,
                 VelocityCci = velocityCci,
                 Body2Ccf = (newest.Body2Ccf * Quat.Turn(newest.Spin, ahead)).Normalized(),
@@ -253,15 +296,32 @@ public sealed class Track
         Wire.State a = _states[i], b = _states[i + 1];
         // Across a change of parent body the two are in different frames.
         if (a.Body != b.Body) return b;
-        double f = (t - a.Universe) / (b.Universe - a.Universe);
+        double between = b.Universe - a.Universe, f = (t - a.Universe) / between;
         return b with
         {
             Universe = t,
-            PositionCcf = a.PositionCcf + ((b.PositionCcf - a.PositionCcf) * f),
+            PositionCcf = Along(a.PositionCcf, a.VelocityCcf, b.PositionCcf, b.VelocityCcf, f, between),
             VelocityCcf = a.VelocityCcf + ((b.VelocityCcf - a.VelocityCcf) * f),
-            PositionCci = a.PositionCci + ((b.PositionCci - a.PositionCci) * f),
+            PositionCci = Along(a.PositionCci, a.VelocityCci, b.PositionCci, b.VelocityCci, f, between),
             VelocityCci = a.VelocityCci + ((b.VelocityCci - a.VelocityCci) * f),
             Body2Ccf = Quat.Slerp(a.Body2Ccf, b.Body2Ccf, f),
         };
+    }
+
+    /// <summary>
+    /// Where a craft is part of the way between two of its states, along the curve that leaves the
+    /// first at the first's speed and reaches the second at the second's.
+    ///
+    /// <para>The straight line between them is where it would be had it not been turning or
+    /// speeding up, and a craft nobody is flying is said only twice a second: in low orbit the line
+    /// cuts 0.3 m inside the path at its middle, and a craft drawn along it and then carried on from
+    /// its end is seen to step sideways every half second. Each state has said how fast the craft
+    /// was going all along.</para>
+    /// </summary>
+    private static Vec3 Along(Vec3 from, Vec3 leaving, Vec3 to, Vec3 arriving, double f, double seconds)
+    {
+        double f2 = f * f, f3 = f2 * f;
+        return (from * ((2.0 * f3) - (3.0 * f2) + 1.0)) + (leaving * ((f3 - (2.0 * f2) + f) * seconds))
+             + (to * ((3.0 * f2) - (2.0 * f3))) + (arriving * ((f3 - f2) * seconds));
     }
 }

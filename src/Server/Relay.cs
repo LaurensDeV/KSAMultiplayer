@@ -11,9 +11,9 @@ namespace KSAMultiplayer.Server;
 /// <para>Loopback has no loss, no reordering, no jitter and a round trip of about 0.05 ms. A player
 /// on a real server is 9 ms away at best and 150 ms at worst, and a family of faults here is
 /// proportional to that number: the clock offset each game estimates from ping and pong, which
-/// feeds straight into how far behind it thinks it is; <see cref="Track.DelaySeconds"/> and
-/// <see cref="Track.MostAheadSeconds"/>, the window a puppet is drawn in, which at 150 ms stops
-/// being generous; and the server's ten seconds of patience, which is how a real player kept being
+/// feeds straight into how far behind it thinks it is; how far past its newest state a puppet
+/// is drawn, which is the trip from one game to the other and at 150 ms each way is a third of
+/// <see cref="Track.MostAheadSeconds"/>; and the server's ten seconds of patience, which is how a real player kept being
 /// dropped. None of it can be reached on one machine without something like this.</para>
 ///
 /// <para>Holding every datagram for <c>latency</c> in both directions gives a game-to-server round
