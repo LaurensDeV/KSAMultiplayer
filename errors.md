@@ -535,3 +535,52 @@ What let both hide is that the rewrite used `re.sub(..., count=1)` and never loo
 key KSA has renamed, or one that was never right, matches nothing, is written nowhere, and the
 profile silently runs at the player's own setting. It counts with `re.subn` now and exits naming
 every key it could not place, which is checked against the game's own `GameSettings` fields.
+
+## 2026-11-09 -- a lone player warps 1000 s past the server and his game stops dead
+
+Watched, not reported: Goddchen alone on `mp.ksarmory.com`, time-warping, ended up more than 1000
+seconds *ahead* of the server's universe time, and his game then paused for a long time.
+
+**Why it stopped is certain, and is one line.** `ClockFollow.Speed` (`src/Protocol/Clock.cs:135`):
+
+```csharp
+if (late < -CatchUpAboveSeconds) return 0.0;
+```
+
+More than three seconds ahead of the server, in its own seconds, and a world is held at a standstill
+-- no proportional slow-down, no floor, and nothing bounding how long. The gap closes only as the
+server's own clock advances, so at 1x a world 1000 s ahead is stopped for about seventeen minutes.
+That is the "long time".
+
+The two directions are not symmetric, and that is the shape of the fault. A world that is *behind*
+is warped at up to `MostCatchUp = 10` with anything of its own in physics and up to
+`MostCatchUpOnRails = 1000` without, so a gap can be opened at a thousand times real time and is
+then repaid at one: up to a thousand times longer to undo than to make. And the server's clock never
+follows a player forward once it is known -- `UniverseClock.Set` is called from a world off disk,
+from the first world handed over, from `OnLoaded` only while `!Known`, and by `HoldTimeAtTheWorld`,
+which runs only when nobody is loaded. A lone player who legitimately warps ahead of the room *is*
+the room, and nothing moves the clock he is being measured against.
+
+**How he got ahead is not confirmed.** During an agreed warp the server runs its own clock at the
+warp rate, so the two should advance together, and the candidates are:
+
+- the catch-up overshooting. `behind` is the server's last word carried on at its rate, so it is
+  always a little stale, and the correction is that staleness multiplied by the gain. At 1000x, 100
+  ms of staleness is 100 s of universe time per cycle, and a few cycles is the gap seen.
+- the game outrunning a wall-clock-driven server. The server's time is `rate x` real time; the
+  game's is its own stepping, and KSA works a world on rails out in closed form, so a step of an hour
+  costs what a step of a frame costs. Nothing holds a game to real time at all.
+- the warp ending at different moments in the two, which has happened before in this exact shape:
+  `UniverseClock.SetSpeed`'s own comment records a server that "quietly rewound" coming out of a
+  warp and left "every game hundreds of seconds ahead".
+
+**Not fixed, and the fix is a choice rather than a line.** Holding the world slower instead of
+stopping it does not help: nothing a world ahead of the server does closes a gap only the server can
+close. Either the server's clock is dragged forward by the room when every loaded player is ahead of
+it -- bounded by `SaneUniverse`, which is what a lone warping player honestly means -- or a game is
+held to the server's rate while warping so the gap cannot open. The first is the smaller change and
+matches what a player alone in a world expects.
+
+Worth fixing in passing either way: the mod tells the player nothing useful while this happens.
+`Sync.Now`'s line is `Math.Abs(b) > CatchUpAboveSeconds ? $"catching up: {b:F0} s behind"`, so a
+player who is ahead reads "catching up: -1000 s behind" over a world that is not moving.
