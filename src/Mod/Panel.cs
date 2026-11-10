@@ -105,6 +105,13 @@ internal static class Panel
     /// <summary>Whether KSA asked for its welcome while this was starting, so it is shown to a player who plays alone.</summary>
     public static bool WelcomeHeld;
 
+    /// <summary>
+    /// KSA's welcome is not wanted at all this session, because the bridge started this game and
+    /// there is nobody at the keyboard to dismiss it. Unlike <see cref="WelcomeHeld"/>, which keeps
+    /// it back until a player asks for it, this turns it away every time KSA makes one.
+    /// </summary>
+    public static bool WelcomeUnwanted;
+
     // Asked for from KSA's configuration, which has no universe to join with: the server is joined
     // once the game has made one, in the system the server said.
     private static bool _joinOnLoad;
@@ -1259,14 +1266,27 @@ internal static class Panel
 
     private const float StartWidth = 380f;
 
-    private static void PlayAlone()
+    /// <summary>
+    /// What PLAY ALONE presses. Reachable by the bridge as well as by a hand, because a tool asked
+    /// to load a save at start is making the same choice and the window is in front of the same
+    /// popup either way.
+    /// </summary>
+    /// <param name="welcome">
+    /// False turns KSA's welcome away for the rest of the session, rather than only declining to
+    /// show it now. KSA makes that popup again while the world loads, and the patch that holds it
+    /// back only holds it while this window is up -- which this method has just stopped being true.
+    /// So declining it here and nothing more moved the popup rather than removing it: it appeared a
+    /// few seconds later, over the loaded game, with nobody there to press OKAY.
+    /// </param>
+    internal static void PlayAlone(bool welcome = true)
     {
         _lockWhatTheServerSettled = false;
         Starting = false;
         Sync.EndAhead();
+        WelcomeUnwanted = !welcome;
         if (!WelcomeHeld) return;
         WelcomeHeld = false;
-        if (KSA.GameSettings.ShowWelcomePopup()) KSA.WelcomePopup.Create();
+        if (welcome && KSA.GameSettings.ShowWelcomePopup()) KSA.WelcomePopup.Create();
     }
 
     /// <param name="ahead">From KSA's configuration, where there is no world yet: Connect asks the server which one to start in.</param>

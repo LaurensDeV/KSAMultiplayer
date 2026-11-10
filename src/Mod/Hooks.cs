@@ -175,6 +175,18 @@ internal static class Hooks
 
     private static bool BeforePopups()
     {
+        // The only hook of this mod's that runs while the start window is up, so the only place the
+        // bridge can be served there: StarMap's frame hook does not exist until AllModsLoaded, which
+        // is after KSA's configuration at start. Before the window rather than after, so a command
+        // that puts it away is obeyed on the frame it arrives rather than the frame after.
+        try
+        {
+            Bridge.ServeStartWindow();
+        }
+        catch (Exception e)
+        {
+            Complain("serving the bridge at the start window", e);
+        }
         try
         {
             return !Panel.InsteadOfConfiguration();
@@ -299,6 +311,13 @@ internal static class Hooks
     {
         try
         {
+            // Started by the bridge, so there is nobody to press OKAY on it -- now or in the few
+            // seconds' time when KSA makes another while the world loads.
+            if (Panel.WelcomeUnwanted)
+            {
+                __instance.Active = false;
+                return;
+            }
             if (!Panel.Starting) return;
             __instance.Active = false;
             Panel.WelcomeHeld = true;

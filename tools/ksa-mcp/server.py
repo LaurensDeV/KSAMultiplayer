@@ -209,6 +209,9 @@ TOOLS = {
                {"connect": {"type": "string"}, "name": {"type": "string"}, "password": {"type": "string"},
                 "disconnect": {"type": "boolean"}, "chat": {"type": "string"},
                 "editor": {"type": "boolean", "description": "open or close the vehicle editor, which the mod behaves differently in"},
+                "blank": {"type": "boolean", "description": "with editor=true, open it empty even while flying, as KSA's Build New Vehicle does"},
+                "launch": {"type": "boolean", "description": "press the editor's Launch, which puts what is in it on a pad"},
+                "pads": {"type": "boolean", "description": "what the pad picker sees: the site chosen, its pads, and which is free"},
                 "board": _num("show the player list for this many seconds, as holding Tab does"),
                 "warp": _num("ask everyone for the world to run at this speed; 0 pauses"),
                 "vote": {"type": "boolean", "description": "answer the warp somebody asked for"}}, [],
@@ -257,10 +260,31 @@ TOOLS = {
                    "save. Uses a running game rather than starting a second.",
                    {"save": {"type": "string"}}, [], lambda a: [_text(launch(a.get("save")))]),
     "ksa_quit": ("Close the game, only if this server launched it.", {}, [], lambda a: [_text(quit_game())]),
-    "ksa_load": ("Load a save by name.", {"save": {"type": "string"}}, ["save"],
-                 lambda a: _dump(send("load", timeout=90, save=a["save"]))),
+    "ksa_start": ("Press Start on KSA's configuration at start: a fresh world with the game's own "
+                  "starting craft in it and no save read. Does nothing once a world is up.",
+                  {"system": {"type": "string"}}, [],
+                  lambda a: _dump(send("start", timeout=200, **a))),
+    "ksa_load": ("Load a save by name. From the configuration at start this presses Start first, so "
+                 "it works on a game that has only just opened.", {"save": {"type": "string"}}, ["save"],
+                 lambda a: _dump(send("load", timeout=200, save=a["save"]))),
     "ksa_save": ("Write this world to a save of this name.", {"name": {"type": "string"}}, ["name"],
                  lambda a: _dump(send("save", **a))),
+    "ksa_fail": ("Blow parts off a craft, or crash it (whole=true, which sheds debris and destroys it), "
+                 "through the same event KSA's own G-load path raises: the named craft, or the flown one. "
+                 "The only way to reach a part failure on the ground, where KSA stands that path down for "
+                 "anything touching terrain, ocean or another craft. Aimed at a puppet, it is how a run "
+                 "watches the mod refuse to strip another player's craft. Applied on the next frame, so "
+                 "read what came of it from ksa_craft and KSA's own log.",
+                 {"craft": {"type": "string"}, "parts": _num("how many parts to fail"),
+                  "whole": {"type": "boolean", "description": "destroy the craft outright, as a crash does"}}, [],
+                 lambda a: _dump(send("fail", **a))),
+    "ksa_design": ("The vehicle editor's designs. With no argument, what designs there are and what the "
+                   "editor holds; save=<craft> writes a craft standing in this world out as a design of "
+                   "the same name; load=<design> puts one into the open editor. Opening the editor with "
+                   "nothing flown (ksa_mp editor=true), loading a design and then ksa_mp launch=true "
+                   "builds and launches a craft with no hand on the mouse. No part can be placed.",
+                   {"save": {"type": "string"}, "load": {"type": "string"}}, [],
+                   lambda a: _dump(send("design", **a))),
     "ksa_pause": ("Pause the world. Refused while connected: the server's clock holds the speed.", {}, [],
                   lambda a: _dump(send("pause"))),
     "ksa_resume": ("Resume the world. Refused while connected.", {}, [], lambda a: _dump(send("resume"))),

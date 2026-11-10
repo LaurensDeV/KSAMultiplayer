@@ -125,6 +125,9 @@ internal static class Sync
 
     // Craft this game made itself, which are never another player's puppet here, whatever the server says of their name.
     private static readonly HashSet<Vehicle> MadeHere = [];
+
+    // Part failures the bridge has asked for, kept for the quiet window in Settle.
+    private static readonly List<(Vehicle Craft, int Parts, bool Whole)> ToFail = [];
     /// <param name="NotAPlayer">Said by the server or by this game rather than by somebody playing,
     /// which the chat window draws in a colour of its own.</param>
     public readonly record struct Line(bool NotAPlayer, string Text);
@@ -603,6 +606,9 @@ internal static class Sync
     /// stood on its pad in one game only. The launch menu does not come through here.</para>
     /// </summary>
     public static void Made(Vehicle v) => MadeHere.Add(v);
+
+    /// <summary>Fail parts on a craft at the next quiet window. See <see cref="World.Fail"/>.</summary>
+    public static void FailLater(Vehicle v, int parts, bool whole) => ToFail.Add((v, parts, whole));
 
     /// <summary>Whether any game in this world has claimed a name.</summary>
     public static bool SomebodyOwns(string key) => _client is { Joined: true } c && c.OwnerOf(key) != 0;
@@ -1638,6 +1644,15 @@ internal static class Sync
             _toClearSmoke = false;
             World.ClearSmoke();
         }
+        // Asked for from outside the game and applied here rather than where the command was read:
+        // shedding debris and destroying a craft both add to and remove from the world's vehicles,
+        // and the frame hook the bridge is served from is not a moment when that list may change.
+        foreach ((Vehicle craft, int parts, bool whole) in ToFail)
+        {
+            if (!World.IsAlive(craft)) continue;
+            if (World.Fail(craft, parts, whole) is { Length: > 0 } why) Log.Warn($"could not fail parts on {KeyOf(craft)}: {why}");
+        }
+        ToFail.Clear();
         if (Now != Stage.Playing) return;
         foreach ((Vehicle craft, Wire.State state) in ToPlace.Values)
         {

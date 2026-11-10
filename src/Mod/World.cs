@@ -279,9 +279,189 @@ internal static class World
         }
     }
 
+    /// <summary>
+    /// Parts failed on a craft the way a crash fails them, or why not. Empty on success.
+    ///
+    /// <para>The one thing a test cannot arrange by flying. <c>PhysicsBubble</c> stands KSA's own
+    /// G-load path down wherever a craft touches terrain, ocean or another craft, so no amount of
+    /// driving reaches a part failure on the ground -- which is exactly where the failure this mod
+    /// guards against was reported. This is the same <see cref="PartFailureEvent.Apply"/> that path
+    /// calls, so the guard is reached as it would be and nothing is simulated around it.</para>
+    ///
+    /// <para><paramref name="whole"/> is the crash rather than the stripping: it sheds twelve pieces
+    /// of debris and destroys the craft in one call, which is the frame a piece's ancestry has to be
+    /// read in.</para>
+    /// </summary>
+    public static string Fail(Vehicle v, int parts, bool whole)
+    {
+        try
+        {
+            List<Part> failed = [];
+            ReadOnlySpan<Part> all = v.Parts.Parts;
+            Part? root = v.Parts.Root;
+            // Never the root: isolating that is destroying the craft, which `whole` is for.
+            for (int i = all.Length - 1; i >= 0 && failed.Count < Math.Max(parts, 1); i--)
+            {
+                if (!ReferenceEquals(all[i], root)) failed.Add(all[i]);
+            }
+            if (failed.Count == 0) return $"{v.Id} has no part to fail but its root";
+            new PartFailureEvent { FailedParts = failed, DestroyWholeVehicle = whole }.Apply(v);
+            return "";
+        }
+        catch (Exception e)
+        {
+            return e.GetBaseException().Message;
+        }
+    }
+
+    // ------------------------------------------------------------------------- the vehicle editor
+
+    /// <summary>
+    /// The vehicle saves on this machine, by name.
+    ///
+    /// <para>Read off disk rather than out of the list KSA built at start, so a design written
+    /// since -- by a test, a moment ago -- is in it.</para>
+    /// </summary>
+    public static List<string> Designs()
+    {
+        List<string> names = [];
+        try
+        {
+            VehicleSaves.Refresh();
+            foreach (VehicleSave save in VehicleSaves.AsSpan()) names.Add(save.Id);
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"the vehicle saves could not be listed: {e.GetBaseException().Message}");
+        }
+        return names;
+    }
+
+    /// <summary>
+    /// A craft standing in this world written out as a vehicle save, or why not.
+    ///
+    /// <para>KSA names the design and looks the craft up by the one string, so a design can only be
+    /// called what its craft is called. The craft is found by its local <see cref="Vehicle.Id"/>,
+    /// not by the name the room shares, which KSA has never heard of.</para>
+    /// </summary>
+    public static string SaveDesign(string craft)
+    {
+        if (!Vehicles().Any(v => v.Id == craft)) return $"no craft called '{craft}' in this world";
+        // A design is a folder named after it, so a name KSA would not accept as a file name is
+        // refused here rather than half-written.
+        if (!SaveName.IsSanitized(craft)) return $"'{craft}' cannot be a design's name";
+        try
+        {
+            return UncompressedVehicleSave.Make(craft) is null ? $"KSA wrote no design for '{craft}'" : "";
+        }
+        catch (Exception e)
+        {
+            return e.GetBaseException().Message;
+        }
+    }
+
+    /// <summary>
+    /// A blank editor whatever is being flown, which is what KSA's own "Build New Vehicle" menu item
+    /// does. False when one is already open.
+    ///
+    /// <para><c>EditorFlag</c> on its own opens the editor on the craft being controlled, and an
+    /// editor opened that way builds nothing: its exit makes a craft only where
+    /// <c>ExistingVehicle</c> is null. The menu item constructs the editor with <c>newVehicle</c>
+    /// set and lets go of the craft, which is both halves of what a game already flying something
+    /// needs to be driven into a launch -- and two games doing it at once is the only way to put two
+    /// launches in one window on purpose, which is where two craft want one name and one pad.</para>
+    /// </summary>
+    public static bool EditBlank()
+    {
+        if (Program.Editor is not null) return false;
+        Program.Editor = new VehicleEditor(Program.ControlledVehicle, newVehicle: true);
+        Program.ControlledVehicle = null;
+        return true;
+    }
+
+    /// <summary>
+    /// A saved design put into the open editor, or why not.
+    ///
+    /// <para>This is the whole of what a test needs the editor for. A part tree arrives, and the
+    /// editor's own Launch -- which the bridge can already press -- turns it into a craft on a pad.
+    /// No part can be <em>placed</em> from here, so part placement, symmetry and staging edits stay
+    /// out of reach; the launch path that shipped unwatched three times does not.</para>
+    ///
+    /// <para>KSA's own <c>loadvehicle</c> command cannot be used for this: it ends in the
+    /// parameterless <c>VehicleSave.Load()</c>, which every vehicle save throws
+    /// <see cref="NotImplementedException"/> from. The overload that works takes a viewport and
+    /// never reads it.</para>
+    /// </summary>
+    public static string LoadDesign(string name)
+    {
+        if (Program.Editor is not { } editor) return "the vehicle editor is not open";
+        try
+        {
+            VehicleSave? found = null;
+            foreach (VehicleSave save in VehicleSaves.AsSpan())
+            {
+                if (save.Id != name) continue;
+                found = save;
+                break;
+            }
+            found ??= DefaultVehicleSaves.FindSave(name);
+            if (found is null) return $"no design called '{name}'";
+            if (found.Load(Program.MainViewport) is not { } parts) return $"'{name}' could not be read, and KSA's own log says why";
+            editor.LoadVehicle(parts);
+            return "";
+        }
+        catch (Exception e)
+        {
+            return e.GetBaseException().Message;
+        }
+    }
+
+    /// <summary>
+    /// What the editor would launch: the name the craft will have in this world and how many parts
+    /// are in it, or null when the editor is not open.
+    ///
+    /// <para>The name is the editor's own, picked by <c>GenerateNewVehicleId</c> as the first one
+    /// free in this system. Two games holding the same world therefore pick the same one, which is
+    /// how two launches can be made to collide on purpose rather than waited for.</para>
+    /// </summary>
+    public static (string Id, int Parts)? Editing =>
+        Program.Editor is { } editor ? (editor.EditingSpace.Id, editor.EditingSpace.Parts?.Count ?? 0) : null;
+
     // ------------------------------------------------------------------ before there is a universe
 
     private static readonly System.Reflection.FieldInfo? PopupList = AccessTools.Field(typeof(Popup), "Popups");
+
+    /// <summary>
+    /// Whether KSA has a world up. False at the configuration popup at start, where there is no
+    /// viewport to measure, no camera to ask and no universe to time -- so anything that wants one
+    /// of those has to ask this first.
+    /// </summary>
+    public static bool Loaded => Program.IsLoaded;
+
+    /// <summary>
+    /// What KSA has standing open, by the name of each popup's own type. A tool driving the game is
+    /// otherwise blind to them: a picture taken through <c>capture</c> is taken with the interface
+    /// hidden, so a popup sitting over everything does not appear in it, and a run can look clean in
+    /// a screenshot while nobody can see past the box on the screen.
+    /// </summary>
+    public static List<string> Popups =>
+        PopupList?.GetValue(null) is List<Popup> popups
+            ? [.. popups.Where(p => p.Active).Select(p => p.GetType().Name)]
+            : [];
+
+    /// <summary>
+    /// A system to start the configuration at start in: the one asked for, else the one this game
+    /// would have offered -- what it last played, or the first it has. Null where it has none at
+    /// all. <see cref="StartIn"/> wants a name and does nothing with an empty one, and a game
+    /// started with no system chosen is a game with no world to read a save into.
+    /// </summary>
+    public static string? ASystemToStartIn(string wanted)
+    {
+        if (wanted.Length > 0) return wanted;
+        if (SystemLibrary.Default?.Id is { Length: > 0 } standing) return standing;
+        if (GameSettings.Current.System.LastSystemId is { Length: > 0 } last) return last;
+        return SystemLibrary.PickerSystems().FirstOrDefault()?.Id;
+    }
 
     /// <summary>
     /// KSA's configuration at start, while it is up: the one popup <c>SelectSystem</c> loops on before

@@ -15,7 +15,6 @@ public sealed class MultiplayerMod
     private const int FaultLimit = 10;
     private int _faults;
     private bool _disabled;
-    private Bridge? _bridge;
     private readonly IModMenuService _menu;
 
     private IDisposable? _menuItem;
@@ -35,6 +34,9 @@ public sealed class MultiplayerMod
         Listings.Agent = $"KSAMultiplayer/{typeof(MultiplayerMod).Assembly.GetName().Version?.ToString(3) ?? "unknown"}";
         // Here and not with the rest: KSA's configuration at start comes before StarMap's AllModsLoaded.
         Hooks.InstallEarly();
+        // Beside them, and for the same reason: the start window those patches draw is up before
+        // AllModsLoaded, and a tool that cannot reach the bridge there cannot get the game past it.
+        Bridge.Open();
     }
 
     [StarMapAllModsLoaded]
@@ -53,10 +55,6 @@ public sealed class MultiplayerMod
         {
             Log.Warn($"could not add a Mods menu entry: {e.Message}");
         }
-        // A developer's install only: the bridge is how the tools drive two games against one
-        // server, and a released mod has no business watching a folder for commands.
-        if (Build.Developer) _bridge = new Bridge();
-        if (_bridge is not null) Log.Info("developer install: the bridge is listening");
     }
 
     [StarMapAfterOnFrame]
@@ -81,10 +79,11 @@ public sealed class MultiplayerMod
         {
             Fault("closing the frame", e);
         }
-        // After the session, so a command reads the state this frame left and never half of it.
+        // After the session, so a command reads the state this frame left and never half of it. From
+        // here on this hook serves the bridge and the start window's does not.
         try
         {
-            _bridge?.Update(dtPlayer);
+            Bridge.ServeFrame(dtPlayer);
         }
         catch (Exception e)
         {
@@ -119,6 +118,7 @@ public sealed class MultiplayerMod
         try { Panel.Save(); } catch (Exception e) { Log.Warn($"could not keep the panel's settings: {e.Message}"); }
         try { Browser.Stop(); } catch (Exception e) { Log.Warn($"could not put the server list down: {e.Message}"); }
         try { Sync.Shutdown(); } catch (Exception e) { Log.Error("leaving the server", e); }
+        Bridge.Close();
         Hooks.Remove();
         Log.Info("unloaded");
         Log.Shutdown();

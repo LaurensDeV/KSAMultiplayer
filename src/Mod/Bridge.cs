@@ -1,7 +1,9 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using KSA;
 
 namespace KSAMultiplayer;
@@ -27,9 +29,61 @@ internal sealed class Bridge
     // How many frames KSA's own capture hides the interface for before the picture.
     private const int WarmFrames = 24;
 
+    // How long a game begun from the configuration at start has to bring a world up. Generous: it is
+    // a cold load of a system, and two games on one machine take turns over the disk.
+    private const double StartWithinSeconds = 180.0;
+
     private double _sincePoll;
     private Func<double, Reply?>? _running;
     private BridgeCommand? _current;
+
+    // ---- the one bridge, and which hook serves it ------------------------------------------
+
+    private static Bridge? _open;
+    private static bool _framed;
+    private static readonly Stopwatch Ticking = Stopwatch.StartNew();
+    private static double _ticked;
+
+    /// <summary>
+    /// Opens the bridge, on a developer's install. From the immediate load and not from
+    /// <c>AllModsLoaded</c>, because KSA's configuration at start comes before StarMap fires that:
+    /// a bridge made there does not exist while the start window is up, which is the one window a
+    /// tool has to get past, so the rig sat waiting for a bridge that only a hand on the mouse
+    /// could bring about.
+    /// </summary>
+    public static void Open()
+    {
+        if (!Build.Developer || _open is not null) return;
+        _open = new Bridge();
+        Log.Info("developer install: the bridge is listening");
+    }
+
+    public static void Close() => _open = null;
+
+    /// <summary>One frame, from StarMap's frame hook, which owns the bridge once there is one.</summary>
+    public static void ServeFrame(double dtPlayer)
+    {
+        _framed = true;
+        _open?.Update(dtPlayer);
+    }
+
+    /// <summary>
+    /// One frame from the start window, which is drawn by a prefix on KSA's popups and so runs while
+    /// this mod has no frame hook at all. It gives way the moment the frame hook runs, so no frame is
+    /// ever served twice, and it keeps a clock of its own because a draw pass is handed no dt.
+    ///
+    /// <para>What runs here runs in the pass that draws KSA's own menu buttons, which is where the
+    /// game already loads a save when somebody presses Load: the same work in the same place, asked
+    /// for by a file instead of a mouse.</para>
+    /// </summary>
+    public static void ServeStartWindow()
+    {
+        if (_framed || _open is null) return;
+        double now = Ticking.Elapsed.TotalSeconds;
+        double dt = Math.Clamp(now - _ticked, 0.0, 0.25);
+        _ticked = now;
+        _open.Update(dt);
+    }
 
     // A folder of its own, under the profile KSA was started with: every mod built from this tooling
     // has a bridge, and two reading one folder each answer whichever command they reach first.
@@ -42,7 +96,72 @@ internal sealed class Bridge
     private static Reply Done(Dictionary<string, object?>? data = null) => new(true, string.Empty, data ?? []);
     private static Reply Failed(string why) => new(false, why, []);
 
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions JsonOptions =
+        new()
+        {
+            WriteIndented = true,
+            Converters = { new FiniteOnly(), new FiniteOrNothing(), new FiniteFloat(), new FiniteFloatOrNothing() },
+        };
+
+    /// <summary>
+    /// A distance or a rate that could not be worked out, written as null rather than as a number
+    /// JSON has no spelling for.
+    ///
+    /// <para>This mod says "cannot tell" with infinity -- <see cref="World.Between"/> and
+    /// <see cref="World.RangeFromCamera"/> both do -- and <c>JsonSerializer</c> refuses to write one
+    /// at all. It throws partway through, so a single unmeasurable distance anywhere in a reply did
+    /// not spoil a field: it destroyed the whole reply, and the command answered nothing until it
+    /// timed out. <c>status</c> went dead in a joined game the moment a puppet was out of the
+    /// camera's reach, which is the one instrument a run has.</para>
+    /// </summary>
+    private sealed class FiniteOnly : JsonConverter<double>
+    {
+        public override double Read(ref Utf8JsonReader reader, Type type, JsonSerializerOptions options) =>
+            reader.TryGetDouble(out double d) ? d : 0.0;
+
+        public override void Write(Utf8JsonWriter writer, double value, JsonSerializerOptions options)
+        {
+            if (double.IsFinite(value)) writer.WriteNumberValue(value);
+            else writer.WriteNullValue();
+        }
+    }
+
+    private sealed class FiniteOrNothing : JsonConverter<double?>
+    {
+        public override double? Read(ref Utf8JsonReader reader, Type type, JsonSerializerOptions options) =>
+            reader.TokenType == JsonTokenType.Null ? null : reader.TryGetDouble(out double d) ? d : null;
+
+        public override void Write(Utf8JsonWriter writer, double? value, JsonSerializerOptions options)
+        {
+            if (value is { } d && double.IsFinite(d)) writer.WriteNumberValue(d);
+            else writer.WriteNullValue();
+        }
+    }
+
+    // The same for the floats, which reach a reply straight out of the engine's own vectors.
+    private sealed class FiniteFloat : JsonConverter<float>
+    {
+        public override float Read(ref Utf8JsonReader reader, Type type, JsonSerializerOptions options) =>
+            reader.TryGetSingle(out float f) ? f : 0f;
+
+        public override void Write(Utf8JsonWriter writer, float value, JsonSerializerOptions options)
+        {
+            if (float.IsFinite(value)) writer.WriteNumberValue(value);
+            else writer.WriteNullValue();
+        }
+    }
+
+    private sealed class FiniteFloatOrNothing : JsonConverter<float?>
+    {
+        public override float? Read(ref Utf8JsonReader reader, Type type, JsonSerializerOptions options) =>
+            reader.TokenType == JsonTokenType.Null ? null : reader.TryGetSingle(out float f) ? f : null;
+
+        public override void Write(Utf8JsonWriter writer, float? value, JsonSerializerOptions options)
+        {
+            if (value is { } f && float.IsFinite(f)) writer.WriteNumberValue(f);
+            else writer.WriteNullValue();
+        }
+    }
 
     /// <summary>
     /// One frame: advances the command running, or takes the next. From the frame hook, which KSA
@@ -91,6 +210,8 @@ internal sealed class Bridge
         {
             "status" => Status(),
             "craft" => CraftList(),
+            "design" => Design(command),
+            "fail" => Fail(command),
             "mp" => Multiplayer(command),
             "goto" => GoTo(command),
             "watch" => Watch(command),
@@ -106,6 +227,7 @@ internal sealed class Bridge
             "warpkey" => WarpKey(command),
             "save" => SaveGame(command),
             "step" => BeginStep(command),
+            "start" => BeginStart(command),
             "load" => BeginLoad(command),
             "capture" => BeginCapture(command),
             _ => Failed($"no command '{command.Name}'"),
@@ -145,33 +267,45 @@ internal sealed class Bridge
         {
             ["ksa"] = World.KsaBuild,
             ["protocol"] = Wire.Version,
-            ["in_flight"] = World.InFlight,
-            ["craft"] = World.Controlled?.Id,
-            ["watching"] = World.Watched?.Id,
-            ["map_view"] = World.InMapView,
-            ["can"] = Math.Round(Sync.Sustains, 3),
-            ["here"] = World.Focused,
-            ["achieved"] = Math.Round(World.Achieved, 3),
-            ["analytic"] = World.Analytic,
-            ["tag_draw"] = Panel.TagReport,
-            // What the nametag pass would draw this frame, so a tag that never appears can be told
-            // from one drawn somewhere nobody looks.
-            ["nametags"] = Sync.Nametags().Select(t => (object?)new Dictionary<string, object?>
-            {
-                ["craft"] = t.Craft,
-                ["who"] = t.Who,
-                ["range_m"] = Math.Round(t.Range, 1),
-                ["flying"] = t.Flying,
-                ["x"] = Math.Round(t.At.X, 1),
-                ["y"] = Math.Round(t.At.Y, 1),
-            }).ToList(),
-            ["screen"] = World.ScreenSize is { } size ? new Dictionary<string, object?> { ["w"] = size.X, ["h"] = size.Y } : null,
-            ["speed"] = Math.Round(World.Speed, 4),
-            ["universe"] = Math.Round(World.Universe, 2),
+            ["loaded"] = World.Loaded,
+            ["starting"] = Panel.Starting,
+            // What is standing over the game. A picture is taken with the interface hidden, so a
+            // popup never shows up in one: this is the only way a tool can see it is being blocked.
+            ["popups"] = World.Popups,
             ["stage"] = Sync.Now.ToString(),
             ["said"] = Sync.Said.ToList(),
             ["chat"] = Sync.Chat.Select(l => (object?)l.Text).ToList(),
         };
+
+        // Everything past here wants a world: a viewport to measure, a camera to ask, a universe to
+        // time. The configuration popup at start has none of them, and asking anyway threw
+        // "[ViewportRegistry] Main viewport is not set yet" -- so a tool found the bridge dead at
+        // the one window it has to get the game past. What is above is true in any state.
+        if (!World.Loaded) return Done(data);
+
+        data["in_flight"] = World.InFlight;
+        data["craft"] = World.Controlled?.Id;
+        data["watching"] = World.Watched?.Id;
+        data["map_view"] = World.InMapView;
+        data["can"] = Math.Round(Sync.Sustains, 3);
+        data["here"] = World.Focused;
+        data["achieved"] = Math.Round(World.Achieved, 3);
+        data["analytic"] = World.Analytic;
+        data["tag_draw"] = Panel.TagReport;
+        // What the nametag pass would draw this frame, so a tag that never appears can be told
+        // from one drawn somewhere nobody looks.
+        data["nametags"] = Sync.Nametags().Select(t => (object?)new Dictionary<string, object?>
+        {
+            ["craft"] = t.Craft,
+            ["who"] = t.Who,
+            ["range_m"] = Math.Round(t.Range, 1),
+            ["flying"] = t.Flying,
+            ["x"] = Math.Round(t.At.X, 1),
+            ["y"] = Math.Round(t.At.Y, 1),
+        }).ToList();
+        data["screen"] = World.ScreenSize is { } size ? new Dictionary<string, object?> { ["w"] = size.X, ["h"] = size.Y } : null;
+        data["speed"] = Math.Round(World.Speed, 4);
+        data["universe"] = Math.Round(World.Universe, 2);
 
         if (Sync.Client is { } c)
         {
@@ -198,7 +332,10 @@ internal sealed class Bridge
                 ["owner"] = o.Value,
                 ["name"] = c.NameOf(o.Value),
                 ["mine"] = o.Value == c.Id,
-                ["here"] = World.Vehicles().Any(v => v.Id == o.Key),
+                // By the name the room shares and not by this world's own: a craft built here
+                // under a free name when the one on the wire was taken answers to neither map
+                // under its local id, and read that way the server's whole roster looked absent.
+                ["here"] = World.Vehicles().Any(v => Sync.KeyOf(v) == o.Key),
                 ["puppet"] = Sync.PuppetCraft.Contains(o.Key),
                 ["heard_s"] = c.Tracked.Contains(o.Key) ? Math.Round(World.Universe - c.TrackOf(o.Key).HeardAt, 2) : null,
             }).ToList();
@@ -250,6 +387,69 @@ internal sealed class Bridge
             });
         }
         return Done(new() { ["craft"] = all });
+    }
+
+    /// <summary>
+    /// Parts blown off a craft, or a craft crashed, through the same event KSA's own G-load path
+    /// raises. The only way to reach a part failure on the ground, where <c>PhysicsBubble</c> stands
+    /// that path down -- and so the only way a run can watch this mod's guard refuse one on another
+    /// player's craft, which is the failure two players reported from the live server.
+    /// </summary>
+    private static Reply Fail(BridgeCommand command)
+    {
+        if (!World.Loaded) return Failed("there is no world yet");
+        string id = command.String("craft");
+        Vehicle? craft = id.Length > 0 ? World.Vehicles().FirstOrDefault(v => v.Id == id) : World.Controlled;
+        if (craft is null) return Failed(id.Length > 0 ? $"no craft '{id}' in this world" : "no craft is being flown");
+        bool whole = command.Flag("whole", false);
+        int parts = (int)command.Number("parts", 1.0);
+        Sync.FailLater(craft, parts, whole);
+        // Asked, not done: it is applied in the one window of the frame where the world's vehicles
+        // may change, so what came of it is read from the next `craft` dump and from KSA's own log.
+        return Done(new()
+        {
+            ["craft"] = craft.Id,
+            ["asked_parts"] = Math.Max(parts, 1),
+            ["whole"] = whole,
+            ["was_puppet"] = Sync.IsPuppet(craft),
+            ["had_parts"] = craft.Parts.Count,
+        });
+    }
+
+    /// <summary>
+    /// The vehicle editor's designs: what there is, one written out of this world, one put into the
+    /// editor. With <c>mp {"editor":true}</c> to open it and <c>mp {"launch":true}</c> to press
+    /// Launch, that is a craft built and flown without a hand on the mouse -- the path this project
+    /// has shipped broken three times and never once watched.
+    /// </summary>
+    private static Reply Design(BridgeCommand command)
+    {
+        if (!World.Loaded) return Failed("there is no world yet");
+
+        if (command.String("save") is { Length: > 0 } craft)
+        {
+            if (World.SaveDesign(craft) is { Length: > 0 } no) return Failed(no);
+            return Done(new() { ["saved"] = craft, ["designs"] = World.Designs() });
+        }
+
+        if (command.String("load") is { Length: > 0 } name)
+        {
+            if (World.LoadDesign(name) is { Length: > 0 } no) return Failed(no);
+            return Done(Editing(new() { ["loaded"] = name }));
+        }
+
+        return Done(Editing(new() { ["designs"] = World.Designs() }));
+    }
+
+    // What the editor holds, said the same way whichever of the three forms asked: a load that
+    // answered ok and left nothing in the editor is the failure worth seeing, and Launch is silent
+    // about an empty one.
+    private static Dictionary<string, object?> Editing(Dictionary<string, object?> said)
+    {
+        said["editor_open"] = KSA.Program.IsEditorOpen;
+        said["editing"] = World.Editing is { } e ? e.Id : null;
+        said["editing_parts"] = World.Editing is { } p ? p.Parts : null;
+        return said;
     }
 
     // ---- the session -----------------------------------------------------------------------
@@ -329,8 +529,12 @@ internal sealed class Bridge
         if (command.Has("editor"))
         {
             bool want = command.Flag("editor", true);
+            // "blank" is KSA's own Build New Vehicle: without it the editor opens on the craft being
+            // flown and has nothing to launch, so a game already in flight could not be driven into
+            // one. Letting go of the craft is part of what that menu item does.
+            bool blank = want && command.Flag("blank", false) && World.EditBlank();
             KSA.Program.EditorFlag = want;
-            return Done(new() { ["editor"] = want, ["open"] = KSA.Program.IsEditorOpen });
+            return Done(new() { ["editor"] = want, ["blank"] = blank, ["open"] = KSA.Program.IsEditorOpen });
         }
 
         if (command.Has("board"))
@@ -535,20 +739,32 @@ internal sealed class Bridge
     {
         string save = command.String("save");
         if (save.Length == 0) return Failed("load needs a save");
-        try
-        {
-            GameSaves.Refresh();
-            GameSaves.LoadSaveGame(save);
-        }
-        catch (Exception e)
-        {
-            return Failed($"could not load '{save}': {e.Message}");
-        }
+
+        // From the configuration popup at start a save cannot simply be read. KSA builds the system,
+        // the particle pools and the rest of a world on its way out of that popup, and reading a
+        // save before any of it exists threw -- first for want of a system, then for want of
+        // everything else. So the popup is started properly, with a system chosen as choosing one
+        // from its own list would choose it, and the save goes in once there is a world to put it
+        // in. The order a player takes too. Without this a tool cannot get a game out of the start
+        // window at all, which is where every game begins.
+        bool cold = !World.Loaded;
+        if (cold && Begin(command) is { } refused) return refused;
+
+        bool read = !cold;
+        if (read && Read(save) is { } straight) return straight;
 
         double waited = 0.0;
         _running = dtPlayer =>
         {
             waited += dtPlayer;
+            if (!read)
+            {
+                if (!World.Loaded)
+                    return waited > StartWithinSeconds ? Failed($"no world after {StartWithinSeconds:0} s") : null;
+                if (Read(save) is { } bad) return bad;
+                (read, waited) = (true, 0.0);
+                return null;
+            }
             // A beat past the craft appearing, for the world to settle round it.
             if (waited > 3.0 && World.InFlight) return Done(new() { ["craft"] = World.Controlled!.Id });
             return waited > 60.0 ? Failed("no craft after 60 s") : null;
@@ -556,10 +772,73 @@ internal sealed class Bridge
         return null;
     }
 
+    /// <summary>
+    /// Presses Start on KSA's configuration at start, or says why it could not be pressed. Null is
+    /// success, which is the shape the callers want: they carry on to wait for the world.
+    /// </summary>
+    private static Reply? Begin(BridgeCommand command)
+    {
+        if (World.Configuration is not { } configuration)
+            return Failed("no world, and no configuration at start to begin one from");
+        if (World.ASystemToStartIn(command.String("system")) is not { } system)
+            return Failed("this game has no system to start in");
+        // The window this mod draws stands in front of that popup; this is the button on it.
+        // Without the welcome that button normally lets through: nobody is here to press OKAY.
+        Panel.PlayAlone(welcome: false);
+        return World.StartIn(configuration, system, out string why, start: true)
+            ? null
+            : Failed(why.Length > 0 ? why : $"could not start in {system}");
+    }
+
+    /// <summary>
+    /// A fresh game and nothing read into it: what a player gets by pressing Start and no more. The
+    /// other half of <see cref="BeginLoad"/>, and the only way to a world holding KSA's own starting
+    /// craft rather than somebody's save -- which is what a test wanting a rocket with stages in it
+    /// has to start from, there being no way to drive the editor into building one.
+    /// </summary>
+    private Reply? BeginStart(BridgeCommand command)
+    {
+        if (World.Loaded) return Done(new() { ["started"] = false, ["why"] = "a world is already up" });
+        if (Begin(command) is { } refused) return refused;
+
+        double waited = 0.0, settling = 0.0;
+        _running = dtPlayer =>
+        {
+            waited += dtPlayer;
+            if (!World.Loaded)
+                return waited > StartWithinSeconds ? Failed($"no world after {StartWithinSeconds:0} s") : null;
+            // A beat past the world appearing, for the starting craft to be put in it.
+            settling += dtPlayer;
+            return settling > 3.0
+                ? Done(new() { ["started"] = true, ["craft"] = World.Controlled?.Id, ["in_flight"] = World.InFlight })
+                : null;
+        };
+        return null;
+    }
+
+    /// <summary>The save read, or why it could not be. Wants a world already up.</summary>
+    private static Reply? Read(string save)
+    {
+        try
+        {
+            GameSaves.Refresh();
+            GameSaves.LoadSaveGame(save);
+            return null;
+        }
+        catch (Exception e)
+        {
+            return Failed($"could not load '{save}': {e.Message}");
+        }
+    }
+
     private static Reply SaveGame(BridgeCommand command)
     {
         string name = command.String("name");
         if (name.Length == 0) return Failed("save needs a name");
+        // KSA writes nothing while the editor is open and says so only in its own log, so without
+        // this the command answered ok over a save that was never made and a test read the file it
+        // found as the world it had just asked for.
+        if (World.Refuses() is { Length: > 0 } no) return Failed($"could not save '{name}': {no}");
         try
         {
             GameSaves.MakeUncompressedSave(name);
