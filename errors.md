@@ -536,7 +536,7 @@ key KSA has renamed, or one that was never right, matches nothing, is written no
 profile silently runs at the player's own setting. It counts with `re.subn` now and exits naming
 every key it could not place, which is checked against the game's own `GameSettings` fields.
 
-## 2026-11-09 -- a lone player warps 1000 s past the server and his game stops dead
+## 2026-11-09 -- ending a timewarp stops every game in the room, for minutes
 
 Watched, not reported: Goddchen alone on `mp.ksarmory.com`, time-warping, ended up more than 1000
 seconds *ahead* of the server's universe time, and his game then paused for a long time.
@@ -555,31 +555,48 @@ That is the "long time".
 The two directions are not symmetric, and that is the shape of the fault. A world that is *behind*
 is warped at up to `MostCatchUp = 10` with anything of its own in physics and up to
 `MostCatchUpOnRails = 1000` without, so a gap can be opened at a thousand times real time and is
-then repaid at one: up to a thousand times longer to undo than to make. And the server's clock never
-follows a player forward once it is known -- `UniverseClock.Set` is called from a world off disk,
-from the first world handed over, from `OnLoaded` only while `!Known`, and by `HoldTimeAtTheWorld`,
-which runs only when nobody is loaded. A lone player who legitimately warps ahead of the room *is*
-the room, and nothing moves the clock he is being measured against.
+then repaid at one. And the server's clock never follows a player forward once it is known --
+`UniverseClock.Set` is called from a world off disk, from the first world handed over, from
+`OnLoaded` only while `!Known`, and by `HoldTimeAtTheWorld`, which runs only when nobody is loaded.
+So nothing moves the clock a game ahead of the server is measured against.
 
-**How he got ahead is not confirmed.** During an agreed warp the server runs its own clock at the
-warp rate, so the two should advance together, and the candidates are:
+**How he got ahead is confirmed, and it is not latency, not a lone player and not an overshoot.**
+Being a few hundred universe-seconds off the server *during a 1000x warp* is being a fraction of a
+real second off, which is healthy and expected -- `Speed` divides by the rate for exactly that
+reason, so `late` is in real seconds and a 400-second gap at 1000x reads as 0.4. Ending the warp
+drops the server's clock to 1x **without reconciling the gap**, and the same 400 universe-seconds is
+now 400 *real* seconds ahead. `late < -3` and the world stops, for as long as the server's 1x clock
+takes to close a gap a 1000x warp opened: up to a thousand times longer to undo than to make.
 
-- the catch-up overshooting. `behind` is the server's last word carried on at its rate, so it is
-  always a little stale, and the correction is that staleness multiplied by the gain. At 1000x, 100
-  ms of staleness is 100 s of universe time per cycle, and a few cycles is the gap seen.
-- the game outrunning a wall-clock-driven server. The server's time is `rate x` real time; the
-  game's is its own stepping, and KSA works a world on rails out in closed form, so a step of an hour
-  costs what a step of a frame costs. Nothing holds a game to real time at all.
-- the warp ending at different moments in the two, which has happened before in this exact shape:
-  `UniverseClock.SetSpeed`'s own comment records a server that "quietly rewound" coming out of a
-  warp and left "every game hundreds of seconds ahead".
+Reproduced on loopback with `two-games.sh --test`, in a minute, on 2026-11-10:
 
-**Not fixed, and the fix is a choice rather than a line.** Holding the world slower instead of
-stopping it does not help: nothing a world ahead of the server does closes a gap only the server can
-close. Either the server's clock is dragged forward by the room when every loaded player is ahead of
-it -- bounded by `SaneUniverse`, which is what a lone warping player honestly means -- or a game is
-held to the server's rate while warping so the gap cannot open. The first is the smaller change and
-matches what a player alone in a world expects.
+```
+A asks for 1000x, B votes yes
+  A universe=83500.6  speed=1026  behind_s=+132.6   warp=1000/Running
+  B universe=83700.4  speed=1026  behind_s=+129.3   warp=1000/Running     <- 0.13 real seconds. healthy.
+A ends the warp
+  A universe=101911.8 speed=0     behind_s=-469.4   warp=None/None
+  B universe=101810.1 speed=0     behind_s=-367.6   warp=None/None
+  ... 24 s later, both still frozen at the same universe time, behind_s closing at 1 s per second
+```
+
+A was stopped for about eight minutes and B for about six. Note that it hits **everyone in the
+room**, not only whoever asked: Goddchen being alone only meant nobody else was there to report it.
+Note also that the two games ended the warp 100 universe-seconds apart, so the size of each player's
+stop is whatever their own frame timing happened to leave them with.
+
+**The fix the server already has the parts for.** Every player sends its own `Late` on every ping
+and `Losing()` already divides it by the rate to read it in real seconds, so at `EndWarp` the server
+knows how far ahead the furthest-ahead player is. Advancing the clock by that lead before dropping
+the rate leaves nobody ahead, and is what the room honestly simulated: the games did that time, and
+the server's wall-clock-driven time is the thing that is behind. The alternative -- keeping the
+server's clock and holding every game at a standstill -- is what happens today.
+
+What that costs, and the reason this is a choice rather than a one-liner: the world's time would
+jump forward at the end of every warp, by up to the whole lead. Craft states already timestamped in
+the past stay valid, since `Track` keeps a window and interpolates, but anything keyed to the
+server's clock being monotonic *and* smooth would see a step. Worth checking `SaveMarginSeconds` and
+the definition-pruning in `Prune` against a jump before shipping it.
 
 Worth fixing in passing either way: the mod tells the player nothing useful while this happens.
 `Sync.Now`'s line is `Math.Abs(b) > CatchUpAboveSeconds ? $"catching up: {b:F0} s behind"`, so a
