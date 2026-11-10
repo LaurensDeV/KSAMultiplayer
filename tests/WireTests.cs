@@ -39,6 +39,22 @@ public class WireTests
         // A piece whose name was taken gets a " 2" instead, which is the same step.
         Assert.Equal(["NewRocket_3_27", "NewRocket_3", "NewRocket"], Wire.ShedFrom("NewRocket_3_27 2"));
 
+        // Names out of the shared world, where a player names a craft in words. The walk stops at
+        // the piece's own separator: carrying on through the spaces would hand back "LS Test MK",
+        // which is nobody's craft, and a piece whose ancestry answers nothing is settled by distance
+        // instead -- which after a crash is a measurement against nothing left alive.
+        Assert.Equal(["LS Test MK I"], Wire.ShedFrom("LS Test MK I_1"));
+        Assert.Equal(["NewRocket_2", "NewRocket"], Wire.ShedFrom("NewRocket_2_1"));
+
+        // A piece shed off a craft this world had to rename. KSA builds the name out of the parent's
+        // local Id, and the walk stops at the bracket, so the chain is that local name and nothing
+        // before it -- while both the game's own roster and the server's are kept under the names
+        // the room shares. That is why Sync reads every ancestor back through the renames before it
+        // looks one up: without that the piece belonged to nobody, and a breakup renames nearly
+        // everything.
+        Assert.Equal(["Rocket_1 (2)"], Wire.ShedFrom("Rocket_1 (2)_1"));
+        Assert.Equal(["Gemini7 (2)"], Wire.ShedFrom("Gemini7 (2)_3"));
+
         // A name that was never shed from anything came off nothing.
         Assert.Empty(Wire.ShedFrom("Rocket"));
         Assert.Empty(Wire.ShedFrom("Octo Smoke Monster"));

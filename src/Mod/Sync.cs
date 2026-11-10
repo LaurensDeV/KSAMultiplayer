@@ -1154,8 +1154,10 @@ internal static class Sync
     }
 
     // Craft this game has made since it was last looked at: a launch, a dropped stage, a kitten on EVA.
-    // Each is this player's when it is the one flown or nearer to this player's craft than to anyone else's
-    // -- unless its name says it came off another player's rocket, in which case it is neither.
+    // A name that says which rocket a piece came off answers for it either way: another player's, and it is
+    // neither this game's nor anybody's to keep here; this player's, and it is theirs. Only a craft whose
+    // name says nothing is settled by distance -- the one flown, or nearer to this player's craft than to
+    // anyone else's.
     private static void Adopt(Client c, Dictionary<string, Vehicle> here, Vehicle? flown)
     {
         foreach (Vehicle v in World.Vehicles())
@@ -1168,7 +1170,8 @@ internal static class Sync
             if (ToRemove.Contains(v)) continue;
             string key = KeyOf(v);
             Seen.Add(v);
-            if (Whose(c, key) is { Owner: var owner, From: var from } && owner != c.Id)
+            (byte Owner, string From)? shed = Whose(c, key);
+            if (shed is { Owner: var owner, From: var from } && owner != c.Id)
             {
                 // Their rocket shed it in this world, which is this world's business and nobody
                 // else's: their own game sheds its own pieces and says so. Left standing it is an
@@ -1181,10 +1184,22 @@ internal static class Sync
                 continue;
             }
             MadeHere.Add(v);
+            // Came off a rocket of this player's, which settles it without measuring anything. The
+            // rocket it came off is usually gone by the time its pieces are here, and a crash leaves
+            // nothing else of this player's alive for a piece to be nearer to: measured against an
+            // empty set every piece was further from this player than from anybody, so none was
+            // claimed, none was described, and the others watched the rocket vanish whole and never
+            // saw it come apart. The name is the surer answer in any case -- it is already the one
+            // trusted a few lines up to give another player their debris.
+            if (ReferenceEquals(v, flown) || shed is not null)
+            {
+                Own(c, v, define: true, made: true);
+                continue;
+            }
             double mine = Owned.Values.Where(m => World.IsAlive(m.Craft)).Select(m => World.Between(m.Craft, v)).DefaultIfEmpty(double.PositiveInfinity).Min();
             double theirs = Puppets.Keys.Where(World.IsAlive).Select(p => World.Between(p, v)).DefaultIfEmpty(double.PositiveInfinity).Min();
             // Made here, so the server gives it a name of its own if another player has that one.
-            if (ReferenceEquals(v, flown) || mine < theirs) Own(c, v, define: true, made: true);
+            if (mine < theirs) Own(c, v, define: true, made: true);
         }
     }
 
@@ -1197,10 +1212,40 @@ internal static class Sync
     {
         foreach (string from in Wire.ShedFrom(key))
         {
-            if (Owned.ContainsKey(from)) return (c.Id, from);
-            if (c.OwnerOf(from) is var owner && owner != 0) return (owner, from);
+            string shared = Shared(from);
+            if (Owned.ContainsKey(shared)) return (c.Id, shared);
+            if (c.OwnerOf(shared) is var owner && owner != 0) return (owner, shared);
         }
         return null;
+    }
+
+    /// <summary>
+    /// The name everybody shares for the craft this game calls <paramref name="local"/>, which is
+    /// that name itself unless the craft has been renamed.
+    ///
+    /// <para>KSA builds a shed piece's name out of its parent's local <see cref="Vehicle.Id"/>,
+    /// while both <see cref="Owned"/> and the server's roster are kept under the names the room
+    /// shares. A renamed rocket's ancestry therefore appears in neither, and every piece it sheds
+    /// is nobody's: not taken away when it is another player's, not claimed and described when it
+    /// is this one's, and never looked at twice. A breakup renames nearly everything, since both
+    /// games shed their own copy's pieces under the same names and whoever receives the other's
+    /// definition second has to find a free one.</para>
+    /// </summary>
+    private static string Shared(string local)
+    {
+        Vehicle? dead = null;
+        foreach (Vehicle v in Renamed.Keys)
+        {
+            if (v.Id != local) continue;
+            // A live craft of that name answers over a destroyed one, whose name KSA may have handed
+            // on already. A destroyed one still answers, though, and has to: a crash sheds its
+            // debris and destroys the rocket in the same call, and the rename is not forgotten until
+            // the next prune -- so the one case this whole rule exists for is the one where the
+            // parent is gone by the time its pieces are looked at.
+            if (World.IsAlive(v)) return KeyOf(v);
+            dead = v;
+        }
+        return dead is null ? local : KeyOf(dead);
     }
 
     private static void Own(Client c, Vehicle v, bool define, bool made)

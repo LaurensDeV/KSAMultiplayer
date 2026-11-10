@@ -17,8 +17,14 @@ namespace KSAMultiplayer;
 /// and the pause go through: while connected, the speed is the one that keeps the server's time.
 /// <see cref="InputEvents.SimSpeedData.Apply"/> beside them, which is the only one of those that is
 /// the player's own word, and so the only one put to the room.</item>
-/// <item><see cref="Universe.DestroyVehicleFromEvent"/>: another player's craft is never destroyed
-/// here by a crash this world sees, only when its owner's game says it is gone.</item>
+/// <item><see cref="Universe.DestroyVehicleFromEvent"/> and <see cref="PartFailureEvent.Apply"/>,
+/// which are KSA's two ways to wreck a craft: another player's is wrecked by neither, however this
+/// world's physics treats it, and goes only when its owner's game says it is gone. Both are needed
+/// because a crash takes the second -- <c>PhysicsBubble</c> stands the first down in its favour
+/// wherever a craft is touching terrain, ocean or another craft -- and because the second strips
+/// parts off a craft that lives, which the first cannot express. Not
+/// <c>Universe.DestroyVehicle</c>, which they share and which this mod needs
+/// (see <see cref="BeforeDelete"/>).</item>
 /// <item><see cref="Vehicle.AddVolumetricExhaustInstances"/> and
 /// <see cref="Vehicle.UpdatePlumeTrailEmitters"/>, where the game turns a craft's engines into a
 /// plume, an exhaust and a light: all three off a number only a physics step leaves behind, so
@@ -214,6 +220,8 @@ internal static class Hooks
                   "there is nothing in KSA's menu bar to say this game is in a shared world");
             Patch(AccessTools.Method(typeof(Universe), nameof(Universe.DestroyVehicleFromEvent)), nameof(BeforeDestroy),
                   "another player's craft can be wrecked in this world alone");
+            Patch(AccessTools.Method(typeof(PartFailureEvent), nameof(PartFailureEvent.Apply)), nameof(BeforePartFailure),
+                  "another player's craft can have its parts blown off in this world alone");
             Patch(AccessTools.Method(typeof(InputEvents.VehicleDestroyData), nameof(InputEvents.VehicleDestroyData.Apply)),
                   nameof(BeforeDelete),
                   "another player's craft can be deleted from the universe manifest in this world alone");
@@ -753,6 +761,39 @@ internal static class Hooks
     }
 
     /// <summary>
+    /// False spares the craft's parts. KSA's other way of wrecking a craft, and the one a crash
+    /// takes: parts past their crash tolerance on contact are failed here rather than through a
+    /// destruction event, and <c>PhysicsBubble</c> stands that path down in favour of this one
+    /// wherever there is terrain, ocean or vehicle contact -- so <see cref="BeforeDestroy"/> is
+    /// never reached by a crash at all.
+    ///
+    /// <para>Another player's craft is in this game's own physics whenever it is near enough to have
+    /// a bubble, and the corrections written to hold it on its owner's states are contact pressure
+    /// this world has and its owner's world never did. Unguarded, this game blew the parts off a
+    /// rocket that was whole in the world that owns it: under half the part count they are exploded
+    /// and isolated one at a time and the hull flies on without them, at half or more the craft goes
+    /// whole, and nothing is sent about either, because this game does not own the craft. What the
+    /// two players saw of one rocket simply disagreed.</para>
+    ///
+    /// <para>Refusing <c>Apply</c> leaves nothing stuck: the caller nulls the event on its next line
+    /// whatever this answers, so <c>PartFailure.Detect</c> is free to raise another next frame and
+    /// have it refused again, which is what the prefix above does all the while a puppet is being
+    /// held against the ground.</para>
+    /// </summary>
+    private static bool BeforePartFailure(Vehicle vehicle)
+    {
+        try
+        {
+            return !Sync.IsPuppet(vehicle);
+        }
+        catch (Exception e)
+        {
+            Complain("sparing another player's craft from a part failure", e);
+            return true;
+        }
+    }
+
+    /// <summary>
     /// False spares the craft. The other half of <see cref="BeforeDestroy"/>: wrecking a craft goes
     /// through the destruction event, but deleting one does not.
     ///
@@ -939,7 +980,7 @@ internal static class Hooks
 
     // Never called: puts the patched methods in this assembly's metadata, so a KSA change to one is a build error.
     private static void PinTheSignatures(Vehicle v, SimStep step, SimSpeed named, VehicleDestructionEvent e,
-                                        KittenEva kitten, EVADoor door, IVASeat seat,
+                                        PartFailureEvent failed, KittenEva kitten, EVADoor door, IVASeat seat,
                                         Camera camera, VolumetricExhaustRenderer exhaust, VolumetricTrailRenderer trails)
     {
         v.PrepareWorker(step);
@@ -948,6 +989,7 @@ internal static class Hooks
         Universe.SetSimulationSpeed(1.0, true);
         Universe.SetSimulationSpeed(named);
         Universe.DestroyVehicleFromEvent(v, e);
+        failed.Apply(v);
         Program.ControlledVehicle = v;
         kitten.BoardVehicle(v, door);
         EVADoor.PerformEvaForSeat(v, seat);
