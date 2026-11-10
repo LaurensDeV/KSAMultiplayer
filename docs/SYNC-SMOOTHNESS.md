@@ -6,6 +6,15 @@ Read at `ce4b0fb`. Nothing here had been seen in a game when it was written: it 
 reading and arithmetic, which is exactly the weakness that made today's catch-up ceiling a
 regression.
 
+**Measured since, on 2026-11-10, and the largest thing here was not in it.** `tools/motion.py` now
+records where every craft is in both games at every physics step, and `tests/TrackTests.cs` flies
+a known path through a simulated wire. A craft was drawn 150 ms in the past and a coasting craft is
+stepped by KSA in the present, a kilometre apart at orbital speed; `Track` draws at the present
+now, and what follows about `Track.DelaySeconds` and about the pull on a craft in orbit describes
+code that is gone. Of the kitten sections one thing has been measured: a kitten walking at 1.8 m/s is
+drawn half a metre behind itself in a sawtooth and was not put anywhere outright in the six seconds
+the rig can walk one, where this predicts five metres and a teleport after twenty-one. `errors.md`.
+
 **Partly acted on since.** Of "What to ship, in order" below, 1, 2, 4 and 6 are in the code --
 `Sync.cs` jitters `SendNext` on construction and accumulates it rather than resetting it, `World.cs`
 takes a craft off rails only when `Pull` writes something, and `Clock.cs` carries attitude forward

@@ -1,7 +1,9 @@
 # Testing the clock, and testing it over a wire that is not loopback
 
 Two things, written together because the second is what the first keeps needing and because it is
-easy to build the wrong one. A plan, not a record: nothing here is done except where it says so.
+easy to build the wrong one. A plan, not a record: nothing here is done except where it says so --
+and the trace is, as `tools/warp-trace.py`. What it walks and what its first runs found is at the
+end.
 
 ## Why timewarp wants a different shape of test from everything else here
 
@@ -49,18 +51,21 @@ Worth writing down because the warp surface is unusually wide, and because a tes
 the seam it is pushing on tends to push on the same one twice.
 
 **On the server.** `_warpPhase` is None, Asking or Running. An ask by anyone else during Asking or
-Running is dropped; a speed within a thousandth of 1 ends a warp rather than starting one;
-`WarpQuietSeconds` after an end belongs to whoever had it, so stepping down through normal and back
-up is one warp rather than two votes. `MostWarp` is 100,000. Every loaded player must answer and all
+Running is dropped; a speed within a thousandth of 1 ends a warp rather than starting one; and for
+`WarpQuietSeconds` after an end nobody's ask is taken, the asker's own included. `MostWarp` is
+100,000. Every loaded player must answer and all
 must answer yes -- silence is not consent, the ask runs out after `--warp-answer` -- and a vote is
 `TryAdd`, so the first answer is the only one that counts. And the ask is **not** agreed at the
-speed asked: `Flyable` holds it to what the room can fly, and the governor keeps moving it during the
-warp, backing off by `GovernBackOff` when the worst player is more than `GovernLateSeconds` behind
-and climbing back by `GovernStep` when they are not.
+speed asked: `Flyable` holds it to what the room can fly, and it is not run at what is agreed
+either, unless every watching machine has said what it flies -- `Reached` starts it at `GovernStep`
+and the governor climbs it by that much a second. The governor keeps moving it during the warp:
+down to what a machine says it can fly, back by `GovernBackOff` when the worst player is more than
+`GovernLateSeconds` behind and not catching up, and no further up while anybody is being left.
+And when the clock's speed falls, `FollowTheRoom` takes it on to the game furthest past it.
 
-**In the game.** `HoldTheClock` stops holding anything when the player is not at a craft, and forces
-1x -- so a player who opens the tracking station mid-warp is running at real time while the room
-warps. `ClockFollow.Speed` divides the gap by the rate, which is what makes a gap safe at high warp
+**In the game.** `HoldTheClock` holds a game to the server's time wherever its world runs, at a
+craft or at none: only in the vehicle editor, where KSA stops the world itself, does it let go, at
+1x and saying it is late by nothing. `ClockFollow.Speed` divides the gap by the rate, which is what makes a gap safe at high warp
 and fatal at low. The catch-up ceiling is `MostCatchUp` (10) with anything of this game's in physics
 and `MostCatchUpOnRails` (1000) without, chosen per frame off `World.Analytic`. `ClockFollow.Asked`
 then multiplies by up to 2 to make up a slow frame, which is a second feedback path on top of the
@@ -95,8 +100,9 @@ step leaves wreckage.
 - 1 → 10 → 1 with a craft in physics; 1 → 1000 → 1 with everything on rails. Both directions of
   `MostCatchUp` versus `MostCatchUpOnRails`.
 - Ended three ways: by the owner asking for 1, by another player's no, by the ask running out.
-- Stepped down through normal and straight back up, inside `WarpQuietSeconds`, which should be one
-  warp and not two votes -- and a second ask by somebody else in that window, which should wait.
+- Stepped down through normal and straight back up, inside `WarpQuietSeconds` -- and a second ask
+  by somebody else in that window. Both are dropped without a word, which the walk writes down
+  rather than judges.
 - The owner changing speed mid-warp, and a non-owner trying to.
 - One game leaving its craft mid-warp, where `HoldTheClock` forces it to 1x while the room warps,
   and coming back.
@@ -113,9 +119,8 @@ family of faults is proportional to that number and therefore structurally invis
 
 - the clock offset the client estimates from ping and pong, whose error feeds straight into
   `behind_s` and so into every assertion above;
-- `Track.DelaySeconds` (0.15) and `MostAheadSeconds` (1.0), the window a puppet is drawn in -- at
-  150 ms the delay *is* the round trip, and the extrapolation past the newest state stops being a
-  corner case;
+- how far past its newest state a puppet is drawn, which is the trip from one game to the other, and
+  `MostAheadSeconds` (1.0), where that stops;
 - `SilentSeconds`, the server's 10-second patience, which is how Onyx kept being dropped;
 - reordering and loss, which the protocol is built to tolerate and which nothing here has ever made
   it tolerate.
@@ -171,11 +176,116 @@ fails at 50 is the interesting result.
 
 Load: the failures that shipped were found with three or four players and rockets in pieces, and a
 third game is ruled out by this card's memory. Two machines, and so each player's own line, NAT and
-MTU. And where anything is -- neither `status` nor `craft` reports a position, so whether a puppet is
-where its owner says it is still cannot be asked by a test at all.
+MTU. Where anything is could not be asked when this was written, since neither `status` nor `craft`
+reports a position; `tools/motion.py` asks it now, of what the bridge can make a craft do.
 
 Nor anything a craft carries that is not a part and not a name. A kitten was found on 2026-11-10
-that is drawn with hardware standing out of it in the game that loaded it and clean in the game that
-rebuilt it from this mod's definition, while both report one part: the two worlds agree on every
-number a test here compares, and the players are looking at different things. `docs/DESIGN.md` has
-it. A picture is the only instrument that found it, and the harness takes none.
+drawn torn open in one game and clean in the other, while both report one part: the two worlds
+agreed on every number a test here compares, and the players were looking at different things. That
+one turned out to be the rig's own doing -- `errors.md` has it -- but a picture is the only
+instrument that found it, and the harness takes none.
+
+## The trace, as built
+
+```bash
+./tools/two-games.sh --test          # the rig, whose server now writes its own clock down
+./tools/warp-trace.py                # walk it and judge the series; about four minutes
+./tools/warp-trace.py --only thousand
+./tools/warp-trace.py --check <run>  # judge a trace again, with no game up
+```
+
+Both games are asked for `status` together twice a second, and the server writes its clock, its
+warp and each player's lateness to a file four times a second and on both sides of every change
+(`ksamp-server --trace <path>`, a flag and not a setting). Every time in it is Windows's time of
+day: a game's `status` carries the instant it was answered at, the server's lines carry theirs, and
+both are processes on one machine. So how far a game was from the server is worked out against the
+server's own clock at the instant the game answered, and the game's own `behind_s` is reported
+beside that rather than trusted.
+
+**None of it is timed on the Linux side**, which the first run was. WSL's clock ran two percent
+fast against Windows's and was stepped back six tenths of a second every half minute, so one step
+of the walk was laid over the one before it and a healthy run failed. Where a step begins is asked
+of a game now.
+
+It judges the first four assertions above over every sample, and the rest as what each step expects
+of the server: STOPPED, LATE, RATE, BACKWARDS, then consent, ownership, the ceiling, and a speed
+written by a program against one picked by a player. Exit 0, 1 or 2 as `breakup.sh` does. A made-up
+trace with one game 30 s past the clock fails STOPPED and LATE and nothing else.
+
+LATE is the one whose bound took arguing. Six seconds from the clock, in seconds of the rate then
+running, and for how long: three seconds past it ahead, since a game ahead stands still for
+exactly as long as it is ahead; and behind, three more than the catch-up it is meant to make takes,
+since the end of a warp turns a tenth of a second at 1000x into a hundred at 1x on the instant and
+what matters is whether a game then makes them up. `ClockFollow` halves a gap every 1.4 s.
+
+The rig has a mode for this work: `./tools/two-games.sh --server` puts this tree's server under the
+two games as they stand, in under a minute, where bringing the games up again is four.
+
+Walked, in order: nothing asked; `modspeed` with no warp running; `pickspeed`, refused by the other
+game; 10x agreed and ended by its asker; an ask refused; an ask nobody answers; 4x, changed to 8x by
+its asker, then asked to change and to end by the other player, then written at by `modspeed` in
+each game; an ask by its own asker inside the quiet; the faster key pressed three times in a second
+and the key for normal speed; 1000x agreed, held for half a minute and ended. **Not walked**: a
+player leaving their craft mid-warp, joining or leaving mid-warp, a save loaded mid-warp, and a
+machine made to look slow. Which catch-up ceiling a step ran under is reported and not arranged:
+the bridge can light an engine and cannot throttle one.
+
+### What it found, 2026-11-10, on loopback
+
+The whole walk five times in the day, with parts of it in between, and the first four failed. Each
+failure was something wrong with the game, the server or the trace, and `errors.md` has them in
+order:
+
+- **A warp asked at 1000x ran for one second and then at 1x**, LATE by two orders of magnitude.
+  The governor: a warp started at the ask in a room that had said nothing, and backing off for
+  lateness made the lateness worse.
+- **With that fixed a warp held 1000x for the first time, and the end of it stood one game still
+  for 42 s and counting**, STOPPED. A game eased its idea of the server's rate towards a new one
+  over more than a second, and the clock went on to the nearest game where it should, just after
+  its own speed has fallen, go on to the furthest.
+- **Two more presses of the faster key did nothing while a warp was climbing**, a claim of the
+  step's own. The key stepped from where the world was and not from what had been asked.
+- **And the first walk of all, a short one, failed on a healthy game**, because it was timed on
+  WSL's clock.
+
+The fifth holds every claim: no game stood still while the clock ran; no universe time went
+backwards; no game named a rate the server had not; a refused ask and an unanswered one never ran;
+the other player could neither steer nor end a warp; no warp ran above what was asked; `modspeed`
+never reached the room, with no warp running or with one, in the asker's game or the other's;
+`pickspeed` did; three presses raised what was asked three times. Through every warp both games
+sat within 0.02 s of the clock, a warp to 1000x got there in seventeen seconds and stayed, and at
+its end the games were 20 s and 17 s past a clock that went on 21 s to them.
+
+Worth knowing before reading a run: the server's log says `the world rises to` once a second for
+the whole of a climb, and a warp to 1000x is seventeen of them; and whether a room can fly what was
+asked depends on what is in it -- with a rocket's wreckage in the sea the same two machines topped
+out near seventy.
+
+### And over the wire, the same day
+
+```bash
+KSAMP_LAG_MS=50 ./tools/two-games.sh --server && ./tools/warp-trace.py
+KSAMP_LAG_MS=50 KSAMP_LAG_JITTER_MS=20 KSAMP_LAG_DROP=0.02 ./tools/two-games.sh --server
+```
+
+| each way | every claim | what failed |
+| --- | --- | --- |
+| 25 ms | held | |
+| 50 ms | held | |
+| 150 ms | failed, then held | the clock followed one game's lead twice |
+| 50 ms give or take 20, one in fifty dropped | failed three walks in six | things said once: the ask for a world, the end of a warp, an ask or a vote |
+
+Delay alone scales one number and breaks nothing until a round trip is a fair part of a second:
+a game's lead at the end of 1000x is twenty seconds on loopback and about a second more for every
+millisecond each way, and the clock goes on to it. At 300 ms round trip a ping written before its
+game had heard the clock move arrived after the clock had moved, and was followed again.
+
+Loss and reordering found nothing wrong with what the protocol repeats -- states, pieces of a
+world -- and three things wrong with what it said once. `errors.md` has all of it. What is left
+said once is an ask for a warp and a vote on one, which the walk now makes again when unheard, a
+line of chat, and the word to a loading game that a craft has gone.
+
+The claim that wanted a number for where a craft is has one now: `tools/motion.py` records both
+games at every physics step, and `tests/TrackTests.cs` flies a known path through a simulated wire
+with no game at all. What they found is in `errors.md`.
+

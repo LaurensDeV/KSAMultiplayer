@@ -7,7 +7,7 @@ three first, in this order:
   and how to assert on a world that is never the same twice. The ranked list lives there.
 - `docs/WARP-AND-WIRE.md` -- the clock, and testing over a wire that is not loopback. Why timewarp
   wants a trace rather than a frozen snapshot, and what the latency relay is and is not for.
-- `errors.md` -- what has actually gone wrong, with measurements. The last three entries are from
+- `errors.md` -- what has actually gone wrong, with measurements. The last eight entries are from
   2026-11-09 and 2026-11-10.
 
 `docs/DESIGN.md` is how the mod works and, in its second half, **what has not been tried in game**,
@@ -15,8 +15,7 @@ which is the real backlog. Keep it true in the same change that makes it untrue.
 
 ## Where it stands, 2026-11-10
 
-Branch `claude/ksa-multiplayer-handoff-786f03`, pushed to `origin/dev` at `ea17ae8`. Tree clean,
-169 tests green (`./tools/test.sh`, no KSA needed).
+192 tests green (`./tools/test.sh`, no KSA needed).
 
 **Seen working in game, with two games on one machine:**
 
@@ -28,6 +27,16 @@ Branch `claude/ksa-multiplayer-handoff-786f03`, pushed to `origin/dev` at `ea17a
   both worlds. The control is what makes the first number mean anything.
 - A crash shedding 16 pieces, all 16 claimed by the owner and all 16 built in the other game.
 - The clock keeping up with a room that has run past it, after a warp ends.
+- A game at no craft held to the server's time through a warp, where it used to be left 229 s
+  behind; a walking kitten's copy 5 cm behind it over 38 m, where it used to fall behind for as
+  long as the kitten walked.
+- A rocket burning off a pad, coming down on its engine, and hopping to 200 m and landing, each
+  followed in the other game to centimetres.
+- A docking flown on thrusters, port onto port, and undone again, with the same two craft in both
+  worlds after each; a docking with the craft another player is flying refused; a craft one
+  player built and another took over followed in its maker's world.
+- A rocket falling over into thirty pieces: the same thirty in both worlds, none stepping a metre
+  between two frames, and the hull never gone from the other world while it changed shape.
 
 **Fixed, built, tested, and *not* seen in game:**
 
@@ -35,11 +44,12 @@ Branch `claude/ksa-multiplayer-handoff-786f03`, pushed to `origin/dev` at `ea17a
   `Renamed`). The unit test covers the name walk; nothing reaches `src/Mod`. A breakup makes renames
   the common case, so `tools/breakup.sh` is the run that would show it.
 
-**Known broken, not fixed:**
+**Explained, and it was the rig:**
 
-- A kitten out of a save is drawn in one game with hardware standing out of it. Not a part -- both
-  games report one -- not a name, and so invisible to every check here. `docs/DESIGN.md` has what
-  was ruled out. Unexplained.
+- A kitten out of a save drawn torn open in one game. The bridge's `load` read the save before KSA
+  had drawn a frame of the world it had just started, and a kitten built then keeps a mangled mesh.
+  `load` waits for the world to be drawn now. It was not a part and not a name, and so invisible to
+  every check here; `errors.md` has the runs.
 
 ## The rig
 
@@ -75,8 +85,8 @@ One command into a running game, by profile:
 KSA_USER_DIR=<profile> python3 tools/ksa-mcp/server.py cli <command> '<json>'
 ```
 
-`status` `craft` `mp` `goto` `watch` `eva` `stage` `setorbit` `engine` `design` `fail` `save` `load`
-`start` `step` `capture` `pause` `resume` `speed` `modspeed` `pickspeed` `warpkey` `log`.
+`status` `craft` `mp` `goto` `watch` `eva` `stage` `setorbit` `engine` `attitude` `land` `dock` `approach` `move` `put`
+`design` `fail` `motion` `save` `load` `start` `step` `capture` `pause` `resume` `speed` `modspeed` `pickspeed` `warpkey` `log`.
 
 `mp` carries the rest as flags: `connect` `disconnect` `name` `password` `chat` `editor` `blank`
 `launch` `pads` `warp` `vote` `board`. With no flag it answers as `status` does.
@@ -96,9 +106,40 @@ Three worth knowing about because they are new and change what is reachable:
   game's own `Rocket` (89 parts) and `Gemini7` (21). `load` does that first if needed, so it works
   on a game that has only just opened.
 
-**Still out of reach:** placing a part (so part placement, symmetry and staging edits), where
-anything *is* (neither `status` nor `craft` reports a position; the closest is `from_flown_m`), a
-third game (GPU memory), and two machines.
+Four more for flying, which no test could do before:
+
+- **`attitude`** -- `{"track":"Up"}` presses the flight computer's button of that name, any of
+  KSA's `FlightComputerAttitudeTrackTarget`; `none` hands the craft back.
+- **`land`** -- brings a craft down on its engine by lighting and shutting it, since KSA holds a
+  throttle to the engine's minimum and that is full for every engine the rig has. `{"climb":120}`
+  flies it up that far first; with nothing it answers how the descent is going. It needs a
+  thrust-to-weight above about 1.3 for the default `slow` of 1.5 m/s^2; the Rocket has 1.7.
+- **`dock`** -- `{"craft":"X","to":"Y"}` docks two craft with a free port each wherever they are,
+  through the `DockingEvent` KSA's contact solver raises. KSA moves the lighter onto the port.
+  `{"craft":"X","undo":true}` undocks, through the input the port's own menu puts in.
+- **`approach`** -- `{"craft":"X","to":"Y"}` flies X onto Y's port on its thrusters and docks
+  nothing: the ports touch and KSA does. It targets the port, controls from X's own, has the
+  flight computer line them up, tries each translation key to learn what it does, and flies.
+  With nothing it answers how far along and across the line it is, how fast, and what the flight
+  computer is doing. `put {"port":true}` starts a craft in front of the other's port.
+- **`attitude`** with nothing answers what the flight computer is tracking, by which of thrusters
+  and gimbals, and how far off it is.
+- **`watch {"body":"Earth"}`** -- the camera on a planet, which is a game at no craft.
+
+And a rocket on a pad out of a craft in orbit, which is the only rocket with an engine the save
+has to stand on the ground: `design {"save":"Rocket"}`, `mp {"editor":true,"blank":true}`,
+`design {"load":"Rocket"}`, `mp {"launch":true}`. `setorbit` puts it back in orbit with its port
+free, which is how a world gets a third craft to dock with. A craft the other game owns is taken
+by watching it for ten seconds after its owner has gone to another.
+
+**Still out of reach:** placing a part (so part placement, symmetry and staging edits), throttling
+an engine below what KSA allows it, a third game (GPU memory), and two machines. Where anything is has an answer now -- `motion` on the bridge and `tools/motion.py`,
+with scenes for an orbit, an EVA, two craft meeting, a walk, a drop, a game at no craft with and
+without a warp, a launch, a hop, the two dockings and the flown one. It lays the two games' clocks
+side by side, compares what each world is left holding, and counts the frames a copy is not the
+shape its owner has it, so a craft in one world only, or left in an old shape, fails a run. `move`
+holds a craft's translation keys, which walks a kitten; `put` puts a craft beside another or lifts
+it off the ground.
 
 ## Traps
 
@@ -123,14 +164,33 @@ game blocked behind a dialog photographs clean. Read `status.popups`.
 **An orphaned `ksamp-server.exe` holds its own file**, so `cp` over it fails with Permission denied.
 `taskkill.exe /F /IM <name>.exe` first, and give the relay a different filename from the server.
 
-**Before any warp test, put both games at a craft.** A game that is not at one is forced to 1x by
-`HoldTheClock` and reports its lateness as zero, so it does not take part in a warp at all and
-nothing you measure means anything. Check `status.in_flight` and `status.craft`.
+**What is written to a craft's flight computer from a frame hook is lost.** KSA hands each
+physics step a copy and takes it back. `World.Track` keeps the order for `Vehicle.PrepareWorker`,
+which is the only place it holds; `attitude {}` reads back whether it did. The launch and the hop
+of 2026-11-10 were recorded believing a flight computer was steering them.
 
-**The governor clamps a warp hard.** Asking for 1000x and reading `warp.speed` back as `1` or `2.7`
-is normal -- it holds the room to what the slowest machine says it can fly. Always assert on
-`warp.speed` from `status`, never on what you asked for. And `status.can` reads `0` until the game
-has measured itself, so never gate a wait on it.
+**A watcher takes what nobody owns**, so who is watching what decides who owns a craft a scene
+left behind. `tools/motion.py` has A fly and B watch; a craft is handed the other way by its
+owner going elsewhere and the taker watching it until the server log says it is theirs to take.
+
+**A scene leaves its world behind.** A hop ends with thirty pieces of rocket rolling on the ground
+in physics, and a world holding those warps at 1.6x and runs the game that did not make them a
+fifth of a second behind. A dock uses up the only two ports the save has. Relaunch before a warp
+trace, and before reading any number as the mod's rather than the debris's.
+
+**Relaunching over running games used to fail without saying so**, and may again in some other
+script: `tasklist.exe | grep -q` under `pipefail` reads a running game as none. `--stop` first.
+
+**A warp climbs to what was asked.** Asking for 1000x and reading `warp.speed` back as `1.5` is the
+first second of seventeen, and reading it back as `70` a minute later is what the room can fly with
+what is in it. Always assert on `warp.speed` from `status`, never on what you asked for. And
+`status.can` reads `0` whenever a game is comfortable at the speed it is running, which at 1x is
+always, so never gate a wait on it.
+
+**Time nothing on the Linux side.** WSL's clock ran two percent fast against Windows's and was
+stepped back six tenths of a second every half minute, which is enough to lay one step of a walk
+over the next. A game's `status.wall` and the server's trace are the same clock; `time.time()` is
+not.
 
 **`breakup.sh`'s referee needs both authorities.** The sibling game alone cannot tell "A invented it"
 from "B has not received it yet"; the server's roster alone cannot either, because it holds only
@@ -160,32 +220,29 @@ the owner's own went to 75".
 
 ## What to do next, ranked
 
-1. **The warp trace.** Every fault in the clock family lives in a transition, and `breakup.sh`'s
-   freeze-and-compare is blind to all of them. Sample both games and the server at 2 Hz through a
-   scripted walk of transitions and assert over the series. `docs/WARP-AND-WIRE.md` has the eight
-   assertions and the transitions; the first assertion is written so the bug just fixed fails the
-   run.
-2. **Reproduce the full 1000x warp case against the fix.** What was verified was a 2.7x warp and a
-   51-second overshoot, because the governor clamped it. Same mechanism, a tenth the drama. Needs
-   both games settled and reporting a high `can` before the ask.
-3. **A breakup with renames**, which is the one fix in the tree that has not been seen in game.
-   `tools/breakup.sh` produces the conditions unaided; what it cannot currently do is *notice*,
-   because the orphan it would leave is neither a part count nor a missing name.
-4. **The `modspeed` invariant** -- the most-repeated failure in this project's history, five separate
-   `fix(mod)` commits, and a pure zero-expected claim: a `modspeed` write either reaches the room or
-   is refused, never silently sticks. Cheapest high-value item here.
-5. **Run everything at 0, 25, 50 and 150 ms.** A claim that holds at 0 and fails at 50 is the
-   interesting result.
-6. **Plant `admins.json`** so a harness can sweep between scenarios with `mp {"chat":"/sweep *"}`
-   rather than relaunching. The rig owns the server's data folder and wipes it per run.
+1. **A docking with a craft nobody owns, seen from the other game.** What nobody owns is each
+   world's own, so the capsule docks metres from the port in the world that is not flying it.
+   Claiming a craft when its port is targeted would make it one craft before anybody gets close.
+   And two players docking is refused, which is a design question and not a test.
+2. **A piece at rest that is struck**, and debris nobody owns: the first is said twice a second
+   until it is seen to move, the second is expired by each world on its own.
+3. **More than 2% loss.** Everything here has been walked at one datagram in fifty and nothing at
+   one in ten. Chat, an ask for a warp and a vote on one are still said once.
+4. **The end of a warp with a craft in physics.** The game the clock passes then catches up at ten
+   times and not a thousand. `land` and `attitude` make a craft that stays in physics for a
+   minute, which the trace could not have before.
+5. **A breakup with renames**, the one fix in the tree not seen in game. `motion.py` notices a
+   craft in one world only now, which `breakup.sh` could not.
+6. **The rest of the walk.** `tools/warp-trace.py` walks nine steps. Not walked: leaving a craft
+   mid-warp, which is a different thing now that a game at no craft keeps the clock; joining or
+   leaving mid-warp; a save loaded mid-warp; a machine made to look slow.
+7. **`breakup.sh` over the wire that loses and reorders**, and `admins.json` planted so a harness
+   can sweep between scenes with `mp {"chat":"/sweep *"}` instead of relaunching.
 
 ## Open questions
 
-- **What is standing out of that kitten.** Both games show it now, which contradicts the first
-  explanation. Ruled out: parts (both report one), the ownership path, the puppet path, and that
-  game's rendering (a fresh `eva` kitten beside it is clean).
-- **One number per craft for its distance from its owner's last reported state.** The largest blind
-  spot here: `docs/DESIGN.md` admits "is the puppet where its owner says it is" has never been
-  measured, and today no test can ask.
+- **What two players docking should do.** It is refused. One craft with two owners is not
+  something the mod has: a craft is one player's.
+- **Why the meeting once would not settle over the lossy wire.** It has run twice since.
 - **Nothing a craft carries that is not a part and not a name is checked at all**, which is how the
   kitten got through. Worth deciding what else falls in that gap.

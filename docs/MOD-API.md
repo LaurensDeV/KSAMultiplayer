@@ -403,7 +403,7 @@ offers two accessors with different guarantees: `latest`, the newest thing heard
 three problems above; and `riderAt`, the tail belonging to the state that craft is currently *drawn*
 at, for a guest that needs its value to match the hull it is painted on. A turret can use `latest`
 and never notice. A guest driving a simulation from received inputs needs `riderAt`, or it runs this
-frame's inputs against a pose from 150 ms ago.
+frame's inputs against a pose carried on from an older state.
 
 **Send the input, not the result.** KSACars has already solved this and its answer is the one to
 copy: it sends throttle, steer, brake and gear — about 13 bytes — and each peer runs its own wheel,
@@ -736,8 +736,9 @@ this design is the right shape. Against its seven items:
    to build, and it needs KSArmory's own pending work — "an outcome is data before it is applied" —
    because the blast path today is threaded through a 4,500-line class and cannot be called from
    outside a live weapon system. For a **kinetic** strike it does not work: the hit comes from a
-   raycast against the firer's copy of a target drawn 0.15 s in the past, which at 1,000 m/s is 150
-   m of displacement, so a CIWS burst that hits on one machine misses on the other. That wants a
+   raycast against the firer's copy of a target, which is where its owner's last word and a guess a
+   round trip long put it -- centimetres for a craft flying steadily and a metre or more for one
+   turning hard on a long line -- so a CIWS burst that hits on one machine can miss on the other. That wants a
    "where was this craft at time t" accessor, which the table does not have and which is the
    standard answer.
    And for a craft **nobody owns** there is no authority at all, so either every machine applies the
