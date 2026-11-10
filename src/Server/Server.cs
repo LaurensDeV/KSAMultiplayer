@@ -208,7 +208,7 @@ public sealed class GameServer : IDisposable
     private byte _warpWho;
     private float _warpSpeed = 1f, _warpWanted = 1f;
     private Wire.WarpPhase _warpPhase;
-    private double _warpAskedAt, _warpNext, _warpQuietSince = double.NegativeInfinity, _governNext;
+    private double _warpAskedAt, _warpNext, _warpQuietSince = double.NegativeInfinity, _governNext, _followNext;
 
     // The fastest a running warp has been found not to work, and whose machine it was found on.
     // Nothing climbs back to it, or the world climbs into the same ceiling and falls out of it once a
@@ -340,6 +340,7 @@ public sealed class GameServer : IDisposable
             EndWarp(now, "the warp ends: whoever started it has gone");
         }
         Govern(now);
+        FollowTheRoom(now);
         Lapse(now);
         if (_warpPhase != Wire.WarpPhase.None && now >= _warpNext)
         {
@@ -840,6 +841,51 @@ public sealed class GameServer : IDisposable
         Broadcast(WarpState(), p => p.Loaded);
     }
 
+    /// <summary>
+    /// The clock is never behind the whole room: where every game says it is further past this
+    /// clock than a nudge can close, the clock keeps up.
+    ///
+    /// <para>The end of a warp makes exactly that state, and nothing else does. A game cannot learn
+    /// the warp has stopped until the word reaches it, and it runs at the old speed until then --
+    /// so at 1000x, the round trip plus a frame is several hundred universe-seconds of overshoot,
+    /// made <em>by</em> the ending and not present before it. Measured at 400 s over a 50 ms link.
+    /// Left alone that gap is fatal rather than harmless, because <see cref="ClockFollow.Speed"/>
+    /// reads it in seconds of the rate now running: 0.4 s at 1000x, 400 s at 1x, past the
+    /// standstill. Every game in the room then stops dead until a 1x clock has closed a gap a 1000x
+    /// warp opened -- half a minute of warp bought eight minutes of frozen game, for everyone and
+    /// not just whoever asked. `errors.md` 2026-11-09.</para>
+    ///
+    /// <para>The <em>least</em>-ahead game is what the clock moves to, so it never passes anybody
+    /// and no game is ever asked to rewind, and one game's runaway clock cannot drag the room: it
+    /// takes every one of them being ahead. A game that is not at a craft is not keeping the clock
+    /// and does not count.</para>
+    /// </summary>
+    private void FollowTheRoom(double now)
+    {
+        if (!UniverseClock.Running || now < _followNext) return;
+        _followNext = now + FollowEverySeconds;
+        double rate = Math.Max(UniverseClock.Rate, 0.001);
+        double least = double.PositiveInfinity;
+        foreach (Player p in _players.Values)
+        {
+            if (p.Loaded && p.Here && double.IsFinite(p.Late)) least = Math.Min(least, -p.Late);
+        }
+        // Nobody keeping the clock, or somebody still behind it: there is nothing here to follow.
+        if (!double.IsFinite(least) || least <= 0.0) return;
+        // Only past what the nudge band closes on its own, so ordinary play is left alone and this
+        // is the standstill being avoided rather than a clock chasing every wobble.
+        if (least / rate <= ClockFollow.CatchUpAboveSeconds) return;
+        double to = UniverseClock.Now(now) + least;
+        // A lead is a number off the wire like any other.
+        if (!ClockFollow.SaneUniverse(to)) return;
+        UniverseClock.Set(to, now);
+        // Said about the clock as it stood, and the clock has just moved out from under them: every
+        // game is that much less ahead now, whether or not its next ping has arrived to say so.
+        // Without this the same lead is taken on again a second later, a step at a time.
+        foreach (Player p in _players.Values) p.Late += least;
+        Log($"every game is {least:F0} s past the clock, so the clock keeps up");
+    }
+
     private void EndWarp(double now, string why)
     {
         if (_warpPhase == Wire.WarpPhase.None) return;
@@ -899,6 +945,9 @@ public sealed class GameServer : IDisposable
     }
 
     // How often the room's speed is looked at again, and how far out of step it must be to move.
+    /// <summary>How often the clock checks whether the whole room has run past it.</summary>
+    private const double FollowEverySeconds = 0.5;
+
     private const double GovernEverySeconds = 1.0, GovernFall = 0.8, GovernStep = 1.5, GovernBackOff = 0.6;
 
     // How far behind a game may be before the world stops asking more of it. In its own seconds, so

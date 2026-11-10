@@ -718,6 +718,61 @@ public class ServerTests
     }
 
     [Fact]
+    public void TheClockKeepsUpWhenTheWholeRoomHasRunPastIt()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+
+        // What the end of a warp leaves behind. A game cannot learn the warp has stopped until the
+        // word reaches it and runs at the old speed until then, so at 1000x the round trip is
+        // hundreds of universe-seconds of overshoot -- made by the ending, not present before it.
+        (a.Late, b.Late) = (-400.0, -300.0);
+        rig.Until(() => rig.Server.Players.Count(p => p.Late < -200.0) == 2,
+                  what: "the server to hear that both have run past it");
+
+        double before = rig.Server.UniverseClock.Now(rig.Now());
+        // The least-ahead game is what it moves to, so it passes nobody: Bob's 300, not Alice's 400.
+        rig.Until(() => rig.Server.UniverseClock.Now(rig.Now()) - before >= 299.0,
+                  what: "the clock to keep up with the room");
+        Assert.True(rig.Server.UniverseClock.Now(rig.Now()) - before < 400.0,
+                    "the clock passed the game that was least far ahead");
+    }
+
+    [Fact]
+    public void TheClockIgnoresOneGameThatHasRunAhead()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+
+        // One game ahead and one behind is one game with a problem, not a clock with one. Moving
+        // for it would drag everybody else further back, and a game cannot rewind to follow.
+        (a.Late, b.Late) = (-4000.0, 20.0);
+        rig.Until(() => rig.Server.Players.Any(p => p.Late < -1000.0), what: "the server to hear it");
+        double before = rig.Server.UniverseClock.Now(rig.Now());
+        rig.For(2.5);
+        Assert.True(rig.Server.UniverseClock.Now(rig.Now()) - before < 100.0,
+                    "one game's word moved the clock");
+    }
+
+    [Fact]
+    public void TheClockLeavesAnOrdinaryWobbleAlone()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+
+        // Inside the band ClockFollow nudges across on its own. A clock that chased this would be
+        // chasing every frame's jitter instead of avoiding a standstill.
+        (a.Late, b.Late) = (-1.0, -1.5);
+        rig.Until(() => rig.Server.Players.Any(p => p.Late <= -1.0), what: "the server to hear it");
+        double before = rig.Server.UniverseClock.Now(rig.Now());
+        rig.For(2.5);
+        Assert.True(rig.Server.UniverseClock.Now(rig.Now()) - before < 10.0, "the clock chased a wobble");
+    }
+
+    [Fact]
     public void AWarpRunsOnlyWhenEveryoneAgrees()
     {
         using Rig rig = new();
