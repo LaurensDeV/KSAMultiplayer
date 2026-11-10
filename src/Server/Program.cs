@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Net;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using KSAMultiplayer;
 using KSAMultiplayer.Server;
@@ -36,6 +37,18 @@ const string Usage = """
       --directories <urls>   where to announce, separated by commas (default: the built-in list)
       --config <path>        the settings file (default: ksamp-server.toml beside the server)
       --help                 this
+
+    Or, instead of serving anything, stand between the games and a real server and hold their
+    datagrams back, for testing this protocol over a wire that is not loopback:
+
+      --relay <host:port>    the server to pass everything to. The games are pointed at this
+                             process instead, and it serves no world of its own
+      --latency <ms>         how long each datagram is held, each way (default 25). The round
+                             trip a game sees is twice this, and so is the path to another game
+      --jitter <ms>          how much that varies, give or take (default 0). This is also what
+                             makes datagrams pass each other, so reordering is not a setting
+                             of its own: it is what a delay that varies already means
+      --drop <share>         the share of datagrams thrown away, 0 to 1 (default 0)
 
     Every option but --config can also be given as an environment variable -- KSAMP_PORT,
     KSAMP_NAME, KSAMP_PASSWORD and so on, the option's name in capitals with dashes as
@@ -98,6 +111,71 @@ for (int i = 0; i < args.Length; i++)
     {
         Console.Error.WriteLine($"{a} needs a value; try --help");
         return 2;
+    }
+}
+
+// A relay is not a server and takes none of the settings below: no file is read or written, and
+// the real server's own options grow nothing an operator could set by accident.
+if (opts.Remove("relay", out string? passTo))
+{
+    double Num(string name, double fallback) =>
+        opts.Remove(name, out string? text) && double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double d)
+            ? d
+            : fallback;
+
+    double latency = Num("latency", 25.0);
+    double jitter = Num("jitter", 0.0);
+    double drop = Math.Clamp(Num("drop", 0.0), 0.0, 1.0);
+    int front = (int)Num("port", 50200);
+    string bindTo = opts.Remove("bind", out string? where) ? where : "0.0.0.0";
+    if (opts.Count > 0)
+    {
+        Console.Error.WriteLine($"--relay takes none of --{string.Join(", --", opts.Keys)}; try --help");
+        return 2;
+    }
+
+    string[] halves = passTo.Split(':');
+    if (halves.Length is not 2
+        || !int.TryParse(halves[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int upPort)
+        || !IPAddress.TryParse(bindTo, out IPAddress? bindAt))
+    {
+        Console.Error.WriteLine("--relay wants host:port, and --bind an address");
+        return 2;
+    }
+    IPAddress[] found = await Dns.GetHostAddressesAsync(halves[0]);
+    if (found.FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork) is not { } upAt)
+    {
+        Console.Error.WriteLine($"no address for '{halves[0]}'");
+        return 2;
+    }
+
+    // Windows naps in whatever its timer resolution is, which is 15.6 ms by default: a one
+    // millisecond sleep then overshoots a 25 ms delay by a third, and the relay held 33 ms against
+    // the 25 it was asked for. This is what the knob exists for, and what every game calls on its
+    // way up.
+    if (OperatingSystem.IsWindows()) Timers.Fine();
+
+    using Relay relay = new(new IPEndPoint(upAt, upPort), front, bindAt, latency, jitter, drop);
+    Console.WriteLine($"relaying :{relay.Port} to {upAt}:{upPort}, holding every datagram "
+                      + $"{latency:0.#} ms each way{(jitter > 0 ? $" give or take {jitter:0.#}" : "")}"
+                      + $"{(drop > 0 ? $", dropping {drop:P1}" : "")}");
+    Console.WriteLine($"a game joins {bindAt}:{relay.Port} and sees a round trip of about {latency * 2:0.#} ms");
+    double said = 0.0;
+    while (true)
+    {
+        relay.Pump();
+        // A millisecond at a time while anything is in hand, because the nap is what the delay
+        // overshoots by: at a 5 ms cap this held 31 ms against the 25 it was asked for. Idle, it
+        // waits longer, since there is nothing to be late for. Either way the figure it reports is
+        // the one it measured, so a run never has to take the asked-for number on trust.
+        double next = relay.NextDueIn();
+        if (next > 0.0015) Thread.Sleep(next > 0.02 ? 5 : 1);
+        if (relay.Counts() is var now && now.Passed + now.Dropped > 0 && Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency - said > 15.0)
+        {
+            said = Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
+            Console.WriteLine($"{now.Games} game(s), {now.Passed} through, {now.Dropped} dropped, "
+                              + $"{now.Waiting} in hand, held {now.MeanMs:0.#} ms on average");
+        }
     }
 }
 
@@ -466,3 +544,19 @@ announcer.Dispose();
 while (announcer.Said.TryDequeue(out string? last)) Say(last);
 server.Dispose();
 return 0;
+
+static class Timers
+{
+    // DllImport rather than LibraryImport: the generated marshalling for the latter is unsafe code,
+    // and this project does not compile with /unsafe for one call that takes an integer.
+    [DllImport("winmm.dll", EntryPoint = "timeBeginPeriod")]
+    private static extern uint BeginPeriod(uint ms);
+
+    /// <summary>Asks Windows for a one-millisecond timer, so a sleep is about as long as it says.</summary>
+    public static void Fine()
+    {
+        try { BeginPeriod(1); }
+        catch (DllNotFoundException) { }
+        catch (EntryPointNotFoundException) { }
+    }
+}

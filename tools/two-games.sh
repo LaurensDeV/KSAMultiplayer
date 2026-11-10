@@ -8,6 +8,11 @@
 #     ./tools/two-games.sh --stop     # close both games and the server
 #     ./tools/two-games.sh --priority # ask Windows again not to throttle the game behind
 #
+# KSAMP_LAG_MS=25 puts a relay of the server's own between the games and the server, holding every
+# datagram that long each way -- so the games see a 50 ms round trip instead of loopback's 0.05.
+# KSAMP_LAG_JITTER_MS varies it, which is also what reorders datagrams, and KSAMP_LAG_DROP throws a
+# share of them away. docs/WARP-AND-WIRE.md says what that is and is not worth testing.
+#
 # KSAMP_TWO_GAMES_PLUMES=1 turns the plume trails on, for watching another player's engine burn.
 # They are off by default because two games with them on have run this card out of memory.
 #
@@ -33,6 +38,14 @@ TEST_ROOT="${KSAMP_TWO_GAMES:-${USER_DIR%%/Documents/*}/KSAMultiplayerTest}"
 # A save clear of every other mod's parts: one a profile with only this mod enabled can load.
 SAVE="${KSAMP_TWO_GAMES_SAVE:-GOLF}"
 PORT="${KSAMP_TEST_PORT:-50100}"
+# Milliseconds each way between the games and the server, through a relay of the server's own. 0 is
+# loopback, which has no loss, no reordering and a round trip of about 0.05 ms -- so a whole family
+# of faults, everything proportional to the round trip, cannot be reached without this. See
+# docs/WARP-AND-WIRE.md. The round trip a game sees is twice this number.
+LAG_MS="${KSAMP_LAG_MS:-0}"
+LAG_JITTER_MS="${KSAMP_LAG_JITTER_MS:-0}"
+LAG_DROP="${KSAMP_LAG_DROP:-0}"
+LAG_PORT="${KSAMP_LAG_PORT:-50101}"
 # Where the server runs: "linux" is the real article, "windows" a published .exe beside the profiles.
 # Auto unless KSAMP_SERVER_ON says. See the server section below for why it is ever not linux.
 SERVER_ON="${KSAMP_SERVER_ON:-auto}"
@@ -71,6 +84,7 @@ fi
 if [[ "${1:-}" == "--stop" ]]; then
     taskkill.exe /F /IM StarMap.exe >/dev/null 2>&1 || true
     taskkill.exe /F /IM ksamp-server.exe >/dev/null 2>&1 || true
+    taskkill.exe /F /IM ksamp-lag.exe >/dev/null 2>&1 || true
     pkill -x ksamp-server 2>/dev/null || true
     echo "stopped"
     exit 0
@@ -224,6 +238,24 @@ SERVER_PID=$!
 disown
 sleep 3
 
+# Where the games are pointed: the server itself, or a relay standing in front of it. The relay is
+# the server's own binary in a mode that serves no world, and it has to be the Windows build for the
+# same reason the server often is -- a Windows game cannot reach a socket bound inside WSL.
+JOIN_PORT="$PORT"
+if [[ "$LAG_MS" != "0" ]]; then
+    "$HERE/tools/publish-server.sh" win-x64 >/dev/null
+    LAG_EXE="$TEST_ROOT/ksamp-lag.exe"
+    cp -f "$HERE/dist/ksamp-server-win-x64/ksamp-server.exe" "$LAG_EXE"
+    echo "starting the relay on port $LAG_PORT: ${LAG_MS} ms each way, so a ${LAG_MS}+${LAG_MS} ms round trip"
+    "$LAG_EXE" --relay "127.0.0.1:$PORT" --port "$LAG_PORT" \
+        --latency "$LAG_MS" --jitter "$LAG_JITTER_MS" --drop "$LAG_DROP" \
+        > "$HERE/.two-games-relay.log" 2>&1 &
+    disown
+    sleep 2
+    JOIN_PORT="$LAG_PORT"
+fi
+echo "$LAG_MS" > "$HERE/.two-games-lag.ms"
+
 for name in A B; do
     echo "waiting for $name's bridge..."
     for _ in $(seq 1 60); do
@@ -234,7 +266,7 @@ for name in A B; do
 done
 
 # A first, which has no world to wait for: the server takes A's and hands it to B.
-call A mp "{\"connect\":\"127.0.0.1:$PORT\",\"name\":\"Alpha\"}"
+call A mp "{\"connect\":\"127.0.0.1:$JOIN_PORT\",\"name\":\"Alpha\"}"
 sleep 20
-call B mp "{\"connect\":\"127.0.0.1:$PORT\",\"name\":\"Bravo\"}"
+call B mp "{\"connect\":\"127.0.0.1:$JOIN_PORT\",\"name\":\"Bravo\"}"
 echo "both joining; the server log is $HERE/.two-games-server.log (pid $SERVER_PID)"

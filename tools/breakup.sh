@@ -324,6 +324,30 @@ if os.path.isfile(os.path.join(os.path.dirname(server_log), '.two-games-server.o
 print(f'the server under test was the {mode} build.')
 if mode != 'linux':
     notes.append('a Windows server was tested, not the Linux one this repository is for')
+
+# The round trip the games actually had, which decides a whole class of claim: everything
+# proportional to it is unreachable on loopback. See docs/WARP-AND-WIRE.md.
+lag = '0'
+try:
+    with open(os.path.join(os.path.dirname(server_log), '.two-games-lag.ms')) as f:
+        lag = f.read().strip() or '0'
+except Exception:
+    pass
+if lag == '0':
+    print('the games were on loopback: no loss, no reordering, a round trip of about 0.05 ms.')
+    notes.append('loopback, so nothing proportional to the round trip was tested')
+else:
+    held = ''
+    try:
+        with open(os.path.join(os.path.dirname(server_log), '.two-games-relay.log')) as f:
+            for line in f:
+                if 'held' in line:
+                    held = line.strip()
+    except Exception:
+        pass
+    print(f'the games were {lag} ms from the server each way, so a {float(lag) * 2:.0f} ms round trip.')
+    if held:
+        print(f'  the relay last said: {held}')
 print()
 
 worlds = {name: load(name, 'craft') for name in ('A', 'B')}
