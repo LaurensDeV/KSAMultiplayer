@@ -13,6 +13,7 @@ dist/
 .two-games-data/
 .two-games-server.log
 .two-games-server.on
+.two-games-server.trace
 .two-games-relay.log
 .two-games-lag.ms
 .two-games-runs/

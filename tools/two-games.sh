@@ -6,6 +6,7 @@
 #     ./tools/two-games.sh --test     # ...then run a server, join A and B, and say what each sees
 #     ./tools/two-games.sh --dir A    # print a profile's folder
 #     ./tools/two-games.sh --stop     # close both games and the server
+#     ./tools/two-games.sh --server   # put this tree's server under the two games already running
 #     ./tools/two-games.sh --priority # ask Windows again not to throttle the game behind
 #
 # KSAMP_LAG_MS=25 puts a relay of the server's own between the games and the server, holding every
@@ -50,6 +51,9 @@ LAG_PORT="${KSAMP_LAG_PORT:-50101}"
 # Auto unless KSAMP_SERVER_ON says. See the server section below for why it is ever not linux.
 SERVER_ON="${KSAMP_SERVER_ON:-auto}"
 DATA="$HERE/.two-games-data"
+# The server's own account of its clock and its warp, which tools/warp-trace.py reads beside what
+# the two games say of theirs.
+TRACE="$HERE/.two-games-server.trace"
 
 win() { wslpath -w "$1"; }
 
@@ -90,6 +94,93 @@ if [[ "${1:-}" == "--stop" ]]; then
     exit 0
 fi
 
+# --- a server and two players ------------------------------------------------
+
+call() {
+    local name=$1
+    shift
+    KSA_USER_DIR="$TEST_ROOT/$name" timeout 150 python3 "$HERE/tools/ksa-mcp/server.py" cli "$@"
+}
+
+# Where the server can run and still be reached. WSL2's default NAT mode gives Linux a network stack
+# of its own, and a Windows process cannot reach a UDP socket bound inside it on 127.0.0.1: a server in
+# WSL is then invisible to the games. Mirrored mode shares the Windows stack and localhost works both
+# ways, so the Linux server -- the one this repository is actually for -- serves the games as it would
+# a real player. Without it the server is published for Windows instead, which tests the same code over
+# the same protocol but not the Linux build.
+start_server() {
+    if [[ "$SERVER_ON" == "auto" ]]; then
+        if [[ "$(wslinfo --networking-mode 2>/dev/null)" == "mirrored" ]]; then SERVER_ON="linux"; else SERVER_ON="windows"; fi
+    fi
+
+    rm -rf "$DATA" "$TRACE"
+    mkdir -p "$DATA"
+    echo "$SERVER_ON" > "$HERE/.two-games-server.on"
+    if [[ "$SERVER_ON" == "linux" ]]; then
+        "$HERE/tools/build.sh" >/dev/null
+        echo "starting the Linux server on port $PORT"
+        dotnet "$HERE/src/Server/bin/Release/net10.0/ksamp-server.dll" --port "$PORT" --data "$DATA" --name "two-games" \
+            --warp-answer 3 --trace "$TRACE" > "$HERE/.two-games-server.log" 2>&1 &
+    else
+        echo "note: WSL is in $(wslinfo --networking-mode 2>/dev/null || echo nat) mode, where the games cannot reach a server inside WSL."
+        echo "      Running a Windows build instead. For the Linux server, put networkingMode=mirrored in"
+        echo "      %USERPROFILE%\\.wslconfig under [wsl2], run 'wsl --shutdown', and try again."
+        "$HERE/tools/publish-server.sh" win-x64 >/dev/null
+        SERVER_EXE="$TEST_ROOT/ksamp-server.exe"
+        cp "$HERE/dist/ksamp-server-win-x64/ksamp-server.exe" "$SERVER_EXE"
+        echo "starting the Windows server on port $PORT"
+        "$SERVER_EXE" --port "$PORT" --data "$(win "$DATA")" --name "two-games" \
+            --warp-answer 3 --trace "$(win "$TRACE")" > "$HERE/.two-games-server.log" 2>&1 &
+    fi
+    SERVER_PID=$!
+    disown
+    sleep 3
+
+    # Where the games are pointed: the server itself, or a relay standing in front of it. The relay is
+    # the server's own binary in a mode that serves no world, and it has to be the Windows build for the
+    # same reason the server often is -- a Windows game cannot reach a socket bound inside WSL.
+    JOIN_PORT="$PORT"
+    if [[ "$LAG_MS" != "0" ]]; then
+        "$HERE/tools/publish-server.sh" win-x64 >/dev/null
+        LAG_EXE="$TEST_ROOT/ksamp-lag.exe"
+        cp -f "$HERE/dist/ksamp-server-win-x64/ksamp-server.exe" "$LAG_EXE"
+        echo "starting the relay on port $LAG_PORT: ${LAG_MS} ms each way, so a ${LAG_MS}+${LAG_MS} ms round trip"
+        "$LAG_EXE" --relay "127.0.0.1:$PORT" --port "$LAG_PORT" \
+            --latency "$LAG_MS" --jitter "$LAG_JITTER_MS" --drop "$LAG_DROP" \
+            > "$HERE/.two-games-relay.log" 2>&1 &
+        disown
+        sleep 2
+        JOIN_PORT="$LAG_PORT"
+    fi
+    echo "$LAG_MS" > "$HERE/.two-games-lag.ms"
+}
+
+join_both() {
+    # A first, which has no world to wait for: the server takes A's and hands it to B.
+    call A mp "{\"connect\":\"127.0.0.1:$JOIN_PORT\",\"name\":\"Alpha\"}"
+    sleep 20
+    call B mp "{\"connect\":\"127.0.0.1:$JOIN_PORT\",\"name\":\"Bravo\"}"
+    echo "both joining; the server log is $HERE/.two-games-server.log (pid $SERVER_PID)"
+}
+
+# A server is seconds to build and the two games are minutes to bring up, so a change to the server
+# alone is put under the games as they stand: they leave, a fresh server comes up with no world, and
+# A's world as it is now becomes the server's, as it did the first time.
+if [[ "${1:-}" == "--server" ]]; then
+    if (( $(tasklist.exe 2>/dev/null | grep -ci starmap || true) < 2 )); then
+        echo "error: the two games are not both running; ./tools/two-games.sh --test brings them up" >&2
+        exit 1
+    fi
+    for name in A B; do call "$name" mp '{"disconnect":true}' >/dev/null || true; done
+    taskkill.exe /F /IM ksamp-server.exe >/dev/null 2>&1 || true
+    taskkill.exe /F /IM ksamp-lag.exe >/dev/null 2>&1 || true
+    pkill -x ksamp-server 2>/dev/null || true
+    sleep 2
+    start_server
+    join_both
+    exit 0
+fi
+
 # A machine keeps several StarMaps side by side, and an old one cannot load today's game: it dies
 # on a missing Brutal assembly before the window opens. The folder named exactly StarMap is the one
 # in use; the rest are copies. Which is newest is no guide, since an archived copy is often the most
@@ -105,7 +196,9 @@ if [[ ! -f "$STARMAP_EXE" ]]; then
     echo "error: StarMap.exe not found; set STARMAP_DIR" >&2
     exit 1
 fi
-if tasklist.exe 2>/dev/null | grep -qi starmap; then
+# Not grep -q: it stops reading at the first match, tasklist dies of the closed pipe, and under
+# pipefail that is a pipeline that failed -- so a game that is running read as none.
+if tasklist.exe 2>/dev/null | grep -i starmap >/dev/null; then
     echo "error: a game is running; close it first (./tools/two-games.sh --stop)" >&2
     exit 1
 fi
@@ -197,64 +290,7 @@ unthrottle
 
 [[ "${1:-}" == "--test" ]] || exit 0
 
-# --- a server and two players ------------------------------------------------
-
-call() {
-    local name=$1
-    shift
-    KSA_USER_DIR="$TEST_ROOT/$name" timeout 150 python3 "$HERE/tools/ksa-mcp/server.py" cli "$@"
-}
-
-# Where the server can run and still be reached. WSL2's default NAT mode gives Linux a network stack
-# of its own, and a Windows process cannot reach a UDP socket bound inside it on 127.0.0.1: a server in
-# WSL is then invisible to the games. Mirrored mode shares the Windows stack and localhost works both
-# ways, so the Linux server -- the one this repository is actually for -- serves the games as it would
-# a real player. Without it the server is published for Windows instead, which tests the same code over
-# the same protocol but not the Linux build.
-if [[ "$SERVER_ON" == "auto" ]]; then
-    if [[ "$(wslinfo --networking-mode 2>/dev/null)" == "mirrored" ]]; then SERVER_ON="linux"; else SERVER_ON="windows"; fi
-fi
-
-rm -rf "$DATA"
-mkdir -p "$DATA"
-echo "$SERVER_ON" > "$HERE/.two-games-server.on"
-if [[ "$SERVER_ON" == "linux" ]]; then
-    "$HERE/tools/build.sh" >/dev/null
-    echo "starting the Linux server on port $PORT"
-    dotnet "$HERE/src/Server/bin/Release/net10.0/ksamp-server.dll" --port "$PORT" --data "$DATA" --name "two-games" \
-        --warp-answer 3 > "$HERE/.two-games-server.log" 2>&1 &
-else
-    echo "note: WSL is in $(wslinfo --networking-mode 2>/dev/null || echo nat) mode, where the games cannot reach a server inside WSL."
-    echo "      Running a Windows build instead. For the Linux server, put networkingMode=mirrored in"
-    echo "      %USERPROFILE%\\.wslconfig under [wsl2], run 'wsl --shutdown', and try again."
-    "$HERE/tools/publish-server.sh" win-x64 >/dev/null
-    SERVER_EXE="$TEST_ROOT/ksamp-server.exe"
-    cp "$HERE/dist/ksamp-server-win-x64/ksamp-server.exe" "$SERVER_EXE"
-    echo "starting the Windows server on port $PORT"
-    "$SERVER_EXE" --port "$PORT" --data "$(win "$DATA")" --name "two-games" \
-        --warp-answer 3 > "$HERE/.two-games-server.log" 2>&1 &
-fi
-SERVER_PID=$!
-disown
-sleep 3
-
-# Where the games are pointed: the server itself, or a relay standing in front of it. The relay is
-# the server's own binary in a mode that serves no world, and it has to be the Windows build for the
-# same reason the server often is -- a Windows game cannot reach a socket bound inside WSL.
-JOIN_PORT="$PORT"
-if [[ "$LAG_MS" != "0" ]]; then
-    "$HERE/tools/publish-server.sh" win-x64 >/dev/null
-    LAG_EXE="$TEST_ROOT/ksamp-lag.exe"
-    cp -f "$HERE/dist/ksamp-server-win-x64/ksamp-server.exe" "$LAG_EXE"
-    echo "starting the relay on port $LAG_PORT: ${LAG_MS} ms each way, so a ${LAG_MS}+${LAG_MS} ms round trip"
-    "$LAG_EXE" --relay "127.0.0.1:$PORT" --port "$LAG_PORT" \
-        --latency "$LAG_MS" --jitter "$LAG_JITTER_MS" --drop "$LAG_DROP" \
-        > "$HERE/.two-games-relay.log" 2>&1 &
-    disown
-    sleep 2
-    JOIN_PORT="$LAG_PORT"
-fi
-echo "$LAG_MS" > "$HERE/.two-games-lag.ms"
+start_server
 
 for name in A B; do
     echo "waiting for $name's bridge..."
@@ -265,8 +301,4 @@ for name in A B; do
     call "$name" load "{\"save\":\"$SAVE\"}"
 done
 
-# A first, which has no world to wait for: the server takes A's and hands it to B.
-call A mp "{\"connect\":\"127.0.0.1:$JOIN_PORT\",\"name\":\"Alpha\"}"
-sleep 20
-call B mp "{\"connect\":\"127.0.0.1:$JOIN_PORT\",\"name\":\"Bravo\"}"
-echo "both joining; the server log is $HERE/.two-games-server.log (pid $SERVER_PID)"
+join_both
