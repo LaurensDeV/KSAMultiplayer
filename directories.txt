@@ -15,3 +15,4 @@
 # standing one up is an afternoon rather than a project.
 
 https://servers.ksarmory.com/v1/servers
+https://ksamp.safeshows.dev/v1/servers

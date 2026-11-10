@@ -188,9 +188,23 @@ player can still point at someone else's craft and press keys; nothing they did 
 but it would happen in their own world, and a kitten pulled out of someone else's capsule would
 become a craft of their own.
 
-A puppet is never destroyed by a crash in this world (a prefix on `Universe.DestroyVehicleFromEvent`),
-only when its owner's game says it is gone. Otherwise one game's collision would wreck a craft that is
-fine in its owner's world, and the pieces would be taken for this player's.
+A puppet is spared when a crash in this world would wreck it -- a prefix on
+`Universe.DestroyVehicleFromEvent` refuses the destroy along with the explosion and the twelve pieces
+that go with it -- and is taken away only when its owner's game says it is gone. Otherwise one game's
+collision would wreck a craft that is fine in its owner's world, and the pieces would be taken for
+this player's.
+
+That prefix covers one of KSA's two ways to wreck a craft, and not the one a crash takes, so there
+is a second on `PartFailureEvent.Apply`. Parts past their crash tolerance on contact fail there, and
+`PhysicsBubble` stands the G-load path down in its favour wherever a craft is touching terrain,
+ocean or another craft -- so a crash raises no `VehicleDestructionEvent` and the first prefix is
+never reached. The two are not the same wreck, either: under half a craft's part count that path
+explodes and isolates the failed parts one at a time and the hull flies on without them, which a
+destruction event cannot express, and only at half or more does it take the whole craft. Unguarded
+it blew parts off a rocket that was whole in the world that owned it and told nobody, a game having
+nothing to say about a craft it does not own, so the two players watched one rocket and disagreed.
+Refusing `Apply` wedges nothing: the caller nulls the event on its next line whatever the prefix
+answers, so the next frame raises another and has it refused too.
 
 ## Transfers
 
@@ -291,8 +305,9 @@ there.
 
 **What the debug menus can and cannot do to somebody else's craft.** The universe manifest (F11)
 deletes, recovers and clears debris by putting a craft in `InputEvents.VehicleDestroyBuffer`, and
-that is refused for another player's craft -- a prefix on `VehicleDestroyData.Apply`, beside the one
-on `Universe.DestroyVehicleFromEvent` that spares it from being wrecked. The buffer and not
+that is refused for another player's craft -- a prefix on `VehicleDestroyData.Apply`, beside the two
+on `Universe.DestroyVehicleFromEvent` and `PartFailureEvent.Apply` that spare it from being wrecked.
+The buffer and not
 `Universe.DestroyVehicle` which it ends in: that call is also how KSA frees breakup slots and expires
 debris, and how this mod takes a craft away, so refusing it wholesale would leave a game unable to
 clean up after a breakup.
@@ -335,10 +350,9 @@ so a late joiner built the craft back at the Earth and nothing moved it. The bod
 counts as a change of shape now.
 
 The one gap left is a frame's worth: a craft this game is controlling before the roster says who
-owns it is not yet a puppet, so a teleport then would move it here alone -- and the pull or the
-analytic placing drags it back within the second. Not worth a flag, given that this mod places
-landed craft through `Vehicle.TeleportToLocation` itself and a refusal would have to let its own
-calls through.
+owns it is not yet a puppet, so a teleport then would move it here alone -- and the pull drags it
+back within the second. Not worth a flag, given that this mod places landed craft through
+`Vehicle.TeleportToLocation` itself and a refusal would have to let its own calls through.
 
 ## What has been seen in a game
 
@@ -472,6 +486,23 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   refused. The worlds the server carries were written by the older build and still load, because
   every element added since -- a world's `Rules`, a kitten's `Condition` and `CauseOfDeath` -- has a
   default, and the default rules are a fresh game's.
+- **A craft built in the editor and launched, with another game watching.** The path three releases
+  shipped broken, flown for the first time on 2026-11-10. B, holding only puppets and so controlling
+  nothing, had `design {"save":"Rocket"}` write the 89-part starting rocket out as a vehicle save,
+  `mp {"editor":true}` open the blank editor on it, `design {"load":"Rocket"}` put the part tree in
+  -- 89 parts, under `NewRocket_2`, the name `GenerateNewVehicleId` picks -- and `mp {"launch":true}`
+  press Launch. The site's own pad was taken, so the mod put it on `CCSFS LC-39A MP3`, which is this
+  mod's own third pad there. B owned and described it once, A built it once as a puppet with the same
+  89 parts, and neither log held a warning or an error. So `Sync.Made`, the launchpad choice and the
+  definition of a launched craft are all watched now, and `mp {"editor":true,"blank":true}` opens an
+  empty editor even while flying, the way KSA's Build New Vehicle does.
+- **The bridge losing a whole reply over one unmeasurable number.** Found by accident with the rig
+  up. `World.Between` and `World.RangeFromCamera` both say "cannot tell" with infinity, and
+  `JsonSerializer` refuses to write one: it throws partway through, so `status` answered nothing at
+  all and timed out, the whole instrument dead, the moment one nametag's range could not be worked
+  out. The log said so in a line about `JsonNumberHandling` that reads as a warning about
+  formatting. Non-finite numbers are written as null now, at the boundary rather than at each
+  sentinel, so a field that cannot be measured is empty and the reply still arrives.
 
 - **Flat ground under all eight launchpads, and nothing to walk in under.** KSA levels a launch site
   with a terrain decal 550 m across holding the ground at one absolute height -- 16.97 m at the Cape
@@ -668,10 +699,15 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   `selectSystemOnStart` on, the window is drawn in place of KSA's configuration and Connect asks the
   server, and with it off the game loads as it always did and the window is drawn over it. Play
   alone, the settings-first path, the welcome being held back and the join after loading have not
-  been watched, and none of them can be: the bridge starts at `AllModsLoaded`, which is after the
-  configuration screen, so nothing can press those buttons but a person.
-- **Placing a puppet without physics.** `SetFlightPlan` on a railed craft and `TeleportToLocation` on
-  a moving one are reached in a run, but neither has been checked against where the craft should be.
+  been watched. They can be now: the bridge is opened at `ImmediateLoad` and served from the popup
+  prefix, so `mp`, `start` and `load` all answer at the start window, and `status`'s `popups` says
+  what is standing over the game -- a picture cannot, KSA hiding the interface to take one.
+- **Placing a puppet without physics never happens.** `PlaceAnalytic`'s own first line and `Settle`'s
+  check before it both stand it down for a craft with a physics bubble, and KSA's
+  `AssignOrphanVehicle` gives every vehicle one in the first thing it does each frame. So both of its
+  branches -- `SetFlightPlan` on a railed craft, `TeleportToLocation` on a moving one -- are
+  unreachable, and `Pull` is the only thing that moves a puppet. `Rebase` is the one analytic path
+  that does run. Written up in `docs/SYNC-SMOOTHNESS.md`.
 - **Pulling a puppet in physics.** Two craft were close enough to share a bubble; that the pull holds
   one steady there has not been measured.
 - **Holding the catch-up warp to the frame rate's headroom.** The arithmetic is tested and the
@@ -685,9 +721,39 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   server. The tests cover the arithmetic and the server over loopback, and the two-game rig says the
   mod still shares a world -- but none of it has been in front of several players, which is where
   every one of these was found.
-- **Two players at one launch site, both shedding pieces.** A name says what a craft came off, so
-  the pieces go to the right player wherever they are standing; what is untested is the case the
+- **Two players at one launch site, both shedding pieces.** A name says what a craft came off, and
+  that answer is taken for both players -- their pieces left alone, this player's claimed -- so the
+  pieces go to the right player wherever they are standing; what is untested is the case the
   distance rule used to get wrong, which is the one that put another player's debris on the wire.
+- **A puppet held against the ground, and the parts this world would fail on it.** Both ways KSA
+  wrecks a craft are refused for another player's now, where only the destruction event was before.
+  The one that was missing is the one a crash takes, and it is also the one that strips parts off a
+  craft that lives -- so this world blew parts off rockets that were whole in the worlds owning
+  them, which is how it was reported. What the guard stops is read off the game's source and the
+  frame order around it. It can be reached on demand now, which it could not before: `PartFailure`
+  on the ground is unreachable by flying, because `PhysicsBubble` stands KSA's G-load path down
+  wherever a craft touches terrain, ocean or another craft -- so the bridge raises the same event
+  itself through `fail`, and aiming it at a puppet is the guard's own test. What has still not been
+  watched is the realistic version: two games holding one rocket on the ground with the same parts on
+  it, a minute of divergent physics doing the work rather than a tool.
+- **A rocket that crashes with nothing else of its owner's alive.** The pieces of a crash were
+  claimed by nobody. `Adopt` settled a craft whose name said nothing by distance, and a crash leaves
+  its owner nothing alive to be near, so every piece measured further from its owner than from
+  anybody, none was claimed, none was described, and the others watched the rocket vanish whole and
+  never saw it come apart. A name now answers for a player's own debris as it already did for
+  everybody else's. The names are the live server's own (`LS Test MK I_1` off `LS Test MK I`) and the
+  walk over them is covered in `WireTests`, but nothing in the suite reaches `src/Mod`, so the frame
+  where a crash sheds twelve pieces has not been watched.
+- **Debris off a craft this world had to rename.** The name rule above reads a piece's ancestry in
+  the names the room shares, while KSA builds a shed piece's name out of its parent's local
+  `Vehicle.Id`. Those differ for every craft this world renamed -- one built here under a free name
+  because the one on the wire was taken, or one the server renamed on a collision -- so the ancestry
+  matched nothing in either roster, the name rule was skipped, and the piece fell through to the
+  distance test standing right beside the puppet it came off. A permanent orphan, and the case the
+  name rule exists for. `Whose` reads each ancestor back through the renames now. Worth knowing that
+  a breakup makes this the common case rather than the odd one: both games shed their own copy's
+  pieces under the same names, so whoever receives the other's definition second has to rename.
+  Never watched -- `tools/breakup.sh` is the run that would show it.
 - **Two games on different machines.** The *server* has been remote -- `mp.ksarmory.com` on a VPS,
   reached across the internet, with a craft described to two other players in its world -- so that
   path is exercised. What has not happened is two games behind two different connections, where each
@@ -711,7 +777,8 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   would next be described at as the shape it already had -- so the re-describe never fired and a
   craft taken this way was never written down. It starts at a shape no craft has now, as the rebuild
   path beside it already did. The editor launch that shared this fault has been flown; this one has
-  not, there being no way from here to make the server hand a craft over on purpose.
+  not. It can be driven, though, which it could not before: A claims a craft and looks away, B
+  watches it with the bridge's `watch`, and the lapse rule hands it over.
 - **A full site refusing a launch.** Nobody has filled all eight pads to see the refusal and the
   line drawn over the editor. What has been watched is the other side of it: the warning rightly
   absent and nothing refused while pads are free. The launch menu for a craft already built refuses
@@ -726,7 +793,12 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   that costs the games receiving it has not been measured, and no fix is in yet.
 - **A world handed over with the vehicle editor open.** That KSA refuses to save or load then is
   read off its own source; that the mod waits rather than handing on a stale world has not been
-  watched happen. Opening the editor itself has been, now that `tools/ksa-mcp` can open it.
+  watched happen. Opening the editor has been, and so has filling it: `design` writes a craft
+  standing in the world out as a vehicle save and puts one back into the open editor, which with
+  `mp {"editor":true}` and `mp {"launch":true}` is a craft built and launched with no hand on the
+  mouse. No part can be *placed* from the bridge, so part placement, symmetry and staging edits stay
+  out of reach. The bridge's `save` used to answer `ok` while KSA wrote nothing, and asks
+  `World.Refuses()` first now.
 
 ## What it does not do
 
