@@ -1202,3 +1202,214 @@ Left as they are:
   expired in one world and stood on in the other.
 - **Two players cannot dock**, and what that should do is a decision.
 
+
+## 2026-11-11 -- what nobody owned, two players at one port, and a hull in the way of its own wreckage
+
+Five things left open the day before, taken in turn with two games and `tools/motion.py`. The wire
+is version 24 for it: a claim and a roster entry say whether a craft is held only for being near,
+a state says how many parts its craft has, and there is a datagram for a docking.
+
+**A craft nobody owns was in as many places as there were games.** The rocket a capsule docked
+with was nobody's, and stood 3.4 m from itself in the two worlds. A game now asks for every craft
+nobody has within 10 km of what its player flies or watches, the server gives each to the first to
+ask, and the rest draw it where that game has it. First written as "every craft this game's
+physics is stepping", from `Vehicle.HasPhysicsBubble`: KSA steps every craft in a world wherever
+it is, so the first game in held all seven craft in the save, two of them in orbit with its player
+standing on the ground. With the distance in, it held the one beside its player. Such a hold keeps
+nobody out -- flown, the craft is the flier's at once -- and lapses when its holder goes away. The
+rocket is 3 mm from itself now, over the lossy wire.
+
+**A craft nobody owns, destroyed in one world, stood on in the others.** The game KSA destroys it
+in claims it and says it gone. Seen with a two-part rocket nobody was near: wrecked through the
+bridge in one game, gone from both. Not where more than eight go at once.
+
+**Two players' craft dock.** Refused the day before, on my call. They dock in whichever game sees
+the ports touch first; that player has the one craft and the other rides in it. What went wrong on
+the way:
+
+- *The server refused the first one flown.* A capsule flown onto the other player's rocket is the
+  craft that is taken in. The game found its own capsule dead, said it gone as it says any craft of
+  its own gone, and then said the two had docked: by then the capsule was nobody's, the rocket was
+  the other player's, and a game may not dock two craft neither of which is its own. The flying
+  game was left with 110 parts under the other player's name and the other with 89. Through the
+  bridge it had worked, because there the flying craft was the heavier and the one left. The
+  docking is said first now, and the craft it took is not said gone separately.
+- *After undocking, the player who docked was left flying the other player's craft.* KSA puts its
+  player in the half that comes away. Asked where it splits them, the game was still flying the
+  stack; a moment later it was in the capsule that had been the other player's, who then waited
+  for a craft nobody was going to leave. Looked at for a second after the split now, and the game
+  flies the other half.
+- *The other game's copy was put nine metres along the rocket, twenty-four steps running.* A
+  craft's place is its centre, and the centre of a rocket with a capsule on it is not where the
+  rocket's was. The copy was the old shape until it was built again and was put where the new one
+  stood. A state says how many parts its craft has, and a copy of another shape is never put
+  anywhere outright.
+- *And that, done bluntly, broke the breakups.* First the copy of another shape was not moved at
+  all. A hull coming apart on the ground is another shape most of the time, and standing still
+  while its owner's fell away it stood in the way of its own wreckage: a piece told to fall at
+  10 m/s fell 3 m behind in a second with the pull on, its copy's speed knocked back to one at
+  every step. Three variants and four crashes to find, since no two crashes are alike. The rule
+  is only for a craft its owner has coasting, which is where a docking or a stage leaves one.
+
+Flown over the lossy wire: docked, undocked, the rocket back with its first owner ten seconds
+after. Exit 0, the rocket's copy within 18 mm and the capsule's within 47 cm.
+
+**A piece lying still that is struck** was written down as said twice a second for a second and a
+half. The recording does not say that: the piece was out for eleven frames. Two smaller things
+were true and are fixed. A change of speed is carried forward because an engine goes on burning,
+and a blow does not go on: a piece that stopped dead was drawn leaving the ground again at the
+speed it arrived. `Track` carries a change only where the change before it agrees, which costs a
+burn its first interval; `tests/TrackTests.cs` counts a third fewer frames out by 0.3 m after a
+blow. And a craft set moving is said at once, not at the next turn it was given while it lay
+still. What is left of that 9 m is in two entries under what has not been tried in
+`docs/DESIGN.md`: a piece that breaks off a hull is built inside the hull's copy, which still has
+that piece in it, and is held there until the hull is built again; and forty pieces under way
+share two hundred states a second.
+
+**Every scene over the lossy wire on this build**, 50 ms give or take 20 with 2% lost: the flown
+docking with a craft nobody flies and with one the other player is in, both dockings through the
+bridge, the meeting, the walk, the warp at no craft, a launch and a hop. Exit 0 for the
+two-player flown docking, the meeting, the walk, the warp and the launch. The other dockings fail
+only on wreckage the rig's server swap had left nobody's, lying 2.6 m from itself with both
+players in orbit. The hop fails on two pieces of thirty-eight stuck in their hull's copy and put
+where they belonged once, 4.9 m, and on the hull being an outdated shape for 4.2 s while it came
+apart. On loopback a hop has no piece put anywhere and no step over 0.76 m.
+
+Not run again: the warp trace, since nothing in the clock changed, and a craft handed from its
+maker to another player as a recording of its own, though every docking above hands one over.
+
+## 2026-11-11 -- a piece inside its own hull, a docking that was refused and counted, and three words to carry a speed on
+
+What was left open that morning, bar the rider who cannot leave a docked craft.
+
+**A piece that broke off a hull was built inside the hull's copy.** The piece is described at
+once and the hull up to two seconds later, so the other game built the piece inside a hull that
+still had it on, and KSA's collisions held it there until it was 5 m out and was put where it
+belonged. A piece now waits to be built until the hull standing here was built from a word its
+owner wrote after the piece's own, and a hull a piece is waiting on is built again after one
+second, not two. That moved the fault before it removed it: a piece built seconds late is built
+where it was described, in the air where it broke off, and was drawn there for a frame -- five
+put 8 to 13 m in the first crash. Put on its orbit at build where it is still falling, as a
+kitten out of a hatch already was, and where it lies otherwise. KSA's own `TeleportToLocation`
+does that a frame later and onto the ground at that spot, which left one piece 1.75 m from where
+it lay for that frame, so the place is written into the craft as the pull writes it.
+
+**Forty pieces sharing two hundred states a second.** A craft nobody flies takes its turn early
+when it is a quarter of a metre from where its last word would have it drawn. Median piece at its
+95th: 5 cm on loopback where it was 17.
+
+**A craft nobody owns with nobody near.** One that is moving is held by the game it moves in,
+wherever it is. And a hole in the morning's work: a game that holds a craft only for being near
+never writes it down, so when KSA cleared old wreckage out of the other game to make room for a
+new breakup, seven pieces stood on in one world with nothing to build them from in the other. A
+game KSA takes such a craft out of claims it and says it gone, as it does for one nobody holds.
+
+**Then the dockings again, which is where the time went.** Three faults, each found by the run
+meant to show nothing had changed:
+
+- *Both games docked the pair a tenth of a second apart, and the rider was not a rider.* The
+  roster is told of a docking as the datagram arrives and the game acts on it a frame later. By
+  then it had seen its craft was somebody else's and let go of the controls, so asked what its
+  player was flying it said nothing: no word to the player, nothing watching the craft, and no
+  way for their rocket to come back. Asked now of the last claim made, a moment before.
+- *The rocket was put 5 m back five steps running, half a second after docking.* Two states of
+  the docked craft a twentieth of a second apart, differing by the nudge the two gave each
+  other, then nothing for three quarters of a second: a lost datagram. That nudge was carried on
+  as though it were a burn. `Track` carries a change of speed on only where three states agree.
+- *After undocking, the other game docked them again by itself.* Twice in two runs, and it took
+  two fixes because the first was to the wrong thing. The two copies are built port to port a
+  tenth of a second after they part. I took it for the frame in which a copy is not yet held
+  for anybody, and had the refusal read the roster as well; it docked again all the same. The
+  refusal had been working throughout. What runs after KSA's docking call runs after a refused
+  one too, and I had dropped the line that asks whether anything docked when I rewrote it the
+  day before: a refused docking was counted as done, the rocket was this game's own for the six
+  seconds the server took not to answer, and the next touch docked it in earnest. The rider then
+  took back a rocket with a capsule on it that every other world had as two craft. A game that
+  docks what the server will not have now builds both again as their owners have them.
+
+**On the build with all of it**, over 50 ms give or take 20 with 2% lost: the flown docking onto
+the other player's rocket, with both games docking at once, the undocking, and the rocket back
+with its first owner, failing only on one step of 1.1 m in the capsule's copy; and a hop, with
+nothing put outright, the worst piece 1.0 m out at its 95th and three steps of 2.9 m. On
+earlier builds of the day, before the three docking faults were fixed and before a change of
+speed needed three states to be carried on: a craft handed from its maker to another player and
+launched, exit 0 and 2.6 cm; two more hops, one onto the wreckage of the other; and the warp
+trace on loopback, every claim held.
+
+## 2026-11-11 -- every scene on one build, and what running them all turned up
+
+Asked whether three leftovers were worth fixing. One was only coverage: run everything on the
+build that would ship. Doing that found four more things, one of them older than the week's work.
+
+**The steps were mostly not faults of the copy.** From the recordings: the 2.9 m steps in a hop
+are each a piece that was built late, drawn for exactly one frame where it was built. The 1.1 m
+step at a docking is KSA setting the capsule onto the port in its owner's game. Left as they are.
+One was real: a capsule's copy stepped 4.1 m, 3.2 s after undocking. It is built as the two part
+and put on the orbit of its owner's newest word, which is from before the push that parts them;
+a coasting copy is looked at every three seconds, by which time it was 4 m out. A copy just built
+is looked at again after half a second.
+
+**That fix made the next run worse, and showed something else.** The two copies are built port to
+port, and in one run KSA's collisions knocked the rocket's copy away at 4 m/s. Having just been
+looked at, it was not looked at again for three seconds: 13 m out, and put back 250 times to no
+effect, since a write into a coasting craft does not hold. A coasting copy more than a metre out
+is now put on its orbit within half a second, however lately it was looked at.
+
+**The rig's autopilot had a dead zone.** `approach` holds 5 m out until it is on the line. Inside
+4 m and off the line it neither corrected sideways nor backed out by more than it thrusts for,
+and sat at 3.9 m and 0.9 m off for as long as it was left: three scenes that exited 0 having
+docked nothing. It had docked before only when it arrived lined up. The correction is
+unconditional. A scene is checked against the server's log, not its exit code.
+
+**An older word of how a craft is built could replace a newer one.** A piece written down twice
+two seconds apart, 11 parts and then 10: over the lossy wire the first finished arriving at the
+server after the second. The server kept and handed on the last to arrive, so the other game had
+11 parts for good and so would anybody who joined. Nothing from this week: it needs loss and a
+craft that changes shape twice in quick succession, which is a breakup. The server keeps the time
+each was written and drops the older. `AnOlderWordOfHowACraftIsBuiltDoesNotReplaceANewerOne`,
+failing first.
+
+**The warp trace failed once.** Started seconds after both games had joined, one game stood still
+for 22 s at the end of a 10x warp, 26 s ahead of the server. Run again at once it held every
+claim, as it had twice earlier in the day. Nothing in the clock changed. Not found, and written
+down under what has not been tried.
+
+**On that build, over 50 ms give or take 20 with 2% lost.** The flown docking onto the rocket the
+other player is in, undocked and returned: two steps of 1.2 m in the capsule's copy as it is put
+right after undocking, and nothing else. The bridge's docking of two players' craft, the
+meeting, the walk, the warp at no craft and a launch: exit 0. A rocket handed over and launched:
+1.4 cm at its 95th, failing only on the 11-part piece above. Three hops: nothing put
+outright, no craft in one world only, worst piece 0.4, 0.7 and 3.3 m at its 95th, one step over
+a metre in the three. Not on that build: the bridge docking of two craft of one player's, which
+the scene could not set up, and the flown docking onto a rocket nobody is in, which ran with
+the other player still in it.
+
+## 2026-11-11 -- the warp trace's one failure, and a watcher that docked two craft it was not flying
+
+**The warp trace that failed once was the judge, not the clock.** At the end of the warp at 1000x
+one game was 25 s past the server and stood still for 22 s. The server moves the clock on only to
+games whose window has the player's attention -- KSA throttles the rest, and what they say of
+their lateness is about that -- and the server's own trace has that game down as in the
+background for every one of its 487 samples. So it was in the run that passed. What differed was
+the game in front: a minute behind the server when the warp ended, so there was no lead of its
+own for the clock to follow that would have covered the other's. Working as written. The judge
+reads the window's state now and notes a game in the background that waits, where it failed it.
+
+**A game that was only watching docked the pair.** The last scene not yet run on the build: a
+capsule flown onto a rocket nobody is in. It passed, and the server's log said Bravo had docked
+them and been given the rocket -- Bravo, whose player was watching. Two holes. A watcher asks
+for nothing near another player's craft, but the craft it watches is not held for anybody in
+the frame after it is built again, and in that frame the watcher took the rocket; the roster is
+asked as well now. And a game could dock another player's craft with one it held only for being
+near, which is a hold that exists so the craft is in one place: that docking is refused, and
+is the other player's game's to do. Run again, Alpha's game docks them. Found only because the
+log was read; the recording was clean both times.
+
+**Wreckage held by the watcher.** A piece of old wreckage that a rocket fell on was put 5 m in
+one game: the watcher held it, the flier's rocket struck it, and each game worked out its own
+half. The rule above is what stops the watcher holding it.
+
+**Run on that build, over the lossy wire:** the flown docking onto a rocket nobody is in and the
+bridge docking of two craft of one player's, both exit 0; two hops, nothing in one world only,
+one with a piece held back by the copies around it and put 5 m once. The warp trace on loopback,
+every claim held, on the server that drops an older word of how a craft is built.

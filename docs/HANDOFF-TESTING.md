@@ -220,12 +220,17 @@ the owner's own went to 75".
 
 ## What to do next, ranked
 
-1. **A docking with a craft nobody owns, seen from the other game.** What nobody owns is each
-   world's own, so the capsule docks metres from the port in the world that is not flying it.
-   Claiming a craft when its port is targeted would make it one craft before anybody gets close.
-   And two players docking is refused, which is a design question and not a test.
-2. **A piece at rest that is struck**, and debris nobody owns: the first is said twice a second
-   until it is seen to move, the second is expired by each world on its own.
+1. **A rider in a docked craft.** Two players' craft dock (`--scene dock-theirs`, and flown,
+   `--scene fly-dock-theirs`), the craft is whoever docked's, and the other player watches it
+   until its owner undocks. They cannot undock or leave. What they should be able to do is a
+   design question; undocking asked of the owner's game is the smallest answer.
+2. **A breakup takes several crashes to judge.** No two are alike: thirty to forty pieces, and
+   the worst of them anywhere from 0.5 to 3 m out depending on what hit what. `--scene hop` four
+   times is a measurement and once is an anecdote. What is left is a metre-sized step or three a
+   crash, and a hull that is an outdated shape for seconds while it goes on coming apart.
+   `--scene fly-dock` and `fly-dock-theirs` rest on the bridge's `approach`, which sat 4 m from
+   the port for as long as it was left until its sideways correction was made unconditional: a
+   scene that exits 0 with no "docked" line in the server's log has shown nothing.
 3. **More than 2% loss.** Everything here has been walked at one datagram in fifty and nothing at
    one in ten. Chat, an ask for a warp and a vote on one are still said once.
 4. **The end of a warp with a craft in physics.** The game the clock passes then catches up at ten
