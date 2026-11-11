@@ -124,6 +124,8 @@ public class ClockTests
         // A quarter turn a second about Z, speeding up by 10 m/s every second.
         Track track = new();
         Vec3 spin = new(0, 0, Math.PI / 2);
+        // Three words that agree on it: two say a speed changed and not that it goes on changing.
+        track.Add(At(9.5, -4) with { Spin = spin, VelocityCcf = new Vec3(5, 0, 0) });
         track.Add(At(10.0, 0) with { Spin = spin, VelocityCcf = new Vec3(10, 0, 0) });
         track.Add(At(10.5, 5) with { Spin = spin, VelocityCcf = new Vec3(15, 0, 0) });
 
@@ -139,7 +141,7 @@ public class ClockTests
         Assert.Equal(turned.Z, s.Body2Ccf.Z, 9);
         Assert.Equal(1.0, s.Body2Ccf.LengthSquared, 9);
 
-        // And carried on at the acceleration the last two words showed, never for longer than the
+        // And carried on at the acceleration its last words agreed on, never for longer than the
         // interval they spanned -- a craft that stages changes that all at once.
         Assert.Equal(20.0, s.VelocityCcf.X, 6);
         Wire.State far = Assert.IsType<Wire.State>(track.At(12.5));

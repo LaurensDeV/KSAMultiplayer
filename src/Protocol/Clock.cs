@@ -250,7 +250,7 @@ public sealed class Track
             if (_states.Count > 1 && _states[^2].Body == newest.Body)
             {
                 double span = newest.Universe - _states[^2].Universe;
-                if (span > 1e-6)
+                if (span > 1e-6 && !Blow(span))
                 {
                     // For the interval the two words spanned, or a quarter of a second where that
                     // is longer. A craft being flown is said twenty times a second, and on a line
@@ -306,6 +306,33 @@ public sealed class Track
             VelocityCci = a.VelocityCci + ((b.VelocityCci - a.VelocityCci) * f),
             Body2Ccf = Quat.Slerp(a.Body2Ccf, b.Body2Ccf, f),
         };
+    }
+
+    /// <summary>How much two changes of speed may differ, m/s^2 and as a share of the larger, and still be one push going on.</summary>
+    private const double SamePushMetresPerSecond2 = 5.0, SamePushShare = 0.5;
+
+    /// <summary>
+    /// Whether the newest change of speed is a blow and not a push: unlike the change before it.
+    ///
+    /// <para>A change of speed is carried forward because an engine goes on burning, and gravity
+    /// goes on pulling. A piece of wreckage that hits the ground has lost ten metres a second in
+    /// one interval and will lose nothing in the next: carried on, it was drawn leaving the ground
+    /// again at the speed it arrived, and a piece struck where it lay was drawn at twice the speed
+    /// it was given. Two intervals that agree are a push; the first interval of a burn is taken
+    /// for a blow and costs that one interval.</para>
+    /// </summary>
+    private bool Blow(double span)
+    {
+        // Two states say a speed changed and not whether it goes on changing. Taken as a push,
+        // the nudge two craft give each other as they dock was carried on for the three quarters
+        // of a second a lost datagram left before the next word, and the rocket was put five
+        // metres back five steps running.
+        if (_states.Count < 3 || _states[^3].Body != _states[^2].Body) return true;
+        double before = _states[^2].Universe - _states[^3].Universe;
+        if (before <= 1e-6) return true;
+        Vec3 now = (_states[^1].VelocityCcf - _states[^2].VelocityCcf) * (1.0 / span);
+        Vec3 was = (_states[^2].VelocityCcf - _states[^3].VelocityCcf) * (1.0 / before);
+        return (now - was).Length > Math.Max(SamePushMetresPerSecond2, SamePushShare * Math.Max(now.Length, was.Length));
     }
 
     /// <summary>

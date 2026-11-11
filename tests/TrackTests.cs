@@ -196,6 +196,48 @@ public class TrackTests(ITestOutputHelper output)
         }
     }
 
+    // A piece of wreckage falling at ten metres a second that hits the ground at five seconds and lies there.
+    private static readonly Path Thud = t => t < 5.0
+        ? (new Vec3(0, 0, 10.0 * (5.0 - t)), new Vec3(0, 0, -10.0))
+        : (new Vec3(0, 0, 0), new Vec3(0, 0, 0));
+
+    // A piece lying still that is struck at five seconds and thrown off at twenty metres a second.
+    private static readonly Path Struck = t => t < 5.0
+        ? (new Vec3(0, 0, 0), new Vec3(0, 0, 0))
+        : (new Vec3(20.0 * (t - 5.0), 0, 0), new Vec3(20.0, 0, 0));
+
+    [Fact]
+    public void ABlowIsNotCarriedOnAsThoughItWereAnEngine()
+    {
+        // A change of speed is carried forward because an engine goes on burning. A blow does not
+        // go on: a piece that stops dead has lost ten metres a second in one interval, and carried
+        // on it is drawn leaving the ground again at that speed; a piece struck where it lay is
+        // drawn at twice the speed it was given. Said ten times a second, as a craft under way
+        // that nobody is flying is. How far out it is at worst is the trip and one interval at
+        // the speed it had, which nothing here changes; what is counted is for how many frames.
+        foreach ((Line line, int thud, int struck) in new[] { (new Line(0.0005), 6, 7), (new Line(0.05), 9, 10), (new Line(0.10, 0.04, 0.02), 11, 12) })
+        {
+            Assert.InRange(Fly(Thud, line, every: 0.1, seconds: 10.0).Frames.Count(f => f.Error > 0.3), 0, thud);
+            Assert.InRange(Fly(Struck, line, every: 0.1, seconds: 10.0).Frames.Count(f => f.Error > 0.3), 0, struck);
+        }
+    }
+
+    [Fact]
+    public void TwoWordsAreNotEnoughToCarryAChangeOfSpeedOn()
+    {
+        // Two craft docking nudge each other: a third of a metre a second between the first two
+        // words of the craft that is left, a twentieth of a second apart. Nothing more is heard
+        // for three quarters of a second, a datagram having been lost, and the craft is coasting.
+        Track track = new();
+        Wire.State At(double t, double speed) => new(1, "R", 0, t, "Earth", new Vec3(0, 0, 0), new Vec3(speed, 0, 0), new Vec3(0, 0, 0), new Vec3(speed, 0, 0),
+                                                     Quat.Identity, Vec3.Zero, 0, Wire.StateFlags.Rails);
+        track.Add(At(10.00, 0.0));
+        track.Add(At(10.05, 0.3));
+        Wire.State drawn = Assert.IsType<Wire.State>(track.At(10.80));
+        // Where it is: three quarters of a second at the speed it was last said to have.
+        Assert.InRange(drawn.PositionCcf.X, 0.0, 0.3);
+    }
+
     [Fact]
     public void ACraftNobodyIsFlyingIsDrawnOnItsPathBetweenItsTwoWordsASecond()
     {
