@@ -497,10 +497,16 @@ def judge(run: Path) -> int:
                 "there": there, "behind": behind, "late": behind / max(line["rate"], 1.0),
                 "own": g.get("behind_s"), "playing": g.get("stage") == "Playing", "craft": g.get("craft"),
                 "warp": g.get("warp"), "rails": bool(g.get("analytic")), "segment": segment_of(g["wall"]),
+                "here": g.get("here"),
             })
 
     # -- STOPPED --
-    stopped: dict[str, list[tuple[float, float, str]]] = {n: [] for n in PLAYERS}
+    # A game whose window is in the background says so, and the server does not move the clock on
+    # to it: KSA throttles such a window, and what it says of its lateness is about that. So one
+    # that is past the clock when a warp ends waits for the clock, by design. Two games on one
+    # machine cannot both have the player's attention, and which has it is whichever was clicked.
+    away = "its window was in the background, which the clock does not wait for"
+    stopped: dict[str, list[tuple[float, float, str, bool]]] = {n: [] for n in PLAYERS}
     for name, samples in series.items():
         since = None
         for a, b in zip(samples, samples[1:]):
@@ -511,10 +517,12 @@ def judge(run: Path) -> int:
                 since = a
             if since is not None and (not still or b is samples[-1]):
                 end = b if still else a
-                stopped[name].append((end["wall"] - since["wall"], since["wall"], since["segment"]["name"]))
+                stopped[name].append((end["wall"] - since["wall"], since["wall"], since["segment"]["name"], since.get("here") is False))
                 since = None
-        for seconds, _, where in stopped[name]:
-            if seconds > STOPPED_SECONDS:
+        for seconds, _, where, background in stopped[name]:
+            if seconds > STOPPED_SECONDS and background:
+                notes.append(f"{name} stood still for {seconds:.0f} s while the server's clock ran, in '{where}': {away}")
+            elif seconds > STOPPED_SECONDS:
                 fails.append(f"STOPPED  {name} stood still for {seconds:.0f} s while the server's clock ran, in '{where}'")
 
     # -- LATE --
@@ -540,7 +548,9 @@ def judge(run: Path) -> int:
             allowed += CATCH_UP_SECONDS * math.log(worst["late"] / LATE_SECONDS)
         text = (f"{name} was {abs(worst['late']):.0f} s {'behind' if worst['late'] > 0 else 'ahead of'} the server at its "
                 f"worst, in '{worst['segment']['name']}', and past {LATE_SECONDS:.0f} s for {stretch[0]:.1f} s at a stretch")
-        if stretch[0] > allowed:
+        if stretch[0] > allowed and worst["late"] < 0 and worst.get("here") is False:
+            notes.append(f"{text}: {away}")
+        elif stretch[0] > allowed:
             fails.append(f"LATE  {text}, against {allowed:.1f} s allowed")
         else:
             notes.append(text)
@@ -635,7 +645,7 @@ def judge(run: Path) -> int:
         cells = ""
         for name in PLAYERS:
             mine = [x for x in series[name] if x["segment"] is s and x["playing"]]
-            longest = max((sec for sec, _, where in stopped[name] if where == s["name"]), default=0.0)
+            longest = max((sec for sec, _, where, _ in stopped[name] if where == s["name"]), default=0.0)
             if mine:
                 on = {x["rails"] for x in mine}
                 cells += (f"  {max(x['late'] for x in mine):+7.2f}/{min(x['late'] for x in mine):+7.2f} s"
@@ -656,10 +666,10 @@ def judge(run: Path) -> int:
             say(f"{name}'s own reading of how far behind it was differed from that by {statistics.median(off):.2f} s "
                 f"at the median and {max(off):.2f} s at worst.")
     for name in PLAYERS:
-        total = sum(sec for sec, _, _ in stopped[name])
+        total = sum(sec for sec, _, _, _ in stopped[name])
         if total:
             say(f"{name} stood still for {total:.1f} s in all while the server's clock ran, "
-                f"{max(sec for sec, _, _ in stopped[name]):.1f} s at the longest.")
+                f"{max(sec for sec, _, _, _ in stopped[name]):.1f} s at the longest.")
     say()
 
     for text in about.get("said", []):

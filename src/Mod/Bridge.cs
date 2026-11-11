@@ -401,6 +401,7 @@ internal sealed class Bridge
                 ["flown"] = ReferenceEquals(v, flown),
                 ["watched"] = ReferenceEquals(v, World.Watched),
                 ["puppet"] = Sync.IsPuppet(v),
+                ["near"] = Sync.HeldNear(v),
                 ["owned"] = Sync.OwnedCraft.Contains(key),
                 ["from_flown_m"] = flown is null || ReferenceEquals(v, flown) ? null : Math.Round(World.Between(flown, v), 1),
                 ["radar_m"] = Math.Round(World.Descent(v).Radar, 2),
@@ -925,7 +926,10 @@ internal sealed class Bridge
         bool lined = a.Across < Math.Max(0.15, 0.05 * a.Along);
         double closing = lined ? -Math.Clamp(0.1 * a.Along, a.Final, 1.0) : -Math.Clamp(0.1 * (a.Along - a.Hold), -0.5, 1.0);
         double3 wanted = at.Axis * closing;
-        if (a.Across > 1e-6 && (lined || a.Along > a.Hold - 1.0)) wanted -= across * (Math.Min(0.2 * a.Across, 0.5) / a.Across);
+        // Wherever it is. Not corrected within a metre inside the hold, a craft that drifted there
+        // off the line was asked to back out at a tenth of a metre a second, which is less than it
+        // bothers to thrust for: four metres out and 0.9 m off, for as long as it was left.
+        if (a.Across > 1e-6) wanted -= across * (Math.Min(0.2 * a.Across, 0.5) / a.Across);
         double3 lacking = (wanted - at.Closing).Transform(cce2Body);
         double3 p0 = a.Pushes[0], p1 = a.Pushes[1], p2 = a.Pushes[2];
         double det = double3.Dot(p0, double3.Cross(p1, p2));

@@ -13,6 +13,7 @@
     ./tools/motion.py --scene nocraft     # B flies, and A's camera is on the planet; nocraft-warp, through a warp
     ./tools/motion.py --scene launch      # a rocket on the ground burns for 35 s; --scene hop, up and down on its engine
     ./tools/motion.py --scene dock        # A's craft docks with one nobody flies; dock-theirs, with the one B flies
+    ./tools/motion.py --scene fly-dock    # A flies onto a port on thrusters and undocks; fly-dock-theirs, onto B's craft
     ./tools/motion.py --scene fly-dock    # A flies one craft onto another's port on its thrusters, docks, and undocks
     ./tools/motion.py --check <run>       # judge a recording already taken, without a game
 
@@ -599,7 +600,7 @@ def scene(name: str, games) -> tuple[float, list[tuple[float, str, str, dict]]] 
             return 50.0, [(3.0, "A", "attitude", {"craft": pick, "track": "Up"}), (5.0, "A", "engine", {"on": True}),
                           (40.0, "A", "engine", {"on": False})]
         return 70.0, [(3.0, "A", "attitude", {"craft": pick, "track": "Up"}), (5.0, "A", "land", {"craft": pick, "climb": 120.0, "slow": 3.0})]
-    if name == "fly-dock":
+    if name in ("fly-dock", "fly-dock-theirs"):
         # A flies the lighter of two craft onto the other's port on its thrusters, and the ports touch.
         # A minute after that would have docked them, it undocks. B watches the craft being flown,
         # which is the craft that goes.
@@ -609,7 +610,11 @@ def scene(name: str, games) -> tuple[float, list[tuple[float, str, str, dict]]] 
             return None
         ported.sort(key=lambda c: c.get("parts") or 0)
         mine, other = ported[0]["id"], ported[-1]["id"]
-        if not both_on(games, mine):
+        if name == "fly-dock-theirs":
+            # B is in the craft that is flown onto, and is still in it when it is somebody else's.
+            call(games["B"], "goto", craft=other)
+            time.sleep(4)
+        if not both_on(games, mine, watch=name == "fly-dock"):
             return None
         print(f"A flies {mine} and is put 25 m in front of {other}'s port: "
               f"{json.dumps(call(games['A'], 'put', craft=mine, beside=other, metres=25, port=True))}", flush=True)
@@ -656,7 +661,7 @@ def main() -> int:
     parser.add_argument("--at", nargs=4, action="append", metavar=("SECONDS", "GAME", "COMMAND", "JSON"), default=[],
                         help="a bridge command sent to one game part-way through")
     parser.add_argument("--scene", choices=("orbit", "eva", "meet", "walk", "drop", "land", "nocraft", "nocraft-warp",
-                                            "launch", "hop", "dock", "dock-theirs", "fly-dock"),
+                                            "launch", "hop", "dock", "dock-theirs", "fly-dock", "fly-dock-theirs"),
                         help="set the two games up first, and do what the scene does")
     parser.add_argument("--check", metavar="RUN", help="judge a recording already taken")
     args = parser.parse_args()
