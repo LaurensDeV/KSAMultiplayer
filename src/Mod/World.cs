@@ -906,7 +906,8 @@ internal static class World
     /// <param name="first">Whether this is the first time the craft is pulled since it was built here: it is put where it is told however near, having been built where it stood when it was described and not drawn yet.</param>
     private const double MisshapenPullMetresPerSecond = 3.0;
 
-    public static Pulled? Pull(Vehicle v, Wire.State s, double dt, bool first = false)
+    /// <param name="patient">Whether a copy in another shape than its owner's is still being waited for to be built again, and so is not put where the other shape's centre stands.</param>
+    public static Pulled? Pull(Vehicle v, Wire.State s, double dt, bool first = false, bool patient = true)
     {
         if (!v.HasPhysicsBubble || dt <= 0.0 || dt > 0.25) return null;
         // Across a change of body the two frames differ, so there is nothing to write. Nothing
@@ -948,7 +949,7 @@ internal static class World
         // or a stage leaves one: a hull coming apart on the ground is another shape most of the
         // time, and held any less closely than it was, its copy stood in the way of its own
         // wreckage, which fell three metres behind in a second.
-        bool misshapen = s.Parts != 0 && s.Parts != v.Parts.Count
+        bool misshapen = patient && s.Parts != 0 && s.Parts != v.Parts.Count
                          && (s.Flags & Wire.StateFlags.Rails) != 0 && (s.Flags & Wire.StateFlags.Landed) == 0;
         // However far: a piece that waited for its hull to be built without it is built seconds
         // after it was described, where it was then.

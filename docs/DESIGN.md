@@ -243,7 +243,10 @@ every other game built and what everybody who joined later was given.
 solver or its port menu says so, in whichever game sees it first, and takes one into the other. That
 game tells the server (`Wire.Dock`, the craft that went and the craft that is left), and the
 server's rule is one line: the craft that is left is that player's and the other is out of the
-world, whoever had either, provided one of the two was theirs. Everybody else is told the same
+world, whoever had either, provided one of the two was theirs. Where the other is another player's
+in earnest, both must have been said by the players who have them to be within 500 m of each
+other in the last ten seconds: taken on trust, a game's word that two craft docked took any craft
+in the world from anybody. Everybody else is told the same
 datagram back with the new owner in it. A game takes the craft that went out of its world,
 whoever's it was, and gives up the craft that is left if it was its own; a player who was flying
 either is left watching the craft that is left, and is told whose it is. The game that docked holds
@@ -932,6 +935,16 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   are built port to port in every other game, and KSA's collisions can knock one away at 4 m/s.
   A coasting copy a metre out is put back on its orbit within half a second, so it is one or two
   steps of about a metre and not 13 m of drift. The knock itself is not prevented.
+- **A docking is still a game's word.** The server holds it against where the two players' own
+  games last said their craft were, which stops a craft being taken from across a world and
+  does not stop a game that lies about where its own craft is. Each game is trusted for its own
+  craft everywhere else in this design as well.
+- **A docking the server will not have.** The game that docked has two craft fused that every
+  other world has apart. Where the craft that is left is another player's it is built again as
+  they have it, if they ever wrote it down; where it is this player's own, nothing undoes it.
+  It takes a server that refuses, which an honest docking has not been seen to meet.
+- **A hull held for being near that is torn down to be built again** is not built if the hold
+  lapses in the few frames between. Not seen.
 - **Copies strike each other where their craft did not.** Each piece of a breakup is a craft in
   KSA's physics in every game, and two copies a few centimetres from where their owner has them
   collide differently. A piece told to fall at 11 m/s moved at 2 to 3 in the other game until it
