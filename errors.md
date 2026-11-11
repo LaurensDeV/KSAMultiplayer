@@ -1413,3 +1413,50 @@ half. The rule above is what stops the watcher holding it.
 bridge docking of two craft of one player's, both exit 0; two hops, nothing in one world only,
 one with a piece held back by the copies around it and put 5 m once. The warp trace on loopback,
 every claim held, on the server that drops an older word of how a craft is built.
+
+## 2026-11-11 -- a second pair of eyes on two days' work
+
+Before building mod support on it: the work since 0.17.0 committed, read by two reviewers who had
+not written it, and a late joiner tried.
+
+**Joining late.** With two players' craft docked and one riding, the rider's game left and came
+back: 110 parts in both worlds, a kitten the other player held for being near it drawn 4 mm from
+where it was, and the undocking after it the same in both.
+
+**What the reviews found, and all of it was mine.** On the server:
+
+- A docking was taken on a game's word, so a player could remove or take any craft in the world
+  by saying it had docked with one of their own. Where the other craft is another player's in
+  earnest, both must now have been said by their own players to be within 500 m.
+- Saying how a craft is built took a craft another player held for being near, and overwrote it.
+- A game that was flying the craft a docking took asks for it every two seconds until it hears,
+  and one such ask arriving after the docking brought the craft back with no world holding it.
+- The same two craft docked twice inside half a minute were answered as the first docking said
+  again, and nothing was changed.
+- A craft held for being near stayed so while its holder flew it, if the claim was lost.
+- `Track` wanted three states to carry a change of speed on and kept only two under a warp.
+
+In the mod:
+
+- A player who flew onto another player's craft had the craft and was at no controls. KSA
+  hands over the craft that is left in the same call that docks them, while it was still held
+  here for its last owner. It was there in every recording as a row that said "coasting" where
+  it should have said "flown", and I had read past it.
+- A name said gone for a craft nobody owned went on being said gone for ten seconds, and KSA
+  hands a freed name to the next piece shed.
+- A piece whose wait for its hull ran out began it again unless it was the one built that frame.
+- A craft held only for being near was not taken outright before its crew was sent out of it.
+- The half left behind at an undocking was this player's only if it was nearer their craft
+  than anybody else's.
+- A rider's camera was put back on the craft they rode in every frame.
+
+Four tests for the server's; the mod's seen in game again over the lossy wire: the flown
+docking with the flier now at the controls of the stack, the undocking, each player back in
+their own craft.
+
+**And one more from the runs after.** A piece of a crashed rocket stood in the watching game
+alone: that game's own breaking of a copy, under a name nobody answered for any more. A piece,
+by its name, that came off nothing of this player's and is nearer somebody else's craft is taken
+away. Two hops of four in these runs, each the first after the games were started, had the
+watching game a sixth and a quarter of a second behind for the whole run, and every number in
+the worse of them was worse for that; the runs after them were within 9 ms.
