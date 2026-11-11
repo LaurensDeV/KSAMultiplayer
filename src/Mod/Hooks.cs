@@ -244,6 +244,8 @@ internal static class Hooks
                   "a craft nobody flies that is docked with stays behind in every other world");
             Patch(AccessTools.Method(typeof(DockingPort), nameof(DockingPort.Undock)), nameof(BeforeUndocking),
                   "another player's craft can be undocked in this world alone");
+            PatchAfter(AccessTools.Method(typeof(DockingPort), nameof(DockingPort.Undock)), nameof(AfterUndocking),
+                  "a player who undocks goes on flying a craft that was another player's before it docked");
             Patch(AccessTools.Method(typeof(InputEvents.VehicleDestroyData), nameof(InputEvents.VehicleDestroyData.Apply)),
                   nameof(BeforeDelete),
                   "another player's craft can be deleted from the universe manifest in this world alone");
@@ -836,8 +838,7 @@ internal static class Hooks
     {
         try
         {
-            if (!Sync.IsPuppet(thisVehicle) && !Sync.IsPuppet(otherVehicle)) return true;
-            Sync.DockingRefused(thisVehicle, otherVehicle);
+            if (Sync.MayDock(thisVehicle, otherVehicle)) return true;
             (__result, consumedToCombined) = (null, PoseChange.Identity);
             return false;
         }
@@ -880,6 +881,19 @@ internal static class Hooks
         {
             Complain("keeping another player's craft docked", e);
             return true;
+        }
+    }
+
+    /// <summary>After KSA has split a docked craft in two. See <see cref="Sync.Undocked"/>.</summary>
+    private static void AfterUndocking(Vehicle oldVehicle, Vehicle? __result)
+    {
+        try
+        {
+            Sync.Undocked(oldVehicle, __result);
+        }
+        catch (Exception e)
+        {
+            Complain("leaving an undocked craft for the player it was", e);
         }
     }
 
@@ -1019,7 +1033,7 @@ internal static class Hooks
     {
         try
         {
-            return craft is not null && Sync.IsPuppet(craft);
+            return craft is not null && Sync.IsTheirs(craft);
         }
         catch (Exception e)
         {

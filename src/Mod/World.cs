@@ -248,6 +248,13 @@ internal static class World
     /// Whether a craft is being stepped through physics and is not one KSA has put on rails: a
     /// craft something is pushing, or that is still moving from having been.
     /// </summary>
+    /// <summary>Whether a craft is within this game's physics: near enough to what is flown or watched to be stepped and struck.</summary>
+    public static bool InBubble(Vehicle v)
+    {
+        try { return v.HasPhysicsBubble; }
+        catch (Exception) { return false; }
+    }
+
     public static bool UnderWay(Vehicle v)
     {
         try { return v.HasPhysicsBubble && !v.Situation.IsOnRails(); }
@@ -776,7 +783,7 @@ internal static class World
 
         Wire.State s = new(0, key, 0, Universe, parent.Id, V(positionCcf), V(velocityCcf), V(positionCci), V(velocityCci),
                            new Quat(body2Ccf.X, body2Ccf.Y, body2Ccf.Z, body2Ccf.W), V(spin),
-                           float.IsFinite(throttle) ? Math.Clamp(throttle, 0f, 1f) : 0f, flags);
+                           float.IsFinite(throttle) ? Math.Clamp(throttle, 0f, 1f) : 0f, flags, (ushort)Math.Min(v.Parts.Count, ushort.MaxValue));
         return s.PositionCcf.IsFinite && s.PositionCci.IsFinite && s.Body2Ccf.IsFinite ? s : null;
     }
 
@@ -784,6 +791,37 @@ internal static class World
     /// A craft with no physics here put where its owner says, by its orbit or, on the ground, by
     /// setting it down there. Seldom: each is a craft rebuilt. True if it was moved.
     /// </summary>
+    /// <summary>
+    /// A craft just built here set down where its owner has it lying, before it is first drawn.
+    /// What it is built from says where it was when that was written, which for a piece of
+    /// wreckage built late is in the air where it broke off. True if it was moved.
+    /// </summary>
+    public static bool SetDown(Vehicle v, Wire.State s, double nearEnoughM)
+    {
+        try
+        {
+            if ((s.Flags & Wire.StateFlags.Landed) == 0 || KSA.Universe.CurrentSystem?.Get(s.Body) is not Celestial body) return false;
+            if (body.MeanRadius > 0.0 && Vec(D(s.PositionCcf)) < body.MeanRadius * HalfWayIn) return false;
+            PhysicsStates states = v.GetPhysicsStatesMutable();
+            PhysicsStates.GetStatesCcf(in states.Origin, in states.Kinematic, out double3 hereCcf, out _, out _);
+            if (ReferenceEquals(v.Parent, body) && Vec(hereCcf - D(s.PositionCcf)) < nearEnoughM) return false;
+            if (!ReferenceEquals(v.Parent, body)) return false;
+            // Written into the craft as the pull writes it, and not asked of KSA's own setting
+            // down, which is done a frame later and puts a craft on the ground at that spot: a
+            // piece was drawn for that frame 1.75 m from where it lay.
+            PhysicsStates.GetStatesCcf(in states.Origin, in states.Kinematic, out _, out _, out doubleQuat body2Ccf);
+            doubleQuat body2Phys = states.Kinematic.Body2Phys, ccf2Body = body2Ccf.Inverse();
+            states.Kinematic.PositionPhys += (D(s.PositionCcf) - hereCcf).Transform(ccf2Body).Transform(body2Phys);
+            states.Kinematic.Body2Phys = body2Phys * (ccf2Body * new doubleQuat(s.Body2Ccf.X, s.Body2Ccf.Y, s.Body2Ccf.Z, s.Body2Ccf.W));
+            return true;
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"could not set {v.Id} down where its owner has it: {e.GetBaseException().Message}");
+            return false;
+        }
+    }
+
     public static bool PlaceAnalytic(Vehicle v, Wire.State s, double nearEnoughM)
     {
         if (v.HasPhysicsBubble) return false;
@@ -866,6 +904,8 @@ internal static class World
     /// </summary>
     /// <returns>What it found and did, for a run that records it; null where there was nothing to measure.</returns>
     /// <param name="first">Whether this is the first time the craft is pulled since it was built here: it is put where it is told however near, having been built where it stood when it was described and not drawn yet.</param>
+    private const double MisshapenPullMetresPerSecond = 3.0;
+
     public static Pulled? Pull(Vehicle v, Wire.State s, double dt, bool first = false)
     {
         if (!v.HasPhysicsBubble || dt <= 0.0 || dt > 0.25) return null;
@@ -900,14 +940,27 @@ internal static class World
         // Or told of a time that is not now at all: this world is further behind its states than
         // any of them is kept, and the oldest is where the craft will be, not where it is.
         bool held = Math.Abs(Universe - s.Universe) > 1e-6;
-        bool born = first && !held && Vec(off) <= SnapM && Vec(off) > 0.05;
-        bool snap = !held && (Vec(off) > SnapM || born);
+        // Told where a craft of another shape is. A craft's place is its centre, and one that has
+        // docked, staged or lost a part has its centre elsewhere: the copy here is the old shape
+        // until it is built again, and put where the new one stands it was put nine metres along
+        // a rocket that a capsule had just joined, twenty-four steps running. Never put there, and
+        // drawn there only slowly. Only a craft its owner has coasting, which is where a docking
+        // or a stage leaves one: a hull coming apart on the ground is another shape most of the
+        // time, and held any less closely than it was, its copy stood in the way of its own
+        // wreckage, which fell three metres behind in a second.
+        bool misshapen = s.Parts != 0 && s.Parts != v.Parts.Count
+                         && (s.Flags & Wire.StateFlags.Rails) != 0 && (s.Flags & Wire.StateFlags.Landed) == 0;
+        // However far: a piece that waited for its hull to be built without it is built seconds
+        // after it was described, where it was then.
+        bool born = first && !held && !misshapen && Vec(off) > 0.05;
+        bool snap = !held && !misshapen && (Vec(off) > SnapM || born);
         if (snap) states.Kinematic.PositionPhys += off.Transform(ccf2Body).Transform(body2Phys);
         doubleQuat wantedBody2Ccf = new(s.Body2Ccf.X, s.Body2Ccf.Y, s.Body2Ccf.Z, s.Body2Ccf.W);
         states.Kinematic.Body2Phys = body2Phys * (ccf2Body * wantedBody2Ccf);
 
         PhysicsStates.GetStatesCcf(in states.Origin, in states.Kinematic, out _, out double3 nowVelocity, out doubleQuat nowBody2Ccf);
         double3 draw = snap || held ? double3.Zero : off / Math.Max(PullSeconds, dt);
+        if (misshapen && Vec(draw) > MisshapenPullMetresPerSecond) draw = draw.Normalized() * MisshapenPullMetresPerSecond;
         // Held to a walk, not to a distance: what matters to a kitten's legs is how fast this says
         // it is going, and the distance was already answered by the snap above.
         if (walks)

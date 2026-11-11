@@ -193,8 +193,75 @@ shared one.
      end of the ladder: nobody is in this player's menu, and asking the room to warp while not
      running at it oneself is not a question worth putting.
 
-What nobody owns is left to each world: a craft on rails goes the same way in every one, and a craft
-in physics that nobody flies drifts apart from world to world.
+**What nobody owns and somebody is near is held by that somebody's game.** A craft nobody owns is
+stepped by every game near it, each in its own way: a rocket nobody flew was 3.4 m from itself in
+two games after a walk of warps, and a parked craft one player drove into moved in that player's
+world alone. A game asks for every such craft within 10 km of what its player flies, or watches
+while flying nothing, and for any that is moving under its physics wherever it is (`Claim.Near`,
+once a second); the first to ask holds it, says where it is
+like any craft of its own, and every other game draws it there. The hold keeps nobody out: the
+roster marks it (`Owner.Near`), it carries no name over the craft, and the server gives it at once
+to whoever asks to fly the craft, send its crew out or take it by watching. It is kept by being
+said -- each state of such a craft carries `StateFlags.Near` while the craft is still within reach
+-- and the first state without it, or three seconds of silence, lets the craft go to whoever has
+it near next. Not by KSA's own physics alone, which steps every craft in a world wherever it is:
+held by that, the first game into a world held all of it. A craft held this way is not written
+down for the others until it changes shape, since it is the craft they already have.
+
+What nobody owns, nobody is near and nothing is moving is left to each world, and goes the same
+way in every one: at rest, or on rails. A game that is only watching another player's craft asks
+for nothing: that player's game is there, and holds what is near. When KSA takes a craft out of one world that nobody owns,
+or that another game holds only for being near it -- wreckage expired or cleared to make room for
+a new breakup, a craft recovered from a menu -- that game claims it and says it gone, so it goes
+from every world. A game that holds a craft for being near never wrote it down, so it could not
+say how to build it again. Not where more than eight go in one frame and they are most of what
+there was, which is a world being unloaded.
+
+**A piece is built when the craft it came off is built without it.** A piece that breaks off is
+described at once, and the hull it left is built again up to two seconds later; built at once,
+the piece's copy stood inside a hull that still had the piece on it and was held there by KSA's
+collisions. Every definition carries the time the server was given it, and a piece waits until
+the nearest craft in its name's ancestry that stands here was built from a word written after
+its own, for at most five seconds. Until then it is still to be seen where it was, on the hull.
+A hull a piece is waiting on is built again after one second and not two. Built late, a piece
+is put where its owner has it before it is first drawn: on its orbit, or where it lies.
+
+**A craft nobody flies is said early when it leaves its path.** Craft under way share two hundred
+states a second, a fifth of a second each for forty pieces, and most of them spend that falling
+as their last word said. A game carries each on from its last word as the others will, and one
+that is a quarter of a metre from where that puts it takes its turn at once, out of two hundred
+more a second. `Track` carries a change of speed on only where three states agree on it: two
+say it changed, not that it goes on changing.
+
+**How a craft is built is taken in the order it was written.** A definition carries the universe
+time its owner's game wrote it at. The server drops one written before the one it already has
+from the same game, if that one was heard in the last thirty seconds: on a wire that loses
+datagrams the first of two can finish arriving after the second, and the last to arrive was what
+every other game built and what everybody who joined later was given.
+
+**A docking is done in one world and told to the rest.** KSA docks two craft where its contact
+solver or its port menu says so, in whichever game sees it first, and takes one into the other. That
+game tells the server (`Wire.Dock`, the craft that went and the craft that is left), and the
+server's rule is one line: the craft that is left is that player's and the other is out of the
+world, whoever had either, provided one of the two was theirs. Everybody else is told the same
+datagram back with the new owner in it. A game takes the craft that went out of its world,
+whoever's it was, and gives up the craft that is left if it was its own; a player who was flying
+either is left watching the craft that is left, and is told whose it is. The game that docked holds
+the craft as its own from the frame it docked in, without waiting for the server: pulled to where
+its last owner had it, the stack would be pulled by the length of what had just joined it. It says
+the docking before it says anything else of the craft that went, since said gone first that craft
+is nobody's when the server hears it docked. Two games may both dock the same two craft a few
+frames apart; the first is the one the server takes, and the other is told like anybody else and
+drops what it made. `DockingPort.Dock` is refused where both craft are other players', and where
+one is and the other is this game's only for being near it: that docking is the other player's
+game's to do. `DockingPort.Undock` is refused where the craft is another player's.
+
+Undocking is KSA's own split in the owner's game: the half that comes away has its old name back,
+is a craft that game has just made, and is described to everybody. Where the half KSA leaves its
+player flying was another player's before the docking, this game flies the other half instead. The
+player who rode along is left watching their own craft again as soon as it stands in their world,
+and it is theirs by the rule every craft follows: its owner has not been near it for ten seconds
+and somebody is watching it.
 
 Another player's craft cannot be taken here at all: prefixes on the setter of
 `Program.ControlledVehicle`, on `KittenEva.BoardVehicle` and on `EVADoor.PerformEvaForSeat` leave
@@ -451,9 +518,17 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   up by its flight computer, docks on contact: 110 parts in both worlds and the capsule in
   neither. Undocked, it is 21 and 89 in both, under the names they had. The other game draws the
   capsule within 22 cm through the approach, 8 cm over a wire of 50 ms each way that loses one
-  datagram in fifty. Docked with the capsule the other game was flying, nothing happens in either
-  world and the player is told why; the bridge's own `dock` is the control, and docks when nobody
-  flies it. `tools/motion.py --scene fly-dock`.
+  datagram in fifty. `tools/motion.py --scene fly-dock`. The rocket nobody flies is held by the
+  game flying the capsule and drawn within 3 mm in the other, where it was 3.4 m out.
+- **Two players' craft, docked and undocked.** A capsule flown onto the port of a rocket the other
+  player is in docks in the flying game: the server gives that player the rocket, the other is
+  told and left watching it, and both worlds hold 110 parts. Undocked two minutes on, the rocket
+  is its first owner's again ten seconds later. No craft put anywhere outright and none more
+  than 47 cm from where its owner had it, over the lossy wire. Flown, the craft taken in is the
+  flier's own; through the bridge's `dock` it is the other player's, who gets it back the same
+  way. `--scene fly-dock-theirs`, `--scene dock-theirs`.
+- **A craft nobody owns, wrecked in one game,** is gone from the other within the second: claimed
+  by the game it was wrecked in and said gone.
 - **A craft whose shape changes** -- a stage dropped, a docking -- is the new shape in every
   other world within a frame or two of its being described, and not gone for five seconds first.
 - **A craft one player launched and another took over** is built again in its maker's world as
@@ -845,18 +920,40 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   a breakup makes this the common case rather than the odd one: both games shed their own copy's
   pieces under the same names, so whoever receives the other's definition second has to rename.
   Never watched -- `tools/breakup.sh` is the run that would show it.
-- **A piece lying still that is struck.** A craft that is under way and not flown is said ten
-  times a second; one at rest, twice, and it stays twice until its owner's game has it moving. A
-  piece of an earlier crash that a rocket fell on was drawn 9 m out for the last second and a half
-  before it was destroyed. Not fixed.
+- **A breakup, piece by piece.** Seven crashes over the lossy wire since pieces wait for their
+  hull and are said early: no piece put anywhere outright, the worst piece 0.4 to 3.3 m out at
+  its 95th and under a metre and a half in six of them, and none to three steps of more than a
+  metre in a crash. Before, two pieces put 4.9 m and the worst 4.6 m out. What a step is: a piece
+  built late is drawn for one frame where it was built, before it is first put anywhere. A hull
+  that goes on coming apart is an outdated shape for up to four and a half seconds at a stretch,
+  and its pieces are seen that much late. A craft a piece has just come off is written down
+  again after one second and not two; with that, it was over three seconds in one crash of three.
+- **Two copies built against each other.** A craft and the craft that has just undocked from it
+  are built port to port in every other game, and KSA's collisions can knock one away at 4 m/s.
+  A coasting copy a metre out is put back on its orbit within half a second, so it is one or two
+  steps of about a metre and not 13 m of drift. The knock itself is not prevented.
+- **Copies strike each other where their craft did not.** Each piece of a breakup is a craft in
+  KSA's physics in every game, and two copies a few centimetres from where their owner has them
+  collide differently. A piece told to fall at 11 m/s moved at 2 to 3 in the other game until it
+  was 4.5 m out and was put right: one piece, in one crash of the last nine. Not fixed.
+- **A game in the background at the end of a warp.** The server moves the clock on only to games
+  whose window has the player's attention, since KSA throttles the rest. One in the background
+  that is past the clock when a warp ends waits for it: 22 s after a warp at 1000x, in a run where
+  the game in front was itself a minute behind. Meant, and `tools/warp-trace.py` now says so
+  rather than failing. Two games on one machine cannot both be in front, so what the game in the
+  background shows there -- this, and running half a second behind while it builds thirty pieces
+  -- has not been separated from being in the background.
 - **A game building thirty pieces at once runs behind.** Half a second at worst and a fifth of
   one for the half minute after, measured against the game that owns them. Not fixed.
-- **A craft nobody owns, docked with.** What nobody owns is each world's own, and after a walk of
-  warps a rocket nobody flew was 3.4 m from itself in the two games: one saw the capsule dock that
-  far from the port. Targeting a port could claim the craft; it does not. Not fixed.
-- **Debris nobody owns.** Its owner's game says when a piece has gone; a piece whose owner has
-  left, or every piece after the rig swaps the server under two games, is expired by each world
-  when that world likes. Thirteen stood on in one world of two. Not fixed.
+- **A craft nobody owns, at rest, with nobody near** is where each world has it. Anything that
+  moves is held by the game it moves in, so two worlds can only differ by what they differed by
+  when it came to rest. Not seen to differ since; the 2.6 m it was seen at was wreckage the rig's
+  server swap had left nobody's.
+- **A player riding in a docked craft cannot leave it.** Only the craft's owner undocks, and a
+  rider has no hatch. If the owner leaves the craft for ten seconds it is the rider's.
+- **A game that hears nothing of a docking it lost a craft to.** The server tells it again each
+  time it speaks of that craft, for thirty seconds. Past that it would go on flying a craft
+  nobody else has. Not seen.
 - **Two games on different machines.** The *server* has been remote -- `mp.ksarmory.com` on a VPS,
   reached across the internet, with a craft described to two other players in its world -- so that
   path is exercised. What has not happened is two games behind two different connections, where each
@@ -905,9 +1002,8 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
 
 ## What it does not do
 
-- **No docking between two players, no shared craft.** A craft is flown by one player at a time, and
-  two players' craft that touch port to port are not docked. A craft docks with one nobody flies,
-  and undocks.
+- **No shared craft.** A craft is flown by one player at a time. Two players' craft dock into one
+  that is one player's, and the other rides in it.
 - **No authority over physics.** Each game is trusted for its own craft; the server only checks a state
   comes from the craft's owner.
 - **The world is never warped past what the slowest machine can fly.** Every game measures what it

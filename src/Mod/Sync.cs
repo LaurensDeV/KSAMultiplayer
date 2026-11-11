@@ -48,6 +48,7 @@ internal static class Sync
     // owner's orbit, and how long before it may be again. Above what carrying a state on over an
     // ordinary line gets wrong, so a craft that is in place is not moved for the wire's sake.
     private const double CoastingOutM = 0.3, CoastingEverySeconds = 3.0;
+    private const double CoastingFarM = 1.0, CoastingFarEverySeconds = 0.5;
 
     // A puppet whose owner has said nothing for this long of universe time is let go of and left where it is.
     // How long a craft may go unheard before it is let go of. Counted in the world's own seconds,
@@ -67,6 +68,15 @@ internal static class Sync
     // is described a few times rather than twenty; short enough that a stage dropped on purpose is
     // in the others' worlds before anybody looks for it.
     private const double RedescribeEverySeconds = 2.0;
+
+    // Craft of this player's that a piece has lately come off, and when. One is described again
+    // sooner than others: every other game is holding that piece back until it has been told how
+    // the craft is built without it.
+    private static readonly Dictionary<string, double> ShedLately = [];
+    private const double RedescribeShedEverySeconds = 1.0, ShedLatelySeconds = 3.0;
+
+    private static double RedescribeWait(string key) =>
+        ShedLately.TryGetValue(key, out double at) && Wall() - at < ShedLatelySeconds ? RedescribeShedEverySeconds : RedescribeEverySeconds;
 
     // The least time between two rebuilds of one craft. A rebuild is not a correction, it is a
     // destruction and a fresh 119-part rocket dropped into the world, which lands on a pad and
@@ -94,6 +104,25 @@ internal static class Sync
     /// </summary>
     private static readonly Dictionary<string, byte[]> Deferred = [];
 
+    // When the server was given each definition held here: the one a copy would be built from,
+    // the one held back by the rebuild wait, and the one the copy standing here was built from.
+    private static readonly Dictionary<string, double> DefinedAt = [], DeferredAt = [], BuiltFrom = [];
+
+    // Pieces not built yet because the craft they came off still stands here with them on it,
+    // and since when. Not for ever: a hull whose owner never says how it is built now is one
+    // this game cannot wait for.
+    private static readonly Dictionary<string, double> PieceWaiting = [];
+    private const double PieceWaitsSeconds = 5.0;
+
+    // Craft a piece was waiting on when last looked at, which are built again sooner than others:
+    // what is waiting is a piece everybody else can already see.
+    private static readonly HashSet<string> Hurried = [];
+    private const double SetDownBeyondM = 0.1;
+    private const double BuiltLookAgainSeconds = 0.5;
+    private const double RebuildHurriedEverySeconds = 1.0;
+
+    private static double StandingWait(string key) => Hurried.Contains(key) ? RebuildHurriedEverySeconds : RebuildStandingEverySeconds;
+
     // Craft taken away to be built again in another shape, until they have been. The wait between
     // two builds of one name is for a copy that will not stand; it is not for these, which went
     // unbuilt for the whole of it -- a rocket that dropped a stage or docked was in no other world
@@ -101,7 +130,11 @@ internal static class Sync
     private static readonly HashSet<string> Rebuilding = [];
 
     // Craft built here that the pull has not had yet.
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Vehicle, byte> Unpulled = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Vehicle, double> Unpulled = new();
+
+    // How long after a copy is built its first place may still be given outright. Later than that
+    // it has been seen standing where it was built, and is drawn to its place like any other.
+    private const double BornWithinSeconds = 0.5;
 
     // Coasting craft the pull put where they were told at the last physics step, by name.
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> PutBack = new();
@@ -115,6 +148,14 @@ internal static class Sync
 
         /// <summary>Whether the server has ever said this craft is this player's, which is when its name became its own.</summary>
         public bool Granted { get; set; }
+
+        /// <summary>Whether it was being stepped through physics when last looked at.</summary>
+        public bool UnderWay { get; set; }
+
+        /// <summary>The last state said of it and the one before, and when the last was said.</summary>
+        public Wire.State? Said { get; set; }
+        public Wire.State? SaidBefore { get; set; }
+        public double SaidAt { get; set; }
 
         /// <summary>
         /// When this craft's state may next be sent, spread across the first interval rather than
@@ -164,10 +205,61 @@ internal static class Sync
     private static readonly List<(Vehicle Craft, int Parts, bool Whole)> ToFail = [];
     private static readonly List<(Vehicle One, Vehicle Other)> ToDock = [];
 
-    // Craft that were nobody's when one of this player's took them in at a docking port, by the
-    // name the room shares: when, when to claim it next, and whether it has been said gone.
+    // Craft that were nobody's when KSA took them out of this world, by the name the room shares:
+    // when, when to claim it next, and whether it has been said gone.
     private static readonly Dictionary<string, (double Since, double ClaimNext, bool Said)> DockedAway = [];
     private const double DockedAwayClaimEverySeconds = 0.5, DockedAwayForSeconds = 10.0;
+
+    // Dockings done in this game that the server has yet to answer for, by the name of the craft
+    // that is left: the craft taken into it, when, when to say so next and how often it has been.
+    private static readonly Dictionary<string, (string Consumed, double Since, double SayNext, int Said)> DockedHere = [];
+    private const double DockedSayEverySeconds = 0.4, DockedForSeconds = 6.0;
+    private const int DockedSaidAtLeast = 3;
+
+    // Names a docking has taken out of this world, and until when no craft is built under them: a
+    // craft's owner may not have heard yet, and what they last said of it is how to build it.
+    private static readonly Dictionary<string, double> Consumed = [];
+    private const double ConsumedForSeconds = 10.0;
+
+    // Craft that were other players' before a docking in this game took them, and whose.
+    private static readonly Dictionary<string, byte> Carried = [];
+
+    // The craft this player rides in since theirs docked with it in another game, and what theirs
+    // was called, which is the name it has again once it undocks.
+    private static string _aboard = "", _cameAs = "";
+
+    // A craft to fly from the next frame, asked for where KSA is in the middle of splitting one.
+    private static Vehicle? _toGoTo;
+
+    // Craft nobody owned when last looked at, and those this game has itself taken away since.
+    private static readonly Dictionary<Vehicle, string> Nobodys = [];
+    private static readonly HashSet<Vehicle> TakenAway = [];
+    private const int MostGoneAtOnce = 8;
+
+    // How often every craft within this game's physics that nobody has is asked for.
+    private const double NearEverySeconds = 1.0;
+    private static double _nearNext;
+
+    private static void ForgetDockings()
+    {
+        DockedAway.Clear();
+        DockedHere.Clear();
+        Consumed.Clear();
+        Carried.Clear();
+        Nobodys.Clear();
+        TakenAway.Clear();
+        DefinedAt.Clear();
+        DeferredAt.Clear();
+        BuiltFrom.Clear();
+        PieceWaiting.Clear();
+        ShedLately.Clear();
+        Hurried.Clear();
+        _earlyTokens = 0.0;
+        JustDocked.Clear();
+        JustUndocked.Clear();
+        Halves.Clear();
+        (_aboard, _cameAs, _toGoTo) = ("", "", null);
+    }
     /// <param name="NotAPlayer">Said by the server or by this game rather than by somebody playing,
     /// which the chat window draws in a colour of its own.</param>
     public readonly record struct Line(bool NotAPlayer, string Text);
@@ -368,6 +460,15 @@ internal static class Sync
     public static bool IsPuppet(Vehicle v) => Puppets.ContainsKey(v);
 
     /// <summary>
+    /// Whether a craft is another player's to fly and not this one's: held here for them, unless
+    /// they hold it only for being near it, which keeps nobody out.
+    /// </summary>
+    public static bool IsTheirs(Vehicle v) => Puppets.TryGetValue(v, out string? key) && !(_client is { } c && c.NearOf(key));
+
+    /// <summary>Whether a craft is held by a game only for being within its physics, this one or another.</summary>
+    public static bool HeldNear(Vehicle v) => _client is { Joined: true } c && c.NearOf(KeyOf(v));
+
+    /// <summary>
     /// Whether what this world's physics would do to a craft is to be left undone: another
     /// player's, or one waiting to be taken out of this world. The second because a craft its
     /// owner says has crashed is no puppet for the rest of the frame it is told in, and the crash
@@ -394,7 +495,7 @@ internal static class Sync
         if (World.Controlled is not null || World.Watched is not { } v || !World.IsAlive(v)) return;
 
         string key = KeyOf(v);
-        if (c.OwnerOf(key) != 0 || Owned.ContainsKey(key) || MadeHere.Contains(v)) return;
+        if (c.HeldBy(key) != 0 || Owned.ContainsKey(key) || MadeHere.Contains(v)) return;
         // Nor one on its way out. A craft its owner has said is gone is nobody's for the frame it
         // takes to leave this world, and a game watching it took it in that frame and flew it:
         // watching a capsule dock, it was given the capsule that had just become part of a rocket,
@@ -414,7 +515,7 @@ internal static class Sync
         string key = KeyOf(v);
         if (Owned.ContainsKey(key)) return true;
 
-        byte owner = c.OwnerOf(key);
+        byte owner = c.HeldBy(key);
         if (owner != 0 && owner != c.Id) return false;
 
         Own(c, v, define: false, made: false);
@@ -624,7 +725,7 @@ internal static class Sync
         Seen.Clear();
         Renamed.Clear();
         MadeHere.Clear();
-        DockedAway.Clear();
+        ForgetDockings();
         Definitions.Clear();
         Describes.Clear();
         Rebuilt.Clear();
@@ -687,39 +788,254 @@ internal static class Sync
     public static void FailLater(Vehicle v, int parts, bool whole) => ToFail.Add((v, parts, whole));
 
     /// <summary>
-    /// KSA has docked two craft in this world, and <paramref name="gone"/> is the one it took into
-    /// the other.
+    /// Whether KSA may dock these two in this world: both this game's to move, or one of them this
+    /// player's and the other another player's.
     ///
-    /// <para>A craft of this player's own goes the way any of theirs goes: the sending round finds it
-    /// dead and says so. One that was nobody's has nobody to say it, and only a craft's owner may:
-    /// so it stood on in every other world, 21 parts of capsule inside the craft it had become
-    /// part of. It is claimed, to be said gone once the server answers that it is this player's.
-    /// Only where the craft it went into is this player's, whose game is the one that docked.</para>
+    /// <para>A docking is done in one world and told to the rest. Two craft that are both other
+    /// players' are docked by one of their games and not by this one, which only watches; and a
+    /// craft on its way out of this world docks with nothing.</para>
     /// </summary>
-    public static void Docked(Vehicle gone, Vehicle into)
+    public static bool MayDock(Vehicle one, Vehicle other)
     {
-        if (_client is not { Joined: true } c || World.IsAlive(gone) || !World.IsAlive(into)) return;
-        string key = KeyOf(gone);
-        if (Owned.ContainsKey(key) || c.OwnerOf(key) != 0 || !Owned.ContainsKey(KeyOf(into))) return;
-        DockedAway[key] = (Wall(), 0.0, false);
-        Log.Info($"{key} docked with {KeyOf(into)} and was nobody's: claiming it to say it is gone");
+        if (_client is not { Joined: true } c || Now != Stage.Playing) return true;
+        if (ToRemove.Contains(one) || ToRemove.Contains(other)) return false;
+        // By the roster as well as by what is held here for them. A copy is not held for anybody
+        // until the frame after it is built: two craft that had just undocked were built here port
+        // to port, a tenth of a second after they parted, and this game docked them again before
+        // it had looked at either -- and then took back a rocket with a capsule on it that every
+        // other world had as a rocket and a capsule.
+        bool Theirs(Vehicle v) => Puppets.ContainsKey(v)
+            || (c.OwnerOf(KeyOf(v)) is var owner && owner != 0 && owner != c.Id && !Owned.ContainsKey(KeyOf(v)) && !MadeHere.Contains(v));
+        bool theirs = Theirs(one), others = Theirs(other);
+        if (!theirs && !others) return true;
+        if (theirs && others) return false;
+        Vehicle mine = theirs ? other : one;
+        // And this player's in earnest. A craft held only for being near is held so that it is
+        // in one place, and docking another player's craft with it is that player's game's to do:
+        // a game that was only watching docked the pair, and was given the craft its player had
+        // never flown.
+        if (ReferenceEquals(mine, World.Controlled)) return true;
+        return (Owned.ContainsKey(KeyOf(mine)) || MadeHere.Contains(mine)) && !c.NearOf(KeyOf(mine));
     }
 
     /// <summary>
-    /// Two craft that would have docked, one of them another player's, and were not let: said to
-    /// the player, and not every step the two ports go on touching.
+    /// KSA has docked two craft in this world, and <paramref name="gone"/> is the one it took into
+    /// the other.
+    ///
+    /// <para>The craft that is left is this player's from here on and the other is out of the
+    /// world, whoever had either: the server is told, says so to everybody, and the player whose
+    /// craft it was rides in what is left. Until the server has answered, the craft that is left
+    /// is held as this player's own here, since a craft still pulled to where its last owner had
+    /// it would be pulled by the whole length of what has just joined it.</para>
     /// </summary>
-    public static void DockingRefused(Vehicle one, Vehicle other)
+    public static void Docked(Vehicle gone, Vehicle into)
     {
-        double now = Wall();
-        if (now < _dockingSaidNext) return;
-        _dockingSaidNext = now + DockingSaidEverySeconds;
-        Vehicle theirs = IsPuppet(one) ? one : other;
-        Say($"{KeyOf(theirs)} is {OwnerOf(theirs)}'s: two players' craft do not dock");
+        if (_client is not { Joined: true } || Now != Stage.Playing) return;
+        // Only where KSA did dock them. This is reached after a docking this game refused as
+        // well, and one taken for done made the craft that would have been left this player's
+        // for as long as it takes the server not to answer: long enough for the two, still port
+        // to port, to touch again and dock in earnest.
+        if (World.IsAlive(gone) || !World.IsAlive(into)) return;
+        JustDocked.Enqueue((gone, into, KeyOf(gone), KeyOf(into)));
     }
 
-    private static double _dockingSaidNext;
-    private const double DockingSaidEverySeconds = 10.0;
+    // Taken up by the frame and not where KSA docks them, which is not a moment this game's own
+    // account of whose craft is whose may change.
+    private static readonly System.Collections.Concurrent.ConcurrentQueue<(Vehicle Gone, Vehicle Into, string Went, string Left)> JustDocked = new();
+
+    private static void TakeOwnDockings(Client c)
+    {
+        while (JustDocked.TryDequeue(out (Vehicle Gone, Vehicle Into, string Went, string Left) d)) DockedInThisGame(c, d.Gone, d.Into, d.Went, d.Left);
+    }
+
+    private static void DockedInThisGame(Client c, Vehicle gone, Vehicle into, string went, string left)
+    {
+        if (!World.IsAlive(into) || went.Length == 0 || left.Length == 0 || went == left) return;
+        foreach (string key in new[] { went, left })
+        {
+            if (c.HeldBy(key) is var had && had != 0 && had != c.Id) Carried[key] = had;
+        }
+        // Nothing is built under the name that went, whatever its owner said of it a moment ago.
+        // What they said is kept: it is how to build the craft again if the server will not have
+        // the docking.
+        Consumed[went] = Wall() + ConsumedForSeconds;
+        Puppets.Remove(gone);
+        Puppets.Remove(into);
+        TakenAway.Add(gone);
+        if (!Owned.TryGetValue(left, out Mine? mine) || !ReferenceEquals(mine.Craft, into)) Owned[left] = new Mine(into) { Shape = 0 };
+        else mine.Shape = 0;
+        c.SayDocked(went, left);
+        DockedHere[left] = (went, Wall(), Wall() + DockedSayEverySeconds, 1);
+        Log.Info($"{went} docked into {left} in this game: telling the server");
+    }
+
+    // Said until the roster shows it, and a few times whatever the roster shows: nothing answers
+    // a docking but the roster, and where both craft were this player's it showed it before
+    // anything was said.
+    private static void SayDockedHere(Client c)
+    {
+        double now = Wall();
+        foreach ((string left, (string went, double since, double next, int said)) in DockedHere.ToArray())
+        {
+            bool shown = c.OwnerOf(left) == c.Id && !c.NearOf(left) && c.OwnerOf(went) == 0;
+            if ((shown && said >= DockedSaidAtLeast) || now - since > DockedForSeconds)
+            {
+                DockedHere.Remove(left);
+                if (shown)
+                {
+                    Definitions.Remove(went);
+                    Deferred.Remove(went);
+                    Rebuilding.Remove(went);
+                    continue;
+                }
+                Log.Warn($"the server never answered that {went} docked into {left}: putting both back as their owners have them");
+                // Not this player's to have docked. What went is gone from this world all the
+                // same, so it is said gone if it was this player's; and where it and the craft it
+                // went into are other players', both are built again as those players have them.
+                if (c.Owns(went)) c.SayGone(went);
+                Consumed.Remove(went);
+                if (c.OwnerOf(left) is var whose && whose != 0 && whose != c.Id && Owned.Remove(left, out Mine? merged) && World.IsAlive(merged.Craft))
+                {
+                    MadeHere.Remove(merged.Craft);
+                    Puppets.Remove(merged.Craft);
+                    Built.Remove(left);
+                    Later(merged.Craft);
+                    Rebuilding.Add(left);
+                }
+                continue;
+            }
+            if (now < next) continue;
+            c.SayDocked(went, left);
+            DockedHere[left] = (went, since, now + DockedSayEverySeconds, said + 1);
+        }
+        foreach (string key in Consumed.Where(k => now > k.Value).Select(k => k.Key).ToArray()) Consumed.Remove(key);
+    }
+
+    /// <summary>
+    /// Dockings done in other games: the craft that went is taken out of this world whoever had
+    /// it, and the craft that is left is its new owner's, this player's own included.
+    /// </summary>
+    private static void TakeDockings(Client c, Dictionary<string, Vehicle> here, Vehicle? flown)
+    {
+        while (c.Docked.TryDequeue(out (string Consumed, string Survivor, byte By) d))
+        {
+            if (d.By == c.Id) continue;
+            string rode = "";
+            Definitions.Remove(d.Consumed);
+            Deferred.Remove(d.Consumed);
+            Rebuilding.Remove(d.Consumed);
+            Describes.Remove(d.Consumed);
+            // This game docked them as well, a moment later, and is not the one that has them.
+            DockedHere.Remove(d.Survivor);
+            DockedHere.Remove(d.Consumed);
+            Consumed.Remove(d.Survivor);
+            Carried.Remove(d.Consumed);
+            Carried.Remove(d.Survivor);
+            if (here.TryGetValue(d.Consumed, out Vehicle? gone) && World.IsAlive(gone))
+            {
+                if (ReferenceEquals(gone, flown) || Flew(d.Consumed))
+                {
+                    rode = d.Consumed;
+                    World.LetGo(gone);
+                }
+                Owned.Remove(d.Consumed);
+                MadeHere.Remove(gone);
+                Puppets.Remove(gone);
+                Built.Remove(d.Consumed);
+                if (_claimed == d.Consumed) _claimed = "";
+                Later(gone);
+                here.Remove(d.Consumed);
+            }
+            if (here.TryGetValue(d.Survivor, out Vehicle? left) && (Owned.ContainsKey(d.Survivor) || MadeHere.Contains(left) || Flew(d.Survivor)))
+            {
+                if (ReferenceEquals(left, flown) || Flew(d.Survivor))
+                {
+                    rode = d.Survivor;
+                    World.LetGo(left);
+                }
+                Owned.Remove(d.Survivor);
+                MadeHere.Remove(left);
+                if (_claimed == d.Survivor) _claimed = "";
+            }
+            if (rode.Length == 0) continue;
+            Log.Info($"{d.Consumed} docked into {d.Survivor} in {c.NameOf(d.By)}'s game, and this player was flying {rode}");
+            (_aboard, _cameAs) = (d.Survivor, rode);
+            Say($"{d.Consumed} has docked with {d.Survivor} in {c.NameOf(d.By)}'s game: the craft is theirs to fly, and you are aboard");
+        }
+    }
+
+    /// <summary>
+    /// Whether this player was at the controls of a craft a moment ago, by the last claim made
+    /// for it. The roster is told of a docking as it arrives and this game acts on it a frame
+    /// later: asked then what its player is flying, a game that had just been told its craft was
+    /// somebody else's had already let go of it, took its player for a bystander, and left them
+    /// at no craft with nothing to bring theirs back.
+    /// </summary>
+    private static bool Flew(string key) => key.Length > 0 && _claimed == key && Wall() < _claimNext + 1.0;
+
+    /// <summary>
+    /// Keeps a player whose craft docked in another game looking at the craft they ride in, and
+    /// at their own again once it has undocked.
+    ///
+    /// <para>Theirs to take back the way any craft is: its owner flies the other half away, and a
+    /// craft nobody has been near for a while is whoever is watching it's.</para>
+    /// </summary>
+    private static void RideAlong(Client c, Dictionary<string, Vehicle> here, Vehicle? flown)
+    {
+        if (_aboard.Length == 0) return;
+        if (flown is not null)
+        {
+            (_aboard, _cameAs) = ("", "");
+            return;
+        }
+        // Their own craft under its own name again: undocked, and built here from what its owner said.
+        if (_cameAs != _aboard && here.TryGetValue(_cameAs, out Vehicle? back) && World.IsAlive(back) && !ToRemove.Contains(back))
+        {
+            Say($"{_cameAs} has undocked: it is yours once {c.NameOf(c.OwnerOf(_cameAs))} has left it");
+            _aboard = _cameAs;
+        }
+        if (!here.TryGetValue(_aboard, out Vehicle? ride) || !World.IsAlive(ride) || ToRemove.Contains(ride)) return;
+        if (!ReferenceEquals(World.Watched, ride)) World.Watch(ride);
+    }
+
+    /// <summary>
+    /// KSA has undocked a craft of this player's into two. One that was another player's before it
+    /// docked is left for them: this player flies the other half.
+    /// </summary>
+    public static void Undocked(Vehicle stack, Vehicle? split)
+    {
+        if (_client is not { Joined: true } || split is null) return;
+        JustUndocked.Enqueue((stack, split, Wall()));
+    }
+
+    // Looked at by the frame for a moment afterwards: KSA decides which half its player flies
+    // after it has split them, so where it splits them the answer is still the craft as it was.
+    private static readonly System.Collections.Concurrent.ConcurrentQueue<(Vehicle Stack, Vehicle Split, double At)> JustUndocked = new();
+    private static readonly List<(Vehicle Stack, Vehicle Split, double At)> Halves = [];
+    private const double HalvesForSeconds = 1.0;
+
+    private static void LeaveWhatWasTheirs(Client c, Vehicle? flown)
+    {
+        while (JustUndocked.TryDequeue(out (Vehicle Stack, Vehicle Split, double At) u)) Halves.Add(u);
+        for (int i = Halves.Count - 1; i >= 0; i--)
+        {
+            (Vehicle stack, Vehicle split, double at) = Halves[i];
+            bool over = Wall() - at > HalvesForSeconds || !World.IsAlive(stack) || !World.IsAlive(split);
+            if (!over && flown is not null && (ReferenceEquals(flown, stack) || ReferenceEquals(flown, split))
+                && Carried.TryGetValue(KeyOf(flown), out byte whose) && c.Players.Any(p => p.Id == whose))
+            {
+                string key = KeyOf(flown);
+                _toGoTo = ReferenceEquals(flown, stack) ? split : stack;
+                Say($"{key} was {c.NameOf(whose)}'s before it docked: left for them to take back");
+                over = true;
+            }
+            if (!over) continue;
+            // Either half is whoever takes it from here on.
+            Carried.Remove(KeyOf(stack));
+            Carried.Remove(KeyOf(split));
+            Halves.RemoveAt(i);
+        }
+    }
 
     // Claimed again until it is given, because a claim is said once and a wire loses things; and said
     // gone again for as long as the roster still has it down as this player's, for the same reason.
@@ -734,7 +1050,7 @@ internal static class Sync
                 c.SayGone(key);
                 DockedAway[key] = (since, next, true);
             }
-            else if (owner != 0 || now - since > DockedAwayForSeconds)
+            else if (c.HeldBy(key) != 0 || now - since > DockedAwayForSeconds)
             {
                 DockedAway.Remove(key);
             }
@@ -835,7 +1151,7 @@ internal static class Sync
     public static string OwnerOf(Vehicle v)
     {
         if (_client is not { Joined: true } c) return "";
-        byte owner = c.OwnerOf(KeyOf(v));
+        byte owner = c.HeldBy(KeyOf(v));
         return owner == 0 || owner == c.Id ? "" : c.NameOf(owner);
     }
 
@@ -964,7 +1280,7 @@ internal static class Sync
     {
         while (_worldToLoad is null && c.Blobs.TryDequeue(out Blob? blob))
         {
-            if (blob.Kind == BlobKind.Vehicle) Definitions[blob.Key] = blob.Data;
+            if (blob.Kind == BlobKind.Vehicle) (Definitions[blob.Key], DefinedAt[blob.Key]) = (blob.Data, blob.Universe);
             if (blob.Kind == BlobKind.World) _worldToLoad = blob;
         }
         if (_worldToLoad is not { } world) return;
@@ -1034,6 +1350,7 @@ internal static class Sync
     private static void StartPlaying(Client c)
     {
         Renamed.Clear();
+        ForgetDockings();
         Seen.Clear();
         foreach (Vehicle v in World.Vehicles()) Seen.Add(v);
         c.ForgetTracks();
@@ -1112,7 +1429,7 @@ internal static class Sync
         // is behind it.
         foreach ((string key, byte[] data) in Deferred.ToArray())
         {
-            if (Wall() - Rebuilt.GetValueOrDefault(key) < RebuildStandingEverySeconds) continue;
+            if (Wall() - Rebuilt.GetValueOrDefault(key) < StandingWait(key)) continue;
             Deferred.Remove(key);
             if (!here.TryGetValue(key, out Vehicle? waited) || Owned.ContainsKey(key) || MadeHere.Contains(waited))
             {
@@ -1121,6 +1438,7 @@ internal static class Sync
             }
             Rebuilt[key] = Wall();
             Definitions[key] = data;
+            DefinedAt[key] = DeferredAt.GetValueOrDefault(key);
             Log.Info($"taking up the word about {key} that the rebuild wait held back: {data.Length} bytes");
             Puppets.Remove(waited);
             Built.Remove(key);
@@ -1156,13 +1474,15 @@ internal static class Sync
             // filled a world with exploding copies. Kept rather than dropped, and taken up when the
             // wait is over, because the craft may never change shape again and the last word about
             // it is the one that matters.
-            if (standing && Wall() - Rebuilt.GetValueOrDefault(blob.Key) < RebuildStandingEverySeconds)
+            if (standing && Wall() - Rebuilt.GetValueOrDefault(blob.Key) < StandingWait(blob.Key))
             {
                 Deferred[blob.Key] = blob.Data;
+                DeferredAt[blob.Key] = blob.Universe;
                 continue;
             }
             Deferred.Remove(blob.Key);
             Definitions[blob.Key] = blob.Data;
+            DefinedAt[blob.Key] = blob.Universe;
             // Bound again rather than taken from the flag: standing can only be true where the
             // lookup above found one, but that is a bool by now and nothing can see through it.
             if (standing && old is { } was)
@@ -1234,8 +1554,21 @@ internal static class Sync
                 : "the world was cleared, and this game had nothing matching to take away");
         }
 
+        TakeOwnDockings(c);
+        TakeDockings(c, here, flown);
+        // What was flown may have been taken into another player's craft, or given up to them.
+        if (flown is not null && (ToRemove.Contains(flown) || !ReferenceEquals(flown, World.Controlled))) flown = null;
+        LeaveWhatWasTheirs(c, flown);
+        if (_toGoTo is { } other)
+        {
+            _toGoTo = null;
+            if (World.IsAlive(other) && World.GoTo(other)) flown = World.Controlled;
+        }
+        RideAlong(c, here, flown);
+        SayNobodysGone(c, here);
         ClaimFlown(c, flown);
         Adopt(c, here, flown);
+        HoldWhatIsNear(c, here, flown);
         // Every craft in this world while a run is recording, whoever's it is or nobody's: how far
         // apart two craft stand is asked of each game, and one of the two is often neither's.
         if (Motion.On)
@@ -1247,6 +1580,7 @@ internal static class Sync
         }
         SendOwned(c, here, flown);
         SayDockedAway(c);
+        SayDockedHere(c);
         PlaceOthers(c, here, flown);
     }
 
@@ -1289,7 +1623,7 @@ internal static class Sync
 
         // Another player holds it, so this player is watching: never claimed, and left to be pulled to
         // wherever its owner's game says it is, which is the whole of what watching means.
-        if (c.OwnerOf(key) is var held && held != 0 && held != c.Id && !MadeHere.Contains(flown!))
+        if (c.HeldBy(key) is var held && held != 0 && held != c.Id && !MadeHere.Contains(flown!) && !DockedHere.ContainsKey(key))
         {
             if (_watching != key)
             {
@@ -1354,6 +1688,7 @@ internal static class Sync
             // trusted a few lines up to give another player their debris.
             if (ReferenceEquals(v, flown) || shed is not null)
             {
+                if (shed is { From: var hull }) ShedLately[hull] = Wall();
                 Own(c, v, define: true, made: true);
                 continue;
             }
@@ -1462,7 +1797,7 @@ internal static class Sync
     private static bool MaySayHow(string key) =>
         !Describes.TryGetValue(key, out Description? told)
         || told.At <= 0.0
-        || Wall() - told.At >= RedescribeEverySeconds;
+        || Wall() - told.At >= RedescribeWait(key);
 
     /// <summary>
     /// A craft described to the others, at most once every <see cref="RedescribeEverySeconds"/> for
@@ -1488,7 +1823,7 @@ internal static class Sync
             return;
         }
         double now = Wall();
-        if (told.At > 0.0 && now - told.At < RedescribeEverySeconds)
+        if (told.At > 0.0 && now - told.At < RedescribeWait(key))
         {
             told.Waiting = bytes;
             return;
@@ -1502,7 +1837,7 @@ internal static class Sync
         double now = Wall();
         foreach ((string key, Description told) in Describes)
         {
-            if (told.Waiting is not { } bytes || now - told.At < RedescribeEverySeconds) continue;
+            if (told.Waiting is not { } bytes || now - told.At < RedescribeWait(key)) continue;
             Describe(c, key, bytes, told, now);
         }
     }
@@ -1537,7 +1872,10 @@ internal static class Sync
             // starts sending states for it. Taken rather than claimed, it may never have been
             // described by this game, and a Mine starting at the craft's shape as it stands never
             // notices: the shape it compares against is already the answer.
-            Owned[key] = new Mine(taken) { Shape = 0 };
+            // One held only for being near is the craft every game already has, and is not written
+            // down until it changes: forty parked craft would each be torn down and built again
+            // in every other game for a player having walked past them.
+            Owned[key] = new Mine(taken) { Shape = c.NearOf(key) ? World.Shape(taken) : 0 };
         }
         double now = Wall();
         int underWay = 0;
@@ -1546,6 +1884,8 @@ internal static class Sync
             if (World.IsAlive(other.Craft) && !ReferenceEquals(other.Craft, flown) && World.UnderWay(other.Craft)) underWay++;
         }
         double underWayEvery = Math.Min(OwnedEverySeconds, Math.Max(UnderWayEverySeconds, underWay / MostUnderWayASecond));
+        _earlyTokens = Math.Min(EarlyAtOnce, _earlyTokens + (Math.Clamp(now - _earlyAt, 0.0, 0.25) * EarlyASecond));
+        _earlyAt = now;
         foreach ((string key, Mine entry) in Owned.ToArray())
         {
             Mine m = entry;
@@ -1568,14 +1908,17 @@ internal static class Sync
                     // opening after the craft had gone sent everybody how to build something this
                     // game had just said was gone.
                     Describes.Remove(key);
-                    if (c.Owns(key)) c.SayGone(key);
+                    // Not one a docking in this game took: the docking is what says that, and said
+                    // gone first the craft is nobody's by the time the server hears it docked --
+                    // which is then a docking of two craft neither of which is this player's.
+                    if (c.Owns(key) && !DockedHere.Values.Any(d => d.Consumed == key)) c.SayGone(key);
                     continue;
                 }
             }
             Vehicle v = m.Craft;
             byte owner = c.OwnerOf(key);
             if (owner == c.Id) m.Granted = true;
-            if (owner != 0 && owner != c.Id)
+            if (owner != 0 && owner != c.Id && !DockedHere.ContainsKey(key))
             {
                 // Taken by another player, who is flying it now.
                 Owned.Remove(key);
@@ -1585,7 +1928,7 @@ internal static class Sync
             // Let go of by the server because this player walked away from it, and let go of here
             // too: a state sent for a craft nobody owns takes it straight back, and the two would
             // hand it to each other for ever. The same rule as the server's, so they agree on it.
-            if (owner == 0 && !ReferenceEquals(v, flown) && KeyOf(v) != (World.Watched is { } at ? KeyOf(at) : ""))
+            if (owner == 0 && !ReferenceEquals(v, flown) && KeyOf(v) != (World.Watched is { } at ? KeyOf(at) : "") && !DockedHere.ContainsKey(key))
             {
                 Owned.Remove(key);
                 HandedOn(m);
@@ -1598,20 +1941,153 @@ internal static class Sync
             // The shape is recorded only once the craft has been written down, and only when the
             // window is open to write it: left unrecorded, this asks again next frame and the craft
             // goes out with the shape it has then rather than one captured frames earlier.
-            if (shape != m.Shape && MaySayHow(key) && Define(c, v)) m.Shape = shape;
+            // Not of a craft a docking has just given this player until the server says it is
+            // theirs: how a craft is built is taken only from its owner, and is said once.
+            if (shape != m.Shape && MaySayHow(key) && (owner == c.Id || !DockedHere.ContainsKey(key)) && Define(c, v)) m.Shape = shape;
             bool controlled = ReferenceEquals(v, flown);
-            double every = controlled ? ControlledEverySeconds : World.UnderWay(v) ? underWayEvery : OwnedEverySeconds;
+            bool moving = World.UnderWay(v);
+            // Said at once when it is set moving, and not at the next turn it was given while it lay still.
+            if (moving && !m.UnderWay) m.SendNext = now;
+            m.UnderWay = moving;
+            double every = controlled ? ControlledEverySeconds : moving ? underWayEvery : OwnedEverySeconds;
             // A craft that has just been set moving is not left waiting out the half second it was
             // given while it stood still.
             if (m.SendNext - now > every) m.SendNext = now + (every * Random.Shared.NextDouble());
-            if (now < m.SendNext) continue;
+            Wire.State? stands = null;
+            if (now < m.SendNext)
+            {
+                // Before its turn, where it is no longer where its last word would have it drawn.
+                if (controlled || !moving || _earlyTokens < 1.0 || now - m.SaidAt < EarlyAfterSeconds || m.Said is not { } said) continue;
+                if ((stands = World.StateOf(v, key, controlled)) is not { } isAt || !LeftItsPath(said, m.SaidBefore, isAt)) continue;
+                _earlyTokens -= 1.0;
+                m.SendNext = now;
+            }
             // Counted on from when it was due, not from now. Set from now, the gap between sends is
             // however many whole frames the interval needs -- so twenty a second asked for on a
             // machine managing thirty frames came out as fifteen, and anything faster would land
             // under the rate its watchers need to draw it smoothly at all. Never further back than
             // one interval, or a game that was busy would try to make up a minute of sends at once.
             m.SendNext = Math.Max(now - every, m.SendNext) + every;
-            if (World.StateOf(v, key, controlled) is { } state) c.SendState(state);
+            if ((stands ?? World.StateOf(v, key, controlled)) is not { } state) continue;
+            // Kept, where it is held only for being near, by being said to be.
+            if (c.NearOf(key) && Near(v, flown)) state = state with { Flags = state.Flags | Wire.StateFlags.Near };
+            c.SendState(state);
+            (m.SaidBefore, m.Said, m.SaidAt) = (m.Said, state, now);
+        }
+    }
+
+    // How far a craft nobody is flying may be from where its last word has it drawn before it is
+    // said again ahead of its turn, how soon after that word, and how many such a second.
+    private const double EarlyOutM = 0.25, EarlyAfterSeconds = 0.05, EarlyASecond = 200.0, EarlyAtOnce = 40.0;
+    private static double _earlyTokens, _earlyAt;
+
+    /// <summary>
+    /// Whether a craft is no longer where its last word would have it drawn: carried on from that
+    /// word at the speed it gave, changing as it had been between the last two.
+    ///
+    /// <para>Forty pieces of a rocket share two hundred states a second, a fifth of a second
+    /// each, and most of them spend that falling exactly as their last word says. The ones that
+    /// do not are the ones that have hit something, and those were drawn a metre or two out until
+    /// their turn came. A turn is taken early by a piece that has left its path.</para>
+    /// </summary>
+    private static bool LeftItsPath(Wire.State said, Wire.State? before, Wire.State at)
+    {
+        if (said.Body != at.Body) return true;
+        double dt = at.Universe - said.Universe;
+        if (dt <= 0.0) return false;
+        Vec3 guess = said.PositionCcf + (said.VelocityCcf * dt);
+        if (before is { } b && b.Body == said.Body && said.Universe - b.Universe is > 1e-6 and < 0.6)
+        {
+            guess += (said.VelocityCcf - b.VelocityCcf) * (0.5 * dt * dt / (said.Universe - b.Universe));
+        }
+        return (at.PositionCcf - guess).Length > EarlyOutM;
+    }
+
+    // How far from what a player flies or watches a craft is held for being near. KSA steps every
+    // craft in a world, wherever it is: held by that alone, the first game into a world held all
+    // of it, and said twice a second where each craft in it was.
+    private const double NearWithinM = 10_000.0;
+
+    /// <summary>
+    /// Whether a craft is being stepped by this game within reach of what its player flies, or
+    /// watches while flying nothing -- or is moving under this game's physics wherever it is.
+    /// A craft at rest or coasting goes the same way in every world and needs nobody; one that is
+    /// rolling down a hill with nobody near goes its own way in each.
+    /// </summary>
+    private static bool Near(Vehicle v, Vehicle? flown)
+    {
+        // Not by a game that is only watching another player's craft: that player's game is there,
+        // and what is near their craft is theirs to hold. Held by the watcher, a piece of old
+        // wreckage their rocket fell on was struck in one game and held in the other, each working
+        // out its own half of the blow, and was put 5 m to make the two agree.
+        // Asked of the roster as well as of what is held here for them: a copy built again is not
+        // held for anybody until the frame after, and in that frame a watcher took the rocket
+        // the player it was watching was about to dock with.
+        if (flown is null && World.Watched is { } watched && _client is { } c
+            && (IsTheirs(watched) || (c.HeldBy(KeyOf(watched)) is var whose && whose != 0 && whose != c.Id))) return false;
+        return World.InBubble(v) && (World.UnderWay(v) || ((flown ?? World.Watched) is { } by && World.IsAlive(by) && World.Between(by, v) < NearWithinM));
+    }
+
+    /// <summary>
+    /// Asks for every craft within this game's physics that nobody has.
+    ///
+    /// <para>A craft nobody owns is stepped by each game that is near it, each in its own way: a
+    /// rocket nobody flew was 3.4 m from itself in two games after a walk of warps, so one player
+    /// saw a capsule dock that far from the port, and a parked craft one player drives into moves
+    /// in that player's world alone. Held by one game, it is where that game has it for everybody.
+    /// The server gives such a hold up to whoever asks to fly the craft, and lets it lapse when
+    /// its holder stops saying the craft is near.</para>
+    /// </summary>
+    private static void HoldWhatIsNear(Client c, Dictionary<string, Vehicle> here, Vehicle? flown)
+    {
+        double now = Wall();
+        if (now < _nearNext) return;
+        _nearNext = now + NearEverySeconds;
+        foreach ((string key, Vehicle v) in here)
+        {
+            if (ReferenceEquals(v, flown) || Owned.ContainsKey(key) || Puppets.ContainsKey(v) || ToRemove.Contains(v)) continue;
+            if (c.OwnerOf(key) != 0 || DockedAway.ContainsKey(key) || !Near(v, flown)) continue;
+            c.Claim(key, controlling: false, made: false, near: true);
+        }
+    }
+
+    /// <summary>
+    /// Craft nobody owned that KSA has taken out of this world since it was last looked at: said
+    /// gone, as their owner would have said had they had one.
+    ///
+    /// <para>What nobody owns was each world's own to destroy. A piece of wreckage whose owner had
+    /// left was expired by each game when that game liked, and thirteen stood on in one world of
+    /// two. Only a craft's owner may say it is gone, so it is claimed first. Not a great many at
+    /// once: that is a world being unloaded and not a world losing craft.</para>
+    /// </summary>
+    private static void SayNobodysGone(Client c, Dictionary<string, Vehicle> here)
+    {
+        List<string> gone = [];
+        foreach ((Vehicle v, string key) in Nobodys)
+        {
+            if (World.IsAlive(v) || TakenAway.Contains(v) || here.ContainsKey(key) || c.HeldBy(key) != 0 || Consumed.ContainsKey(key)) continue;
+            gone.Add(key);
+        }
+        // Most of what there was, and not merely many: KSA frees the places old wreckage holds
+        // when a new breakup needs them, a dozen at a time.
+        if (gone.Count > MostGoneAtOnce && gone.Count * 2 > Nobodys.Count) Log.Warn($"{gone.Count} craft nobody owns left this world at once: not said gone");
+        else
+        {
+            foreach (string key in gone)
+            {
+                DockedAway[key] = (Wall(), 0.0, false);
+                Log.Info($"{key} was nobody's and has gone from this world: claiming it to say so");
+            }
+        }
+        Nobodys.Clear();
+        TakenAway.RemoveWhere(v => !World.IsAlive(v));
+        foreach ((string key, Vehicle v) in here)
+        {
+            // Or held by another game only for being near it, which is nobody's as much: that
+            // game cannot say how to build it again, since it never wrote it down, so a piece KSA
+            // took out of this world to make room stood on in the other for good.
+            if (Owned.ContainsKey(key) || ToRemove.Contains(v) || MadeHere.Contains(v) || c.HeldBy(key) != 0) continue;
+            Nobodys[v] = key;
         }
     }
 
@@ -1619,6 +2095,7 @@ internal static class Sync
     private static void PlaceOthers(Client c, Dictionary<string, Vehicle> here, Vehicle? flown)
     {
         HashSet<Vehicle> wanted = [];
+        Hurried.Clear();
         bool builtOne = false;
         double universe = World.Universe, now = Wall();
         double lost = LostSeconds * Math.Max(1.0, World.Speed);
@@ -1631,6 +2108,8 @@ internal static class Sync
             if (v is null && Built.TryGetValue(key, out Vehicle? standing) && World.IsAlive(standing)) here[key] = v = standing;
             if (v is null)
             {
+                if (Consumed.ContainsKey(key)) continue;
+                if (track.Newest is not null && Definitions.ContainsKey(key) && WaitsForItsHull(key, here, now)) continue;
                 // One a frame: each is a craft built.
                 if (builtOne || track.Newest is null || !Definitions.TryGetValue(key, out byte[]? definition)) continue;
                 // And one every few seconds per name, however often it goes. The last limit only
@@ -1682,7 +2161,14 @@ internal static class Sync
                 // Only against a place it was told to stand now. Carried on as far as it may be, or
                 // this world too far behind to be told, the place is for another time and a craft
                 // standing where it should looks kilometres from it.
-                if (now >= PlacedAt.GetValueOrDefault(key) && Math.Abs(s.Universe - universe) < 1e-6
+                // Nor a craft that is another shape here than its owner has it: its centre is not theirs.
+                // Looked at this often, and sooner for a craft that is far out: one knocked by
+                // another copy built against it as the two undocked left at 4 m/s, and waiting
+                // its three seconds it was 13 m out and had been put back 250 times to no effect.
+                bool due = now >= PlacedAt.GetValueOrDefault(key);
+                bool soon = now >= PlacedAt.GetValueOrDefault(key) - (CoastingEverySeconds - CoastingFarEverySeconds);
+                if ((due || soon) && Math.Abs(s.Universe - universe) < 1e-6
+                    && (said.Parts == 0 || said.Parts == v.Parts.Count)
                     && World.StateOf(v, key, controlled: false) is { } stands)
                 {
                     double outM = (stands.PositionCcf - s.PositionCcf).Length;
@@ -1692,7 +2178,7 @@ internal static class Sync
                     // another orbit while it was in this world's physics was put 11,000 km at
                     // every step for seventeen seconds, and never given the orbit.
                     bool putBack = PutBack.TryRemove(key, out _);
-                    if (UnderWay.Remove(key) || outM > CoastingOutM || putBack)
+                    if (outM > CoastingFarM || putBack || (due && (UnderWay.Remove(key) || outM > CoastingOutM)))
                     {
                         PlacedAt[key] = now + CoastingEverySeconds;
                         ToOrbit[key] = (v, said, outM);
@@ -1709,6 +2195,36 @@ internal static class Sync
         foreach (Vehicle v in Seen.Where(x => !World.IsAlive(x)).ToArray()) Seen.Remove(v);
         foreach (Vehicle v in MadeHere.Where(x => !World.IsAlive(x)).ToArray()) MadeHere.Remove(v);
         foreach (Vehicle v in Unpulled.Keys) if (!World.IsAlive(v)) Unpulled.TryRemove(v, out _);
+    }
+
+    /// <summary>
+    /// Whether a piece is not to be built yet, because the craft it came off still stands here
+    /// with that piece on it.
+    ///
+    /// <para>A piece that breaks off is described at once and built here at once, and the hull it
+    /// left is built again up to two seconds later. Until then the hull's copy still has the
+    /// piece on it, the piece's copy is built inside that, and KSA's collisions hold it there:
+    /// told to fall at 10 m/s it moved at one, and was put where it belonged once it was five
+    /// metres out. So the piece is built when the hull is built from a word its owner wrote after
+    /// the piece's own, and until then it is still to be seen where it was, on the hull.</para>
+    /// </summary>
+    private static bool WaitsForItsHull(string key, Dictionary<string, Vehicle> here, double now)
+    {
+        double written = DefinedAt.GetValueOrDefault(key);
+        foreach (string from in Wire.ShedFrom(key))
+        {
+            if (!here.TryGetValue(from, out Vehicle? hull) || !World.IsAlive(hull) || !Puppets.ContainsKey(hull)) continue;
+            if (BuiltFrom.GetValueOrDefault(from, double.NegativeInfinity) >= written) break;
+            if (!PieceWaiting.TryGetValue(key, out double since)) PieceWaiting[key] = since = now;
+            if (now - since < PieceWaitsSeconds)
+            {
+                Hurried.Add(from);
+                return true;
+            }
+            break;
+        }
+        PieceWaiting.Remove(key);
+        return false;
     }
 
     // A player is named this far off; a craft of theirs they are not in is marked only this far.
@@ -1739,7 +2255,7 @@ internal static class Sync
             if (!World.IsAlive(v)) continue;
             // Nobody's, or this player's own whatever the bookkeeping says: unnamed either way.
             byte owner = c.OwnerOf(key);
-            if (owner == 0 || owner == c.Id || Owned.ContainsKey(key)) continue;
+            if (owner == 0 || owner == c.Id || Owned.ContainsKey(key) || c.NearOf(key)) continue;
 
             // Asked of whoever owns it, so a word gone stale can only fail to match and never put
             // somebody's name on a craft that was never theirs.
@@ -1768,11 +2284,13 @@ internal static class Sync
         if (!Puppets.TryGetValue(v, out string? key) || _client is not { } c) return;
         Track track = c.TrackOf(key);
         if (track.At(World.Universe) is not { } s) return;
-        World.Pulled? pulled = World.Pull(v, s, dt, first: Unpulled.ContainsKey(v));
+        World.Pulled? pulled = World.Pull(v, s, dt, first: Unpulled.TryGetValue(v, out double built) && Wall() - built < BornWithinSeconds);
         // A piece of a rocket is built where it was when its owner described it, a few frames or
         // half a second ago, and thirty of them are built one a frame: drawn there over a few
         // steps, each started its life with a step of metres that everybody saw.
-        if (pulled is not null) Unpulled.TryRemove(v, out _);
+        // Not by a pull that was held: a copy built while this world was behind has not been put
+        // anywhere yet, and is still owed its first place.
+        if (pulled is { Held: false }) Unpulled.TryRemove(v, out _);
         if (pulled is { Snap: true } && (s.Flags & Wire.StateFlags.Rails) != 0 && (s.Flags & Wire.StateFlags.Landed) == 0) PutBack[key] = 0;
         if (Motion.On && pulled is { } found) Motion.Puppet(key, World.Universe, dt, found, s, track.HeardAt);
     }
@@ -1935,12 +2453,27 @@ internal static class Sync
                 if (localId != key) Renamed[built] = key;
                 Seen.Add(built);
                 Built[key] = built;
-                Unpulled[built] = 0;
+                BuiltFrom[key] = DefinedAt.GetValueOrDefault(key);
+                Unpulled[built] = Wall();
                 Log.Info($"built {key}, {owner}'s{(localId != key ? $", called {localId} here" : "")}");
                 // And put where its owner has it before it is first drawn. What it is built from
                 // says where it was when that was written, and a kitten out of a hatch in orbit
                 // was drawn for its first two frames a kilometre and a half from the capsule.
-                if (_client?.TrackOf(key).Newest is { } said && (said.Flags & Wire.StateFlags.Landed) == 0) World.Rebase(built, said);
+                // Or lying where its owner has it, where that is not where it was built: a piece
+                // that waited for its hull was drawn for a frame thirteen metres up, where it
+                // had broken off.
+                if (_client?.TrackOf(key).Newest is { } said)
+                {
+                    if ((said.Flags & Wire.StateFlags.Landed) == 0) World.Rebase(built, said);
+                    else World.SetDown(built, said, SetDownBeyondM);
+                }
+                // And looked at again soon, as a craft whose owner has just stopped pushing it is.
+                // The word it was put by may be from before it was this craft: a capsule built
+                // as it undocked was put on the orbit it had before the push that parted them,
+                // was 4 m out three seconds later when a coasting craft is next looked at, and
+                // was put right in one step.
+                PlacedAt[key] = Wall() + BuiltLookAgainSeconds;
+                UnderWay.Add(key);
             }
             else
             {
@@ -1960,6 +2493,7 @@ internal static class Sync
     /// </summary>
     private static void Later(Vehicle v)
     {
+        TakenAway.Add(v);
         if (!ToRemove.Contains(v)) ToRemove.Add(v);
     }
 

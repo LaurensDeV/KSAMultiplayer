@@ -54,9 +54,11 @@ Once you're in:
   fly. Their name is over the craft they're in; their other craft carry a faint `Alice's Lander`.
 - **Launch as usual.** A craft you launch, a stage you drop and a kitten you send on EVA show up for
   everyone else.
-- **Dock with what nobody is flying.** Your craft and one nobody is in become one craft, for
-  everyone, and two again when you undock. Two players' craft do not dock: the ports touch,
-  nothing happens, and you are told why.
+- **Dock.** Your craft and another become one craft, for everyone, and two again when you undock.
+  Docked with another player's craft, the one craft belongs to whoever's game docked them first:
+  that player flies it and the other rides along, watching. Only its owner can undock it. When
+  they do, each half goes back to whoever had it, the rider's about ten seconds after its owner
+  has flown the other half away.
 - **Time is shared.** Every world keeps the server's time, so changing speed is put to everyone
   first: a warp runs only if all agree, and only whoever asked can end it. Pause is a speed like any
   other. The world is never warped past what the slowest machine in it is managing, and slows to
