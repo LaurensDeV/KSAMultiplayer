@@ -95,7 +95,10 @@ public class AnnouncerTests
         announcer.Tick();
 
         Assert.True(await Eventually(() => announcer.Where() is [Two]));
-        Assert.Contains($"no longer listing itself with {One}", Drain(announcer));
+        // Waited for like the rest: the list is taken up on one pass and the withdrawal said on
+        // a later one, and asked for once in between it was not there yet -- which failed a
+        // release whose every other job had passed.
+        Assert.True(await Eventually(() => Drain(announcer).Any(s => s.Contains($"no longer listing itself with {One}"))));
     }
 
     [Fact]
