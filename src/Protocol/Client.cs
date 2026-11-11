@@ -63,6 +63,9 @@ public sealed class Client : IDisposable
     private readonly Dictionary<string, byte> _owners = [];
     private readonly Dictionary<string, Track> _tracks = [];
     private Dictionary<string, byte> _ownersComing = [];
+    // Which of them are held only for being within their holder's physics.
+    private readonly HashSet<string> _near = [];
+    private HashSet<string> _nearComing = [];
 
     // The page of the round being gathered, or -1 for no round: a round whose pages do not arrive in
     // order is dropped rather than mixed with the one before it.
@@ -179,6 +182,9 @@ public sealed class Client : IDisposable
     public Queue<Blob> Blobs { get; } = new();
     public Queue<string> Gone { get; } = new();
 
+    /// <summary>Dockings the server has told of: the craft that went, the craft it went into, and whose that is now.</summary>
+    public Queue<(string Consumed, string Survivor, byte By)> Docked { get; } = new();
+
     /// <summary>Names the operator has swept the world by: this game takes away every craft of its own that matches.</summary>
     public Queue<string> Swept { get; } = new();
 
@@ -217,6 +223,12 @@ public sealed class Client : IDisposable
 
     public byte OwnerOf(string key) => _owners.GetValueOrDefault(key);
     public bool Owns(string key) => Joined && OwnerOf(key) == Id;
+
+    /// <summary>Whether a craft is held only for being within its holder's physics: anybody's to fly, and nobody's by name.</summary>
+    public bool NearOf(string key) => _near.Contains(key);
+
+    /// <summary>Who a craft is kept from other players by, or 0: its owner, unless they hold it only for being near.</summary>
+    public byte HeldBy(string key) => _near.Contains(key) ? (byte)0 : OwnerOf(key);
     public string NameOf(byte id) => Players.FirstOrDefault(p => p.Id == id).Name ?? $"player {id}";
 
     public Track TrackOf(string key)
@@ -245,7 +257,8 @@ public sealed class Client : IDisposable
         _offsetAt = double.NegativeInfinity;
         Warp = null;
         _owners.Clear();
-        (_ownersComing, _ownersWant) = ([], -1);
+        _near.Clear();
+        (_ownersComing, _nearComing, _ownersWant) = ([], [], -1);
         _tracks.Clear();
         Players = [];
         (_probing, Probed) = (false, null);
@@ -275,12 +288,21 @@ public sealed class Client : IDisposable
     }
 
     /// <param name="made">Whether this game made the craft, rather than finding it in the world everyone loaded.</param>
-    public void Claim(string key, bool controlling, bool made = false)
+    /// <param name="near">Whether it is asked for only because it is within this game's physics. See <see cref="Wire.Claim"/>.</param>
+    public void Claim(string key, bool controlling, bool made = false, bool near = false)
     {
         if (!Joined || key.Length == 0) return;
         // Asked for again, so whatever was said gone under this name is not this craft.
         _saidGone.Remove(key);
-        Send(new Wire.Claim(key, controlling, made));
+        Send(new Wire.Claim(key, controlling, made, near));
+    }
+
+    /// <summary>Tells the server two craft have docked in this game, one of them this player's. See <see cref="Wire.Dock"/>.</summary>
+    public void SayDocked(string consumed, string survivor)
+    {
+        if (!Joined || consumed.Length == 0 || survivor.Length == 0) return;
+        _saidGone.Remove(consumed);
+        Send(new Wire.Dock(consumed, survivor, Id));
     }
 
     public void SayGone(string key)
@@ -464,19 +486,25 @@ public sealed class Client : IDisposable
                 // until the next round. Dropping the round instead of committing what came is also
                 // why the gathering is emptied here: committing a part of a round would leave the
                 // map missing craft, which is two players on one hull.
-                if (o.Page == 0) (_ownersComing, _ownersWant) = ([], 0);
+                if (o.Page == 0) (_ownersComing, _nearComing, _ownersWant) = ([], [], 0);
                 if (o.Page != _ownersWant)
                 {
                     _ownersWant = -1;
                     return;
                 }
-                foreach (Wire.Owner e in o.Entries) _ownersComing[e.Key] = e.Id;
+                foreach (Wire.Owner e in o.Entries)
+                {
+                    _ownersComing[e.Key] = e.Id;
+                    if (e.Near) _nearComing.Add(e.Key);
+                }
                 _ownersWant++;
                 if (o.Page + 1 >= o.Pages)
                 {
                     _owners.Clear();
                     foreach ((string key, byte id) in _ownersComing) if (id != 0) _owners[key] = id;
-                    (_ownersComing, _ownersWant) = ([], -1);
+                    _near.Clear();
+                    _near.UnionWith(_nearComing.Where(_owners.ContainsKey));
+                    (_ownersComing, _nearComing, _ownersWant) = ([], [], -1);
                 }
                 return;
             case Wire.State s when Joined && s.Owner != Id:
@@ -520,8 +548,25 @@ public sealed class Client : IDisposable
                 if (_tracks.Remove(n.Was, out Track? moved)) _tracks[n.Now] = moved;
                 Renamed.Enqueue((n.Was, n.Now));
                 return;
+            case Wire.Dock d when Joined && d.Consumed.Length > 0 && d.Survivor.Length > 0:
+                // The roster says the same a moment later. Taken from here so that the frame this
+                // is acted on in already has the craft that is left down as its new owner's.
+                _owners.Remove(d.Consumed);
+                _ownersComing.Remove(d.Consumed);
+                _near.Remove(d.Consumed);
+                _tracks.Remove(d.Consumed);
+                _near.Remove(d.Survivor);
+                if (d.By != 0)
+                {
+                    _owners[d.Survivor] = d.By;
+                    if (_ownersWant >= 0) _ownersComing[d.Survivor] = d.By;
+                    _nearComing.Remove(d.Survivor);
+                }
+                Docked.Enqueue((d.Consumed, d.Survivor, d.By));
+                return;
             case Wire.Gone g when Joined:
                 _owners.Remove(g.Key);
+                _near.Remove(g.Key);
                 _ownersComing.Remove(g.Key);
                 _tracks.Remove(g.Key);
                 Gone.Enqueue(g.Key);

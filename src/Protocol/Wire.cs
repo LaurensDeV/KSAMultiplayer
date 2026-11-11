@@ -162,7 +162,7 @@ public static class Wire
     /// player count is half a row, and a row that cannot say "needs KSA 2026.11.10.5801" sends a
     /// player to find that out by being thrown out.</para>
     /// </summary>
-    public const ushort Version = 23;
+    public const ushort Version = 24;
 
     /// <summary>The port a server listens on unless it is given another, and what an address with no port in it means.</summary>
     public const int DefaultPort = 50100;
@@ -216,9 +216,9 @@ public static class Wire
     /// </summary>
     public const int OwnersBudgetBytes = BufferBytes - 512;
 
-    /// <summary>What one owners entry costs in a datagram: a length byte, the key, and the owner.</summary>
+    /// <summary>What one owners entry costs in a datagram: a length byte, the key, the owner, and how it is held.</summary>
     public static int OwnerBytes(string key) =>
-        2 + Math.Min(255, System.Text.Encoding.UTF8.GetByteCount(key));
+        3 + Math.Min(255, System.Text.Encoding.UTF8.GetByteCount(key));
 
     /// <summary>The most pieces one <see cref="Need"/> asks for.</summary>
     public const int MostNeeded = 400;
@@ -253,6 +253,7 @@ public static class Wire
         Command = 24,
         Op = 25,
         Alive = 26,
+        Dock = 27,
     }
 
     /// <summary>Where a warp has got to: nobody has asked, somebody has and is waiting, or it is running.</summary>
@@ -363,6 +364,12 @@ public static class Wire
 
         /// <summary>The craft its owner is flying, sent often; any other it owns is sent seldom.</summary>
         Controlled = 16,
+
+        /// <summary>
+        /// Within its owner's physics, said of a craft held only for being there: what keeps the
+        /// hold, and what gives the craft up when it is no longer said.
+        /// </summary>
+        Near = 32,
     }
 
     /// <summary>
@@ -372,9 +379,14 @@ public static class Wire
     /// <param name="Universe">The universe time it was there.</param>
     /// <param name="Body2Ccf">Its attitude in the body's fixed frame.</param>
     /// <param name="Spin">Its angular velocity in its own frame, rad/s.</param>
+    /// <param name="Parts">
+    /// How many parts it has, or 0 where that is not said. Where a craft is, is where its centre
+    /// is, and a craft that sheds a stage or docks has its centre somewhere else from that moment:
+    /// a copy still in the old shape that is put where the new one stands is put metres out.
+    /// </param>
     public sealed record State(byte Owner, string Key, uint Sequence, double Universe, string Body,
                                Vec3 PositionCcf, Vec3 VelocityCcf, Vec3 PositionCci, Vec3 VelocityCci,
-                               Quat Body2Ccf, Vec3 Spin, float Throttle, StateFlags Flags) : Message(Kind.State);
+                               Quat Body2Ccf, Vec3 Spin, float Throttle, StateFlags Flags, ushort Parts = 0) : Message(Kind.State);
 
     /// <param name="Controlling">Whether the player is flying it now, which nobody may take it from; otherwise only kept, as debris it dropped.</param>
     /// <param name="Made">
@@ -383,7 +395,13 @@ public static class Wire
     /// for two craft; the server can only tell that apart from two players reaching for one shared
     /// craft because the game says which it is.
     /// </param>
-    public sealed record Claim(string Key, bool Controlling, bool Made) : Message(Kind.Claim);
+    /// <param name="Near">
+    /// Whether the craft is asked for only because it is within this game's physics. A craft
+    /// nobody owns is stepped by every game near it, each in its own way, and is in as many places
+    /// as there are games: held by one, it is in one. Such a hold is given up to whoever asks to
+    /// fly the craft, and lapses when its holder stops saying the craft is near.
+    /// </param>
+    public sealed record Claim(string Key, bool Controlling, bool Made, bool Near = false) : Message(Kind.Claim);
 
     /// <summary>A craft of this game's whose name another player already had, and what it is called from now on.</summary>
     public sealed record Rename(string Was, string Now) : Message(Kind.Rename);
@@ -401,13 +419,26 @@ public static class Wire
     /// <param name="Waiting">Players yet to answer, while asking. Empty otherwise.</param>
     public sealed record Warp(byte Who, float Speed, WarpPhase Phase, byte[] Waiting) : Message(Kind.Warp);
 
-    public readonly record struct Owner(string Key, byte Id);
+    /// <param name="Near">Whether it is held only for being within its holder's physics, and is anybody's to fly.</param>
+    public readonly record struct Owner(string Key, byte Id, bool Near = false);
 
     /// <summary>Who owns which craft, a page at a time: an owner of zero lets a craft go.</summary>
     public sealed record Owners(ushort Page, ushort Pages, Owner[] Entries) : Message(Kind.Owners);
 
     /// <summary>A craft its owner's game no longer has: destroyed, recovered or boarded.</summary>
     public sealed record Gone(string Key) : Message(Kind.Gone);
+
+    /// <summary>
+    /// Two craft that have docked in one game: <paramref name="Consumed"/> was taken into
+    /// <paramref name="Survivor"/>, which is the one craft left.
+    ///
+    /// <para>From a game, it is that game saying so, of a docking its own craft was in. From the
+    /// server, it is the world being told: the craft that is left is <paramref name="By"/>'s,
+    /// whoever had it, and the other is no longer in the world, whoever had that. A docking is done
+    /// in one world and cannot be done in two, so the game that docks first has the craft and the
+    /// other player rides in it.</para>
+    /// </summary>
+    public sealed record Dock(string Consumed, string Survivor, byte By) : Message(Kind.Dock);
 
     /// <summary>
     /// The operator sweeping craft out of the world: every craft whose name matches, in every game,
@@ -594,11 +625,13 @@ public static class Wire
                 w.V3f(s.Spin);
                 w.F32(s.Throttle);
                 w.U8((byte)s.Flags);
+                w.U16(s.Parts);
                 break;
             case Claim c:
                 w.Text(c.Key, KeyChars);
                 w.U8(c.Controlling ? (byte)1 : (byte)0);
                 w.U8(c.Made ? (byte)1 : (byte)0);
+                w.U8(c.Near ? (byte)1 : (byte)0);
                 break;
             case Rename n:
                 w.Text(n.Was, KeyChars);
@@ -625,10 +658,16 @@ public static class Wire
                 {
                     w.Text(e.Key, KeyChars);
                     w.U8(e.Id);
+                    w.U8(e.Near ? (byte)1 : (byte)0);
                 }
                 break;
             case Gone g:
                 w.Text(g.Key, KeyChars);
+                break;
+            case Dock d:
+                w.Text(d.Consumed, KeyChars);
+                w.Text(d.Survivor, KeyChars);
+                w.U8(d.By);
                 break;
             case Swept s2:
                 w.Text(s2.Like, KeyChars);
@@ -683,14 +722,15 @@ public static class Wire
                 Kind.Got => new Got(r.U32()),
                 Kind.Loaded => new Loaded(r.F64()),
                 Kind.State => new State(r.U8(), r.Text(KeyChars), r.U32(), r.F64(), r.Text(64), r.V3d(), r.V3f(), r.V3d(), r.V3f(),
-                                        new Quat(r.F32(), r.F32(), r.F32(), r.F32()).Normalized(), r.V3f(), r.F32(), (StateFlags)r.U8()),
-                Kind.Claim => new Claim(r.Text(KeyChars), r.U8() != 0, r.U8() != 0),
+                                        new Quat(r.F32(), r.F32(), r.F32(), r.F32()).Normalized(), r.V3f(), r.F32(), (StateFlags)r.U8(), r.U16()),
+                Kind.Claim => new Claim(r.Text(KeyChars), r.U8() != 0, r.U8() != 0, r.U8() != 0),
                 Kind.Rename => new Rename(r.Text(KeyChars), r.Text(KeyChars)),
                 Kind.WarpAsk => new WarpAsk(r.F32()),
                 Kind.WarpVote => new WarpVote(r.U8() != 0),
                 Kind.Warp => ReadWarp(ref r),
                 Kind.Owners => ReadOwners(ref r),
                 Kind.Gone => new Gone(r.Text(KeyChars)),
+                Kind.Dock => new Dock(r.Text(KeyChars), r.Text(KeyChars), r.U8()),
                 Kind.Swept => new Swept(r.Text(KeyChars)),
                 Kind.Chat => new Chat(r.U8(), r.Text(ChatChars)),
                 Kind.Command => new Command(r.Text(ChatChars)),
@@ -741,7 +781,7 @@ public static class Wire
     {
         ushort page = r.U16(), pages = r.U16();
         Owner[] entries = new Owner[Math.Min((int)r.U8(), OwnersPerPage)];
-        for (int i = 0; i < entries.Length; i++) entries[i] = new Owner(r.Text(KeyChars), r.U8());
+        for (int i = 0; i < entries.Length; i++) entries[i] = new Owner(r.Text(KeyChars), r.U8(), r.U8() != 0);
         return new Owners(page, pages, entries);
     }
 
