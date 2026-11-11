@@ -224,9 +224,9 @@ public sealed class Track
         // comes to when the newcomer is it.
         if (at == 0 && _states.Count > 0 && (s.Universe < _states[^1].Universe - KeptSeconds || _states.Count >= MostKept)) return;
         _states.Insert(at, s);
-        // Two at least, however far apart: under a warp they are said once in many universe-seconds,
-        // and a craft is carried on from the last two.
-        while (_states.Count > 2 && (_states.Count > MostKept || _states[0].Universe < _states[^1].Universe - KeptSeconds)) _states.RemoveAt(0);
+        // Three at least, however far apart: under a warp they are said once in many
+        // universe-seconds, and a change of speed is carried on only where three agree on it.
+        while (_states.Count > 3 && (_states.Count > MostKept || _states[0].Universe < _states[^1].Universe - KeptSeconds)) _states.RemoveAt(0);
     }
 
     public void Clear() => _states.Clear();
