@@ -325,6 +325,169 @@ public class ServerTests
         rig.Until(() => b.Gone.Count(k => k == "Debris") >= 2, what: "Bob to be told twice that it is gone");
     }
 
+    private static Wire.State Standing(string key, Wire.StateFlags flags) =>
+        new(0, key, 0, 5000, "Earth", new Vec3(1, 2, 3), Vec3.Zero, new Vec3(1, 2, 3), Vec3.Zero, Quat.Identity, Vec3.Zero, 0, flags);
+
+    [Fact]
+    public void ACraftHeldForBeingNearIsOneCraftAndAnybodysToFly()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        a.Claim("Station", controlling: false, made: false, near: true);
+        rig.Until(() => b.OwnerOf("Station") == a.Id && b.NearOf("Station"), what: "Bob to hear Alice has the station near her");
+        Assert.Equal(0, b.HeldBy("Station"));
+
+        // Near Bob as well, which gives him nothing: one game steps it and the other is told where it is.
+        b.Claim("Station", controlling: false, made: false, near: true);
+        rig.For(0.5);
+        Assert.Equal(a.Id, b.OwnerOf("Station"));
+
+        // Flown, it is his at once and his outright.
+        b.Claim("Station", controlling: true);
+        rig.Until(() => a.OwnerOf("Station") == b.Id && !a.NearOf("Station"), what: "the station to be Bob's for flying it");
+    }
+
+    [Fact]
+    public void ACraftHeldForBeingNearIsLetGoWhenItsHolderNoLongerSaysItIs()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        a.Claim("Hull", controlling: false, made: false, near: true);
+        a.Claim("Tank", controlling: false, made: false, near: true);
+        rig.Until(() => b.OwnerOf("Hull") == a.Id && b.OwnerOf("Tank") == a.Id, what: "Bob to hear of both");
+
+        // Said to be near, it is kept past the time a hold lasts with nothing said.
+        for (int i = 0; i < 8; i++)
+        {
+            a.SendState(Standing("Hull", Wire.StateFlags.Landed | Wire.StateFlags.Near));
+            rig.For(0.5);
+        }
+        Assert.Equal(a.Id, b.OwnerOf("Hull"));
+        // The other, of which nothing was said, has lapsed by now.
+        Assert.Equal(0, b.OwnerOf("Tank"));
+
+        // And the first word without it gives the craft up, for whoever has it near next.
+        a.SendState(Standing("Hull", Wire.StateFlags.Landed));
+        rig.Until(() => b.OwnerOf("Hull") == 0, what: "the hull to be nobody's");
+        b.Claim("Hull", controlling: false, made: false, near: true);
+        rig.Until(() => a.OwnerOf("Hull") == b.Id, what: "the hull to be held by Bob, who has it near now");
+    }
+
+    [Fact]
+    public void ACraftHeldOutrightIsNotGivenUpForBeingNearSomebodyElse()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        a.Claim("Lander", controlling: true);
+        rig.Until(() => b.OwnerOf("Lander") == a.Id, what: "Bob to hear of the lander");
+        b.Claim("Lander", controlling: false, made: false, near: true);
+        // Nor does saying so of her own craft make it anybody's to take.
+        a.Claim("Lander", controlling: false, made: false, near: true);
+        rig.For(0.5);
+        Assert.Equal(a.Id, b.OwnerOf("Lander"));
+        Assert.False(b.NearOf("Lander"));
+    }
+
+    [Fact]
+    public void TwoPlayersCraftDockIntoOneThatIsWhoeverDockedFirsts()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        a.Claim("Capsule", controlling: true);
+        b.Claim("Station", controlling: true);
+        rig.Until(() => a.OwnerOf("Station") == b.Id && b.OwnerOf("Capsule") == a.Id, what: "each to hear of the other's craft");
+
+        // In Alice's game her capsule went into Bob's station, which is the craft that is left.
+        a.SayDocked("Capsule", "Station");
+        rig.Until(() => b.Docked.Count > 0, what: "Bob to be told of the docking");
+        Assert.Equal(("Capsule", "Station", a.Id), b.Docked.Peek());
+        // Known to his game in the same breath, before any roster.
+        Assert.Equal(a.Id, b.OwnerOf("Station"));
+        rig.Until(() => a.OwnerOf("Station") == a.Id && a.OwnerOf("Capsule") == 0, what: "the roster to give Alice the station and nobody the capsule");
+        rig.Until(() => b.Gone.Contains("Capsule"), what: "the capsule to be said gone as any craft is");
+        Assert.Equal("", rig.Server.Players.First(p => p.Id == b.Id).Controlling);
+
+        // Bob's game docked them too, a moment later and the other way round. It is not his to say.
+        b.SayDocked("Station", "Capsule");
+        rig.For(0.5);
+        Assert.Equal(a.Id, b.OwnerOf("Station"));
+        Assert.Equal(0, a.OwnerOf("Capsule"));
+        Assert.Empty(a.Docked);
+
+        // And a game that goes on speaking of the craft it lost is told again what became of it.
+        b.Docked.Clear();
+        b.Claim("Station", controlling: true);
+        rig.Until(() => b.Docked.Count > 0, what: "Bob to be told again");
+    }
+
+    [Fact]
+    public void ADockingOfTwoCraftThatAreOtherPlayersIsNobodysToSay()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        Client c = JoinAndLoad(rig, "Cas");
+        a.Claim("Capsule", controlling: true);
+        b.Claim("Station", controlling: true);
+        rig.Until(() => c.OwnerOf("Station") == b.Id && c.OwnerOf("Capsule") == a.Id, what: "Cas to hear of both");
+        c.SayDocked("Capsule", "Station");
+        rig.For(0.5);
+        Assert.Equal(a.Id, c.OwnerOf("Capsule"));
+        Assert.Equal(b.Id, c.OwnerOf("Station"));
+        Assert.Empty(a.Docked);
+    }
+
+    [Fact]
+    public void ACraftThatUndocksHasItsNameBack()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        a.Claim("Station", controlling: true);
+        b.Claim("Capsule", controlling: true);
+        rig.Until(() => a.OwnerOf("Capsule") == b.Id && b.OwnerOf("Station") == a.Id, what: "each to hear of the other's craft");
+        a.SayDocked("Capsule", "Station");
+        rig.Until(() => b.Gone.Contains("Capsule"), what: "the capsule to be gone");
+
+        // Undocked in Alice's game, the capsule is a craft she has just made, under its old name.
+        a.Claim("Capsule", controlling: false, made: true);
+        rig.Until(() => b.OwnerOf("Capsule") == a.Id, what: "the capsule to be in the world again, Alice's");
+        b.Docked.Clear();
+        rig.For(1.5);
+        // Not said gone again, and Bob asking after it is not told it docked.
+        Assert.Equal(a.Id, b.OwnerOf("Capsule"));
+        b.Claim("Capsule", controlling: true);
+        rig.For(0.5);
+        Assert.Empty(b.Docked);
+    }
+
+    [Fact]
+    public void AnOlderWordOfHowACraftIsBuiltDoesNotReplaceANewerOne()
+    {
+        // A piece of wreckage is written down twice, two seconds apart, and on a wire that loses
+        // datagrams the first can finish arriving after the second. The last to arrive is not
+        // the last that was written.
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        byte[] elevenParts = [1, 2, 3, 4], tenParts = [5, 6, 7];
+        a.Claim("Piece", controlling: false, made: true);
+        a.Upload(new Blob(BlobKind.Vehicle, "Piece", a.Id, 5002, tenParts));
+        rig.Until(() => b.Blobs.Any(x => x.Key == "Piece"), what: "Bob to be told how the piece is built now");
+        a.Upload(new Blob(BlobKind.Vehicle, "Piece", a.Id, 5000, elevenParts));
+        rig.For(1.0);
+        Assert.Equal(tenParts, b.Blobs.Last(x => x.Key == "Piece").Data);
+
+        // Nor is it what somebody who joins afterwards is given.
+        Client c = JoinAndLoad(rig, "Carol");
+        rig.Until(() => c.Blobs.Any(x => x.Key == "Piece"), what: "Carol to get the piece");
+        Assert.Equal(tenParts, c.Blobs.Last(x => x.Key == "Piece").Data);
+    }
+
     [Fact]
     public void ANameGivenToANewCraftIsNotSaidGoneAgain()
     {

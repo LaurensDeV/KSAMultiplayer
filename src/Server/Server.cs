@@ -163,6 +163,21 @@ public sealed class GameServer : IDisposable
         /// <summary>When its owner was last in it or looking at it, on the server's own clock.</summary>
         public double AttendedAt;
 
+        /// <summary>
+        /// Whether it is held only for being within its holder's physics, and when the holder last
+        /// said it was. Such a hold keeps a craft in one place for everybody and keeps nobody out
+        /// of it.
+        /// </summary>
+        public bool Near;
+        public double NearAt;
+
+        /// <summary>Who last said how it is built, and the universe time their game wrote that down at.</summary>
+        public byte WrittenBy;
+        public double Written;
+
+        /// <summary>When that was heard, on the server's own clock.</summary>
+        public double WrittenHeard;
+
         /// <summary>How many times its owner has said how it is built. Every one of these is the craft
         /// torn down and built again in every other game, so a craft described over and over is a
         /// fault worth seeing from here.</summary>
@@ -476,10 +491,25 @@ public sealed class GameServer : IDisposable
             case Wire.State state when player.Loaded:
                 // Owned already, or not relayed. A state used to take an unheld craft, which handed
                 // one back the instant it was let go of and made the letting go meaningless.
-                if (OwnerOf(state.Key) != player.Id) return;
+                if (OwnerOf(state.Key) != player.Id)
+                {
+                    SayDockedAgain(player, state.Key);
+                    return;
+                }
                 // A claim says which craft is being flown; a state says which is not. Only the one
                 // they are said to be in may give it up, so a parked craft cannot unseat another.
                 bool atTheControls = (state.Flags & Wire.StateFlags.Controlled) != 0;
+                if (_crafts[state.Key] is { Near: true } near)
+                {
+                    // Held for being near, and kept by being said to be: the first word without it
+                    // gives the craft up, so whoever has it near next may hold it.
+                    if ((state.Flags & Wire.StateFlags.Near) != 0) near.NearAt = _clock();
+                    else if (!atTheControls)
+                    {
+                        (near.Owner, near.Near) = (0, false);
+                        OwnersChanged();
+                    }
+                }
                 if (atTheControls && player.Controlling.Length == 0) Flying(player, state.Key);
                 else if (!atTheControls && player.Controlling == state.Key) Flying(player, "");
                 Wire.State relayed = state with { Owner = player.Id };
@@ -488,7 +518,11 @@ public sealed class GameServer : IDisposable
             case Wire.Claim claim when player.Loaded && claim.Key.Length > 0:
                 bool had = OwnerOf(claim.Key) == player.Id;
                 // Only once it is theirs: a player refused a craft is not flying it, whatever they asked.
-                if (Grant(player, claim.Key, taking: claim.Controlling, made: claim.Made) is not { } granted) return;
+                if (Grant(player, claim.Key, taking: claim.Controlling, made: claim.Made, near: claim.Near) is not { } granted)
+                {
+                    SayDockedAgain(player, claim.Key);
+                    return;
+                }
                 if (claim.Controlling) Flying(player, granted);
                 if (!had) OwnersChanged();
                 return;
@@ -498,6 +532,9 @@ public sealed class GameServer : IDisposable
                 if (player.Controlling == gone.Key) Flying(player, "");
                 Broadcast(gone, p => p.Loaded && p != player);
                 foreach (double after in GoneAgainAfterSeconds) _goneAgain.Add((gone.Key, player.Id, _clock() + after));
+                return;
+            case Wire.Dock dock when player.Loaded && dock.Consumed.Length > 0 && dock.Survivor.Length > 0 && dock.Consumed != dock.Survivor:
+                OnDock(player, dock.Consumed, dock.Survivor);
                 return;
             case Wire.NoWorld no:
                 OnNoWorld(player, Wire.Clip(no.Why, 200));
@@ -751,8 +788,20 @@ public sealed class GameServer : IDisposable
             case BlobKind.Vehicle when p.Loaded && blob.Key.Length > 0:
                 // A definition under a name this player was refused is dropped; the claim that goes with
                 // it tells their game the name it may use, and the definition is sent again under that.
-                if (Grant(p, blob.Key) is null) return;
+                // Asked only of a craft that is not theirs yet: a craft held for being near is still
+                // held that way after its holder has said how it is built.
+                if (OwnerOf(blob.Key) != p.Id && Grant(p, blob.Key) is null) return;
                 Craft craft = _crafts[blob.Key];
+                // Written before the one already here, by the same game: the last to arrive is
+                // not the last that was written. A piece of wreckage written down twice two
+                // seconds apart had the first finish arriving after the second on a wire that
+                // loses datagrams, and every other game, and everybody who joined after, was
+                // given the piece as it had been.
+                // Only against one heard lately: universe time is put back when a world is handed
+                // out again or left empty, and a craft written down after that is not an old word.
+                if (craft.WrittenBy == p.Id && craft.Definition is not null && blob.Universe < craft.Written
+                    && _clock() - craft.WrittenHeard < OlderWordWithinSeconds) return;
+                (craft.WrittenBy, craft.Written, craft.WrittenHeard) = (p.Id, blob.Universe, _clock());
                 Blob stamped = blob with { Owner = p.Id, Universe = UniverseClock.Now(_clock()) };
                 craft.Definition = stamped.Encode();
                 craft.Described++;
@@ -774,7 +823,8 @@ public sealed class GameServer : IDisposable
     /// The name this player may fly the craft under: the one they asked for, or one of its own when
     /// that name is another player's and this is a craft their game made. Null when it is not theirs.
     /// </summary>
-    private string? Grant(Player p, string key, bool taking = false, bool made = false)
+    /// <param name="near">Whether it is asked for only for being within this player's physics: given where nobody has it, and never taken from anybody.</param>
+    private string? Grant(Player p, string key, bool taking = false, bool made = false, bool near = false)
     {
         if (!_crafts.TryGetValue(key, out Craft? craft))
         {
@@ -786,8 +836,21 @@ public sealed class GameServer : IDisposable
             if (_gone.ContainsKey(key) && !taking && !made) return null;
             _crafts[key] = craft = new Craft();
         }
-        if (craft.Owner == p.Id) return key;
-        if (craft.Owner != 0 && _players.TryGetValue(craft.Owner, out Player? holder))
+        if (craft.Owner == p.Id)
+        {
+            if (near) craft.NearAt = _clock();
+            else if (craft.Near)
+            {
+                // Asked for outright by the player who had it for being near: theirs like any other.
+                (craft.Near, craft.AttendedAt) = (false, _clock());
+                OwnersChanged();
+            }
+            return key;
+        }
+        // Held by somebody only for being near them, and asked for by a player who means to have
+        // it: given. That hold exists so a craft is in one place, not so that it is anybody's.
+        bool yielded = craft.Near && !near && !made;
+        if (craft.Owner != 0 && !yielded && _players.TryGetValue(craft.Owner, out Player? holder))
         {
             // A craft this game made that happens to share a name is a second craft, not the one the
             // holder has, and is given a name of its own. Anything else is the holder's to fly.
@@ -800,10 +863,71 @@ public sealed class GameServer : IDisposable
             Log($"{holder.Name} already has a craft called {key}, so {p.Name}'s is {fresh} here");
             return fresh;
         }
-        (craft.Owner, craft.AttendedAt) = (p.Id, _clock());
+        (craft.Owner, craft.AttendedAt, craft.Near, craft.NearAt) = (p.Id, _clock(), near, _clock());
         _gone.Remove(key);
         OwnersChanged();
         return key;
+    }
+
+    // Dockings lately told of, so a game that never heard can be told again when it next speaks of
+    // a craft the docking took from it.
+    private readonly List<(string Consumed, string Survivor, byte By, double At)> _dockings = [];
+    private const double DockingToldForSeconds = 30.0;
+
+    /// <summary>
+    /// Two craft docked in one player's game, one of them that player's: the craft that is left is
+    /// theirs and the other is out of the world, whoever had either.
+    ///
+    /// <para>A docking happens in one world. Two games each see the ports touch, a few frames
+    /// apart, and each would take the other's craft into its own: the first to say so has it, and
+    /// the other player's game is told what became of the craft it was flying. Said again by the
+    /// game until the roster shows it, and answered the same way each time.</para>
+    /// </summary>
+    private void OnDock(Player p, string consumed, string survivor)
+    {
+        double now = _clock();
+        _dockings.RemoveAll(d => now - d.At > DockingToldForSeconds);
+        bool again = _dockings.Any(d => d.Consumed == consumed && d.Survivor == survivor && d.By == p.Id);
+        if (!again)
+        {
+            // Only of a craft of their own, and only while both are in the world: a game cannot
+            // take two craft that are other players' by saying they docked.
+            if (OwnerOf(consumed) != p.Id && OwnerOf(survivor) != p.Id) return;
+            if (_gone.ContainsKey(consumed) && !_crafts.ContainsKey(consumed)) return;
+            string was = string.Join(" and ", new[] { consumed, survivor }
+                .Select(k => (Key: k, Owner: OwnerOf(k)))
+                .Where(k => k.Owner != 0 && k.Owner != p.Id && !_crafts[k.Key].Near)
+                .Select(k => $"{Named(k.Owner)}'s {k.Key}"));
+            _crafts.Remove(consumed);
+            _gone[consumed] = UniverseClock.Now(now);
+            if (!_crafts.TryGetValue(survivor, out Craft? left)) _crafts[survivor] = left = new Craft();
+            (left.Owner, left.Near, left.AttendedAt) = (p.Id, false, now);
+            _gone.Remove(survivor);
+            foreach (Player q in _players.Values)
+            {
+                if (q.Controlling == consumed || (q != p && q.Controlling == survivor)) Flying(q, "");
+            }
+            _dockings.Add((consumed, survivor, p.Id, now));
+            foreach (double after in GoneAgainAfterSeconds) _goneAgain.Add((consumed, p.Id, now + after));
+            OwnersChanged();
+            Log($"{p.Name} docked {consumed} into {survivor}" + (was.Length > 0 ? $", taking {was}" : ""));
+        }
+        Broadcast(new Wire.Dock(consumed, survivor, p.Id), q => q.Loaded && q != p);
+    }
+
+    /// <summary>Tells a player again of a docking that took a craft they are still speaking of as their own.</summary>
+    private void SayDockedAgain(Player p, string key)
+    {
+        foreach ((string consumed, string survivor, byte by, double at) in _dockings)
+        {
+            if (by == p.Id || (consumed != key && survivor != key) || _clock() - at > DockingToldForSeconds) continue;
+            // Not once the name is somebody's again in its own right: undocked, a craft has its
+            // name back, and its first owner asking for it is asking for that craft.
+            if (key == consumed && _crafts.ContainsKey(consumed)) continue;
+            if (key == survivor && OwnerOf(survivor) != by) continue;
+            _udp.Send(new Wire.Dock(consumed, survivor, by), p.At);
+            return;
+        }
     }
 
     // A name like the one asked for that no craft here has, gone or not: one that came back under a
@@ -1265,6 +1389,17 @@ public sealed class GameServer : IDisposable
         foreach ((string key, Craft craft) in _crafts)
         {
             if (craft.Owner == 0) continue;
+            if (craft.Near)
+            {
+                // Held for being near and not said to be for this long: its holder has gone
+                // elsewhere, or gone.
+                if (now - craft.NearAt > NearForSeconds)
+                {
+                    (craft.Owner, craft.Near) = (0, false);
+                    any = true;
+                }
+                continue;
+            }
             if (!_players.TryGetValue(craft.Owner, out Player? owner))
             {
                 continue;
@@ -1287,6 +1422,13 @@ public sealed class GameServer : IDisposable
         if (any) OwnersChanged();
     }
 
+    // How long after a craft was written down an older word of it can still be on its way.
+    private const double OlderWordWithinSeconds = 30.0;
+
+    // How long a craft held for being near stays held with nothing said of it. A craft at rest is
+    // said twice a second.
+    private const double NearForSeconds = 3.0;
+
     private void Flying(Player p, string key)
     {
         if (p.Controlling == key) return;
@@ -1301,7 +1443,7 @@ public sealed class GameServer : IDisposable
         bool released = false;
         foreach (Craft c in _crafts.Values.Where(c => c.Owner == p.Id))
         {
-            c.Owner = 0;
+            (c.Owner, c.Near) = (0, false);
             released = true;
         }
         if (released) OwnersChanged();
@@ -1512,7 +1654,7 @@ public sealed class GameServer : IDisposable
 
     private IEnumerable<Wire.Owners> OwnerPages()
     {
-        Wire.Owner[] all = [.. _crafts.Where(c => c.Value.Owner != 0).Select(c => new Wire.Owner(c.Key, c.Value.Owner))];
+        Wire.Owner[] all = [.. _crafts.Where(c => c.Value.Owner != 0).Select(c => new Wire.Owner(c.Key, c.Value.Owner, c.Value.Near))];
         // Filled by what they come to in bytes and not only by how many they hold: a key is clipped
         // to a number of characters and a character is up to three bytes, so a full page of names in
         // most of the world's writing systems did not fit the datagram it was sent in.
