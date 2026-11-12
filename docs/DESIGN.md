@@ -245,6 +245,11 @@ KSA knows a mod's name and nothing of its version), and an operator's `mods` may
 after an `@`: a release, or a release and the beginning of the commit it was built from
 (`ModList`). Two builds of one mod are one name and two mods -- a car mod that says how its cars
 are steering and one that does not. The list a world's first player brought is still ids alone.
+A player with another version is told the two releases, and the commits only where one release
+was built twice and then seven characters of each: forty of a commit, in the line a player acts
+on, were read as noise and hid the two numbers that mattered. And it is said apart from a mod
+that is off (`Sync.ModsAgainst`), because "turn it on" about a mod that is on sends a player to
+a switch that is already where it should be.
 
 **What another mod knows of a craft goes with the craft.** A car's steering and its wheels are in
 the car mod's memory and in nothing KSA saves. `Guests` listens on StarMap's event bus for what a
@@ -775,9 +780,10 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   `BACK TO MULTIPLAYER` in KSA's own configuration footer is the way back from it.
 
   **Whether this game can join a server is the state of a row, not a value in a column.** The marker
-  beside the name carries it -- `[wrong KSA build]`, `[turn mods on]`, `[turn mods off]`, `[full]`,
-  `[wrong version]`, `[no answer]`, `[recent]` -- and `CONNECT` is greyed, with the reason beside
-  it, for a row this game would be refused from. Rows were dimmed for this before there was a
+  beside the name carries it, as a pill against the right of the row (`Panel.PillAtRight`) --
+  `wrong KSA build`, `turn mods on`, `turn mods off`, `other mod version`, `full`, `update your
+  mod`, `server is older`, `no answer`, and a muted `recent` -- and `CONNECT` is greyed, with the
+  reason beside it, for a row this game would be refused from. Rows were dimmed for this before there was a
   marker, and dimming fought the colour ImGui fills a row with when it is chosen or merely under the
   pointer, so a row could disappear as the mouse crossed it.
 

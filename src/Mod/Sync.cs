@@ -692,7 +692,7 @@ internal static class Sync
         // Said before a world is started rather than after it is refused. KSA reads its mods once,
         // at startup, so a player who learns here has a start screen to act from and one who learns
         // after the join has a restart ahead of them either way.
-        (string missing, string extra) = ModsAgainst(p.Mods);
+        (string missing, string extra, string wrong) = ModsAgainst(p.Mods);
         // Into the window as well as the log. Said alone, this reached a player through the chat
         // they have not opened and a file they have no reason to read, so pressing CONNECT looked
         // like pressing nothing.
@@ -708,6 +708,12 @@ internal static class Sync
             Say($"{name} doesn't run mods you have enabled: {extra}. Turn them off and start again.");
             return null;
         }
+        if (wrong.Length > 0)
+        {
+            ServerTrouble = $"needs {wrong}";
+            Say($"{name} needs {wrong}. Install that and start again.");
+            return null;
+        }
         // Nothing said about the system: the window has a World row that says it already, in the name
         // KSA's own list uses rather than the id, and a second telling of it under the buttons is a
         // line the player reads twice. A refusal above is said because nothing else says it.
@@ -716,18 +722,22 @@ internal static class Sync
 
     /// <summary>
     /// What this game would be refused for, measured against the mods a world wants: the ones it has
-    /// not got, and the ones it is running that the world has not. Both empty when a world asks
-    /// nothing, which is what an imported world does until somebody saves over it.
+    /// not got, the ones it is running that the world has not, and the ones it has at another
+    /// version than the world wants, each of those said with both versions. All empty when a world
+    /// asks nothing, which is what an imported world does until somebody saves over it.
+    ///
+    /// <para>Another version is kept apart from not having the mod, because what a player does
+    /// about each is different: one is a switch in KSA's Mods and the other is a download, and
+    /// "turn it on" said of a mod that is on already sends them to look for a switch that is
+    /// where it should be.</para>
     ///
     /// <para>The same comparison the server makes in its own refusal, made here as well so it can be
     /// put to the player while it is still worth something. The server's is the one that decides.</para>
     /// </summary>
-    public static (string Missing, string Extra) ModsAgainst(string worldMods)
+    public static (string Missing, string Extra, string Wrong) ModsAgainst(string worldMods)
     {
-        // A mod at another version than the server wants is one this game is missing, as far as
-        // getting in goes, and is said with the version that is wanted.
         (string[] missing, string[] extra, string[] wrong) = ModList.Against(worldMods, World.Mods);
-        return (string.Join(", ", missing.Concat(wrong)), string.Join(", ", extra));
+        return (string.Join(", ", missing), string.Join(", ", extra), string.Join(", ", wrong));
     }
 
     public static void EndAhead()

@@ -546,7 +546,12 @@ public class ServerTests
             "Core,KSAMultiplayer,FastAndPurrious@0.1.13", "Core@1.0,KSAMultiplayer@0.19.0+f0fd6cb,FastAndPurrious@0.1.12+2eeedf8,KSArmory@0.3.0");
         Assert.Empty(missing);
         Assert.Equal(["KSArmory"], extra);
-        Assert.Equal(["FastAndPurrious 0.1.13 (you have 0.1.12+2eeedf8)"], wrong);
+        Assert.Equal(["FastAndPurrious 0.1.13 (you have 0.1.12)"], wrong);
+        // The commit is said only where it is all that differs, and cut to what tells two apart.
+        Assert.Equal(["Cars 0.1.12+d2411b6 (you have 0.1.12+6477cbd)"],
+                     ModList.Against("Cars@0.1.12+d2411b6", "Cars@0.1.12+6477cbdbabafb5aba007d43ea59aa8311f362a10").Wrong);
+        Assert.Equal(["Cars 0.19.1 (you have 0.19.0)"],
+                     ModList.Against("Cars@0.19.1+d2411b6", "Cars@0.19.0+6477cbdbabafb5aba007d43ea59aa8311f362a10").Wrong);
         // A world that names no versions takes any, and one that wants nothing takes anything.
         Assert.Empty(ModList.Against("Core,FastAndPurrious", "Core@1.0,FastAndPurrious@0.1.12+2eeedf8").Wrong);
         Assert.Empty(ModList.Against("", "Anything@1").Extra);
@@ -561,7 +566,7 @@ public class ServerTests
 
         Client b = rig.Join("Bob", mods: "Core,Cars@0.1.12+2eeedf8");
         rig.Until(() => b.Out.Length > 0, what: "the other build to be turned away");
-        Assert.Contains("Cars 0.1.13 (you have 0.1.12+2eeedf8)", b.Out);
+        Assert.Contains("Cars 0.1.13 (you have 0.1.12)", b.Out);
     }
 
     [Fact]

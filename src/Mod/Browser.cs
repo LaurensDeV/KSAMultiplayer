@@ -207,12 +207,14 @@ internal static class Browser
             return r.Trouble.Length == 0 ? "" : r.Speaks > Wire.Version ? "update your mod" : r.Speaks != 0 ? "server is older" : "no answer";
         }
         if (f.KsaBuild.Length > 0 && World.KsaBuild.Length > 0 && f.KsaBuild != World.KsaBuild) return "wrong KSA build";
-        (string missing, string extra) = Sync.ModsAgainst(f.Mods);
+        (string missing, string extra, string wrong) = Sync.ModsAgainst(f.Mods);
         // What to do rather than what is wrong, for the two that have one thing to do. "extra mods"
         // did not say whose they were, and read as the server having some that a player would need
         // -- which is backwards.
         if (missing.Length > 0) return "turn mods on";
         if (f.Mods.Length > 0 && extra.Length > 0) return "turn mods off";
+        // Not "update": a server held to last month's build of a mod wants an older one than this.
+        if (wrong.Length > 0) return "other mod version";
         if (f.Full) return "full";
         return "";
     }
@@ -226,13 +228,14 @@ internal static class Browser
     {
         if (r.Facts is not { } f) return r.Trouble;
         if (f.KsaBuild.Length > 0 && World.KsaBuild.Length > 0 && f.KsaBuild != World.KsaBuild) return $"needs KSA {f.KsaBuild}";
-        (string missing, string extra) = Sync.ModsAgainst(f.Mods);
+        (string missing, string extra, string wrong) = Sync.ModsAgainst(f.Mods);
         if (missing.Length > 0) return $"needs {missing}";
         // And mods this game has that the world has not. A server refuses those too, for the reason
         // it refuses the others: a mod that adds parts makes craft nobody else can build. Only when
         // the world says what it wants at all -- a server that asks for nothing refuses nothing, so
         // reading its silence as "and nothing else" would grey out every row on a modded game.
         if (f.Mods.Length > 0 && extra.Length > 0) return $"turn off {extra}";
+        if (wrong.Length > 0) return $"needs {wrong}";
         // Last, because it is the only one of these that fixes itself.
         if (f.Full) return "full";
         return "";

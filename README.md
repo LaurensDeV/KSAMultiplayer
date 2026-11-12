@@ -79,7 +79,7 @@ The window lists every server it can find, a row each:
 
 | Column | |
 | --- | --- |
-| **Server** | its name, `(password)` where it wants one, and a marker where this game cannot join -- `[wrong KSA build]`, `[turn mods on]`, `[turn mods off]`, `[full]`, `[wrong version]`, `[no answer]`, or `[recent]` for an address you have been to before |
+| **Server** | its name, `(password)` where it wants one, and a pill at the right where this game cannot join -- `wrong KSA build`, `turn mods on`, `turn mods off`, `other mod version`, `full`, `update your mod`, `server is older`, `no answer` -- or a quieter `recent` for an address you have been to before |
 | **Players** | how many are on it, against the most it takes |
 | **World** | the system its world is in, or that it has none yet |
 | **Latency** | the round trip, measured by the asking |

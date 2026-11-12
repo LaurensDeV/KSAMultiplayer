@@ -61,9 +61,30 @@ public static class ModList
         string[] wrong =
         [
             .. wants.Where(e => theirs.TryGetValue(e.Id, out string? version) && !Fits(e.Version, version))
-                .Select(e => $"{e.Id} {e.Version} (you have {(theirs[e.Id].Length > 0 ? theirs[e.Id] : "a version it does not say")})")
+                .Select(e => Said(e, theirs[e.Id]))
                 .Order(),
         ];
         return (missing, extra, wrong);
     }
+
+    /// <summary>A version without the commit it was built from: the release a player picks to install.</summary>
+    public static string Release(string version) => version.IndexOf('+') is >= 0 and var plus ? version[..plus] : version;
+
+    // How many characters of a commit are said: what tells two builds apart, and what a page of
+    // releases shows beside each.
+    private const int CommitChars = 7;
+
+    // The releases, where they differ, since that is the whole of it and a release is what a
+    // player can go and get. The commits only where one release was built twice, and then only
+    // their beginnings: forty characters of one say nothing seven do not.
+    private static string Said(Entry wanted, string has)
+    {
+        if (has.Length == 0) return $"{wanted.Id} {Release(wanted.Version)} (you have a version it does not say)";
+        return string.Equals(Release(wanted.Version), Release(has), StringComparison.OrdinalIgnoreCase)
+            ? $"{wanted.Id} {Cut(wanted.Version)} (you have {Cut(has)})"
+            : $"{wanted.Id} {Release(wanted.Version)} (you have {Release(has)})";
+    }
+
+    private static string Cut(string version) =>
+        version.IndexOf('+') is >= 0 and var plus && version.Length > plus + 1 + CommitChars ? version[..(plus + 1 + CommitChars)] : version;
 }

@@ -114,13 +114,15 @@ beside this one:
       port        = 50101
       server_name = "Cars"
       image       = "ghcr.io/<owner>/ksamp-server@sha256:..."
-      mods        = "Core,KSAMultiplayer@0.18.0+f0fd6cb,FastAndPurrious@0.1.12+8b152a3"
+      mods        = "Core,KSAMultiplayer,FastAndPurrious@0.1.12+8b152a3"
     } }'
 
 **The image** is any build of the server. A release has one, and `gh workflow run "Server image"
 --ref <branch>` builds one from a branch and prints the line with its digest. A game and a server
 that speak different protocol versions refuse each other by name, so the server's build is already
-what holds players to a build of this mod that speaks its protocol.
+what holds players to a build of this mod that speaks its protocol: a version on `KSAMultiplayer`
+in the list below turns away every player at each release until somebody changes it, for nothing
+the protocol number does not already say.
 
 **The mods** are ids separated by commas, as the `mods` setting takes them, and each may be held
 to a version after an `@`. A game says what it has with the version each mod's own assembly

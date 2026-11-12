@@ -1041,18 +1041,21 @@ internal static class Panel
         string locked = r.Facts is { Password: true } ? "  (password)" : "";
         // The id is the address and the label is the name, so a server that renames itself mid-list
         // does not become a different row and lose what the player had picked.
+        // As tall as the row. ImGui fills a selectable half the item spacing past its text each
+        // way, and a row is the cell padding past it: with the two unlike, the fill of a chosen
+        // row stopped three pixels short of the band its neighbour is shaded with, top and
+        // bottom, and one row of two read as the shorter.
+        ImGui.PushStyleVarY(ImGuiStyleVar.ItemSpacing, CellPadding.Y * 2f);
         bool picked = ImGui.Selectable($"{r.Title}{locked}###KSAMultiplayerRow{r.Where}", chosen, ImGuiSelectableFlags.SpanAllColumns);
+        ImGui.PopStyleVar();
         // One marker, against the right of the server's own column: why this game cannot go there,
         // or that the player has been before. Short enough to read without stopping, with the whole
         // of it in the block below where there is room for a sentence.
-        string mark = Browser.Short(r) is { Length: > 0 } why ? $"[{why}]"
-                    : r.Found.Contains(Browser.Yours) ? "[recent]" : "";
-        if (mark.Length > 0)
-        {
-            ImGui.SameLine();
-            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - ImGui.CalcTextSize(mark).X);
-            ImGui.Text(mark);
-        }
+        // In the colour KSA gives to what is waiting on the player where it is why they cannot
+        // join, and in its quietest where it is only that they have been before: two kinds of
+        // word in one place, and a list is glanced down for the first kind.
+        if (Browser.Short(r) is { Length: > 0 } why) PillAtRight(why, in ConsoleStyle.Pending);
+        else if (r.Found.Contains(Browser.Yours)) PillAtRight("recent", in ConsoleStyle.TextMuted);
         if (picked)
         {
             AddressText.SetValue(r.Where);
@@ -1077,6 +1080,30 @@ internal static class Panel
         // The round trip to the server, which is not the time to join it and is the best guide
         // there is to that before anybody has.
         Cell(double.IsFinite(r.Ping) ? $"{r.Ping * 1000:F0} ms" : "");
+    }
+
+    // How much of a pill's colour its ground is. Enough to be a shape on a row that is chosen
+    // or under the pointer, and little enough that the word on it is still the brightest thing.
+    private const float PillGround = 0.20f;
+
+    /// <summary>
+    /// A word or two on a rounded ground of their own colour, against the right of the line being
+    /// drawn. Brackets round a word made it part of the sentence beside it; this is a label on the
+    /// row and reads as one.
+    /// </summary>
+    private static void PillAtRight(string says, in float4 colour)
+    {
+        float2 text = ImGui.CalcTextSize(says);
+        float inset = MathF.Round(text.Y * 0.5f), wide = text.X + (inset * 2f);
+        ImGui.SameLine();
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - wide);
+        float2 at = ImGui.GetCursorScreenPos();
+        // A pixel over the text above and below and no more: a row is one line of text high, and a
+        // pill taller than its row is drawn across the rule between two servers.
+        ImGui.GetWindowDrawList().AddRectFilled(new float2(at.X, at.Y - 1f), new float2(at.X + wide, at.Y + text.Y + 1f),
+                                                (ImColor8)new float4(colour.X, colour.Y, colour.Z, PillGround), (text.Y * 0.5f) + 1f);
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + inset);
+        ImGui.TextColored(in colour, says);
     }
 
     /// <summary>
@@ -1112,12 +1139,16 @@ internal static class Panel
         {
             return $"This world is KSA {f.KsaBuild} and you run {World.KsaBuild}: joining needs the same build.";
         }
-        (string missing, string extra) = Sync.ModsAgainst(f.Mods);
+        (string missing, string extra, string wrong) = Sync.ModsAgainst(f.Mods);
         // One or several, because "turn it off" about two mods reads as badly as "turn them off"
-        // about one, and this is the line a player acts on.
-        if (missing.Length > 0) return $"This server needs {missing}: turn {One(missing)} on in KSA's Mods and start again.";
-        if (f.Mods.Length > 0 && extra.Length > 0) return $"This server doesn't run {extra}: turn {One(extra)} off and start again.";
-        return "";
+        // about one, and this is the line a player acts on. And everything in the way at once: a
+        // player told of one thing, who does it and starts KSA again to be told of the next, has
+        // been made to start it twice.
+        List<string> todo = [];
+        if (missing.Length > 0) todo.Add($"turn {missing} on in KSA's Mods");
+        if (f.Mods.Length > 0 && extra.Length > 0) todo.Add($"turn {extra} off");
+        if (wrong.Length > 0) todo.Add($"install {wrong}");
+        return todo.Count == 0 ? "" : $"To join this server, {string.Join(", and ", todo)}. Then start KSA again.";
     }
 
     /// <summary>
@@ -1132,9 +1163,6 @@ internal static class Panel
     /// </summary>
     private static bool WouldBeRefused => Known(AddressText.ToString().Trim()) is { } f && Refused(f).Length > 0;
 
-    /// <summary>"it" for one mod in a list and "them" for more.</summary>
-    private static string One(string mods) => mods.Contains(',') ? "them" : "it";
-
     private static void ThisServer(string typed)
     {
         // Always these three rows, answered or not: a window that grows a section when an answer
@@ -1147,15 +1175,13 @@ internal static class Panel
         bool listed = Starting && Browser.Rows.Any(r => string.Equals(r.Where, typed, StringComparison.OrdinalIgnoreCase));
         if (Known(typed) is { } there)
         {
-            (string missing, string extra) = Sync.ModsAgainst(there.Mods);
-            string[] wants = [.. there.Mods.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
             if (!listed)
             {
                 Told("Server name"u8, there.ServerName.Length > 0 ? there.ServerName : "unnamed");
                 Told("World"u8, !there.HasWorld ? "none yet: yours becomes it"
                               : there.System.Length > 0 ? Named(there.System) : "yes");
             }
-            Mods(wants, missing, extra);
+            Mods(there.Mods);
             return;
         }
         // What the server said when it was asked, or what the list already knows of it: a server
@@ -1192,12 +1218,25 @@ internal static class Panel
     /// not is under it, said as what to do about it rather than as what it is: that stops a join
     /// just as surely as something missing, and a player reading this wants the next step.
     /// </summary>
-    private static void Mods(string[] wants, string missing, string extra)
+    private static void Mods(string world)
     {
-        HashSet<string> absent = [.. missing.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
-        string[] shown = [.. wants.Where(m => absent.Contains(m) || !Given.Contains(m, StringComparer.OrdinalIgnoreCase))];
-        string[] spare = [.. extra.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                                  .Where(m => !Given.Contains(m, StringComparer.OrdinalIgnoreCase))];
+        (string[] missing, string[] extra, string[] wrong) = ModList.Against(world, World.Mods);
+        // A mod at another version is said as the comparison says it, with both versions: its name
+        // is the first word of that.
+        Dictionary<string, string> other = new(StringComparer.OrdinalIgnoreCase);
+        foreach (string says in wrong) other[says.Split(' ')[0]] = says;
+        HashSet<string> absent = new(missing, StringComparer.OrdinalIgnoreCase);
+        // A version only beside a mod that has to be gone and got. Beside one this game has and
+        // the server is content with, it is a number nobody asked for.
+        (string Says, bool Bad)[] shown =
+        [
+            .. ModList.Parse(world)
+                .Where(m => absent.Contains(m.Id) || other.ContainsKey(m.Id) || !Given.Contains(m.Id, StringComparer.OrdinalIgnoreCase))
+                .Select(m => other.TryGetValue(m.Id, out string? says) ? (says, true)
+                           : absent.Contains(m.Id) ? ($"{m.Id} {ModList.Release(m.Version)}".TrimEnd(), true)
+                           : (m.Id, false)),
+        ];
+        string[] spare = [.. extra.Where(m => !Given.Contains(m, StringComparer.OrdinalIgnoreCase))];
 
         // No count on the label. A bare number beside the word Mods reads as a number the server
         // wants, so "Mods (1)" against one mod to turn off said the opposite of the truth -- and
@@ -1207,7 +1246,9 @@ internal static class Panel
         ImGui.NextColumn();
         // Which the number is, in the same breath. This read "Required mods" over a list of mods to
         // turn off, filing the one thing in the way under a word meaning the opposite.
-        string what = absent.Count > 0 ? $"{absent.Count} to turn on"
+        string what = absent.Count > 0 && other.Count > 0 ? $"{absent.Count} to turn on, {other.Count} at another version"
+                    : absent.Count > 0 ? $"{absent.Count} to turn on"
+                    : other.Count > 0 ? $"{other.Count} at another version"
                     : spare.Length > 0 ? $"{spare.Length} to turn off"
                     : $"{shown.Length} needed";
         if (shown.Length == 0 && spare.Length == 0)
@@ -1216,10 +1257,10 @@ internal static class Panel
         }
         else if (ImGui.TreeNode($"{what}###KSAMultiplayerMods"))
         {
-            foreach (string mod in shown)
+            foreach ((string says, bool bad) in shown)
             {
-                float4 how = absent.Contains(mod) ? ConsoleStyle.Danger : ConsoleStyle.Positive;
-                ImGui.TextColored(in how, mod);
+                float4 how = bad ? ConsoleStyle.Danger : ConsoleStyle.Positive;
+                ImGui.TextColored(in how, says);
             }
             // The caption only where there are two lists to tell apart. With nothing above them
             // the node already says "1 to turn off", and saying it again over the one name under it
