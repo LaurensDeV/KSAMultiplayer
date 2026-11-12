@@ -307,7 +307,7 @@ remembered under follows whoever last joined with it, so `deop` names the player
 Every release publishes a container image, so there is nothing to build or clone:
 
 ```bash
-docker run -dit --name ksamp -p 50100:50100/udp -v ksamp-data:/data ghcr.io/laurensdev/ksamp-server:v0.18.0
+docker run -dit --name ksamp -p 50100:50100/udp -v ksamp-data:/data ghcr.io/laurensdev/ksamp-server:v0.19.0
 ```
 
 A release's notes carry the same line pinned to that build's digest, which is what to run on a
