@@ -20,7 +20,8 @@
 
   <!--
     Discord's Social SDK, unpacked as Discord hands it out: include/, lib/, bin/. It is Discord's to
-    distribute and its terms forbid redistributing it, so it is never committed either. First match
+    distribute: its Social SDK Terms allow it shipped inside the mod (2(a)) and forbid it on its own
+    (2(b)), so it goes in the release zip beside the mod and is never committed. First match
     wins: DISCORD_SDK_DIR, then Import/discord_social_sdk/, then a discord_social_sdk checkout beside
     this repository. Without one the mod is built without Discord, and runs without it.
   -->

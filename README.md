@@ -71,7 +71,8 @@ Once you're in:
 - **Invite from Discord.** While you are on a server, Discord shows which one and how many are on it,
   and your friends can be invited or ask to join from there. Accepting starts the game if it is
   closed, in the server's system, and joins. The invite carries the server's password, so whoever
-  you let in can read it.
+  you let in can read it. Discord's terms for this are for players of 13 and over, as a Discord
+  account is.
 
 Two craft with the same name are still two craft: the server gives the second one a name of its own,
 your game goes on calling it what you called it, and the player list says *known to the others as*
@@ -359,7 +360,7 @@ be reached -- `tmux` or `screen` is the way to keep one for a service.
 | `./tools/test.sh` | the protocol, the server and the directory over loopback; needs nothing of KSA |
 | `./tools/build.sh` | the server and the mod; the mod needs KSA's assemblies, found by `Directory.Build.props` (set `KSA_DLL_DIR`) |
 | `./tools/publish-server.sh [rid]` | the server as one self-contained executable |
-| `./tools/package.sh` | the mod as a player installs it, `dist/KSAMultiplayer-<version>.zip`, with Discord's Social SDK library beside it when the build finds the SDK (`DISCORD_SDK_DIR`, `Import/discord_social_sdk/`, or `../discord_social_sdk/discord_social_sdk`; Discord's terms forbid redistributing it, so it is never committed), and Discord switched on only when the build is given the application id in `DISCORD_APPLICATION_ID` or `Import/discord-application-id.txt`, which Discord's terms keep out of open-source code |
+| `./tools/package.sh` | the mod as a player installs it, `dist/KSAMultiplayer-<version>.zip`, with Discord's Social SDK library beside it when the build finds the SDK (`DISCORD_SDK_DIR`, `Import/discord_social_sdk/`, or `../discord_social_sdk/discord_social_sdk`; Discord's Social SDK Terms allow it shipped inside the mod (2(a)) and not on its own (2(b)), so it is in the zip and never committed), and Discord switched on only when the build is given the application id in `DISCORD_APPLICATION_ID` or `Import/discord-application-id.txt`, which Discord's terms keep out of open-source code |
 | `./tools/deploy.sh` | the mod into this machine's KSA, as a developer's install: it starts the bridge |
 | `./tools/run.sh` | deploy and launch the game, showing the mod's log |
 | `./tools/play.sh` | the game with this mod and nothing else, in a profile of its own |
