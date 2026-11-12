@@ -222,6 +222,14 @@ for name in A B; do
     for id in "${extra[@]}"; do
         [[ -n "$id" && -d "$dir/mods/$id" ]] && printf '\n[[mods]]\nid = "%s"\nenabled = true\n' "$id" >> "$dir/manifest.toml"
     done
+    # Whatever else is in this game's mods folder is listed too, switched off. KSA stops at a
+    # popup asking about any mod folder its manifest does not mention, and a game at a popup
+    # never joins: a mod left there by an earlier run with KSAMP_RIG_MODS held both games at
+    # "MOD FOUND" until the run timed out.
+    for other in "$dir"/mods/*/; do
+        id="$(basename "$other")"
+        grep -q "^id = \"$id\"" "$dir/manifest.toml" || printf '\n[[mods]]\nid = "%s"\nenabled = false\n' "$id" >> "$dir/manifest.toml"
+    done
     python3 - "$USER_DIR/settings.toml" "$dir/settings.toml" "$name" <<'PY'
 import os, re, sys
 source, target, name = sys.argv[1:]
