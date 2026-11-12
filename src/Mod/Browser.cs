@@ -48,6 +48,9 @@ internal static class Browser
         /// <summary>Why it cannot be reached or joined, empty while it can.</summary>
         public string Trouble { get; set; } = "";
 
+        /// <summary>The protocol version it answered in, where that is not this mod's; 0 otherwise.</summary>
+        public ushort Speaks { get; set; }
+
         public bool Waiting => Facts is null && Trouble.Length == 0;
 
         public string Where => Port == Wire.DefaultPort ? Host : $"{Host}:{Port}";
@@ -153,7 +156,7 @@ internal static class Browser
             }
             else if (_probes.Elsewhere.TryGetValue(at, out ushort version))
             {
-                foreach (Row r in rows) r.Trouble = $"protocol {version}, you have {Wire.Version}";
+                foreach (Row r in rows) (r.Speaks, r.Trouble) = (version, Versions(version));
             }
             else if (_probes.Silent.Contains(at))
             {
@@ -192,7 +195,9 @@ internal static class Browser
         // they have too few or too many.
         if (r.Facts is not { } f)
         {
-            return r.Trouble.Length == 0 ? "" : r.Trouble.StartsWith("protocol", StringComparison.Ordinal) ? "wrong version" : "no answer";
+            // Which of the two is behind, since that is who has something to do: "wrong version"
+            // said neither, to a player whose own mod was two releases old.
+            return r.Trouble.Length == 0 ? "" : r.Speaks > Wire.Version ? "update your mod" : r.Speaks != 0 ? "server is older" : "no answer";
         }
         if (f.KsaBuild.Length > 0 && World.KsaBuild.Length > 0 && f.KsaBuild != World.KsaBuild) return "wrong KSA build";
         (string missing, string extra) = Sync.ModsAgainst(f.Mods);
@@ -204,6 +209,11 @@ internal static class Browser
         if (f.Full) return "full";
         return "";
     }
+
+    /// <summary>What to do about a server that speaks another protocol version than this mod, which is whichever of the two is older being brought up to date.</summary>
+    public static string Versions(ushort theirs) => theirs > Wire.Version
+        ? $"speaks protocol {theirs} and this mod speaks {Wire.Version}: install the newest KSA Multiplayer to join"
+        : $"speaks protocol {theirs} and this mod speaks {Wire.Version}: the server has not been updated to this release yet";
 
     public static string Why(Row r)
     {

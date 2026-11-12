@@ -1072,7 +1072,7 @@ internal static class Panel
         // Capitalised, because the rest of this column is "Earth and Moon" and a cell that starts
         // small beside one that does not reads as a different kind of thing than it is.
         Cell(r.Facts is { } g ? !g.HasWorld ? "No world yet" : g.System.Length > 0 ? Named(g.System) : "A world"
-             : r.Waiting ? "..." : "No answer");
+             : r.Waiting ? "..." : r.Speaks != 0 ? $"Protocol {r.Speaks}, yours is {Wire.Version}" : "No answer");
         ImGui.TableNextColumn();
         // The round trip to the server, which is not the time to join it and is the best guide
         // there is to that before anybody has.
@@ -1158,12 +1158,18 @@ internal static class Panel
             Mods(wants, missing, extra);
             return;
         }
-        if (mine && Sync.ServerTrouble.Length > 0)
+        // What the server said when it was asked, or what the list already knows of it: a server
+        // that speaks another protocol version never answers an ask in this one, and the row's
+        // two words up there are not room to say which of the two has to be updated.
+        string trouble = mine && Sync.ServerTrouble.Length > 0
+            ? Sync.ServerTrouble
+            : Browser.Rows.FirstOrDefault(r => r.Speaks != 0 && r.Where == typed) is { } row ? $"This server {row.Trouble}." : "";
+        if (trouble.Length > 0)
         {
             ImGui.Text("Server name"u8);
             ImGui.NextColumn();
             ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.Pending);
-            ImGui.TextWrapped(Sync.ServerTrouble);
+            ImGui.TextWrapped(trouble);
             ImGui.PopStyleColor();
             ImGui.NextColumn();
         }
