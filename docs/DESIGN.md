@@ -93,7 +93,7 @@ stranger sent it.
   A new save drops what it already holds.
 
 It passes every state on to every other game in the world, checks a state comes from the craft's
-owner, and passes chat on. It refuses a player with another KSA build than the world was saved by (or, before a save has said, than whoever is in), one playing a different celestial system (a world of Sol
+owner, and passes chat on. It refuses a player with another KSA build than it was built for (`KsaBuild` in `Directory.Build.props`, written into the server when it is built and checked against the assemblies whenever the mod is; the operator's `ksa-build` says another), one playing a different celestial system (a world of Sol
 entire is not a world of Earth and its Moon alone), or one whose mods are not the world's
 exactly. Without one the world's giver had enabled, a save holding a part of it does not load; with
 one they had not, that player builds craft nobody else can put together, and all the others see is
@@ -256,6 +256,22 @@ was built twice and then seven characters of each: forty of a commit, in the lin
 on, were read as noise and hid the two numbers that mattered. And it is said apart from a mod
 that is off (`Sync.ModsAgainst`), because "turn it on" about a mod that is on sends a player to
 a switch that is already where it should be.
+
+**A game turned away for its mods is handed a link to them.** `ModLink` writes the world's list
+as Borea's `borea://modlist?mods=Id@1.2.3,...&name=...&id=...`, and the connect window puts a
+button for it where `CONNECT` would be greyed. Borea knows nothing of this mod and this mod knows
+that one line of Borea. A link has to say an exact release of every mod, which a world's list
+often does not, so a mod the world leaves open is given the version this game has, KSA's own
+`Core` is left out, a commit after a `+` is dropped, and where a mod has no version anybody here
+knows there is no link and no button. The `id` is how Borea knows a list it has made a game from
+before, to offer bringing that one up to date, so it has to outlast a server's name. It is
+`ksamp-` and the operator's `id` setting, which a server says in its `Facts` and in the welcome
+that carries a cookie. It is a setting and not something the server makes up and keeps, because
+all a server keeps is its world, and a world is thrown away and begun again far more often than
+a server becomes another server. One with no `id` is known by the address the player reaches it
+by, so under two addresses it is two lists, and at an address that moves a new one each time.
+What is handed to the shell is only ever a line `ModLink.Is` knows as its own, since a server
+had a hand in it.
 
 **What another mod knows of a craft goes with the craft.** A car's steering and its wheels are in
 the car mod's memory and in nothing KSA saves. `Guests` listens on StarMap's event bus for what a
@@ -1010,14 +1026,32 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
 - **A game that hears nothing of a docking it lost a craft to.** The server tells it again each
   time it speaks of that craft, for thirty seconds. Past that it would go on flying a craft
   nobody else has. Not seen.
+- **The link to a world's mods, past Borea's dialog.** Seen 2026-11-12 against a local server
+  with an `id` and a mod the game had not: the button stood where `CONNECT` does, and pressed
+  (through the bridge, by the call the button makes) it opened Borea 0.6.20 on "Create an
+  instance from a link" with both mods at the versions wanted, the server's name, and Create
+  live. Create was not pressed. So an instance made this way has not been played from, Borea
+  offering to update one when a server's mods change has not been seen, and neither has what an
+  older Borea says of a link it does not know.
 - **A mod at another version said apart from one that is off.** The sentence beside `CONNECT`
   that names two things to do at once, and `other mod version` on a row, have only been read in
   the source: it takes a server held to a version this game has not got. The pill itself was seen
   2026-11-12, amber `turn mods on` and `no answer` on a plain row and on the chosen one; the muted
   `recent` was not on screen.
-- **A second player on another KSA build, joining before the first one's world has arrived.** The
-  server holds them to the build of whoever is in (`RequiredBuild`), under test over loopback. It
-  takes two installs of KSA at two builds to see.
+- **A game on a Mac, closed.** It hung on exit, for a reason read out of .NET's own source and
+  not seen: a UDP socket closed under a thread reading it, which macOS cannot wake (`Udp.Read`,
+  and `errors.md` for 2026-11-12). The reader no longer waits in the socket. Nobody here has a
+  Mac, so that it now closes, and that joining and leaving a server on one do not stall, are
+  unseen.
+- **A launch on Mars.** A place with no launchpad is launched from as KSA always did
+  (`Pads.Room`), seen from `Apollo11` on Luna in a game played alone on 2026-11-12 after every
+  launch off Earth had been refused as a full site. Venus and Mars are the same kind of place in
+  the same list and have not been launched from, and neither has any of them in a shared world.
+- **A player on another KSA build than a server was built for.** The server turns them away
+  before it has a world or a player (`RequiredBuild`), and lists its build to anybody who asks,
+  under test over loopback. It takes an install of KSA at another build to see, and a KSA update
+  to see the other half: a world saved by the old build handed out by a server brought up to the
+  new one.
 - **Two games on different machines.** The *server* has been remote -- `mp.ksarmory.com` on a VPS,
   reached across the internet, with a craft described to two other players in its world -- so that
   path is exercised. What has not happened is two games behind two different connections, where each

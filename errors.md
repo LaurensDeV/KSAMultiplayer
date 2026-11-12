@@ -1460,3 +1460,48 @@ by its name, that came off nothing of this player's and is nearer somebody else'
 away. Two hops of four in these runs, each the first after the games were started, had the
 watching game a sixth and a quarter of a second behind for the whole run, and every number in
 the worse of them was worse for that; the runs after them were within 9 ms.
+
+## 2026-11-12 -- no launch from anywhere off Earth
+
+Reported by a player on a Mac, playing alone: the mod would not let them launch on Mars.
+
+**Every place KSA offers off Earth is a landmark, and a landmark has no pad.** Earth has five
+launchpads; Venus has seven landmarks, Luna four and Mars four (Viking 1 and 2, Pathfinder,
+Spirit), and none is a pad. `Pads.Room` asked whether the chosen site had a pad free, by way of
+`Pads.Free`, which answers null where every pad is taken -- and where there are none to take. So
+a launch from any of those fifteen places was refused as a full site, from the editor and from
+the launch menu, with "every pad at the chosen site is taken" in the log. Nothing in it asks
+whether the game is in a shared world, so a game played alone was refused the same.
+
+It had never been seen because every run of the rig launches from Earth. Seen fixed in a game,
+played alone in Earth and Moon: with the editor pointed at Luna's `Apollo11` the bridge answered
+`pads_at_site: []`, `free_pad: null`, `room: true`, and an 89-part rocket launched from it was
+`Landed` with Luna as its parent, 8.2 m of radar under it. Mars itself was not tried, having no
+world of Sol on this machine to hand; it is the same list of the same kind of place.
+
+**What it leaves.** The seven extra pads round each site on Earth are still laid out in a game
+played alone, which the same player remarked on. They have to be in the ground before KSA reads
+the terrain, which is before a player has said whether they will join anybody.
+
+## 2026-11-12 -- a game on a Mac that never finished closing
+
+Reported by the same player: with the mod loaded, the game hangs on exit. Not reproduced, there
+being no Mac here; found by reading.
+
+**Closing a socket waits for whoever is reading it, and on macOS a UDP read cannot be woken.**
+`Udp` read on a thread of its own, sat in `ReceiveFrom` for as long as nothing arrived, and was
+closed from another thread with the reader still in it. .NET's `SafeSocketHandle.CloseAsIs` then
+loops until the reader has let go, calling `TryUnblockSocket` to make it, and that method's own
+comment says where it does not work: "On OSX ... pending TCP connect operations and UDP receive
+are not abortable." So the close span for as long as no datagram came. The list of servers keeps
+such a socket from the moment the mod loads and is sent nothing once its asking is done, and
+`Unload` closes it: a game with the mod in it and no server joined never got past that line. On
+Windows and Linux the read is woken, which is every machine this had been run on. The same close
+is behind `PLAY ALONE` and disconnecting, where the socket is one a server was asked on, so a
+Mac may have stalled there too until something arrived.
+
+The reader now asks whether there is anything to read, a tenth of a second at a time, and is in
+the receive only while there is; and a socket is closed after its reader has stopped, not under
+it. The suite is unchanged over loopback at 256 passed, and a game here closed as it did before.
+Whether a Mac now closes is for the player who reported it to say.
+

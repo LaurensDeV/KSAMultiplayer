@@ -85,7 +85,9 @@ which carries no UDP, so the name would resolve perfectly and never connect.
     export TF_VAR_worlds='{ mpcars = { port = 50101 } }'
 
 Anything left out of a world's entry is the first server's: its player limit, its snapshot interval,
-its memory ceiling. `server_name` defaults to the world's own name, which is what the panel shows.
+its memory ceiling. `server_name` defaults to the world's own name, which is what the panel shows,
+and so does `id`, the server's setting of that name: what a mod manager knows the world's mods by,
+so renaming a world in this map makes it a new list to every player who has installed its mods.
 
 Then the firewall rule, for the reason the first port's is there — Docker reaches the port without
 it, and the rule is how a reader knows that was meant:

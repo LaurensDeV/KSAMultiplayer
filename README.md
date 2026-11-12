@@ -90,6 +90,16 @@ can see who is on them. Picking a row fills the address in; the **Password** fie
 *none needed* for a server that has said it wants none, and **CONNECT** is greyed for a row this game
 would be refused from, with the reason beside it.
 
+Where the reason is your mods, the button is **GET THESE MODS WITH BOREA** instead. It hands
+[Borea](https://github.com/KSAModding/Borea), a mod manager for KSA, the list of what the server
+wants; Borea shows it, and on your say-so makes a separate instance of the game holding exactly
+those mods, leaving the one you play in as it was. The link is in the mod's log as well, for
+pasting. There is no button where a link could not say what the server wants: a mod it names
+without a version that this game has not got either, since Borea takes only exact versions. It
+needs a Borea that reads `borea://modlist` links, which is 0.6.20 or later. When a server's mods
+change, Borea offers to bring the instance it made for that server up to date: it knows the
+server by the `id` its operator set, or by its address where they set none.
+
 Nothing about the list is on the way in: typing an address and pressing **CONNECT** works whether or
 not the list ever came up. The list is in this window only -- the **Multiplayer** panel inside a game
 takes an address and not a list, so changing servers from there is disconnect, type, connect.
@@ -143,10 +153,11 @@ to the server's address.
   make one, since a world is KSA's own format and the server has no game. They pin the system a
   world started from them is in, and go stale when KSA's save format moves on.
 
-  A world the server carries records **no KSA build**, so it takes the first player's: whoever is
-  in it holds everyone after them to their build, and from the first time one of them saves it the
-  world is that build's for good. Set `ksa-build` as well to say which build before anybody has
-  joined.
+  Either way the server holds every player to **the KSA build it was built for**, which is the
+  one its release of the mod was compiled against and is on the release's page. It says so on a
+  list of servers before anybody has joined, and it does not go by which build saved its world:
+  when KSA updates, install the server release made for the new build and the world is kept.
+  `ksa-build` says another build instead.
 - **Or copy a save in.** Copy a save folder from `Documents/My Games/Kitten Space Agency/saves/<name>`
   (or a zip of it) to the server and start with `--world <path>`.
 
@@ -228,11 +239,12 @@ like `quit`.
 | `--port` | `KSAMP_PORT` | `50100` | UDP port |
 | `--bind` | `KSAMP_BIND` | every address | address to listen on |
 | `--name` | `KSAMP_NAME` | `KSA server` | shown to players |
+| `--id` | `KSAMP_ID` | none | a short name that never changes though the name and the address may, in letters, digits, dots, dashes and underscores (`my-clan-cars`). Borea knows the mods it installed for this server by it, and offers to update that instance when the server's mods change. Without one the server is known by the address a player reaches it at |
 | `--password` | `KSAMP_PASSWORD` | none | |
 | `--max-players` | `KSAMP_MAX_PLAYERS` | `16` | |
 | `--data` | `KSAMP_DATA` | `./data` | where the world is kept |
 | `--world` | `KSAMP_WORLD` | | a save folder or zip to start from, replacing the kept one; not a setting in the file, since it is something to do once |
-| `--ksa-build` | `KSAMP_KSA_BUILD` | the world's, or the first player's in | the KSA build players must run |
+| `--ksa-build` | `KSAMP_KSA_BUILD` | the build this server was built for | the KSA build players must run |
 | `--mods` | `KSAMP_MODS` | the world's | the mods players must have, comma separated, each held to a version after an `@` where one is given: `FastAndPurrious@0.1.13` for that release, `FastAndPurrious@0.1.13+8b152a3` for one build of it. The whole list, not a floor: a player running anything else is refused. Worth setting, because the world's own list follows whoever last handed a save over |
 | `--snapshot-every` | `KSAMP_SNAPSHOT_EVERY` | `300` | seconds between fresh saves |
 | `--keep-time` | `KSAMP_KEEP_TIME` | off | let time run with nobody connected |
