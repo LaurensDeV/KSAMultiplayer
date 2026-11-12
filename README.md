@@ -144,9 +144,10 @@ to the server's address.
   make one, since a world is KSA's own format and the server has no game. They pin the system a
   world started from them is in, and go stale when KSA's save format moves on.
 
-  A world the server carries records **no KSA build**, so unlike a world a player hands over it
-  checks nobody's: set `ksa-build` as well if everyone should be on one build. Players still have to
-  agree with each other, since a craft is passed between games as KSA's own serialisation of one.
+  A world the server carries records **no KSA build**, so it takes the first player's: whoever is
+  in it holds everyone after them to their build, and from the first time one of them saves it the
+  world is that build's for good. Set `ksa-build` as well to say which build before anybody has
+  joined.
 - **Or copy a save in.** Copy a save folder from `Documents/My Games/Kitten Space Agency/saves/<name>`
   (or a zip of it) to the server and start with `--world <path>`.
 
@@ -231,7 +232,7 @@ like `quit`.
 | `--max-players` | `KSAMP_MAX_PLAYERS` | `16` | |
 | `--data` | `KSAMP_DATA` | `./data` | where the world is kept |
 | `--world` | `KSAMP_WORLD` | | a save folder or zip to start from, replacing the kept one; not a setting in the file, since it is something to do once |
-| `--ksa-build` | `KSAMP_KSA_BUILD` | the world's | the KSA build players must run |
+| `--ksa-build` | `KSAMP_KSA_BUILD` | the world's, or the first player's in | the KSA build players must run |
 | `--mods` | `KSAMP_MODS` | the world's | the mods players must have, comma separated, each held to a version after an `@` where one is given: `FastAndPurrious@0.1.13` for that release, `FastAndPurrious@0.1.13+8b152a3` for one build of it. The whole list, not a floor: a player running anything else is refused. Worth setting, because the world's own list follows whoever last handed a save over |
 | `--snapshot-every` | `KSAMP_SNAPSHOT_EVERY` | `300` | seconds between fresh saves |
 | `--keep-time` | `KSAMP_KEEP_TIME` | off | let time run with nobody connected |

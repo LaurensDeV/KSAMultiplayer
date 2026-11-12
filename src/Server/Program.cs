@@ -20,7 +20,7 @@ const string Usage = """
       --world <path>         start from this KSA save: its folder, or a zip of it,
                              replacing any world kept in --data
       --ksa-build <build>    the KSA build players must run (default: that of
-                             whoever gave the server its world)
+                             whoever gave the server its world, or is in it)
       --mods <a,b,c>         the mods players must have (default: those of whoever
                              gave the server its world, which follows whoever last
                              handed one over)

@@ -889,6 +889,35 @@ public class ServerTests
     }
 
     [Fact]
+    public void ABuildIsHeldToFromTheFirstPlayerInAndNotFromTheirWorldArriving()
+    {
+        using Rig rig = new();
+        Client a = rig.Join("Alice", "B1");
+        rig.Until(() => a.Joined && a.SnapshotWanted is not null, what: "the server to ask Alice for a world");
+        Assert.False(rig.Server.HasWorld);
+        Assert.Equal("B1", rig.Server.RequiredBuild);
+
+        Client b = rig.Join("Bob", "B2");
+        rig.Until(() => b.Out.Length > 0, what: "another build to be turned away while the world is still on its way");
+        Assert.Contains("you need the same build", b.Out);
+        Assert.False(b.Joined);
+    }
+
+    [Fact]
+    public void AnEmptyWorldOfTheServersOwnIsHeldToTheBuildOfWhoeverIsInIt()
+    {
+        using Rig rig = new(new ServerOptions { EmptyWorld = "SolLite" });
+        rig.Server.SetWorld(new Blob(BlobKind.World, "", 0, 0.0, StockWorld.Zip("SolLite")!), "", [], "SolLite", timeKnown: false);
+        Assert.Equal("", rig.Server.RequiredBuild);
+        Client a = rig.Join("Alice", "B1");
+        rig.Until(() => a.Joined, what: "Alice to be let into the empty world");
+
+        Client b = rig.Join("Bob", "B2");
+        rig.Until(() => b.Out.Length > 0, what: "another build to be turned away");
+        Assert.Contains("you need the same build", b.Out);
+    }
+
+    [Fact]
     public void TwoPlayersOfOneNameAreToldApart()
     {
         using Rig rig = new();

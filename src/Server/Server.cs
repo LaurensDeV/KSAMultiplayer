@@ -316,9 +316,17 @@ public sealed class GameServer : IDisposable
 
     /// <summary>
     /// The KSA build a player must run: the operator's if they named one, otherwise the build of the
-    /// world being handed out. Empty when neither is known, and then any build is let in.
+    /// world being handed out, otherwise the build of whoever is in. Empty when none is known, and
+    /// then any build is let in.
+    ///
+    /// <para>Whoever is in, because a world is not there the moment its first player is: it is
+    /// asked of them and takes seconds to arrive, and an empty world the server started with was
+    /// written by no player at all. Somebody joining meanwhile on another build would be sent a
+    /// save their game did not write, or share a world with a game whose parts are not theirs.</para>
     /// </summary>
-    public string RequiredBuild => Options.KsaBuild.Length > 0 ? Options.KsaBuild : _worldBuild;
+    public string RequiredBuild => Options.KsaBuild.Length > 0 ? Options.KsaBuild
+        : _worldBuild.Length > 0 ? _worldBuild
+        : _players.Values.Select(p => p.KsaBuild).FirstOrDefault(b => b.Length > 0) ?? "";
 
     /// <summary>What a player must have enabled: what the operator pinned, or the world's own list when they pinned nothing.</summary>
     /// <remarks>

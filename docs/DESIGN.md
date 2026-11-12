@@ -87,7 +87,7 @@ another version is refused by name rather than misread.
   A new save drops what it already holds.
 
 It passes every state on to every other game in the world, checks a state comes from the craft's
-owner, and passes chat on. It refuses a player with another KSA build, one playing a different celestial system (a world of Sol
+owner, and passes chat on. It refuses a player with another KSA build than the world was saved by (or, before a save has said, than whoever is in), one playing a different celestial system (a world of Sol
 entire is not a world of Earth and its Moon alone), or one whose mods are not the world's
 exactly. Without one the world's giver had enabled, a save holding a part of it does not load; with
 one they had not, that player builds craft nobody else can put together, and all the others see is
@@ -990,6 +990,14 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
 - **A game that hears nothing of a docking it lost a craft to.** The server tells it again each
   time it speaks of that craft, for thirty seconds. Past that it would go on flying a craft
   nobody else has. Not seen.
+- **A mod at another version said apart from one that is off.** The sentence beside `CONNECT`
+  that names two things to do at once, and `other mod version` on a row, have only been read in
+  the source: it takes a server held to a version this game has not got. The pill itself was seen
+  2026-11-12, amber `turn mods on` and `no answer` on a plain row and on the chosen one; the muted
+  `recent` was not on screen.
+- **A second player on another KSA build, joining before the first one's world has arrived.** The
+  server holds them to the build of whoever is in (`RequiredBuild`), under test over loopback. It
+  takes two installs of KSA at two builds to see.
 - **Two games on different machines.** The *server* has been remote -- `mp.ksarmory.com` on a VPS,
   reached across the internet, with a craft described to two other players in its world -- so that
   path is exercised. What has not happened is two games behind two different connections, where each
