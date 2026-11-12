@@ -12,12 +12,17 @@ namespace KSAMultiplayer;
 /// threads for thirty datagrams, and the keepalive in every one of them has nothing to keep
 /// alive.</para>
 ///
-/// <para>So the hello goes out from one socket to every address at once and the answers are told
-/// apart by where they came from, which is the only thing about a datagram that is not the sender's
-/// to choose. A server that answers in a protocol this game cannot read is remembered as that rather
-/// than as silent: a row that says which version it speaks is a row a player can act on, and the
-/// refusal a server sends for a version mismatch is itself written in the version it speaks, so it
-/// cannot be read as a refusal -- only as a sighting.</para>
+/// <para>So the question goes out from one socket to every address at once and the answers are
+/// told apart by where they came from, which is the only thing about a datagram that is not the
+/// sender's to choose.</para>
+///
+/// <para>The question is a <see cref="Wire.Ask"/> and not the hello a join begins with, because a
+/// server answers one whatever version it or the asker speaks: what it says of itself is read by a
+/// directory built several releases ago, and by a game deciding which of the two is out of date.
+/// A server from before the ask existed answers it as it answers anything of another version, with
+/// a refusal written in its own, which cannot be read as a refusal -- only as a sighting. It is
+/// remembered as that rather than as silent: a row that says which version it speaks is a row a
+/// player can act on.</para>
 /// </summary>
 public sealed class Probes : IDisposable
 {
@@ -27,8 +32,7 @@ public sealed class Probes : IDisposable
     /// <summary>How long a server is waited for, s, before it is taken as unreachable from here.</summary>
     public const double WaitSeconds = 2.0;
 
-    /// <summary>The hello that asks. Nothing in it: no name to put on a roster, no cookie, so the answer is the one a server gives anybody.</summary>
-    private static readonly Wire.Hello Question = new("", "", "", "", "", "");
+    private static readonly Wire.Ask Question = new();
 
     private readonly Udp _udp;
     private readonly Func<double> _clock;
@@ -44,11 +48,15 @@ public sealed class Probes : IDisposable
         _udp = new Udp(port, clock, "KSAMultiplayer probes");
     }
 
-    /// <summary>What answered, by the address it answered from, which is what two listings of one server have in common when nothing else about them does.</summary>
+    /// <summary>
+    /// What answered, by the address it answered from, which is what two listings of one server
+    /// have in common when nothing else about them does. Not all of it can be joined:
+    /// <see cref="ServerFacts.Protocol"/> says which version each speaks.
+    /// </summary>
     public IReadOnlyDictionary<IPEndPoint, ServerFacts> Answered => _answered;
 
     /// <summary>
-    /// How long each answer took to come back, s. Measured from the hello that was answered rather
+    /// How long each answer took to come back, s. Measured from the ask that was answered rather
     /// than the first one sent, so a server that needed asking twice is not charged for the wait.
     ///
     /// <para>One sample, because one is what a question and its answer give. It is the round trip to
@@ -57,7 +65,7 @@ public sealed class Probes : IDisposable
     /// </summary>
     public IReadOnlyDictionary<IPEndPoint, double> Rtt => _rtt;
 
-    /// <summary>What answered in a protocol this game cannot read, and which version it said.</summary>
+    /// <summary>What answered without saying what it is, and which version it answered in: a server from before <see cref="Wire.Ask"/>.</summary>
     public IReadOnlyDictionary<IPEndPoint, ushort> Elsewhere => _elsewhere;
 
     /// <summary>What never answered. Unreachable from here, which is not the same as down.</summary>
@@ -108,10 +116,10 @@ public sealed class Probes : IDisposable
             // either an answer already counted or a datagram nobody here sent for.
             if (!_asking.ContainsKey(d.From)) continue;
             Wire.Message? m = Wire.Read(d.Data, out ushort version);
-            if (m is Wire.Welcome w)
+            if (m is Wire.Facts f)
             {
-                _answered[d.From] = ServerFacts.Of(w);
-                // Never negative: an answer to the hello before last arrives after the last one went
+                _answered[d.From] = ServerFacts.Of(f);
+                // Never negative: an answer to the ask before last arrives after the last one went
                 // out, and a round trip measured through that is a number from nowhere.
                 _rtt[d.From] = Math.Max(0.0, d.Arrived - _asking[d.From].Sent);
                 _asking.Remove(d.From);
@@ -121,7 +129,7 @@ public sealed class Probes : IDisposable
                 _elsewhere[d.From] = version;
                 _asking.Remove(d.From);
             }
-            // Anything else -- a datagram cut short, or one of this version that is not a welcome --
+            // Anything else -- a datagram cut short, or one of this version that is not an answer --
             // is left outstanding, and the next ask covers it.
         }
         foreach (IPEndPoint at in _asking.Keys.ToArray())

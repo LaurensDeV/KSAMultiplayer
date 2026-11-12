@@ -98,12 +98,124 @@ public sealed class ProbesTests
         Assert.Equal(0, probes.Waiting);
     }
 
-    [Fact]
-    public void AServerSpeakingAnotherVersionIsRememberedAsThatRatherThanAsSilent()
+    /// <summary>One datagram sent to a server from a socket of the test's own, and what came back within a moment, or nothing.</summary>
+    private static byte[]? Answer(Rig rig, ReadOnlySpan<byte> question)
     {
-        // A refusal for the wrong version is written in the version that sent it, so it cannot be
-        // read as a refusal. A row that says which version a server speaks is a row a player can
-        // act on; one that says "no answer" sends them to check a firewall that is fine.
+        using Socket asker = new(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        asker.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+        asker.SendTo(question, new IPEndPoint(IPAddress.Loopback, rig.Server.Port));
+        byte[] heard = new byte[Wire.BufferBytes];
+        double until = Clock() + 1.0;
+        while (Clock() < until)
+        {
+            rig.Server.Tick();
+            if (asker.Available > 0) return heard[..asker.Receive(heard)];
+            Thread.Sleep(1);
+        }
+        return null;
+    }
+
+    private static byte[] Ask(ushort version)
+    {
+        byte[] ask = new byte[Wire.BufferBytes];
+        int n = Wire.Write(new Wire.Ask(), ask);
+        BinaryPrimitives.WriteUInt16LittleEndian(ask.AsSpan(4), version);
+        return ask[..n];
+    }
+
+    [Fact]
+    public void AServerSaysWhatItIsToAnAskerOfAnotherVersion()
+    {
+        // The directory somebody else runs, built before this server's release or after it.
+        using Rig rig = new(new ServerOptions { Name = "Moon base", MaxPlayers = 7 });
+        foreach (ushort theirs in new[] { (ushort)(Wire.Version - 3), (ushort)(Wire.Version + 3) })
+        {
+            byte[] answer = Assert.IsType<byte[]>(Answer(rig, Ask(theirs)));
+            Wire.Facts told = Assert.IsType<Wire.Facts>(Wire.Read(answer, out ushort version));
+            // In its own version, which is what the asker lists it under.
+            Assert.Equal((Wire.Version, Wire.Version), (version, told.Speaks));
+            Assert.Equal(("Moon base", 7), (told.ServerName, told.MaxPlayers));
+        }
+        Assert.Empty(rig.Server.Players);
+    }
+
+    [Fact]
+    public void AnAskIsNeverAnsweredWithMoreThanItCostToSend()
+    {
+        // Anybody can put any address on a datagram, so whatever an ask is answered with is sent
+        // to somebody who may never have asked.
+        using Rig rig = new(new ServerOptions { Name = "Moon base", Mods = string.Join(",", Enumerable.Repeat("ModWithALongName", 20)) });
+        byte[] ask = Ask(Wire.Version);
+        Assert.InRange(Assert.IsType<byte[]>(Answer(rig, ask)).Length, 1, ask.Length);
+
+        // Cut down to its header and its one byte, it is still an ask, and is not answered at all.
+        Assert.Null(Answer(rig, ask.AsSpan(0, 8)));
+        Assert.Null(Answer(rig, ask.AsSpan(0, Wire.AskBytes - 1)));
+    }
+
+    [Fact]
+    public void AModListTooLongToAnswerWithIsLeftOutRatherThanTheServerGoingUnlisted()
+    {
+        // Three hundred characters are nine hundred bytes in most of the world's writing, and with
+        // a name and a build written the same way the answer is longer than the ask.
+        string name = new('基', 64);
+        using Rig rig = new(new ServerOptions { Name = name, KsaBuild = new string('版', 64), Mods = new string('模', 400) });
+        byte[] ask = Ask(Wire.Version);
+        byte[] answer = Assert.IsType<byte[]>(Answer(rig, ask));
+        Assert.InRange(answer.Length, 1, ask.Length);
+        Wire.Facts told = Assert.IsType<Wire.Facts>(Wire.Read(answer, out _));
+        Assert.Equal((name, ""), (told.ServerName, told.Mods));
+    }
+
+    [Fact]
+    public void AServerOfAnotherVersionIsAnsweredForWithWhatItIs()
+    {
+        using Socket elsewhere = new(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        elsewhere.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+        IPEndPoint at = (IPEndPoint)elsewhere.LocalEndPoint!;
+
+        byte[] answer = new byte[Wire.BufferBytes];
+        int n = Wire.Write(new Wire.Facts("Next year's", "Sol", true, "Core", 2, 8, Wire.WelcomeFlags.None, ""), answer);
+        BinaryPrimitives.WriteUInt16LittleEndian(answer.AsSpan(4), 99);
+
+        using CancellationTokenSource stop = new();
+        Thread answering = new(() =>
+        {
+            byte[] heard = new byte[2048];
+            EndPoint any = new IPEndPoint(IPAddress.Any, 0);
+            while (!stop.IsCancellationRequested)
+            {
+                try
+                {
+                    elsewhere.ReceiveFrom(heard, ref any);
+                    elsewhere.SendTo(answer.AsSpan(0, n), SocketFlags.None, any);
+                }
+                catch (Exception)
+                {
+                    return;
+                }
+            }
+        }) { IsBackground = true };
+        answering.Start();
+
+        using Probes probes = new(Clock);
+        probes.Ask(at);
+        Until(probes, () => { }, () => probes.Answered.Count == 1, what: "what a server of another version is");
+
+        Assert.Equal(("Next year's", 2, (ushort)99), (probes.Answered[at].ServerName, probes.Answered[at].Players, probes.Answered[at].Protocol));
+        Assert.Empty(probes.Elsewhere);
+
+        stop.Cancel();
+        elsewhere.Close();
+    }
+
+    [Fact]
+    public void AServerFromBeforeItCouldBeAskedIsRememberedAsItsVersionRatherThanAsSilent()
+    {
+        // Such a server refuses an ask as it refuses anything of another version, and the refusal
+        // is written in the version that sent it, so it cannot be read as one. A row that says
+        // which version a server speaks is a row a player can act on; one that says "no answer"
+        // sends them to check a firewall that is fine.
         using Socket elsewhere = new(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
         elsewhere.Bind(new IPEndPoint(IPAddress.Loopback, 0));
         IPEndPoint at = (IPEndPoint)elsewhere.LocalEndPoint!;

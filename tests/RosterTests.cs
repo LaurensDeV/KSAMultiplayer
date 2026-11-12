@@ -105,6 +105,19 @@ public class RosterTests
     }
 
     [Fact]
+    public void AServerIsListedInTheVersionItSpeaksAndNotTheDirectorys()
+    {
+        // A directory is somebody else's and is updated when they get to it. One that listed only
+        // its own version lost every server at every release, until its operator caught up.
+        Roster roster = new();
+        roster.Announce("", 50100, Somewhere, 0.0);
+        roster.Heard(Roster.Key("45.133.178.13", 50100), Said() with { Protocol = (ushort)(Wire.Version + 3) }, 1.0);
+
+        Listed listed = roster.Snapshot("d", 1.0, DateTimeOffset.UnixEpoch).Servers.Single();
+        Assert.Equal(Wire.Version + 3, listed.Protocol);
+    }
+
+    [Fact]
     public void AServerWhoseNameGivesItsPortIsListedAsFoundByItsNameAlone()
     {
         Roster roster = new();

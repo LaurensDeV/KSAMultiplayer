@@ -197,6 +197,9 @@ public sealed class GameServer : IDisposable
 
     /// <summary>How long one join cookie stands, s. Two are accepted, so it is good for twice this.</summary>
     private const double CookieSeconds = 15.0;
+
+    /// <summary>Where an answer is written to learn how long it is, before it is sent.</summary>
+    private readonly byte[] _measure = new byte[Wire.BufferBytes];
     private const double RosterEverySeconds = 2.0, OwnersEverySeconds = 5.0, ClockEverySeconds = 0.2;
 
     // A count that climbs while nobody is launching anything is a world filling with craft that
@@ -461,6 +464,11 @@ public sealed class GameServer : IDisposable
             }
             return;
         }
+        if (message is Wire.Ask)
+        {
+            Tell(data.Length, from);
+            return;
+        }
         if (player is null)
         {
             if (message is Wire.Hello hello) Admit(hello, from, arrived);
@@ -632,6 +640,26 @@ public sealed class GameServer : IDisposable
         if (hello.Cookie.Length == 0) return false;
         long slice = (long)(now / CookieSeconds);
         return hello.Cookie == Cookie(from, slice) || hello.Cookie == Cookie(from, slice - 1);
+    }
+
+    /// <summary>
+    /// Answers a list of servers asking what this is: what the cookie's welcome says, to anybody,
+    /// in whatever version they speak. Nothing is held for the address and nothing is logged.
+    /// </summary>
+    /// <param name="asked">How long the ask was, bytes, which is the most it is answered with.</param>
+    private void Tell(int asked, IPEndPoint from)
+    {
+        // Nothing here says where a datagram really came from, so an answer longer than its
+        // question is a way to aim this server at somebody else. A real ask is padded to this.
+        if (asked < Wire.AskBytes) return;
+        Wire.Facts facts = new(Options.Name, _worldSystem, _world is not null, WorldMods,
+                               (byte)Math.Min(_players.Count, 255), (byte)Math.Min(Options.MaxPlayers, 255),
+                               Options.Password.Length > 0 ? Wire.WelcomeFlags.Password : Wire.WelcomeFlags.None, RequiredBuild);
+        // Only a name, a build and three hundred characters of mods, none of them in ASCII, come
+        // to more than an ask. Said without the mods then, as a list too long is said clipped:
+        // the handshake is what compares them.
+        if (Wire.Write(facts, _measure) > asked) facts = facts with { Mods = "" };
+        _udp.Send(facts, from);
     }
 
     private void Admit(Wire.Hello hello, IPEndPoint from, double now)

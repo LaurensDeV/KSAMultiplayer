@@ -161,8 +161,41 @@ public static class Wire
     /// refused for the wrong one. A list of servers is unreadable without them -- a row with no
     /// player count is half a row, and a row that cannot say "needs KSA 2026.11.10.5801" sends a
     /// player to find that out by being thrown out.</para>
+    ///
+    /// <para>26 adds <see cref="Ask"/> and <see cref="Facts"/>, which are read whatever version they
+    /// are stamped with: see <see cref="ProbeVersion"/>. No other datagram changed. The number moves
+    /// so that a server from before them answers an ask the way it answers anything of another
+    /// version, by saying which it speaks; left at 25, such a server would drop the ask as a kind it
+    /// does not know, and an old server would read on every list as an unreachable one.</para>
     /// </summary>
-    public const ushort Version = 25;
+    public const ushort Version = 26;
+
+    /// <summary>
+    /// The version of <see cref="Ask"/> and <see cref="Facts"/> alone, in the first byte of each.
+    ///
+    /// <para>Apart from <see cref="Version"/> because what a list of servers reads is a different
+    /// promise from what a game in a session reads. <see cref="Version"/> moves whenever the shared
+    /// world changes shape, which is most releases and often without a byte of the wire changing;
+    /// while a list was read through a hello and a welcome, every such move emptied every directory
+    /// built before it, though neither datagram had changed. A directory is run by somebody else
+    /// and is updated when they get to it.</para>
+    ///
+    /// <para>So these two are read by their kind, before the version is looked at, and this moves
+    /// only when what is already in a <see cref="Facts"/> changes place or meaning. A field added
+    /// at the end is not that: a reader stops at the last field it knows.</para>
+    /// </summary>
+    public const byte ProbeVersion = 1;
+
+    /// <summary>
+    /// How long an <see cref="Ask"/> is, padding included, and so the most a <see cref="Facts"/> is
+    /// ever answered with.
+    ///
+    /// <para>An ask is answered to an address the server has never heard from, which is whatever
+    /// address the datagram claimed. Answered with more than it cost to send, a server is a
+    /// reflector; padded to this, it sends a stranger no more than the stranger sent it. 1,200 is
+    /// under what any path carries without splitting a datagram.</para>
+    /// </summary>
+    public const int AskBytes = 1200;
 
     /// <summary>The port a server listens on unless it is given another, and what an address with no port in it means.</summary>
     public const int DefaultPort = 50100;
@@ -258,6 +291,8 @@ public static class Wire
         Alive = 26,
         Dock = 27,
         Extra = 28,
+        Ask = 29,
+        Facts = 30,
     }
 
     /// <summary>Where a warp has got to: nobody has asked, somebody has and is waiting, or it is running.</summary>
@@ -298,6 +333,25 @@ public static class Wire
     /// <param name="KsaBuild">The build this server's world wants, empty when it wants whichever it is given. On a row of a list because a game cannot change its own build without being started again, so this is the one thing a player has to act on before clicking rather than after.</param>
     public sealed record Welcome(byte Id, string Refused, string ServerName, bool HasWorld, string Cookie = "", string System = "", string Mods = "",
                                  byte Players = 0, byte MaxPlayers = 0, WelcomeFlags Flags = WelcomeFlags.None, string KsaBuild = "") : Message(Kind.Welcome);
+
+    /// <summary>
+    /// What is this server? Asked by a list of servers, of an address it knows nothing else about,
+    /// and answered with a <see cref="Facts"/>. Padded to <see cref="AskBytes"/> on the wire.
+    /// </summary>
+    /// <param name="Probe">The <see cref="ProbeVersion"/> of whoever asks.</param>
+    public sealed record Ask(byte Probe = ProbeVersion) : Message(Kind.Ask);
+
+    /// <summary>
+    /// What a server says of itself to anybody who asks: what the welcome that carries a cookie
+    /// says, without the cookie, since nobody who asks this is joining.
+    /// </summary>
+    /// <param name="Speaks">
+    /// The <see cref="Version"/> of the server that said it, which is the stamp on the datagram and
+    /// so is not written a second time. The one thing here a reader of another version needs: the
+    /// rest is a row of a list, and this is whether the row can be joined.
+    /// </param>
+    public sealed record Facts(string ServerName, string System, bool HasWorld, string Mods, byte Players, byte MaxPlayers,
+                               WelcomeFlags Flags, string KsaBuild, ushort Speaks = Version) : Message(Kind.Facts);
 
     /// <param name="Rtt">The player's round trip to the server, s, as that player last measured it; negative until it has.</param>
     /// <param name="Can">The speed that player's game is managing, as a multiple of real time:
@@ -572,6 +626,21 @@ public static class Wire
                 w.U8((byte)m.Flags);
                 w.Text(m.KsaBuild, 64);
                 break;
+            case Ask a:
+                w.U8(a.Probe);
+                w.Zeros(AskBytes - w.At);
+                break;
+            case Facts f:
+                w.U8(ProbeVersion);
+                w.Text(f.ServerName, 64);
+                w.Text(f.System, NameChars);
+                w.U8(f.HasWorld ? (byte)1 : (byte)0);
+                w.LongText(f.Mods, ProbeModsChars);
+                w.U8(f.Players);
+                w.U8(f.MaxPlayers);
+                w.U8((byte)f.Flags);
+                w.Text(f.KsaBuild, 64);
+                break;
             case Roster r:
                 w.U8((byte)Math.Min(r.Players.Length, 64));
                 foreach (Player p in r.Players.Take(64))
@@ -719,16 +788,30 @@ public static class Wire
     /// <summary>
     /// A datagram read, or null for one that is not ours, is of another version, or is cut short:
     /// <paramref name="version"/> says which version it was, for a refusal to name.
+    ///
+    /// <para>An <see cref="Ask"/> and a <see cref="Facts"/> are read whatever that version is.</para>
     /// </summary>
     public static Message? Read(ReadOnlySpan<byte> data, out ushort version)
     {
         version = 0;
         if (data.Length < 7 || !data[..4].SequenceEqual(Mark)) return null;
         version = BinaryPrimitives.ReadUInt16LittleEndian(data[4..]);
-        if (version != Version) return null;
         Reader r = new(data[7..]);
         try
         {
+            switch ((Kind)data[6])
+            {
+                // Whatever it says of itself: the asker only needs answering, in the one form this
+                // can write.
+                case Kind.Ask:
+                    return new Ask(r.U8());
+                case Kind.Facts:
+                    // A form this cannot read is a server that answered and no more than that,
+                    // which is what a datagram of another version already is to whoever asked.
+                    if (r.U8() != ProbeVersion) return null;
+                    return new Facts(r.Text(64), r.Text(NameChars), r.U8() != 0, r.LongText(ProbeModsChars), r.U8(), r.U8(), (WelcomeFlags)r.U8(), r.Text(64), version);
+            }
+            if (version != Version) return null;
             Message m = (Kind)data[6] switch
             {
                 Kind.Hello => new Hello(r.Text(NameChars), r.Text(64), r.LongText(4000), r.Text(NameChars), r.Text(64), r.Text(TokenChars), r.Text(CookieChars)),
@@ -829,6 +912,13 @@ public static class Wire
         }
 
         public void U8(byte v) => _into[At++] = v;
+
+        // Cleared rather than skipped: the buffer is the sender's own and holds its last datagram.
+        public void Zeros(int n)
+        {
+            _into.Slice(At, n).Clear();
+            At += n;
+        }
 
         public void U16(ushort v)
         {

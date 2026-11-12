@@ -71,7 +71,8 @@ public static class Program
         app.MapGet("/health", (Roster roster, Ticker clock) =>
         {
             (int known, int listed) = roster.Count(clock.Now);
-            return Results.Ok(new { ok = true, known, listed, protocol = Wire.Version, document = Listings.Version });
+            // `protocol` is the build this was made from and no longer what it can list: `probe` is.
+            return Results.Ok(new { ok = true, known, listed, protocol = Wire.Version, probe = Wire.ProbeVersion, document = Listings.Version });
         });
 
         app.MapGet("/v1/servers", (Roster roster, Ticker clock, HttpResponse r) =>
@@ -101,7 +102,8 @@ public static class Program
             return Results.Ok(new Noted(true, from.ToString(), false, gone ? "taken out of the list" : "was not in the list"));
         }).RequireRateLimiting("announcing");
 
-        app.Logger.LogInformation("{Name}: listing protocol {Protocol}, documents of version {Document}", name, Wire.Version, Listings.Version);
+        app.Logger.LogInformation("{Name}: built at protocol {Protocol}, asking in probe version {Probe}, documents of version {Document}",
+                                  name, Wire.Version, Wire.ProbeVersion, Listings.Version);
         await app.RunAsync().ConfigureAwait(false);
         return 0;
     }

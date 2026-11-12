@@ -14,7 +14,9 @@ dedicated server (`ksamp-server`) that runs on Linux with no game installed.
 - `src/Protocol` and `src/Server` must never reference KSA: the server runs without the game, and the
   tests drive both over loopback. Only `src/Mod` touches KSA, and `src/Mod/World.cs` holds nearly all of it.
 - The mod compiles `src/Protocol/*.cs` into its own DLL, so a player installs one assembly.
-- Change `Wire.Version` whenever what a datagram means changes.
+- Change `Wire.Version` whenever what a datagram means changes. `Wire.ProbeVersion` is `Ask` and
+  `Facts` alone, which directories of other versions read: it changes only when a field already in
+  a `Facts` does, never for one added at the end.
 - KSA's assemblies are copyrighted and never committed. `Directory.Build.props` finds them: `KSA_DLL_DIR`,
   `Import/`, `../ksa-game-assemblies/current/dll`, then a game install, which is enough on its own:
   `StarMap.API` and `Lib.Harmony` come from NuGet, compile-time only so one assembly still ships.

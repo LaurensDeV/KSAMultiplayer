@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using Xunit;
 
 namespace KSAMultiplayer.Tests;
@@ -86,6 +87,9 @@ public class WireTests
         Assert.Equal(new Wire.Op(false, ""), RoundTrip(new Wire.Op(false, "")));
         Assert.Equal(new Wire.Welcome(3, "", "Moon base", true), RoundTrip(new Wire.Welcome(3, "", "Moon base", true)));
         Assert.Equal(new Wire.Welcome(0, "", "Moon base", true, "c00kie", "SolLite"), RoundTrip(new Wire.Welcome(0, "", "Moon base", true, "c00kie", "SolLite")));
+        Assert.Equal(new Wire.Ask(), RoundTrip(new Wire.Ask()));
+        Assert.Equal(new Wire.Facts("Moon base", "SolLite", true, "Core,KSAMultiplayer", 3, 16, Wire.WelcomeFlags.Password, "2026.11.10.5801"),
+                     RoundTrip(new Wire.Facts("Moon base", "SolLite", true, "Core,KSAMultiplayer", 3, 16, Wire.WelcomeFlags.Password, "2026.11.10.5801")));
         Assert.Equal(new Wire.Bye("kicked"), RoundTrip(new Wire.Bye("kicked")));
         Assert.Equal(new Wire.Ping(12.5, 0.035f, 0f, 1f, true, ""), RoundTrip(new Wire.Ping(12.5, 0.035f, 0f, 1f, true, "")));
         // A game that has not measured a round trip yet says so rather than claiming none.
@@ -147,6 +151,50 @@ public class WireTests
         // Cut short anywhere, a datagram is dropped rather than read wrong.
         n = Wire.Write(new Wire.Hello("Jeb", "b", "m", "s", "p", "t"), buffer);
         for (int k = 7; k < n; k++) Assert.Null(Wire.Read(buffer.AsSpan(0, k), out _));
+    }
+
+    [Fact]
+    public void WhatAListOfServersAsksAndIsToldIsReadInAnyVersion()
+    {
+        // Every other datagram of another version is dropped, which is what emptied every directory
+        // at every release: a list was read through a hello and a welcome, and neither had changed.
+        byte[] buffer = new byte[Wire.BufferBytes];
+        int n = Wire.Write(new Wire.Facts("Moon base", "SolLite", true, "Core", 3, 16, Wire.WelcomeFlags.None, "B1"), buffer);
+        BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(4), 99);
+        Wire.Facts told = Assert.IsType<Wire.Facts>(Wire.Read(buffer.AsSpan(0, n), out ushort version));
+        Assert.Equal(99, version);
+        // Which version said it is the stamp, and is the one thing a reader of another needs.
+        Assert.Equal(new Wire.Facts("Moon base", "SolLite", true, "Core", 3, 16, Wire.WelcomeFlags.None, "B1", 99), told);
+
+        // A field added after the ones a reader knows is not a new form of the answer.
+        buffer[n] = 7;
+        Assert.Equal(told, Wire.Read(buffer.AsSpan(0, n + 1), out _));
+
+        // A form of the answer this cannot read is a server that answered, and no more than that.
+        buffer[7] = (byte)(Wire.ProbeVersion + 1);
+        Assert.Null(Wire.Read(buffer.AsSpan(0, n), out version));
+        Assert.Equal(99, version);
+
+        n = Wire.Write(new Wire.Ask(), buffer);
+        BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(4), 7);
+        Assert.Equal(new Wire.Ask(), Wire.Read(buffer.AsSpan(0, n), out version));
+        Assert.Equal(7, version);
+    }
+
+    [Fact]
+    public void AnAskIsAsLongAsTheMostItIsAnsweredWithAndCarriesNothingOfTheLastDatagram()
+    {
+        byte[] buffer = new byte[Wire.BufferBytes];
+        Array.Fill(buffer, (byte)0xAB);
+        int n = Wire.Write(new Wire.Ask(), buffer);
+        Assert.Equal(Wire.AskBytes, n);
+        // The buffer is the sender's own, written over for every datagram it sends.
+        Assert.All(buffer[8..n], b => Assert.Equal(0, b));
+
+        // The longest answer a mod list in ASCII makes, with room to spare.
+        string wide = new('m', Wire.ProbeModsChars);
+        Assert.InRange(Wire.Write(new Wire.Facts(new string('n', 64), new string('s', 24), true, wide, 255, 255, Wire.WelcomeFlags.Password, new string('b', 64)), buffer),
+                       1, Wire.AskBytes);
     }
 
     [Fact]

@@ -95,8 +95,7 @@ not the list ever came up. The list is in this window only -- the **Multiplayer*
 takes an address and not a list, so changing servers from there is disconnect, type, connect.
 
 What the list costs you: the mod fetches `directories.txt` from this repository and then each
-directory's list over HTTPS, and asks every server on it the same question your game asks before
-joining one. So the operators of the servers listed see a request from your address, as they would if
+directory's list over HTTPS, and asks every server on it what it is. So the operators of the servers listed see a request from your address, as they would if
 you typed the address yourself -- a few dozen of them rather than one. Nothing about you goes with
 it: no name, no account, nothing but the request.
 
@@ -167,9 +166,10 @@ advertise = true
 ```
 
 The server then says so at every start -- listed, or not listed and why, in words you can act on.
-Nothing is listed on being asked: a directory sends the game's own pre-join query to the address and
-lists the server only once it answers, so a port that is closed or forwarded wrongly reads as
-exactly that in the log rather than as a server nobody joins. Announcing stops the moment
+Nothing is listed on being asked: a directory asks the address what it is, as a game's own list
+does, and lists the server only once it answers, so a port that is closed or forwarded wrongly reads
+as exactly that in the log rather than as a server nobody joins. A directory need not be on the
+server's release to list it, as long as both speak protocol 26 or later. Announcing stops the moment
 `advertise` goes back to `false`, without a restart.
 
 A server behind carrier-grade NAT cannot be listed, and is told so.

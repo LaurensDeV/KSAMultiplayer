@@ -5,8 +5,9 @@ using System.Net.Sockets;
 namespace KSAMultiplayer.Directories;
 
 /// <summary>
-/// Asks every server this directory has been told about whether it is really there, in the protocol
-/// it would be joined in, and lists only what answers.
+/// Asks every server this directory has been told about whether it is really there, the way a game
+/// asks before it shows one, and lists only what answers -- in whatever version of the protocol it
+/// answers, since a server says what it is to anybody and a game judges for itself what it can join.
 ///
 /// <para>This is the whole reason a directory is worth more than a text file. A server's account of
 /// itself is unchecked, so it is free to be wrong about its address, its name and how many people
@@ -77,7 +78,8 @@ public sealed class Watch(Roster roster, Ticker clock, ILogger<Watch> log) : Bac
                 }
                 else if (probes.Elsewhere.TryGetValue(at, out ushort version))
                 {
-                    string why = $"it answered at {at} in protocol {version}; this directory lists protocol {Wire.Version}, so update the server";
+                    // Only a server from before the ask gets here; any since says what it is.
+                    string why = $"it answered at {at} in protocol {version}, which is from before a server could tell a directory what it is: update the server";
                     foreach (string key in keys) roster.Quiet(key, why, now);
                 }
                 else if (probes.Silent.Contains(at))

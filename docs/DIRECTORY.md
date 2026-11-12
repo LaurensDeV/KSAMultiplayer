@@ -69,7 +69,8 @@ are ignored.
 
 Everything past the address is a hint, and this mod reads almost none of it: `name` fills a row
 until the server answers for itself, and `seen` breaks a tie when two directories carry the same
-server. `protocol`, `ksa`, `players`, `max`, `password`, `system` and `mods` are read by nothing
+server. `protocol` is the version the server said it speaks, which need not be the directory's.
+`protocol`, `ksa`, `players`, `max`, `password`, `system` and `mods` are read by nothing
 today — the mod asks every server for all of it and shows what the server said. Write them anyway
 where they are cheap, since another reader may want them, but `host`, `port` and `name` are the
 whole of what matters now.
@@ -115,8 +116,8 @@ announcements and 60 reads a minute from one address.
 
 ## The three rules that matter
 
-**1. List what you have seen, never what you were told.** Send the game's own pre-join query to the
-address and list only what answers. This is the whole difference between a directory and a text
+**1. List what you have seen, never what you were told.** Ask the address what it is, with the
+question a game asks before it shows a row, and list only what answers. This is the whole difference between a directory and a text
 file. An announcement is unchecked, so a server is free to announce an address that never worked, a
 name it has since changed and a player count from an hour ago -- and a list that republishes such
 claims fills up with servers nobody can reach while reporting that all is well.
@@ -192,8 +193,9 @@ docker run -d --name ksamp-directory -p 8080:8080 \
     ghcr.io/laurensdev/ksamp-directory:v0.19.2
 ```
 
-Pin the tag to a release rather than tracking `main`. A directory reads a welcome in the protocol
-version it was built against, so which build you run decides which servers you can list at all.
+Pin the tag to a release rather than tracking `main`. It has to be one that speaks protocol 26 or
+later: before that a directory read a server through the handshake a join begins with, in the one
+protocol version it was built against, and listed nothing once servers had moved past it.
 
 It serves plain HTTP, so put TLS in front of it — any reverse proxy will do. What you submit to
 `directories.txt` has to be `https://`, and an `http://` URL is skipped by every reader without a
@@ -222,17 +224,41 @@ it on a host or a Docker network needs. Narrow it to your proxy's own network if
 you from one of those ranges as well. The address an announcement arrives from is the whole of what
 this trusts, and `X-Forwarded-For` is a header the sender chooses.
 
-`GET /health` answers `{"ok":true,"known":1,"listed":1,"protocol":23,"document":1}`. `known` counts
-entries and `listed` counts the ones currently in the list; the two differing is normal and is how
-many servers are announcing but not answering.
+`GET /health` answers `{"ok":true,"known":1,"listed":1,"protocol":26,"probe":1,"document":1}`. `known`
+counts entries and `listed` counts the ones currently in the list; the two differing is normal and
+is how many servers are announcing but not answering. `protocol` is the build it was made from and
+says nothing about what it can list; `probe` is the version of the question it asks, which does.
 
 There is no conformance suite for a directory of your own. The nearest things are this one's
 `/health`, `tests/RosterTests.cs` for the expiry and reachability rules, and pointing a game at your
 URL through its own `directories.json` to see whether rows appear.
 
-## A directory is tied to one protocol version
+## A directory is not tied to a protocol version
 
-It can only read a welcome in the version it was built against, so it cannot list a server speaking
-another one — and says so in that server's log, naming both versions. That is deliberate: a row a
-player cannot join is noise, and `Wire.Version`, the KSA build and the mod set all have to match
-before a join works. During a version change, servers disappear from lists until they update.
+The protocol's version moves at most releases, because it is how a server says "everybody updates
+together", and a directory is updated when whoever runs it gets to it. So the question a directory
+asks and the answer it reads are the two datagrams that are read whatever version they are stamped
+with:
+
+```
+Ask     KSMP | version u16 | 29 | probe u8 | zeros, to 1200 bytes in all
+Facts   KSMP | version u16 | 30 | probe u8 | name | system | has a world u8 | mods | players u8 | most u8 | flags u8 | KSA build
+```
+
+Little-endian; a text is a length byte and UTF-8, and `mods` has a two-byte length. `version` is
+the sender's own protocol version, and the one on a `Facts` is what goes in a row's `protocol`.
+`probe` is 1 and changes only if a field already there moves or changes meaning; a field added
+after the last is not that, and a reader stops at the last one it knows. The lowest bit of `flags` is a
+password being wanted.
+
+A directory lists a server in whatever version it answers. Whether a game can join it is the game's
+to work out, and it does: its own mod asks every row the same question and says which of the two is
+out of date.
+
+An ask is padded because it is answered to an address nobody has checked. A server answers none
+shorter than 1,200 bytes and never with more than it was asked with, so asking one costs a stranger
+at least what the server sends on their behalf.
+
+A server older than protocol 26 knows neither datagram. It answers an ask as it answers anything of
+another version, with a refusal in its own, and this directory tells that server's log which
+version it saw and that the server is the one to update.

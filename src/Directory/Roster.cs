@@ -190,7 +190,7 @@ public sealed class Roster
                 .OrderByDescending(e => e.Facts!.Players)
                 .ThenBy(e => e.Host, StringComparer.OrdinalIgnoreCase)
                 .Select(e => new Listed(
-                    e.Host, e.Port, e.Facts!.ServerName, Wire.Version, e.Facts.KsaBuild,
+                    e.Host, e.Port, e.Facts!.ServerName, e.Facts.Protocol, e.Facts.KsaBuild,
                     e.Facts.Players, e.Facts.MaxPlayers, e.Facts.Password, e.Facts.System, e.Facts.Mods,
                     wall.ToUnixTimeSeconds() - (long)Math.Max(0.0, now - e.Answered), e.NameIsEnough))];
             return new Listing(Listings.Version, name, servers);

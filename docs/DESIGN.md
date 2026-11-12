@@ -30,7 +30,13 @@ server runs no world at all, which is why it needs no game and runs anywhere .NE
   answers in another, so the tools can drive a game; only a developer's install starts it.
 
 Every datagram starts with `KSMP` and the protocol version, so anything else is dropped, and a game of
-another version is refused by name rather than misread.
+another version is refused by name rather than misread. Two are read whatever the version: `Ask`, which
+a list of servers sends an address to learn what is there, and `Facts`, which answers it. They carry
+`Wire.ProbeVersion` instead, because `Wire.Version` moves whenever the shared world changes shape and a
+directory is somebody else's machine: read through the join's own hello and welcome, every release
+emptied every directory built before it, though neither datagram had changed since protocol 23. An ask
+is padded to 1,200 bytes and never answered with more, so a server sends a stranger no more than the
+stranger sent it.
 
 ## What the server keeps
 
@@ -789,7 +795,7 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
 
   A row also says the round trip, which cost nothing to know: the probe is a question and its
   answer, so the time between them was already being measured and simply not written down. It is
-  taken from the hello that was answered rather than the first one sent, so a server that needed
+  taken from the ask that was answered rather than the first one sent, so a server that needed
   asking twice is not charged for the lost datagram.
 
   A row carries what a server said of itself rather than what a directory claimed of it, which is
@@ -837,11 +843,19 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   reached it, and what a directory answers goes into the log whatever it says. What has not been
   seen is the case that matters most to somebody standing a server up -- a port closed or forwarded
   wrongly, and an operator reading the refusal and acting on it.
-- **A directory somebody else runs.** `servers.ksarmory.com` is deployed and listing, and the split
-  it needed holds: this repository owns the container, the KSArmory repository owns the hostname and
-  the Caddy site block in front of it. What the whole design turns on and nobody has done is a
-  second directory, on different hardware and under a different person -- which is the case that
-  decides whether retiring this one ever costs a player anything.
+- **A directory somebody else runs, listing a server newer than itself.** There is one:
+  `ksamp.safeshows.dev`, on other hardware and under another person, and in `directories.txt`. On
+  2026-11-12 its `/health` said `"known":2,"listed":0,"protocol":23` while both KSArmory servers
+  spoke 25 and were listed at `servers.ksarmory.com`; each server's log had the directory's answer,
+  `it answered at 45.133.178.13:50100 in protocol 25; this directory lists protocol 23`. Nothing a
+  directory reads had changed between 23 and 25. `Ask` and `Facts` are the answer to that, and are
+  driven over loopback only: a server answering an asker three versions either side of it, a prober
+  reading a server stamped 99, and a roster listing it under that number. What has not been seen is
+  a real directory of one release listing a real server of the next, which cannot be until both are
+  past protocol 26.
+- **The list in a game, of a server of another version.** A server that says what it is in another
+  version is drawn as the rows `update your mod` and `server is older` were before, from the version
+  alone; `Browser.Update` throws the rest of the answer away. Not seen in a game.
 - **Grass and rocks kept off the extra launchpads.** KSA keeps four circles of ground clear of
   ground clutter for a whole planet -- the cap is in the clutter compute shader as much as in the
   struct handed to it, so a mod cannot raise it -- and spends one on each of the first four

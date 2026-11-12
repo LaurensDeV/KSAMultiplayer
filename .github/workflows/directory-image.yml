@@ -3,9 +3,8 @@
 # The digest is what gets deployed, not the tag: infra/server pins TF_VAR_directory_image to it, so a
 # machine runs the image that was built rather than whatever the tag points at today.
 #
-# It watches src/Protocol as well as src/Directory, because a directory reads a welcome in the
-# version it was built against: a protocol change it was not rebuilt for is a directory that lists
-# nothing and says so in every server's log.
+# It watches src/Protocol as well as src/Directory, because the question a directory asks a server
+# and the answer it reads are compiled in from there.
 
 name: Directory image
 

@@ -156,7 +156,13 @@ internal static class Browser
         _probes.Update();
         foreach ((IPEndPoint at, List<Row> rows) in Asked.ToArray())
         {
-            if (_probes.Answered.TryGetValue(at, out ServerFacts? facts))
+            // What it is, but in another version: nothing this game can join, so it is shown as the
+            // version and not as a row of facts that every check below would pass.
+            if (_probes.Answered.TryGetValue(at, out ServerFacts? other) && other.Protocol != Wire.Version)
+            {
+                foreach (Row r in rows) (r.Speaks, r.Trouble) = (other.Protocol, Versions(other.Protocol));
+            }
+            else if (_probes.Answered.TryGetValue(at, out ServerFacts? facts))
             {
                 double rtt = _probes.Rtt.TryGetValue(at, out double took) ? took : double.NaN;
                 foreach (Row r in rows) (r.Facts, r.At, r.Trouble, r.Ping) = (facts, at, "", rtt);
