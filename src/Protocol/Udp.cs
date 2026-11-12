@@ -12,6 +12,10 @@ public sealed class Udp : IDisposable
 {
     private const int MostQueued = 4096;
 
+    // How long the reader waits to be told there is something to read before it looks at whether
+    // the socket has been closed under it, microseconds.
+    private const int LookEveryMicroseconds = 100_000;
+
     private readonly Socket _socket;
     private readonly Thread _reader;
     private readonly ConcurrentQueue<(byte[] Data, IPEndPoint From, double Arrived)> _in = new();
@@ -78,6 +82,13 @@ public sealed class Udp : IDisposable
         {
             try
             {
+                // Never waiting in the receive itself. Closing a socket waits for whoever is in
+                // it to come out, and makes them: on Windows and Linux. On macOS a UDP receive
+                // cannot be made to return, so closing a socket nobody was sending to waited for
+                // ever -- the list of servers' own, when the game was closed, and a game with
+                // this mod in it never finished exiting. Asked first, for a tenth of a second at
+                // a time, the reader is in the receive only while there is a datagram to take.
+                if (!_socket.Poll(LookEveryMicroseconds, SelectMode.SelectRead)) continue;
                 int n = _socket.ReceiveFrom(buffer, ref any);
                 Received++;
                 if (_in.Count < MostQueued) _in.Enqueue((buffer[..n], (IPEndPoint)any, _clock()));
@@ -95,7 +106,9 @@ public sealed class Udp : IDisposable
     {
         if (_closed) return;
         _closed = true;
+        // The reader out of the socket first, which it is within one look, and only then the
+        // socket: see Read for what closing it under a reader costs.
+        _reader.Join(1000);
         _socket.Dispose();
-        _reader.Join(500);
     }
 }
