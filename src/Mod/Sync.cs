@@ -402,6 +402,9 @@ internal static class Sync
     /// </summary>
     public static string LastServer { get; private set; } = "";
 
+    /// <summary>The password this game joined with, which a Discord invite carries along with the address.</summary>
+    public static string ServerPassword => _asking?.Password ?? "";
+
     public static double Wall() => Clock.Elapsed.TotalSeconds;
 
     /// <summary>

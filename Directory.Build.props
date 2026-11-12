@@ -19,6 +19,30 @@
   </PropertyGroup>
 
   <!--
+    Discord's Social SDK, unpacked as Discord hands it out: include/, lib/, bin/. It is Discord's to
+    distribute: its Social SDK Terms allow it shipped inside the mod (2(a)) and forbid it on its own
+    (2(b)), so it goes in the release zip beside the mod and is never committed. First match
+    wins: DISCORD_SDK_DIR, then Import/discord_social_sdk/, then a discord_social_sdk checkout beside
+    this repository. Without one the mod is built without Discord, and runs without it.
+  -->
+  <PropertyGroup>
+    <DiscordSdkDir Condition="'$(DiscordSdkDir)' == '' AND '$(DISCORD_SDK_DIR)' != ''">$([MSBuild]::EnsureTrailingSlash('$(DISCORD_SDK_DIR)'))</DiscordSdkDir>
+    <DiscordSdkDir Condition="'$(DiscordSdkDir)' == '' AND Exists('$(MSBuildThisFileDirectory)Import/discord_social_sdk/include/cdiscord.h')">$(MSBuildThisFileDirectory)Import/discord_social_sdk/</DiscordSdkDir>
+    <DiscordSdkDir Condition="'$(DiscordSdkDir)' == '' AND Exists('$(MSBuildThisFileDirectory)../discord_social_sdk/discord_social_sdk/include/cdiscord.h')">$(MSBuildThisFileDirectory)../discord_social_sdk/discord_social_sdk/</DiscordSdkDir>
+  </PropertyGroup>
+
+  <!--
+    The Discord application the mod speaks as. Discord's Developer Terms count an application id as
+    a developer credential, which "may not be embedded in open source projects" (2(d)), so it is
+    given to the build and never written in the source: DISCORD_APPLICATION_ID, or
+    Import/discord-application-id.txt. Without one the mod has no Discord.
+  -->
+  <PropertyGroup>
+    <DiscordApplicationId Condition="'$(DiscordApplicationId)' == '' AND '$(DISCORD_APPLICATION_ID)' != ''">$(DISCORD_APPLICATION_ID)</DiscordApplicationId>
+    <DiscordApplicationId Condition="'$(DiscordApplicationId)' == '' AND Exists('$(MSBuildThisFileDirectory)Import/discord-application-id.txt')">$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)Import/discord-application-id.txt').Trim())</DiscordApplicationId>
+  </PropertyGroup>
+
+  <!--
     The KSA build this tree is for. A server has no game to ask and holds every player to this, so
     it is written down here, where the server's build reads it, and the mod's build is failed below
     when the assemblies it found are another build's: the two ship under one tag, and a server

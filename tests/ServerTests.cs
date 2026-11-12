@@ -824,6 +824,10 @@ public class ServerTests
         Assert.Empty(rig.Server.Players);
         Assert.False(later.Joined);
         Assert.Equal("", later.Out);
+        // A game that joins is told how many players the server takes, for a Discord party to say.
+        Client joined = rig.Join("Alice", mods: "Core,KSArmory");
+        rig.Until(() => joined.Joined, what: "Alice to join");
+        Assert.Equal(16, joined.MostPlayers);
     }
 
     [Fact]

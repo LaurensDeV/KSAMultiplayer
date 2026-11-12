@@ -896,6 +896,19 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   Read against KSArmory, whose warp policy writes the speed, and KSACars, whose own hook writes it
   during one of its races and whose car physics writes a craft's state in the same window as `Pull`.
   Not yet watched with either of them installed.
+- **Discord, past the invite.** `src/Mod/Discord.cs` calls the Social SDK's C API: rich presence
+  with a party (an id hashed from the server's address, the roster's size, and
+  the most players the welcome with the cookie said on the way in, so Discord adds
+  nothing to the protocol) and a join secret of the address and the password;
+  `SetActivityJoinCallback` hands an accepted invite to the panel, which joins it, or from the start
+  window asks the server first as Connect does; and `RegisterLaunchCommand` starts the game the way it
+  was started this time for an invite accepted while it is closed. It runs only in a build given an
+  application id (`DISCORD_APPLICATION_ID` or `Import/discord-application-id.txt`, never the source:
+  Discord's Developer Terms 2(d) forbid it in an open-source project) and beside
+  `discord_partner_sdk`. Seen in a Discord client with nobody signed in to the SDK: the presence,
+  "Joining" then "Flying superheavystock (1 of 16)", and an invite sent from it that the other
+  account accepted. That accepting it puts that player's game on the server, running or closed, has
+  not been watched.
 - **The Multiplayer window before KSA's configuration and its welcome.** KSA's configuration at
   start comes before StarMap's `AllModsLoaded`, so a prefix on `Popup.DrawAll` goes in at
   `ImmediateLoad` (`Mod.PrepareSystems`, inside `ModLibrary.PrepareAll`) and draws the window instead

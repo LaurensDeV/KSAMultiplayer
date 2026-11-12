@@ -2,6 +2,8 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <!-- Discord's Social SDK is a C library, called through function pointers. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>KSAMultiplayer</RootNamespace>
     <!-- StarMap loads "<EntryAssembly>.dll" from mod.toml, so this name must match it. -->
     <AssemblyName>KSAMultiplayer</AssemblyName>
@@ -62,6 +64,22 @@
     <Reference Include="$(KsaDllDir)Planet.Core.dll" Private="false" />
     <Reference Include="$(KsaDllDir)BepuUtilities.dll" Private="false" />
     <Reference Include="$(KsaDllDir)BepuPhysics.dll" Private="false" />
+  </ItemGroup>
+
+  <!--
+    Discord's native library beside the mod, where Discord.cs loads it from, with the SDK's own
+    notices. $(DiscordSdkDir) is resolved by Directory.Build.props; whichever platforms' builds it
+    holds are the ones that go out.
+  -->
+  <!-- Read back by Discord.cs; resolved by Directory.Build.props, and never in the source. -->
+  <ItemGroup Condition="'$(DiscordApplicationId)' != ''">
+    <AssemblyMetadata Include="DiscordApplicationId" Value="$(DiscordApplicationId)" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(DiscordSdkDir)' != ''">
+    <None Include="$(DiscordSdkDir)bin/release/discord_partner_sdk.dll" Condition="Exists('$(DiscordSdkDir)bin/release/discord_partner_sdk.dll')" Link="discord_partner_sdk.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    <None Include="$(DiscordSdkDir)lib/release/libdiscord_partner_sdk.so" Condition="Exists('$(DiscordSdkDir)lib/release/libdiscord_partner_sdk.so')" Link="libdiscord_partner_sdk.so" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    <None Include="$(DiscordSdkDir)License-Notices.txt" Condition="Exists('$(DiscordSdkDir)License-Notices.txt')" Link="discord-license-notices.txt" CopyToOutputDirectory="PreserveNewest" Visible="false" />
   </ItemGroup>
 
 </Project>
