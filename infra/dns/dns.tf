@@ -65,4 +65,10 @@ resource "cloudflare_dns_record" "world_srv" {
   }
 
   comment = "Where ${each.key}.${var.domain} answers: UDP ${each.value.port}. Read by the mod, by nothing else."
+
+  # Cloudflare answers with the priority beside the record as well as inside it, and a priority
+  # set nowhere but inside is one every plan since offers to take away again.
+  lifecycle {
+    ignore_changes = [priority]
+  }
 }
