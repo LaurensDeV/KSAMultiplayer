@@ -265,13 +265,20 @@ internal static class Pads
     /// <summary>
     /// Whether the site a menu is pointed at has a pad to put a craft on. True whenever it cannot be
     /// told: a launch is never refused over a question this mod could not answer.
+    ///
+    /// <para>And true of a place that has no pad at all, which is every place KSA offers off
+    /// Earth: where Viking 1 came down on Mars is a landmark, a craft launched there is set on the
+    /// ground, and nothing of this mod's stands there to be taken. Asked only whether a pad was
+    /// free, such a place answered that none was, and every launch from Luna, Mars and Venus was
+    /// refused as a full site -- in a game played alone as much as in a shared one.</para>
     /// </summary>
     public static bool Room(object menu)
     {
         try
         {
             (Celestial? body, string site) = Chosen(menu);
-            return body is null || site.Length == 0 || Free(body, site) is not null;
+            if (body?.BodyTemplate is not { } template || site.Length == 0) return true;
+            return At(template, site).Count == 0 || Free(body, site) is not null;
         }
         catch (Exception e)
         {
