@@ -101,6 +101,23 @@ public class RosterTests
         Assert.Equal(3, listed[0].Players);
         Assert.Equal("A server", listed[0].Name);
         Assert.Equal(Wire.Version, listed[0].Protocol);
+        Assert.False(listed[0].Srv);
+    }
+
+    [Fact]
+    public void AServerWhoseNameGivesItsPortIsListedAsFoundByItsNameAlone()
+    {
+        Roster roster = new();
+        IPAddress machine = IPAddress.Parse("45.133.178.13");
+        roster.Announce("cars.example.com", 50101, machine, 0.0);
+        roster.Heard(Roster.Key("cars.example.com", 50101), Said(players: 0), 1.0);
+        // What the watch found when it looked the name up: an SRV record for this port.
+        roster.Due(100.0).Single().NameIsEnough = true;
+
+        Listed listed = roster.Snapshot("d", 1.0, DateTimeOffset.UnixEpoch).Servers.Single();
+        Assert.Equal(("cars.example.com", 50101, true), (listed.Host, listed.Port, listed.Srv));
+        // As the directory serves it, which is how a page that is not this game reads it.
+        Assert.Contains("\"srv\":true", System.Text.Json.JsonSerializer.Serialize(listed, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)));
     }
 
     [Fact]

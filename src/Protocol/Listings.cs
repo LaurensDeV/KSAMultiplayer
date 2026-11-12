@@ -15,6 +15,12 @@ namespace KSAMultiplayer;
 /// having.</para>
 /// </summary>
 /// <param name="Seen">When the directory last had an answer from it, as seconds since 1970. Zero from a directory that keeps no times, such as a hand-written list.</param>
+/// <param name="Srv">
+/// Whether the name alone finds the server: every SRV record under it gives this port, so a
+/// reader may show <c>cars.example.com</c> where it would have shown <c>cars.example.com:50101</c>,
+/// and a player may type it so. A hint like the rest: a game looks the record up for itself
+/// before it drops the port.
+/// </param>
 public sealed record Listed(
     string Host,
     int Port,
@@ -26,7 +32,8 @@ public sealed record Listed(
     bool Password = false,
     string System = "",
     string Mods = "",
-    long Seen = 0);
+    long Seen = 0,
+    bool Srv = false);
 
 /// <summary>
 /// What a directory answers, and the whole of what one has to be able to do.

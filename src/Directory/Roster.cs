@@ -31,6 +31,9 @@ public sealed class Entry
     /// <summary>Why it is not listed, in words its operator can act on. Empty once it is.</summary>
     public string Trouble { get; set; } = "";
 
+    /// <summary>Whether every SRV record under its name gives its port, so that the name alone finds it. Looked up each time the name is.</summary>
+    public bool NameIsEnough { get; set; }
+
     public string Where => Port == Wire.DefaultPort ? Host : $"{Host}:{Port}";
 }
 
@@ -189,7 +192,7 @@ public sealed class Roster
                 .Select(e => new Listed(
                     e.Host, e.Port, e.Facts!.ServerName, Wire.Version, e.Facts.KsaBuild,
                     e.Facts.Players, e.Facts.MaxPlayers, e.Facts.Password, e.Facts.System, e.Facts.Mods,
-                    wall.ToUnixTimeSeconds() - (long)Math.Max(0.0, now - e.Answered)))];
+                    wall.ToUnixTimeSeconds() - (long)Math.Max(0.0, now - e.Answered), e.NameIsEnough))];
             return new Listing(Listings.Version, name, servers);
         }
     }

@@ -53,7 +53,14 @@ internal static class Browser
 
         public bool Waiting => Facts is null && Trouble.Length == 0;
 
-        public string Where => Port == Wire.DefaultPort ? Host : $"{Host}:{Port}";
+        /// <summary>
+        /// Whether its name alone finds it: every SRV record under the name gives this port,
+        /// which this game has looked up for itself. Typed without a port, that name is looked
+        /// up the same way when it is connected to.
+        /// </summary>
+        public bool NameIsEnough { get; set; }
+
+        public string Where => Port == Wire.DefaultPort || NameIsEnough ? Host : $"{Host}:{Port}";
 
         /// <summary>The name to show: its own, else what a directory called it, else its address.</summary>
         public string Title =>
@@ -331,6 +338,15 @@ internal static class Browser
             Ask(new IPEndPoint(literal.MapToIPv4(), row.Port), row);
             return;
         }
+        // And whether the port needs saying. A server on a port of its own is shown with it, and
+        // one whose name has an SRV record for that port is reached by the name alone.
+        if (row.Port != Wire.DefaultPort && !row.NameIsEnough)
+        {
+            _ = Srv.Resolve($"{Srv.Service}.{row.Host.Trim().TrimEnd('.')}", TimeSpan.FromSeconds(3)).ContinueWith(t =>
+            {
+                if (t.IsCompletedSuccessfully && t.Result is { Length: > 0 } records && records.All(r => r.Port == row.Port)) Named.Enqueue(row);
+            }, TaskScheduler.Default);
+        }
         _resolving++;
         Task<IPAddress[]> finding = Dns.GetHostAddressesAsync(row.Host, AddressFamily.InterNetwork);
         _ = finding.ContinueWith(t =>
@@ -342,6 +358,7 @@ internal static class Browser
     }
 
     private static readonly System.Collections.Concurrent.ConcurrentQueue<(Row Row, IPEndPoint? At)> Pending = new();
+    private static readonly System.Collections.Concurrent.ConcurrentQueue<Row> Named = new();
 
     private static void Ask(IPEndPoint at, Row row)
     {
@@ -353,6 +370,7 @@ internal static class Browser
     /// <summary>Takes up whatever resolved since the last frame, before the probes are drained.</summary>
     private static void Resolved()
     {
+        while (Named.TryDequeue(out Row? named)) named.NameIsEnough = true;
         while (Pending.TryDequeue(out (Row Row, IPEndPoint? At) r))
         {
             // Counted down before anything else, including for a row the list no longer has: a

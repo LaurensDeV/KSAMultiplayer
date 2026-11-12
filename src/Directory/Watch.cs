@@ -147,6 +147,20 @@ public sealed class Watch(Roster roster, Ticker clock, ILogger<Watch> log) : Bac
         });
     }
 
+    /// <summary>Whether every SRV record under a name gives this port. False where there is none, or nothing answered.</summary>
+    private static async Task<bool> NamedAt(string host, int port)
+    {
+        try
+        {
+            return await Srv.Resolve($"{Srv.Service}.{host.Trim().TrimEnd('.')}", TimeSpan.FromSeconds(3)).ConfigureAwait(false) is { Length: > 0 } records
+                   && records.All(r => r.Port == port);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
     private static async Task<(IPEndPoint At, string Key, string Trouble)> Where(Entry e)
     {
         string key = Roster.Key(e.Host, e.Port);
@@ -176,6 +190,10 @@ public sealed class Watch(Roster roster, Ticker clock, ILogger<Watch> log) : Bac
             return (nowhere, key, $"{e.Host} does not resolve to an IPv4 address");
         }
         if (found.Length == 0) return (nowhere, key, $"{e.Host} does not resolve to an IPv4 address");
+        // A server on a port of its own is listed with that port after its name, which is right
+        // and is not what its operator set a name up for: where the name's SRV record already
+        // says the port, the listing says the name is enough.
+        e.NameIsEnough = e.Port != Wire.DefaultPort && await NamedAt(e.Host, e.Port).ConfigureAwait(false);
         if (e.FromHere)
         {
             if (found.FirstOrDefault(Roster.Reachable) is not { } usable)
