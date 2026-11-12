@@ -162,7 +162,7 @@ public static class Wire
     /// player count is half a row, and a row that cannot say "needs KSA 2026.11.10.5801" sends a
     /// player to find that out by being thrown out.</para>
     /// </summary>
-    public const ushort Version = 24;
+    public const ushort Version = 25;
 
     /// <summary>The port a server listens on unless it is given another, and what an address with no port in it means.</summary>
     public const int DefaultPort = 50100;
@@ -170,6 +170,9 @@ public static class Wire
     public const int BufferBytes = 8192;
     public const int NameChars = 24;
     public const int KeyChars = 96;
+
+    /// <summary>The longest name a mod's channel may have, and the most one of its words about a craft may weigh.</summary>
+    public const int ChannelChars = 48, ExtraBytes = 128;
     public const int ChatChars = 200;
 
     /// <summary>The longest an admin's token is: 32 random bytes in base64url come to 43 characters.</summary>
@@ -254,6 +257,7 @@ public static class Wire
         Op = 25,
         Alive = 26,
         Dock = 27,
+        Extra = 28,
     }
 
     /// <summary>Where a warp has got to: nobody has asked, somebody has and is waiting, or it is running.</summary>
@@ -427,6 +431,18 @@ public static class Wire
 
     /// <summary>A craft its owner's game no longer has: destroyed, recovered or boarded.</summary>
     public sealed record Gone(string Key) : Message(Kind.Gone);
+
+    /// <summary>
+    /// What another mod says of a craft its player owns, as that craft is now: a car's steering and
+    /// throttle, say. The newest word is the only one that matters, so it is said like a state --
+    /// often, once, and not again if it is lost.
+    ///
+    /// <para>Neither this protocol nor the server knows what is in it. <paramref name="Channel"/> is
+    /// the mod's own name for what it is saying and carries its version, and
+    /// <paramref name="Data"/> is that mod's to read; a game without the mod hears it and nobody
+    /// is listening. Relayed as a state is: from the craft's owner, to everybody else.</para>
+    /// </summary>
+    public sealed record Extra(byte Owner, string Key, string Channel, byte[] Data) : Message(Kind.Extra);
 
     /// <summary>
     /// Two craft that have docked in one game: <paramref name="Consumed"/> was taken into
@@ -664,6 +680,13 @@ public static class Wire
             case Gone g:
                 w.Text(g.Key, KeyChars);
                 break;
+            case Extra x:
+                w.U8(x.Owner);
+                w.Text(x.Key, KeyChars);
+                w.Text(x.Channel, ChannelChars);
+                w.U8((byte)Math.Min(x.Data.Length, ExtraBytes));
+                w.Bytes(x.Data.AsSpan(0, Math.Min(x.Data.Length, ExtraBytes)));
+                break;
             case Dock d:
                 w.Text(d.Consumed, KeyChars);
                 w.Text(d.Survivor, KeyChars);
@@ -731,6 +754,7 @@ public static class Wire
                 Kind.Owners => ReadOwners(ref r),
                 Kind.Gone => new Gone(r.Text(KeyChars)),
                 Kind.Dock => new Dock(r.Text(KeyChars), r.Text(KeyChars), r.U8()),
+                Kind.Extra => new Extra(r.U8(), r.Text(KeyChars), r.Text(ChannelChars), r.Take(Math.Min((int)r.U8(), ExtraBytes)).ToArray()),
                 Kind.Swept => new Swept(r.Text(KeyChars)),
                 Kind.Chat => new Chat(r.U8(), r.Text(ChatChars)),
                 Kind.Command => new Command(r.Text(ChatChars)),

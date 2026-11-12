@@ -185,6 +185,20 @@ public sealed class Client : IDisposable
     /// <summary>Dockings the server has told of: the craft that went, the craft it went into, and whose that is now.</summary>
     public Queue<(string Consumed, string Survivor, byte By)> Docked { get; } = new();
 
+    /// <summary>What other players' games have said of their craft on a mod's behalf, newest last.</summary>
+    public Queue<Wire.Extra> Extras { get; } = new();
+
+    // No more of them than this are kept waiting for the game to take them up: each is only worth
+    // its newest, and a game that is loading takes none.
+    private const int MostExtrasWaiting = 512;
+
+    /// <summary>Says what a mod says of a craft of this player's. See <see cref="Wire.Extra"/>.</summary>
+    public void SendExtra(string key, string channel, byte[] data)
+    {
+        if (!Joined || key.Length == 0 || channel.Length == 0 || data.Length > Wire.ExtraBytes) return;
+        Send(new Wire.Extra(Id, key, channel, data));
+    }
+
     /// <summary>Names the operator has swept the world by: this game takes away every craft of its own that matches.</summary>
     public Queue<string> Swept { get; } = new();
 
@@ -547,6 +561,10 @@ public sealed class Client : IDisposable
                 // Everything held under the old name follows it, so nothing of this craft is lost.
                 if (_tracks.Remove(n.Was, out Track? moved)) _tracks[n.Now] = moved;
                 Renamed.Enqueue((n.Was, n.Now));
+                return;
+            case Wire.Extra x when Joined && x.Owner != Id && x.Key.Length > 0 && x.Channel.Length > 0:
+                if (Extras.Count >= MostExtrasWaiting) Extras.Dequeue();
+                Extras.Enqueue(x);
                 return;
             case Wire.Dock d when Joined && d.Consumed.Length > 0 && d.Survivor.Length > 0:
                 // The roster says the same a moment later. Taken from here so that the frame this

@@ -545,6 +545,13 @@ public sealed class GameServer : IDisposable
                 Broadcast(gone, p => p.Loaded && p != player);
                 foreach (double after in GoneAgainAfterSeconds) _goneAgain.Add((gone.Key, player.Id, _clock() + after));
                 return;
+            // A mod's word about a craft, passed on as the craft's state is and on the same
+            // footing: from the player who has it, and to everybody else. Not read here.
+            case Wire.Extra extra when player.Loaded && extra.Channel.Length > 0 && extra.Data.Length <= Wire.ExtraBytes:
+                if (OwnerOf(extra.Key) != player.Id) return;
+                Wire.Extra passed = extra with { Owner = player.Id };
+                Broadcast(passed, p => p.Loaded && p != player);
+                return;
             case Wire.Dock dock when player.Loaded && dock.Consumed.Length > 0 && dock.Survivor.Length > 0 && dock.Consumed != dock.Survivor:
                 OnDock(player, dock.Consumed, dock.Survivor);
                 return;

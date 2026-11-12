@@ -528,6 +528,31 @@ public class ServerTests
     }
 
     [Fact]
+    public void WhatAModSaysOfACraftIsPassedOnFromItsOwnerAndNobodyElse()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        a.Claim("Buggy", controlling: true);
+        rig.Until(() => b.OwnerOf("Buggy") == a.Id, what: "Bob to hear of the buggy");
+
+        byte[] steering = [1, 40, 0, 255];
+        a.SendExtra("Buggy", "cars:drive/v1", steering);
+        rig.Until(() => b.Extras.Count > 0, what: "Bob to be told what the car mod says of it");
+        Wire.Extra heard = b.Extras.Dequeue();
+        Assert.Equal(("Buggy", "cars:drive/v1", a.Id), (heard.Key, heard.Channel, heard.Owner));
+        Assert.Equal(steering, heard.Data);
+        Assert.Empty(a.Extras);
+
+        // Said by a game that does not have the craft, it goes nowhere; nor does one too long to be a word.
+        b.SendExtra("Buggy", "cars:drive/v1", [9]);
+        a.SendExtra("Buggy", "cars:drive/v1", new byte[Wire.ExtraBytes + 1]);
+        rig.For(0.5);
+        Assert.Empty(a.Extras);
+        Assert.Empty(b.Extras);
+    }
+
+    [Fact]
     public void ADockingOfTwoCraftThatAreOtherPlayersIsNobodysToSay()
     {
         using Rig rig = new();
