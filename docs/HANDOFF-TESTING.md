@@ -251,3 +251,21 @@ the owner's own went to 75".
 - **Why the meeting once would not settle over the lossy wire.** It has run twice since.
 - **Nothing a craft carries that is not a part and not a name is checked at all**, which is how the
   kitten got through. Worth deciding what else falls in that gap.
+
+## Another mod in the rig
+
+`KSAMP_RIG_MODS="FastAndPurrious" ./tools/two-games.sh --test` starts both games with KSACars as
+well. The rig only lists the mod in each game's manifest; its own tooling puts it there first, from
+the KSACars checkout:
+
+```bash
+KSA_MODS_DIR=/mnt/c/Users/<you>/KSAMultiplayerTest/A/mods ./tools/deploy.sh    # and again for B
+```
+
+That is a developer's install, so KSACars' own bridge is up beside this mod's:
+`KSA_USER_DIR=<game> python3 <KSACars>/tools/ksa-mcp/server.py cli spawn '{"craft":"Beach Buggy","name":"Buggy2","lat":28.608,"lon":-80.604}'`
+parks a car 40 m from the kitten at the launch site (with no `lat` and `lon` it is parked at 0, 0,
+which is the sea), and `cli drive '{"craft":"Buggy2","focus":true,"throttle":0.5,"steer":0.4,"seconds":6}'`
+drives it. `drive` with only `craft` reports what that game's KSACars has the car doing, which
+is how the other game's copy is read. `tools/install-testcraft.sh` there writes the car designs
+into the real profile; pointed at a rig profile by hand, it writes them there.

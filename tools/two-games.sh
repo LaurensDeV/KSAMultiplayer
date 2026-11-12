@@ -215,6 +215,13 @@ for name in A B; do
     # Only this mod: the server refuses a player without a mod the world's giver had enabled, and a
     # save holding another mod's parts would not load in a profile without it.
     printf '[[mods]]\nid = "Core"\nenabled = true\n\n[[mods]]\nid = "KSAMultiplayer"\nenabled = true\n' > "$dir/manifest.toml"
+    # And any other mod asked for, which its own tooling has put in this game's mods folder
+    # beforehand: KSAMP_RIG_MODS="FastAndPurrious" for the cars. Both games get the same, as the
+    # server would turn away one that had a mod the other had not.
+    IFS=',' read -ra extra <<< "${KSAMP_RIG_MODS:-}"
+    for id in "${extra[@]}"; do
+        [[ -n "$id" && -d "$dir/mods/$id" ]] && printf '\n[[mods]]\nid = "%s"\nenabled = true\n' "$id" >> "$dir/manifest.toml"
+    done
     python3 - "$USER_DIR/settings.toml" "$dir/settings.toml" "$name" <<'PY'
 import os, re, sys
 source, target, name = sys.argv[1:]
