@@ -1261,6 +1261,10 @@ internal static class Sync
             (told.Can, told.Here) = (_sustains, World.Focused);
             told.Watching = World.Watched is { } seen && World.IsAlive(seen) ? KeyOf(seen) : "";
         }
+        // What the other mods are told of, every frame and whatever this game is doing: in a shared
+        // world or out of one, and which craft somebody else is driving.
+        Guests.InSession(Now == Stage.Playing);
+        Guests.Remotes(Now == Stage.Playing ? Puppets.Keys : []);
         if (_client is not { } c) return;
         try
         {
@@ -1617,6 +1621,11 @@ internal static class Sync
                 : "the world was cleared, and this game had nothing matching to take away");
         }
 
+        // What other players' games say of their craft on a mod's behalf, for this game's copy of that mod.
+        while (c.Extras.TryDequeue(out Wire.Extra? word))
+        {
+            if (here.TryGetValue(word.Key, out Vehicle? of) && Puppets.ContainsKey(of)) Guests.Arrived(of, word.Channel, word.Data);
+        }
         TakeOwnDockings(c);
         TakeDockings(c, here, flown);
         // What was flown may have been taken into another player's craft, or given up to them.
@@ -2048,6 +2057,8 @@ internal static class Sync
             // Kept, where it is held only for being near, by being said to be.
             if (c.NearOf(key) && Near(v, flown)) state = state with { Flags = state.Flags | Wire.StateFlags.Near };
             c.SendState(state);
+            // And what other mods say of it, which is as new as its state and as soon out of date.
+            foreach ((string channel, byte[] data) in Guests.Of(v)) c.SendExtra(key, channel, data);
             (m.SaidBefore, m.Said, m.SaidAt) = (m.Said, state, now);
         }
     }

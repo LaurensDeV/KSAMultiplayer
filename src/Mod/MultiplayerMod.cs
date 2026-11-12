@@ -24,7 +24,13 @@ public sealed class MultiplayerMod
     /// is why this mod wants StarMap 0.5.3 or later: nothing before 0.5 has any to hand, and 0.5.3 is
     /// the first that runs on KSA 2026.11.10.5801.
     /// </summary>
-    public MultiplayerMod(IModMenuService menu) => _menu = menu;
+    public MultiplayerMod(IModMenuService menu, IEventBus bus)
+    {
+        _menu = menu;
+        // Here, before any other mod has had a turn: nothing said on the bus is kept for whoever
+        // listens later.
+        Guests.Start(bus);
+    }
 
     [StarMapImmediateLoad]
     public void OnImmediateLoad(Mod mod)

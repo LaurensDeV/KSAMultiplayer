@@ -1,10 +1,52 @@
 # Letting other mods into the session
 
-**Nothing here is built.** This is the plan for one thing: a mod that has never heard of KSA
-Multiplayer should be able to put its own state into a shared world, and KSA Multiplayer should carry
-it without having heard of that mod either. Written against StarMap 0.5.0 and protocol 18; the mod
-now wants StarMap 0.5.3 and speaks protocol 23, so check anything concrete here against the code
-before relying on it.
+A mod that has never heard of KSA Multiplayer puts its own state into a shared world, and KSA
+Multiplayer carries it without having heard of that mod either.
+
+## What is built
+
+The first and smallest part, in protocol 25: what a mod says of a craft as it is now. It is the
+whole of `src/Mod/Guests.cs`, and KSACars is the mod it was built with -- a car driven in one game
+is drawn in the other within 2 cm, steering as its driver steers, at the same revs and in the same
+gear, with neither mod referring to the other.
+
+The two mods agree on five names on StarMap's event bus (`IEventBus`, injected into a mod's
+constructor) and on nothing else. A bus event is matched by its name and by the type it carries,
+and a type of a mod's own is another type in every other mod, so every message is a
+`Dictionary<string, object?>` of plain values and KSA's own types:
+
+| name | from | carries |
+| --- | --- | --- |
+| `craftsync.hello` | a mod, once every mod is loaded | `mod`. Answered in the same dictionary before the call returns: `provider = true`, and `session`, whether a world is shared now. Nothing set is nobody there |
+| `craftsync.session` | to mods | `active`, when this game enters or leaves a shared world |
+| `craftsync.authority` | to mods | `craft` (a `Vehicle`) and `remote`. A remote craft is put where another game has it at every physics step: a mod must not move it, and may go on animating it |
+| `craftsync.state` | a mod | `craft`, `channel`, `data`: at most 128 bytes about a craft this game's player has, newest wins. Sent to every other game with the craft's own state, and no longer once it has not been said for a second |
+| `craftsync.state.remote` | to mods | the same three, as another game's copy of the mod said them of a craft that is remote here |
+
+`channel` is the mod's own name for what it is saying and carries its version
+(`ksacars:drive/v1`); neither this mod nor the server reads `data`. On the wire it is `Wire.Extra`,
+relayed as a state is: from the craft's owner, to everybody else, once.
+
+A mod listens from its constructor, since the bus keeps nothing for whoever listens later, and
+asks `craftsync.hello` from `[StarMapAllModsLoaded]`. With nothing answering it is in a game of
+its own and none of this does anything. Both games need the mod, which the server already sees
+to: it turns away a game whose mods are not the world's.
+
+What a mod with physics of its own has to do for a remote craft is the part that is not in the
+contract. Two mods prefix `Vehicle.PrepareWorker` in no order either can count on, so KSACars
+steps a remote car for its wheels and springs and then takes back what the step did to where the
+car is and how it moves.
+
+Not built: an event said once and in order (a toggle), a word to everybody that is about no craft
+(a race about to start), anything kept for a player who joins later (a circuit), and a way for a
+mod to ask who has a craft. The plan below has all four.
+
+## The plan this came from
+
+**Nothing below here is built**, and what is built above is smaller than it: no handshake that
+hands over a table of functions, and names that do not say whose they are. Written against
+StarMap 0.5.0 and protocol 18, so check anything concrete here against the code before relying on
+it.
 
 The two mods must agree on one thing, and it is a string.
 

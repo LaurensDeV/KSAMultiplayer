@@ -54,6 +54,9 @@ Once you're in:
   fly. Their name is over the craft they're in; their other craft carry a faint `Alice's Lander`.
 - **Launch as usual.** A craft you launch, a stage you drop and a kitten you send on EVA show up for
   everyone else.
+- **Other mods' craft.** A mod that adds to a craft -- a car's steering and wheels -- can share
+  that with every other game through StarMap, without either mod knowing of the other. KSACars
+  does. `docs/MOD-API.md` is what a mod has to say and listen for.
 - **Dock.** Your craft and another become one craft, for everyone, and two again when you undock.
   Docked with another player's craft, the one craft belongs to whoever's game docked them first:
   that player flies it and the other rides along, watching. Only its owner can undock it. When

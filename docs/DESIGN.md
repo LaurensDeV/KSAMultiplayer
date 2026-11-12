@@ -239,6 +239,14 @@ from the same game, if that one was heard in the last thirty seconds: on a wire 
 datagrams the first of two can finish arriving after the second, and the last to arrive was what
 every other game built and what everybody who joined later was given.
 
+**What another mod knows of a craft goes with the craft.** A car's steering and its wheels are in
+the car mod's memory and in nothing KSA saves. `Guests` listens on StarMap's event bus for what a
+mod says of a craft this player has and sends it with the craft's state (`Wire.Extra`, opaque
+bytes under the mod's own channel name), hands what arrives to this game's copy of that mod, and
+tells mods which craft are held here for another game, so that a mod with physics of its own
+leaves those alone. Neither mod refers to the other; `docs/MOD-API.md` has the five names they
+share.
+
 **A docking is done in one world and told to the rest.** KSA docks two craft where its contact
 solver or its port menu says so, in whichever game sees it first, and takes one into the other. That
 game tells the server (`Wire.Dock`, the craft that went and the craft that is left), and the
@@ -523,6 +531,10 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   capsule within 22 cm through the approach, 8 cm over a wire of 50 ms each way that loses one
   datagram in fifty. `tools/motion.py --scene fly-dock`. The rocket nobody flies is held by the
   game flying the capsule and drawn within 3 mm in the other, where it was 3.4 m out.
+- **A car from another mod, driven.** KSACars' buggy driven in one game is drawn in the other
+  within 2 cm with nothing put outright, and that game's copy of KSACars shows it steering 2.1
+  degrees as its driver does, at the same throttle, in the same gear and within 50 rpm. On
+  loopback; the two mods found each other over the bus in both games.
 - **Two players' craft, docked and undocked.** A capsule flown onto the port of a rocket the other
   player is in docks in the flying game: the server gives that player the rocket, the other is
   told and left watching it, and both worlds hold 110 parts. Undocked two minutes on, the rocket
@@ -935,6 +947,10 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   are built port to port in every other game, and KSA's collisions can knock one away at 4 m/s.
   A coasting copy a metre out is put back on its orbit within half a second, so it is one or two
   steps of about a metre and not 13 m of drift. The knock itself is not prevented.
+- **Other mods, past one word about a craft.** Nothing said once and in order, nothing to
+  everybody, nothing kept for a late joiner; KSACars' races, its circuits and its opponents are not
+  shared, and its hold on time warp during a race has not met this mod's vote. Not tried over the
+  lossy wire or with more than one mod speaking.
 - **A docking is still a game's word.** The server holds it against where the two players' own
   games last said their craft were, which stops a craft being taken from across a world and
   does not stop a game that lies about where its own craft is. Each game is trusted for its own
