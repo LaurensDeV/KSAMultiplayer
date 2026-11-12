@@ -12,6 +12,7 @@ namespace KSAMultiplayer;
 /// </summary>
 /// <param name="Players">How many are on it now, and <paramref name="MaxPlayers"/> the most it takes.</param>
 /// <param name="KsaBuild">The build it wants, empty when it wants whichever it is given.</param>
+/// <param name="LinkId">What its operator calls it where a name that never changes is wanted, empty when they have not said: see <see cref="ModLink"/>.</param>
 /// <param name="Protocol">The <see cref="Wire.Version"/> it speaks, which need not be this one: a server may be asked what it is by anybody, and joined only by a game of its own version.</param>
 public sealed record ServerFacts(
     string ServerName,
@@ -22,16 +23,17 @@ public sealed record ServerFacts(
     int MaxPlayers,
     bool Password,
     string KsaBuild,
-    ushort Protocol = Wire.Version)
+    ushort Protocol = Wire.Version,
+    string LinkId = "")
 {
     // A welcome is read in this version or not at all.
     public static ServerFacts Of(Wire.Welcome w) =>
         new(w.ServerName, w.System, w.HasWorld, w.Mods, w.Players, w.MaxPlayers,
-            w.Flags.HasFlag(Wire.WelcomeFlags.Password), w.KsaBuild);
+            w.Flags.HasFlag(Wire.WelcomeFlags.Password), w.KsaBuild, LinkId: w.LinkId);
 
     public static ServerFacts Of(Wire.Facts f) =>
         new(f.ServerName, f.System, f.HasWorld, f.Mods, f.Players, f.MaxPlayers,
-            f.Flags.HasFlag(Wire.WelcomeFlags.Password), f.KsaBuild, f.Speaks);
+            f.Flags.HasFlag(Wire.WelcomeFlags.Password), f.KsaBuild, f.Speaks, f.LinkId);
 
     /// <summary>Whether the server has as many players as it takes. Unknown of a server that said no maximum, which is no reason to keep a player out of it.</summary>
     public bool Full => MaxPlayers > 0 && Players >= MaxPlayers;

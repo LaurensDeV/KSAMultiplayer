@@ -780,6 +780,19 @@ public class ServerTests
     }
 
     [Fact]
+    public void AServerSaysWhatItsOperatorCallsItToAGameThatAsks()
+    {
+        using Rig rig = new(new ServerOptions { Name = "Cars", Id = "my-clan-cars" });
+        Client asking = new(rig.Now);
+        rig.Clients.Add(asking);
+        asking.Probe(new IPEndPoint(IPAddress.Loopback, rig.Server.Port));
+        rig.Until(() => asking.Probed is not null, what: "an answer from a server that has an id");
+        Assert.Equal("my-clan-cars", asking.Probed!.LinkId);
+        // And so a link to its mods is the same link wherever the server is reached.
+        Assert.EndsWith("&name=Cars&id=ksamp-my-clan-cars", ModLink.For("Cars@1.0.0", "", asking.Probed.ServerName, "10.0.0.7:50100", asking.Probed.LinkId));
+    }
+
+    [Fact]
     public void AGameCanAskWhichSystemTheWorldIsInWithoutJoining()
     {
         using Rig rig = new();
@@ -794,6 +807,7 @@ public class ServerTests
         // from this answer alone: nobody on it, room for sixteen, no password, and no build wanted
         // because a server with no world takes whichever build brings it one.
         Assert.Equal(new ServerFacts("KSA server", "", false, "", 0, 16, false, ""), early.Probed);
+        Assert.Equal("", early.Probed!.LinkId);
 
         rig.Server.SetWorld(new Blob(BlobKind.World, "", 0, 0.0, Rig.FakeWorld()), "B1", ["Core", "KSArmory"], "SolLite", timeKnown: false);
         Client later = new(rig.Now);

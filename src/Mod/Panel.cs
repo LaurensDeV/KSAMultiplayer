@@ -867,10 +867,13 @@ internal static class Panel
 
         // The refusal this window can see coming, between what the server wants and the button that
         // would go there anyway.
+        string? link = null;
         if (Known(typed) is { } about && Refused(about) is { Length: > 0 } no)
         {
             ImGui.PushTextWrapPos(0f);
             ImGui.TextColored(in ConsoleStyle.Danger, no);
+            link = ModsLink(about, typed);
+            if (link is not null && _linkSaid.Length > 0) ImGui.TextColored(in ConsoleStyle.Pending, _linkSaid);
             ImGui.PopTextWrapPos();
         }
 
@@ -884,15 +887,26 @@ internal static class Panel
         // with three rows in it.
         ImGui.SetCursorPosY(PanelTall - ConsoleWidgets.ButtonHeight - PanelPadding.Y);
         bool ready = typed.Length > 0 && NameText.ToString().Trim().Length > 0 && !Sync.AskingAhead && !WouldBeRefused;
-        ImGui.BeginDisabled(!ready);
-        if (ConsoleWidgets.PrimaryButton("CONNECT".AsSpan(), new float2(ImGui.GetContentRegionAvail().X, ConsoleWidgets.ButtonHeight)))
+        float2 across = new(ImGui.GetContentRegionAvail().X, ConsoleWidgets.ButtonHeight);
+        // In CONNECT's place and not beside it. A server that would turn this game away for its
+        // mods has that button greyed, and a greyed button over a live one is two answers to
+        // "what do I press"; the one thing there is to do about it is the one button.
+        if (link is not null)
         {
-            Save();
-            Remember(AddressText.ToString());
-            if (ahead) Sync.AskAhead(AddressText.ToString());
-            else Sync.Connect(AddressText.ToString(), NameText.ToString(), PasswordText.ToString());
+            if (ConsoleWidgets.PrimaryButton("GET THESE MODS WITH BOREA".AsSpan(), across)) OpenModsLink(link);
         }
-        ImGui.EndDisabled();
+        else
+        {
+            ImGui.BeginDisabled(!ready);
+            if (ConsoleWidgets.PrimaryButton("CONNECT".AsSpan(), across))
+            {
+                Save();
+                Remember(AddressText.ToString());
+                if (ahead) Sync.AskAhead(AddressText.ToString());
+                else Sync.Connect(AddressText.ToString(), NameText.ToString(), PasswordText.ToString());
+            }
+            ImGui.EndDisabled();
+        }
         ImGui.EndChild();
         ImGui.PopStyleColor();
 
@@ -907,6 +921,73 @@ internal static class Panel
 
     // The address the window has asked about, so it asks once a server and again when the field changes.
     private static string _asked = "";
+
+    // The link last made and what it was made from, since making one reads every mod's version
+    // and this is asked every frame; and what came of pressing its button.
+    private static string _linkOf = "", _linkSaid = "";
+    private static string? _link;
+
+    /// <summary>
+    /// A link that has a mod manager make a game with the mods this server wants, where its mods
+    /// are why this game would be turned away and a link can say them. See <see cref="ModLink"/>.
+    ///
+    /// <para>Not for another build of KSA, which no list of mods mends. And said in the log the
+    /// once, so a player without the manager has it to paste and one with a question has it to
+    /// show.</para>
+    /// </summary>
+    private static string? ModsLink(ServerFacts f, string typed)
+    {
+        if (f.KsaBuild.Length > 0 && World.KsaBuild.Length > 0 && f.KsaBuild != World.KsaBuild) return null;
+        string of = $"{typed}\n{f.ServerName}\n{f.LinkId}\n{f.Mods}";
+        if (of == _linkOf) return _link;
+        (_linkOf, _linkSaid) = (of, "");
+        (string missing, string extra, string wrong) = Sync.ModsAgainst(f.Mods);
+        _link = missing.Length > 0 || wrong.Length > 0 || (f.Mods.Length > 0 && extra.Length > 0)
+            ? ModLink.For(f.Mods, World.Mods, f.ServerName, typed, f.LinkId)
+            : null;
+        if (_link is not null) Log.Info($"the mods {typed} wants, as a link a mod manager opens: {_link}");
+        return _link;
+    }
+
+    /// <summary>The button pressed by the bridge: the link the window offers now, opened, and what the window says came of it.</summary>
+    public static (string? Link, string Said) PressModsLink()
+    {
+        if (_link is null) return (null, "");
+        OpenModsLink(_link);
+        return (_link, _linkSaid);
+    }
+
+    /// <summary>
+    /// Hands the link to whatever this machine opens such links with. Only a link of this mod's
+    /// own making: what goes to the shell is a line a server had a hand in.
+    /// </summary>
+    private static void OpenModsLink(string link)
+    {
+        if (!ModLink.Is(link)) return;
+        try
+        {
+            // Asked first on Windows, which answers a link nothing is registered for with a
+            // window of its own offering to look in its shop.
+            if (OperatingSystem.IsWindows())
+            {
+                using Microsoft.Win32.RegistryKey? known = Microsoft.Win32.Registry.ClassesRoot.OpenSubKey("borea");
+                if (known is null)
+                {
+                    _linkSaid = "Borea is not installed here. It is a mod manager for KSA: github.com/KSAModding/Borea";
+                    return;
+                }
+            }
+            using global::System.Diagnostics.Process? opened =
+                global::System.Diagnostics.Process.Start(new global::System.Diagnostics.ProcessStartInfo(link) { UseShellExecute = true });
+            _linkSaid = "Opened in Borea. Create the instance there, and play from it.";
+            Log.Info("handed the link to the mod manager");
+        }
+        catch (Exception e)
+        {
+            _linkSaid = "Borea did not open. It is a mod manager for KSA: github.com/KSAModding/Borea";
+            Log.Warn($"the mods link did not open: {e.GetBaseException().Message}");
+        }
+    }
 
     /// <summary>
     /// How tall the list of servers is. Fixed, and scrolled inside: the fields and the buttons below

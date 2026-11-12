@@ -334,9 +334,17 @@ public sealed class GameServer : IDisposable
     public Admins Admins { get; }
 
     /// <summary>
-    /// The KSA build a player must run: the operator's if they named one, otherwise the build of the
-    /// world being handed out, otherwise the build of whoever is in. Empty when none is known, and
-    /// then any build is let in.
+    /// The KSA build a player must run: the operator's if they named one, otherwise the build this
+    /// server was built for. Only a server built without one goes on to the build of the world
+    /// being handed out, and then of whoever is in; empty when none of those is known, and then
+    /// any build is let in.
+    ///
+    /// <para>What it was built for and not what its world was saved by, which is what this was.
+    /// A mod and a server are released together for one build of KSA, so that build is the one a
+    /// player who can speak to this server at all is running. Going by the world meant a server
+    /// with no world yet wanted no build and said none on a list of servers, and a world saved
+    /// before KSA updated turned away everybody who had updated, on a server that had been brought
+    /// up to date for them.</para>
     ///
     /// <para>Whoever is in, because a world is not there the moment its first player is: it is
     /// asked of them and takes seconds to arrive, and an empty world the server started with was
@@ -671,7 +679,8 @@ public sealed class GameServer : IDisposable
         if (asked < Wire.AskBytes) return;
         Wire.Facts facts = new(Options.Name, _worldSystem, _world is not null, WorldMods,
                                (byte)Math.Min(_players.Count, 255), (byte)Math.Min(Options.MaxPlayers, 255),
-                               Options.Password.Length > 0 ? Wire.WelcomeFlags.Password : Wire.WelcomeFlags.None, RequiredBuild);
+                               Options.Password.Length > 0 ? Wire.WelcomeFlags.Password : Wire.WelcomeFlags.None, RequiredBuild,
+                               LinkId: Options.Id);
         // Only a name, a build and three hundred characters of mods, none of them in ASCII, come
         // to more than an ask. Said without the mods then, as a list too long is said clipped:
         // the handshake is what compares them.
@@ -696,7 +705,7 @@ public sealed class GameServer : IDisposable
             // carries them. The two that admit and refuse go to somebody who is past needing them.
             _udp.Send(new Wire.Welcome(0, "", Options.Name, _world is not null, Cookie(from, (long)(now / CookieSeconds)), _worldSystem, WorldMods,
                                        (byte)Math.Min(_players.Count, 255), (byte)Math.Min(Options.MaxPlayers, 255),
-                                       Options.Password.Length > 0 ? Wire.WelcomeFlags.Password : Wire.WelcomeFlags.None, RequiredBuild), from);
+                                       Options.Password.Length > 0 ? Wire.WelcomeFlags.Password : Wire.WelcomeFlags.None, RequiredBuild, Options.Id), from);
             return;
         }
         string? refused = _players.Count >= Options.MaxPlayers ? $"the server is full: {Options.MaxPlayers} players"

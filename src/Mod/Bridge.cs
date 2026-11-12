@@ -498,6 +498,15 @@ internal sealed class Bridge
             return Done(new() { ["stage"] = Sync.Now.ToString(), ["address"] = address });
         }
 
+        // The button that hands a server's mods to a mod manager, pressed: the same call the
+        // button makes, on whatever link the connect window is offering now.
+        if (command.Flag("mods_link", false))
+        {
+            (string? link, string said) = Panel.PressModsLink();
+            return link is null ? Failed("the connect window is offering no link to a server's mods")
+                                : Done(new() { ["link"] = link, ["said"] = said });
+        }
+
         // A warp is asked for and answered through the panel; these are the same two things, for a
         // test that has no hands.
         if (command.Has("warp"))
@@ -540,6 +549,26 @@ internal sealed class Bridge
             Dictionary<string, object?> said = new() { ["editor_open"] = KSA.Program.IsEditorOpen };
             if (KSA.Program.Editor is { } open)
             {
+                // Pointing the editor somewhere first, as its two dropdowns do: the body, which
+                // makes it list that body's places again, and then one of those. What it could
+                // not be asked to do before was launch from anywhere but where it opened, and
+                // every place off Earth is a place with no pad.
+                if (command.String("body") is { Length: > 0 } wantBody && command.String("site") is { Length: > 0 } wantSite)
+                {
+                    Type kind = open.GetType();
+                    object? bodies = HarmonyLib.AccessTools.Field(kind, "_celestialObjects")?.GetValue(open);
+                    object? there = (bodies as System.Collections.IEnumerable)?.Cast<object>().FirstOrDefault(o =>
+                        ((HarmonyLib.AccessTools.Field(o.GetType(), "Celestial")?.GetValue(o)
+                          ?? HarmonyLib.AccessTools.Property(o.GetType(), "Celestial")?.GetValue(o)) as KSA.Celestial)?.Id == wantBody);
+                    if (there is null) return Failed($"the editor does not offer {wantBody} to launch from");
+                    HarmonyLib.AccessTools.Field(kind, "_selectedCelestial")?.SetValue(open, there);
+                    HarmonyLib.AccessTools.Method(kind, "SetLocations")?.Invoke(open, null);
+                    object? places = HarmonyLib.AccessTools.Field(kind, "_locationObjects")?.GetValue(open);
+                    object? place = (places as System.Collections.IEnumerable)?.Cast<object>().FirstOrDefault(o =>
+                        HarmonyLib.AccessTools.Method(o.GetType(), "GetKey")?.Invoke(o, null) as string == wantSite);
+                    if (place is null) return Failed($"the editor does not offer {wantSite} on {wantBody}");
+                    HarmonyLib.AccessTools.Field(kind, "_selectedLocation")?.SetValue(open, place);
+                }
                 (KSA.Celestial? body, string site) = Pads.Chosen(open);
                 said["chosen_body"] = body?.Id;
                 said["chosen_site"] = site;

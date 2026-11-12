@@ -87,6 +87,7 @@ variable "worlds" {
     advertise              = optional(bool)
     advertise_as           = optional(string)
     server_name            = optional(string)
+    id                     = optional(string)
     max_players            = optional(number)
     snapshot_every_seconds = optional(number)
     memory_mb              = optional(number)

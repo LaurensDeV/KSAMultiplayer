@@ -105,12 +105,23 @@ public static class Settings
                 : throw new FormatException($"empty-world from {from} is '{system}', and there is no empty world for it; there is one for {string.Join(", ", StockWorld.Systems)}");
         }
 
+        string Id()
+        {
+            (string v, string from) = s["id"];
+            string id = v.Trim();
+            // Held to what a link can carry, here where the operator reads the answer: an id a
+            // game would have to drop is a server known by its address after all, silently.
+            return id.Length == 0 || ModLink.IsId(id) ? id
+                : throw new FormatException($"id from {from} is '{id}', which is not 1 to {Wire.IdChars} letters, digits, dots, dashes and underscores beginning and ending with a letter or digit");
+        }
+
         int port = Whole("port");
         if (port is < 0 or > 65535) throw new FormatException($"port {port} is not a port");
         ServerOptions options = new()
         {
             Port = port,
             Name = Text("name"),
+            Id = Id(),
             Password = Text("password"),
             MaxPlayers = Math.Clamp(Whole("max-players"), 1, 250),
             KsaBuild = Text("ksa-build"),

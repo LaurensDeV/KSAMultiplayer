@@ -150,6 +150,9 @@ resource "docker_container" "other_world" {
   env = concat(
     [
       "KSAMP_NAME=${coalesce(each.value.server_name, each.key)}",
+      # What a mod manager knows this world's mods by, which must outlast its name and its
+      # address. The key it has in this map is the one thing here that never changes.
+      "KSAMP_ID=${coalesce(each.value.id, each.key)}",
       "KSAMP_PORT=${each.value.port}",
       "KSAMP_MAX_PLAYERS=${coalesce(each.value.max_players, var.max_players)}",
       "KSAMP_SNAPSHOT_EVERY=${coalesce(each.value.snapshot_every_seconds, var.snapshot_every_seconds)}",

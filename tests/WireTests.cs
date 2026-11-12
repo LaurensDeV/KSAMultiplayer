@@ -87,6 +87,10 @@ public class WireTests
         Assert.Equal(new Wire.Op(false, ""), RoundTrip(new Wire.Op(false, "")));
         Assert.Equal(new Wire.Welcome(3, "", "Moon base", true), RoundTrip(new Wire.Welcome(3, "", "Moon base", true)));
         Assert.Equal(new Wire.Welcome(0, "", "Moon base", true, "c00kie", "SolLite"), RoundTrip(new Wire.Welcome(0, "", "Moon base", true, "c00kie", "SolLite")));
+        Assert.Equal(new Wire.Welcome(0, "", "Moon base", true, "c00kie", "SolLite", LinkId: "moon-base"),
+                     RoundTrip(new Wire.Welcome(0, "", "Moon base", true, "c00kie", "SolLite", LinkId: "moon-base")));
+        Assert.Equal(new Wire.Facts("Moon base", "SolLite", true, "Core", 3, 16, Wire.WelcomeFlags.None, "B1", LinkId: "moon-base"),
+                     RoundTrip(new Wire.Facts("Moon base", "SolLite", true, "Core", 3, 16, Wire.WelcomeFlags.None, "B1", LinkId: "moon-base")));
         Assert.Equal(new Wire.Ask(), RoundTrip(new Wire.Ask()));
         Assert.Equal(new Wire.Facts("Moon base", "SolLite", true, "Core,KSAMultiplayer", 3, 16, Wire.WelcomeFlags.Password, "2026.11.10.5801"),
                      RoundTrip(new Wire.Facts("Moon base", "SolLite", true, "Core,KSAMultiplayer", 3, 16, Wire.WelcomeFlags.Password, "2026.11.10.5801")));
@@ -169,6 +173,9 @@ public class WireTests
         // A field added after the ones a reader knows is not a new form of the answer.
         buffer[n] = 7;
         Assert.Equal(told, Wire.Read(buffer.AsSpan(0, n + 1), out _));
+        // Nor is one this reader knows and the server was built before: the id, which is the
+        // last thing written and here the one byte saying it is empty.
+        Assert.Equal(told, Wire.Read(buffer.AsSpan(0, n - 1), out _));
 
         // A form of the answer this cannot read is a server that answered, and no more than that.
         buffer[7] = (byte)(Wire.ProbeVersion + 1);
@@ -193,7 +200,8 @@ public class WireTests
 
         // The longest answer a mod list in ASCII makes, with room to spare.
         string wide = new('m', Wire.ProbeModsChars);
-        Assert.InRange(Wire.Write(new Wire.Facts(new string('n', 64), new string('s', 24), true, wide, 255, 255, Wire.WelcomeFlags.Password, new string('b', 64)), buffer),
+        Assert.InRange(Wire.Write(new Wire.Facts(new string('n', 64), new string('s', 24), true, wide, 255, 255, Wire.WelcomeFlags.Password, new string('b', 64),
+                                                 LinkId: new string('i', Wire.IdChars)), buffer),
                        1, Wire.AskBytes);
     }
 

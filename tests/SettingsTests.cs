@@ -89,6 +89,24 @@ public class SettingsTests
     }
 
     [Fact]
+    public void AnIdIsOneALinkCanCarry()
+    {
+        (ServerOptions unsaid, _, _) = Settings.Options(Settings.Resolve(None, NoEnvironment, new Dictionary<string, string>()));
+        Assert.Equal("", unsaid.Id);
+        (ServerOptions o, _, _) = Settings.Options(Settings.Resolve(None, NoEnvironment, new Dictionary<string, string> { ["id"] = " my-clan.cars " }));
+        Assert.Equal("my-clan.cars", o.Id);
+
+        // Said at start, to the operator. A game would have to drop an id it cannot put in a link,
+        // and the server would be known by its address without anybody having been told.
+        foreach (string bad in new[] { "my cars", "-cars", "cars&x=1", new string('a', Wire.IdChars + 1) })
+        {
+            FormatException e = Assert.Throws<FormatException>(() =>
+                Settings.Options(Settings.Resolve(None, NoEnvironment, new Dictionary<string, string> { ["id"] = bad })));
+            Assert.Contains("id from", e.Message);
+        }
+    }
+
+    [Fact]
     public void AnEmptyWorldIsOneTheServerCarries()
     {
         Dictionary<string, string> file = new() { ["empty-world"] = "SolLite" };

@@ -163,7 +163,8 @@ public static class Wire
     /// player to find that out by being thrown out.</para>
     ///
     /// <para>26 adds <see cref="Ask"/> and <see cref="Facts"/>, which are read whatever version they
-    /// are stamped with: see <see cref="ProbeVersion"/>. No other datagram changed. The number moves
+    /// are stamped with: see <see cref="ProbeVersion"/>, and a <see cref="Welcome"/> ends with what
+    /// the server's operator calls it. No other datagram changed. The number moves
     /// so that a server from before them answers an ask the way it answers anything of another
     /// version, by saying which it speaks; left at 25, such a server would drop the ask as a kind it
     /// does not know, and an old server would read on every list as an unreachable one.</para>
@@ -236,6 +237,12 @@ public static class Wire
     /// reflection belongs in a datagram only a joined player gets.</para>
     /// </summary>
     public const int ProbeModsChars = 300;
+
+    /// <summary>
+    /// The longest name a server is known by to whatever keeps a list of its mods: see
+    /// <see cref="ModLink"/>, which puts six characters before it and has sixty-four in all.
+    /// </summary>
+    public const int IdChars = 58;
 
     /// <summary>The most entries one <see cref="Owners"/> carries.</summary>
     public const int OwnersPerPage = 40;
@@ -330,9 +337,11 @@ public static class Wire
     /// anything from this address that it chose itself. Empty on a welcome that admits or refuses.</param>
     /// <param name="Mods">The mods the server's world wants, comma separated; empty when it asks none.</param>
     /// <param name="Players">How many players are on the server now, and <paramref name="MaxPlayers"/> the most it takes. Both are nothing to a game that has joined, which has a roster; they are what a list of servers is read for.</param>
+    /// <param name="LinkId">What the operator calls this server where a name that never changes is wanted, empty when they have not said: see <see cref="ModLink"/>.</param>
     /// <param name="KsaBuild">The build this server's world wants, empty when it wants whichever it is given. On a row of a list because a game cannot change its own build without being started again, so this is the one thing a player has to act on before clicking rather than after.</param>
     public sealed record Welcome(byte Id, string Refused, string ServerName, bool HasWorld, string Cookie = "", string System = "", string Mods = "",
-                                 byte Players = 0, byte MaxPlayers = 0, WelcomeFlags Flags = WelcomeFlags.None, string KsaBuild = "") : Message(Kind.Welcome);
+                                 byte Players = 0, byte MaxPlayers = 0, WelcomeFlags Flags = WelcomeFlags.None, string KsaBuild = "",
+                                 string LinkId = "") : Message(Kind.Welcome);
 
     /// <summary>
     /// What is this server? Asked by a list of servers, of an address it knows nothing else about,
@@ -350,8 +359,12 @@ public static class Wire
     /// so is not written a second time. The one thing here a reader of another version needs: the
     /// rest is a row of a list, and this is whether the row can be joined.
     /// </param>
+    /// <param name="LinkId">
+    /// As on a <see cref="Welcome"/>. The last field, and so absent from a server that was built
+    /// before it, which a reader takes as not said.
+    /// </param>
     public sealed record Facts(string ServerName, string System, bool HasWorld, string Mods, byte Players, byte MaxPlayers,
-                               WelcomeFlags Flags, string KsaBuild, ushort Speaks = Version) : Message(Kind.Facts);
+                               WelcomeFlags Flags, string KsaBuild, ushort Speaks = Version, string LinkId = "") : Message(Kind.Facts);
 
     /// <param name="Rtt">The player's round trip to the server, s, as that player last measured it; negative until it has.</param>
     /// <param name="Can">The speed that player's game is managing, as a multiple of real time:
@@ -625,6 +638,7 @@ public static class Wire
                 w.U8(m.MaxPlayers);
                 w.U8((byte)m.Flags);
                 w.Text(m.KsaBuild, 64);
+                w.Text(m.LinkId, IdChars);
                 break;
             case Ask a:
                 w.U8(a.Probe);
@@ -640,6 +654,7 @@ public static class Wire
                 w.U8(f.MaxPlayers);
                 w.U8((byte)f.Flags);
                 w.Text(f.KsaBuild, 64);
+                w.Text(f.LinkId, IdChars);
                 break;
             case Roster r:
                 w.U8((byte)Math.Min(r.Players.Length, 64));
@@ -809,14 +824,15 @@ public static class Wire
                     // A form this cannot read is a server that answered and no more than that,
                     // which is what a datagram of another version already is to whoever asked.
                     if (r.U8() != ProbeVersion) return null;
-                    return new Facts(r.Text(64), r.Text(NameChars), r.U8() != 0, r.LongText(ProbeModsChars), r.U8(), r.U8(), (WelcomeFlags)r.U8(), r.Text(64), version);
+                    return new Facts(r.Text(64), r.Text(NameChars), r.U8() != 0, r.LongText(ProbeModsChars), r.U8(), r.U8(), (WelcomeFlags)r.U8(), r.Text(64), version,
+                                     r.More ? r.Text(IdChars) : "");
             }
             if (version != Version) return null;
             Message m = (Kind)data[6] switch
             {
                 Kind.Hello => new Hello(r.Text(NameChars), r.Text(64), r.LongText(4000), r.Text(NameChars), r.Text(64), r.Text(TokenChars), r.Text(CookieChars)),
                 Kind.Welcome => new Welcome(r.U8(), r.LongText(RefusedChars), r.Text(64), r.U8() != 0, r.Text(CookieChars), r.Text(NameChars), r.LongText(ProbeModsChars),
-                                            r.U8(), r.U8(), (WelcomeFlags)r.U8(), r.Text(64)),
+                                            r.U8(), r.U8(), (WelcomeFlags)r.U8(), r.Text(64), r.Text(IdChars)),
                 Kind.Roster => ReadRoster(ref r),
                 Kind.Bye => new Bye(r.Text(200)),
                 Kind.Alive => new Alive(),
@@ -987,6 +1003,9 @@ public static class Wire
     {
         private readonly ReadOnlySpan<byte> _from = from;
         private int _at;
+
+        /// <summary>Whether anything is left to read: what a field added at the end of a datagram is asked for by.</summary>
+        public readonly bool More => _at < _from.Length;
 
         public ReadOnlySpan<byte> Take(int n)
         {
