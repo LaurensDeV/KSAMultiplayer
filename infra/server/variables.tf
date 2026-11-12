@@ -64,13 +64,22 @@ variable "memory_mb" {
 # left out is the same as the first server's.
 #
 # Each world is its own container and its own volume, so one of them filling its memory, wedging or
-# being restarted leaves the others alone. They share the machine, the image and the release: a
-# world can be pinned to another image by hand, and there is no variable for it until something
-# actually needs one.
+# being restarted leaves the others alone. They share the machine, and the release unless a world
+# names an `image` of its own: that world runs that build until the entry is changed, whatever is
+# released meanwhile, which is how a world is kept for a build that is not a release -- a branch
+# that speaks a newer protocol, say -- or held back on an old one.
+#
+# `mods` is what the server turns a player away for not having, as the `mods` setting is: ids
+# separated by commas, each held to a version after an @ where one is given. Left out, the world
+# wants whatever the first player to bring it a world had enabled.
 variable "worlds" {
   description = "Other servers on this machine: the name each answers to, its UDP port, and what it does not share."
   type = map(object({
     port                   = number
+    image                  = optional(string)
+    mods                   = optional(string)
+    ksa_build              = optional(string)
+    empty_world            = optional(string)
     server_name            = optional(string)
     max_players            = optional(number)
     snapshot_every_seconds = optional(number)

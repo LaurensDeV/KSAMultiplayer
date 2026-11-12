@@ -1,0 +1,110 @@
+# The other worlds on the machine, brought into line with the KSAMP_WORLDS repository variable,
+# without a release and without touching the first server.
+#
+#   gh variable set KSAMP_WORLDS --body '{ mpcars = { port = 50101, image = "ghcr.io/<owner>/ksamp-server@sha256:...", mods = "Core,KSAMultiplayer,FastAndPurrious" } }'
+#   gh workflow run Worlds                 # the plan, for reading
+#   gh workflow run Worlds -f apply=true   # and done
+#
+# A world that names an `image` runs that build until its entry changes, whatever is released
+# meanwhile; the Server image workflow builds one from any branch (`gh workflow run "Server image"
+# --ref <branch>`) and prints its digest. infra/README.md has the rest: the firewall rule, which is
+# typed on the machine, and the name, which is the DNS layer's.
+
+name: Worlds
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Apply the plan. Left off, the plan is only shown."
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# One at a time with a release's deploy, which writes the same state.
+concurrency:
+  group: infra-server
+  cancel-in-progress: false
+
+jobs:
+  worlds:
+    name: The other worlds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: "1.9.0"
+
+      - name: The key, and the state's credentials
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+          TF_STATE_ENDPOINT: ${{ secrets.TF_STATE_ENDPOINT }}
+          TF_STATE_ACCESS_KEY: ${{ secrets.TF_STATE_ACCESS_KEY }}
+          TF_STATE_SECRET_KEY: ${{ secrets.TF_STATE_SECRET_KEY }}
+        run: |
+          if [[ -z "$DEPLOY_SSH_KEY" || -z "$TF_STATE_ACCESS_KEY" ]]; then
+              echo "::error::DEPLOY_SSH_KEY and the TF_STATE_* secrets are not set, so nothing here can reach the machine or its state."
+              exit 1
+          fi
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
+          umask 077
+          cat > infra/server/backend.hcl <<BACKEND
+          bucket     = "$TF_STATE_BUCKET"
+          endpoints  = { s3 = "$TF_STATE_ENDPOINT" }
+          access_key = "$TF_STATE_ACCESS_KEY"
+          secret_key = "$TF_STATE_SECRET_KEY"
+          BACKEND
+
+      - name: Plan
+        working-directory: infra/server
+        env:
+          WORLDS: ${{ vars.KSAMP_WORLDS }}
+          TF_VAR_ssh_private_key: ~/.ssh/deploy
+          TF_IN_AUTOMATION: "1"
+        run: |
+          tofu init -backend-config=backend.hcl
+
+          # What the first server and the directory run now, read out of the state and handed
+          # straight back: this is about the other worlds, and an image left unsaid is a
+          # container taken away.
+          image_of() { tofu state show -no-color "$1" 2>/dev/null | sed -n 's/^ *name *= *"\(.*\)"$/\1/p' | head -1; }
+          server=$(image_of 'docker_image.server[0]')
+          directory=$(image_of 'docker_image.directory[0]')
+          if [[ -z "$server" ]]; then
+              echo "::error::the state has no server in it. A release puts one there; this only adds worlds beside it."
+              exit 1
+          fi
+          export TF_VAR_server_image="$server"
+          if [[ -n "$directory" ]]; then export TF_VAR_directory_image="$directory"; fi
+          if [[ -n "$WORLDS" ]]; then export TF_VAR_worlds="$WORLDS"; fi
+
+          tofu plan -input=false -out=worlds.plan
+          {
+              echo "### The plan"
+              echo
+              echo '```'
+              tofu show -no-color worlds.plan | tail -n 60
+              echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Apply
+        if: inputs.apply
+        working-directory: infra/server
+        env:
+          TF_IN_AUTOMATION: "1"
+        run: |
+          tofu apply -input=false worlds.plan
+          {
+              echo "### Applied"
+              echo
+              echo '```'
+              tofu output -no-color worlds
+              echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

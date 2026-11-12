@@ -93,6 +93,16 @@ resource "docker_container" "server" {
 # together. Separate containers mean they need not -- a world can be held on an older image by hand
 # when that is wanted -- which is the property this shape buys and one process would not have.
 
+# The image of a world that names one of its own. Immutable like the release's, and for the same
+# reason: the machine runs what was built, and a tag can be moved.
+resource "docker_image" "other_world" {
+  for_each = var.server_image == "" ? {} : { for name, world in var.worlds : name => world.image if world.image != null }
+
+  name         = each.value
+  keep_locally = false
+  force_remove = true
+}
+
 # Losing this is losing that world's save. The lifecycle block means removing a world from the map
 # fails the plan rather than deleting its world: take it out of the state and remove the volume by
 # hand if that is really what is meant.
@@ -112,7 +122,7 @@ resource "docker_container" "other_world" {
   for_each = var.server_image == "" ? {} : var.worlds
 
   name  = "ksamp-${each.key}"
-  image = docker_image.server[0].repo_digest
+  image = each.value.image != null ? docker_image.other_world[each.key].repo_digest : docker_image.server[0].repo_digest
 
   restart  = "unless-stopped"
   must_run = true
@@ -132,11 +142,18 @@ resource "docker_container" "other_world" {
     container_path = "/data"
   }
 
-  env = [
-    "KSAMP_NAME=${coalesce(each.value.server_name, each.key)}",
-    "KSAMP_MAX_PLAYERS=${coalesce(each.value.max_players, var.max_players)}",
-    "KSAMP_SNAPSHOT_EVERY=${coalesce(each.value.snapshot_every_seconds, var.snapshot_every_seconds)}",
-  ]
+  # Only what a world says of itself: a setting left out is the server's own default, and the mods
+  # of a world that names none are those of whoever brings it one.
+  env = concat(
+    [
+      "KSAMP_NAME=${coalesce(each.value.server_name, each.key)}",
+      "KSAMP_MAX_PLAYERS=${coalesce(each.value.max_players, var.max_players)}",
+      "KSAMP_SNAPSHOT_EVERY=${coalesce(each.value.snapshot_every_seconds, var.snapshot_every_seconds)}",
+    ],
+    each.value.mods == null ? [] : ["KSAMP_MODS=${each.value.mods}"],
+    each.value.ksa_build == null ? [] : ["KSAMP_KSA_BUILD=${each.value.ksa_build}"],
+    each.value.empty_world == null ? [] : ["KSAMP_EMPTY_WORLD=${each.value.empty_world}"],
+  )
 
   memory = coalesce(each.value.memory_mb, var.memory_mb)
 

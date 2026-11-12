@@ -21,6 +21,8 @@ output "worlds" {
     for name, world in var.worlds :
     name => {
       port      = world.port
+      image     = coalesce(world.image, var.server_image)
+      mods      = world.mods
       container = "ksamp-${name}"
       console   = "docker attach ksamp-${name}"
       volume    = "ksamp-world-${name}"

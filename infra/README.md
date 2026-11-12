@@ -101,8 +101,47 @@ which save.
 
 **A world is its own container on purpose.** One of them filling its memory, wedging or being
 restarted leaves the others running, which is the whole reason these are not one process hosting
-several worlds. They do share the machine and the release: a world *can* be held on an older image
-when that is wanted, but by hand — there is no variable for it until something needs one.
+several worlds. They share the machine, and the release unless a world says otherwise.
+
+### A world on a build and a set of mods of its own
+
+A world's entry may name an `image`, and then it runs that build until the entry changes, whatever
+is released meanwhile; and `mods`, which is what that server turns a player away for not having.
+That is a second server for a mod that is not released yet, or for players who run another mod
+beside this one:
+
+    export TF_VAR_worlds='{ mpcars = {
+      port        = 50101
+      server_name = "Cars"
+      image       = "ghcr.io/<owner>/ksamp-server@sha256:..."
+      mods        = "Core,KSAMultiplayer@0.18.0+f0fd6cb,FastAndPurrious@0.1.12+8b152a3"
+    } }'
+
+**The image** is any build of the server. A release has one, and `gh workflow run "Server image"
+--ref <branch>` builds one from a branch and prints the line with its digest. A game and a server
+that speak different protocol versions refuse each other by name, so the server's build is already
+what holds players to a build of this mod that speaks its protocol.
+
+**The mods** are ids separated by commas, as the `mods` setting takes them, and each may be held
+to a version after an `@`. A game says what it has with the version each mod's own assembly
+carries, which for a mod built from a repository ends in the commit: `0.1.12+8b152a3f...`. So
+`FastAndPurrious` wants the mod at any version, `FastAndPurrious@0.1.12` wants that release
+whatever commit built it, and `FastAndPurrious@0.1.12+8b152a3` wants that build and no other. A
+player with another is told which one the server wants. The version a build carries is in its log's
+first lines, and in the refusal of a server that wants a different one. `ksa_build` and
+`empty_world` are the settings of the same names.
+
+**Without a release**, `.github/workflows/worlds.yml` applies the other worlds alone. It reads
+them from the repository variable `KSAMP_WORLDS`, which is the same text as `TF_VAR_worlds`, and
+reads what the first server and the directory run now out of the state, so neither is touched:
+
+    gh variable set KSAMP_WORLDS --body '{ mpcars = { port = 50101, image = "...", mods = "..." } }'
+    gh workflow run Worlds                 # shows the plan
+    gh workflow run Worlds -f apply=true
+
+A release's deploy passes the same variable, so a release leaves these worlds as they are: taken
+out of it, a release would plan to remove their containers and stop at their volumes. The
+firewall rule and the DNS layer's records are still typed by hand, as above.
 
 **Removing a world is deliberately awkward.** Its volume is `prevent_destroy`, so taking the entry
 out of the map fails the plan instead of deleting a world's save. Take it out of the state and remove

@@ -354,6 +354,10 @@ jobs:
     needs: [image, directory, publish, deployable]
     if: needs.deployable.outputs.ok == 'true'
     runs-on: ubuntu-latest
+    # One at a time with the Worlds workflow, which writes the same state.
+    concurrency:
+      group: infra-server
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
 
@@ -390,7 +394,12 @@ jobs:
           DIRECTORY_DIGEST: ${{ needs.directory.outputs.digest }}
           TF_VAR_ssh_private_key: ~/.ssh/deploy
           TF_IN_AUTOMATION: "1"
+          # The other worlds on the machine, as infra/server's `worlds` takes them: a repository
+          # variable, since they are not secret and a release that did not know of them would
+          # plan to take their containers away -- and fail on their volumes, which it may not.
+          WORLDS: ${{ vars.KSAMP_WORLDS }}
         run: |
+          if [[ -n "$WORLDS" ]]; then export TF_VAR_worlds="$WORLDS"; fi
           owner=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
           export TF_VAR_server_image="ghcr.io/$owner/ksamp-server@$DIGEST"
           # The two go up together on purpose: a directory lists a server only in the protocol
