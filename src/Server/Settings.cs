@@ -24,12 +24,13 @@ public static class Settings
     public static readonly Setting[] All =
     [
         new("name", Kind.Text, "KSA server", "the server's name, shown to players", true),
+        new("id", Kind.Text, "", "a short name for this server that never changes though its name and address may, in letters, digits, dots, dashes and underscores (my-clan-cars): a mod manager knows the mods it installed for this server by it; empty to be known by address", true),
         new("port", Kind.Whole, "50100", "UDP port to listen on", false),
         new("bind", Kind.Text, "", "address to listen on; empty for every address", false),
         new("password", Kind.Text, "", "a password players must give; empty for none", true),
         new("max-players", Kind.Whole, "16", "the most players at once, 1 to 250", true),
         new("data", Kind.Text, "data", "where the world is kept between runs, relative to where the server is started", false),
-        new("ksa-build", Kind.Text, "", "the KSA build players must run; empty for that of whoever gave the server its world, or is in it before it has one", true),
+        new("ksa-build", Kind.Text, "", "the KSA build players must run; empty for the build this server was built for", true),
         new("mods", Kind.Text, "", "the mods players must have, separated by commas, each held to a version after an @ where one is given (FastAndPurrious@0.1.13); empty for those of whoever gave the server its world", true),
         new("snapshot-every", Kind.Number, "300", "seconds between fresh saves of the world, at least 30", true),
         new("warp-answer", Kind.Number, "30", "seconds everyone has to answer a warp, 1 to 300", true),

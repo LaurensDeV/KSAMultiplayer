@@ -19,8 +19,8 @@ const string Usage = """
       --data <dir>           where the world is kept between runs (default ./data)
       --world <path>         start from this KSA save: its folder, or a zip of it,
                              replacing any world kept in --data
-      --ksa-build <build>    the KSA build players must run (default: that of
-                             whoever gave the server its world, or is in it)
+      --ksa-build <build>    the KSA build players must run (default: the one
+                             this server was built for)
       --mods <a,b,c>         the mods players must have (default: those of whoever
                              gave the server its world, which follows whoever last
                              handed one over)
@@ -264,6 +264,10 @@ try
         store.Save(new Blob(BlobKind.World, "", 0, 0.0, empty), options.KsaBuild, [], options.EmptyWorld, timeKnown: false);
         Say($"starting with an empty world in {options.EmptyWorld}; the first player joins into it rather than giving theirs");
     }
+    // Written into this assembly when it was built: see KsaBuild in Directory.Build.props.
+    string builtFor = typeof(GameServer).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyMetadataAttribute), false)
+        .OfType<System.Reflection.AssemblyMetadataAttribute>().FirstOrDefault(a => a.Key == "KsaBuild")?.Value ?? "";
+    options = options with { BuiltFor = builtFor };
     server = new GameServer(options, Now, store, bind);
 }
 catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or System.Net.Sockets.SocketException)
@@ -280,7 +284,8 @@ Listings.Agent = $"ksamp-server/{Version}";
 Announcer announcer = new(options, server.Port, Now, Path.Combine(dataFolder, "directories-seen.txt"));
 
 while (server.Said.TryDequeue(out string? early)) Say(early);
-Say($"ksamp-server {Version}, speaking protocol {Wire.Version}");
+Say($"ksamp-server {Version}, speaking protocol {Wire.Version}"
+    + (server.RequiredBuild.Length > 0 ? $", for players on KSA {server.RequiredBuild}" : ", for whichever KSA build its first player runs"));
 Say($"settings: {configPath}");
 Say($"{options.Name}: listening on UDP {(bind?.ToString() ?? "*")}:{server.Port}, up to {options.MaxPlayers} players{(options.Password.Length > 0 ? ", with a password" : "")}");
 Say(server.HasWorld ? "a world is ready to hand out" : "no world yet: the first player to join gives the server theirs");
@@ -427,7 +432,9 @@ void Command(string line, GameServer.Player? who = null)
             // The protocol, not just the release: it is the number that decides who can join, and the
             // one an operator needs when a player says they were refused by name.
             Answer($"ksamp-server {Version}, protocol {Wire.Version}, "
-                + (server.RequiredBuild.Length > 0 ? $"for KSA {server.RequiredBuild}" : "any KSA build until a world says otherwise"));
+                + (server.RequiredBuild.Length > 0 ? $"for KSA {server.RequiredBuild}" : "any KSA build until a world says otherwise")
+                + (server.Options.KsaBuild.Length > 0 && server.Options.BuiltFor.Length > 0 && server.Options.KsaBuild != server.Options.BuiltFor
+                    ? $" by its ksa-build setting, and built for {server.Options.BuiltFor}" : ""));
             break;
         case "status":
             double u = server.UniverseClock.Now(Now());

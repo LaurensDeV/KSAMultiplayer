@@ -894,6 +894,45 @@ public class ServerTests
     }
 
     [Fact]
+    public void AServerHoldsPlayersToTheBuildItWasBuiltFor()
+    {
+        using Rig rig = new(new ServerOptions { BuiltFor = "B1" });
+        // Before anybody has joined or brought a world, which is when a list of servers asks.
+        Assert.Equal("B1", rig.Server.RequiredBuild);
+        Client asking = new(rig.Now);
+        rig.Clients.Add(asking);
+        asking.Probe(new IPEndPoint(IPAddress.Loopback, rig.Server.Port));
+        rig.Until(() => asking.Probed is not null, what: "an answer from a server with no world");
+        Assert.Equal("B1", asking.Probed!.KsaBuild);
+
+        Client b = rig.Join("Bob", "B2");
+        rig.Until(() => b.Out.Length > 0, what: "another build to be turned away from an empty server");
+        Assert.Contains("this server is for KSA B1 and you run B2", b.Out);
+    }
+
+    [Fact]
+    public void AWorldSavedByAnotherBuildDoesNotMoveWhatAServerWasBuiltFor()
+    {
+        // The day after KSA updates: the world on disk was saved by the old build, and the server
+        // has been brought up to the release made for the new one.
+        using Rig rig = new(new ServerOptions { BuiltFor = "B2" });
+        rig.Server.SetWorld(new Blob(BlobKind.World, "", 0, 0.0, Rig.FakeWorld()), "B1", ["Core"], "SolLite", timeKnown: false);
+        Assert.Equal("B2", rig.Server.RequiredBuild);
+        Client a = rig.Join("Alice", "B2");
+        rig.Until(() => a.Joined, what: "a player on the build the server is for to be let in");
+    }
+
+    [Fact]
+    public void AnOperatorsBuildIsTakenOverTheOneAServerWasBuiltFor()
+    {
+        using Rig rig = new(new ServerOptions { BuiltFor = "B1", KsaBuild = "B9" });
+        Assert.Equal("B9", rig.Server.RequiredBuild);
+        // And a setting changed while it runs does not lose what it was built for.
+        rig.Server.Reconfigure(new ServerOptions { Port = rig.Server.Port });
+        Assert.Equal("B1", rig.Server.RequiredBuild);
+    }
+
+    [Fact]
     public void ABuildIsHeldToFromTheFirstPlayerInAndNotFromTheirWorldArriving()
     {
         using Rig rig = new();

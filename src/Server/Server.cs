@@ -61,6 +61,21 @@ public sealed record ServerOptions
     /// <summary>The name to be listed under, empty to be listed at whatever address a directory sees an announcement arrive from.</summary>
     public string AdvertiseAs { get; init; } = "";
 
+    /// <summary>
+    /// The KSA build this server was built for: the one its own release of the mod was compiled
+    /// against. A server has no game to ask, so this is written into it when it is built. Empty
+    /// in one that was built without it, which then goes by its world and its players.
+    /// </summary>
+    public string BuiltFor { get; init; } = "";
+
+    /// <summary>
+    /// What this server is called where a name that never changes is wanted, as its name may and
+    /// its address may: a mod manager knows a list of mods it has made a game from by it. The
+    /// operator's to say and nothing the server makes up or keeps, since a world is thrown away
+    /// and begun again far more often than a server becomes another server.
+    /// </summary>
+    public string Id { get; init; } = "";
+
     /// <summary>Where to announce to, separated by commas; empty for the built-in list.</summary>
     public string Directories { get; init; } = "";
 }
@@ -302,7 +317,8 @@ public sealed class GameServer : IDisposable
     {
         double now = _clock();
         ServerOptions was = Options;
-        Options = next with { Port = was.Port };
+        // Nor what it was built for, which is no setting and is in nothing a setting is read from.
+        Options = next with { Port = was.Port, BuiltFor = was.BuiltFor };
         // A shorter wait is not made to sit out the longer one already counting down.
         if (next.SnapshotEverySeconds != was.SnapshotEverySeconds) _snapshotNext = Math.Min(_snapshotNext, now + next.SnapshotEverySeconds);
         // A warp holds the clock for as long as it runs and gives it back at this speed when it ends.
@@ -328,6 +344,7 @@ public sealed class GameServer : IDisposable
     /// save their game did not write, or share a world with a game whose parts are not theirs.</para>
     /// </summary>
     public string RequiredBuild => Options.KsaBuild.Length > 0 ? Options.KsaBuild
+        : Options.BuiltFor.Length > 0 ? Options.BuiltFor
         : _worldBuild.Length > 0 ? _worldBuild
         : _players.Values.Select(p => p.KsaBuild).FirstOrDefault(b => b.Length > 0) ?? "";
 
@@ -756,7 +773,7 @@ public sealed class GameServer : IDisposable
         string build = RequiredBuild;
         if (build.Length > 0 && hello.KsaBuild.Length > 0 && hello.KsaBuild != build)
         {
-            return $"the server's world is KSA {build} and you run {hello.KsaBuild}: you need the same build";
+            return $"this server is for KSA {build} and you run {hello.KsaBuild}: you need the same build";
         }
         // A world of Sol entire is not a world of Earth and its Moon: the save would load into a game
         // that has no such bodies, or put every craft of the others nowhere.

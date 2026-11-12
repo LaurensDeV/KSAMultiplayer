@@ -258,12 +258,12 @@ jobs:
 
           ## Upgrading a server when KSA has
 
-          A world remembers the KSA build of whoever gave it to the server, and the server turns away
-          anyone running a different one. So the day KSA updates, a world seeded before it refuses
-          **everybody who updates** -- and nothing says so from inside the game beyond the refusal.
-          Either \`fresh\` at the console, which throws that world away and starts an empty one, or
-          \`set ksa-build <the new build>\` to make the operator's word the test instead of the
-          world's. A world the server started by itself records no build and turns nobody away.
+          A server holds every player to the KSA build it was built for, which for this release is
+          the one named above. So the day KSA updates, a server left as it is refuses **everybody
+          who updates**, and says which build it is for. Install the server release made for the
+          new build and it takes them, with the world it had: nothing has to be thrown away.
+          \`set ksa-build <a build>\` makes the operator's word the test instead, for a server that
+          is to go on taking another build than its own.
 
           ## State
 

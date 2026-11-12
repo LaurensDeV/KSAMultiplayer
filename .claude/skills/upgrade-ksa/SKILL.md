@@ -85,7 +85,7 @@ grep -rn '20[0-9][0-9]\.[0-9]*\.[0-9]*\.[0-9]*' README.md docs/ errors.md tests/
 
 If all three agree, stop — there is nothing to upgrade.
 
-Write the new build number down. It is needed in five places in step 7.
+Write the new build number down. It is needed in six places in step 7.
 
 **Then check StarMap**, because a KSA update usually breaks the loader too and a mod cannot be
 tested through a loader that will not start. Its releases name the build they were made for:
@@ -304,8 +304,12 @@ Check the server still carries them:
 
 ## 7. Write the new build down
 
-Nothing enforces this, so it is the step that rots. Five places:
+One of these is enforced and the rest are the step that rots. Six places:
 
+- `Directory.Build.props` — `KsaBuild`, **the one that matters**: it is written into the server
+  when it is built, and the server holds every player to it. The mod's build fails while this
+  disagrees with `KSA_BUILD` beside the assemblies it found, so step 5 cannot pass until it is
+  moved; a game install has no such file and is taken on trust
 - `README.md` — the **Status** block, which names the build two games have flown against
 - `docs/DESIGN.md` — *What has been seen in a game*, the same claim
 - `src/Server/worlds/*/meta.toml` — written by KSA in step 6, not by hand
@@ -371,27 +375,28 @@ behaviour fix is not a `fix` until it has been seen in game** — which step 8 i
 ### Every running server locks its players out
 
 This is the consequence unique to this project, and it is not in the mod at all. The server
-refuses a join whose KSA build differs from the world's:
+refuses a join whose KSA build differs from the one it was built for (`KsaBuild` in
+`Directory.Build.props`, `Server.RequiredBuild`):
 
 ```
-the server's world is KSA <build> and you run <yours>: you need the same build
+this server is for KSA <build> and you run <yours>: you need the same build
 ```
 
-A world seeded by a player records **that player's** build (`Server.cs`, `SetWorld(blob, p.KsaBuild, …)`).
-So the moment RocketWerkz ship a build, every existing world is stamped with the old one and
-refuses everybody who updates — including `mp.ksarmory.com`. Nothing warns the operator, and the
-players see only the refusal.
+So the moment RocketWerkz ship a build, every running server refuses everybody who updates —
+including `mp.ksarmory.com` — until it runs a release made for the new build. Nothing warns the
+operator, and the players see only the refusal.
 
-Three ways out, in order of preference:
+Two ways out:
 
-- **`fresh`** at the server console — throws the world away and hands out the stock empty world,
-  which records `empty-world`'s build rather than a player's. Console only — an admin in game is
-  told `fresh is the console's alone`.
-- **`set ksa-build <new>`**, which makes the operator's word the gate instead of the world's.
-- Seed again from a game on the new build.
+- **Release, and deploy it.** A server on the new release takes players on the new build and
+  hands out the world it already had, whichever build saved it. Step 6 is what makes that safe
+  for the worlds the server carries; a world a player brought is KSA's to load.
+- **`set ksa-build <new>`** on a server that cannot be updated yet, which makes the operator's
+  word the gate. Only worth it where the protocol did not move, since a game on the new mod
+  cannot speak to the old server otherwise.
 
-Say which in the release notes. An operator who does nothing has a server nobody can join, and no
-way to tell from inside the game why.
+The release notes say this under "Upgrading a server when KSA has". An operator who does nothing
+has a server nobody can join.
 
 Also change **`Wire.Version`** if what a datagram means changed — and remember the mod and the
 server ship together: a server on the old protocol refuses the new mod with

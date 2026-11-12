@@ -21,6 +21,11 @@
     <ProjectReference Include="..\Protocol\KSAMultiplayer.Protocol.csproj" />
   </ItemGroup>
 
+  <!-- The KSA build this server holds players to, from Directory.Build.props: read back in Program.cs. -->
+  <ItemGroup>
+    <AssemblyMetadata Include="KsaBuild" Value="$(KsaBuild)" />
+  </ItemGroup>
+
   <!--
     Empty worlds, one folder per system, exactly as KSA wrote them. Carried in the assembly so a
     server can start with a world instead of waiting for a player to bring one: the server never

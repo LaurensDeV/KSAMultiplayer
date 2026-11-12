@@ -19,6 +19,16 @@
   </PropertyGroup>
 
   <!--
+    The KSA build this tree is for. A server has no game to ask and holds every player to this, so
+    it is written down here, where the server's build reads it, and the mod's build is failed below
+    when the assemblies it found are another build's: the two ship under one tag, and a server
+    held to a build its own mod was not compiled against is a server nobody can join.
+  -->
+  <PropertyGroup>
+    <KsaBuild>2026.11.10.5801</KsaBuild>
+  </PropertyGroup>
+
+  <!--
     Only KSA's own assemblies are wanted here: StarMap's API and Harmony come from NuGet, so a plain
     game install is enough and no copy of the loader has to be found beside it. Say a missing install
     plainly rather than with a wall of missing types.
@@ -26,6 +36,15 @@
   <Target Name="KsaMpCheckAssemblies" BeforeTargets="CoreCompile" Condition="'$(NeedsKsa)' == 'true'">
     <Error Condition="'$(KsaDllDir)' == '' OR !Exists('$(KsaDllDir)KSA.dll')"
            Text="The mod needs KSA's assemblies and none was found (looked in: '$(KsaDllDir)'). Point KSA_DLL_DIR at a game install, or at a mirror of one. They are copyrighted: never commit them. The server and the tests need none of this." />
+    <!--
+      A mirror of the game's assemblies says which build they are in a file beside them; a game
+      install does not, and is taken on trust.
+    -->
+    <PropertyGroup Condition="Exists('$(KsaDllDir)../KSA_BUILD')">
+      <KsaBuildFound>$([System.IO.File]::ReadAllText('$(KsaDllDir)../KSA_BUILD').Trim())</KsaBuildFound>
+    </PropertyGroup>
+    <Error Condition="'$(KsaBuildFound)' != '' AND '$(KsaBuildFound)' != '$(KsaBuild)'"
+           Text="The assemblies in '$(KsaDllDir)' are KSA $(KsaBuildFound) and Directory.Build.props says this tree is for KSA $(KsaBuild). A server is held to the one written there: change KsaBuild to $(KsaBuildFound), which the upgrade-ksa skill does among the rest of a move to a new build." />
   </Target>
 
 </Project>
