@@ -111,8 +111,51 @@ internal static class World
     /// <summary>The celestial system being played, such as Sol entire or Earth and its Moon alone.</summary>
     public static string System => KSA.Universe.CurrentSystem?.Id ?? "";
 
+    /// <summary>
+    /// Every mod this game has enabled, each with the version its own assembly carries where it
+    /// has one: <c>Core,KSAMultiplayer@0.18.0+f0fd6cb...</c>. See <see cref="ModList"/>.
+    /// </summary>
     public static string Mods =>
-        ModLibrary.Manifest is { } manifest ? string.Join(',', manifest.Mods.Where(m => m.Enabled).Select(m => m.Id)) : "";
+        ModLibrary.Manifest is { } manifest
+            ? string.Join(',', manifest.Mods.Where(m => m.Enabled).Select(m => ModVersions().TryGetValue(m.Id, out string? at) ? $"{m.Id}@{at}" : m.Id))
+            : "";
+
+    private static Dictionary<string, string>? _modVersions;
+
+    /// <summary>
+    /// The version of each mod that brought code, by the folder it was loaded from: KSA knows a
+    /// mod's name and where it is and nothing of what version it is at, so it is read off the
+    /// assembly the mod's own <c>mod.toml</c> names. Looked for until something is found, since a
+    /// game may ask before every mod has loaded.
+    /// </summary>
+    private static Dictionary<string, string> ModVersions()
+    {
+        if (_modVersions is { Count: > 0 } known) return known;
+        Dictionary<string, string> found = new(StringComparer.OrdinalIgnoreCase);
+        foreach (global::System.Reflection.Assembly a in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            try
+            {
+                if (a.IsDynamic || a.Location is not { Length: > 0 } at || Path.GetDirectoryName(at) is not { } folder) continue;
+                string toml = Path.Combine(folder, ModLibrary.MOD_TOML);
+                if (!File.Exists(toml)) continue;
+                global::System.Text.RegularExpressions.Match entry =
+                    global::System.Text.RegularExpressions.Regex.Match(File.ReadAllText(toml), "EntryAssembly\\s*=\\s*\"([^\"]+)\"");
+                string named = entry.Success ? Path.GetFileNameWithoutExtension(entry.Groups[1].Value) : "";
+                if (!string.Equals(named, a.GetName().Name, StringComparison.OrdinalIgnoreCase)) continue;
+                string? version = a.GetCustomAttributes(typeof(global::System.Reflection.AssemblyInformationalVersionAttribute), false)
+                    .OfType<global::System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion;
+                version ??= a.GetName().Version?.ToString(3);
+                // Nothing in it that would be read as the end of an entry or the start of a version.
+                if (version is { Length: > 0 } && !version.Contains(',') && !version.Contains('@')) found[Path.GetFileName(folder)] = version;
+            }
+            catch (Exception)
+            {
+                // An assembly that will not say where it is from is not a mod's.
+            }
+        }
+        return _modVersions = found;
+    }
 
     /// <summary>The longest step KSA takes a frame, s: a frame slower than this loses the rest.</summary>
     public static double StepCap => 1.0 / Math.Max(1f, GameSettings.Current.Simulation.MinTargetFrameRate);

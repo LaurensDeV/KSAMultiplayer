@@ -724,15 +724,10 @@ internal static class Sync
     /// </summary>
     public static (string Missing, string Extra) ModsAgainst(string worldMods)
     {
-        string[] wants = Split(worldMods);
-        if (wants.Length == 0) return ("", "");
-        HashSet<string> here = [.. Split(World.Mods)];
-        HashSet<string> world = [.. wants];
-        return (string.Join(", ", wants.Where(m => !here.Contains(m)).Order()),
-                string.Join(", ", here.Where(m => !world.Contains(m)).Order()));
-
-        static string[] Split(string list) =>
-            [.. list.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+        // A mod at another version than the server wants is one this game is missing, as far as
+        // getting in goes, and is said with the version that is wanted.
+        (string[] missing, string[] extra, string[] wrong) = ModList.Against(worldMods, World.Mods);
+        return (string.Join(", ", missing.Concat(wrong)), string.Join(", ", extra));
     }
 
     public static void EndAhead()

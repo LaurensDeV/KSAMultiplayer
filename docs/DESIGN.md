@@ -239,6 +239,13 @@ from the same game, if that one was heard in the last thirty seconds: on a wire 
 datagrams the first of two can finish arriving after the second, and the last to arrive was what
 every other game built and what everybody who joined later was given.
 
+**A server can be held to a build of a mod.** A game says what it has enabled with the version each
+mod's own assembly carries (`World.Mods`, read off the assembly each mod's `mod.toml` names, since
+KSA knows a mod's name and nothing of its version), and an operator's `mods` may name a version
+after an `@`: a release, or a release and the beginning of the commit it was built from
+(`ModList`). Two builds of one mod are one name and two mods -- a car mod that says how its cars
+are steering and one that does not. The list a world's first player brought is still ids alone.
+
 **What another mod knows of a craft goes with the craft.** A car's steering and its wheels are in
 the car mod's memory and in nothing KSA saves. `Guests` listens on StarMap's event bus for what a
 mod says of a craft this player has and sends it with the craft's state (`Wire.Extra`, opaque

@@ -232,7 +232,7 @@ like `quit`.
 | `--data` | `KSAMP_DATA` | `./data` | where the world is kept |
 | `--world` | `KSAMP_WORLD` | | a save folder or zip to start from, replacing the kept one; not a setting in the file, since it is something to do once |
 | `--ksa-build` | `KSAMP_KSA_BUILD` | the world's | the KSA build players must run |
-| `--mods` | `KSAMP_MODS` | the world's | the mods players must have, comma separated. The whole list, not a floor: a player running anything else is refused. Worth setting, because the world's own list follows whoever last handed a save over |
+| `--mods` | `KSAMP_MODS` | the world's | the mods players must have, comma separated, each held to a version after an `@` where one is given: `FastAndPurrious@0.1.13` for that release, `FastAndPurrious@0.1.13+8b152a3` for one build of it. The whole list, not a floor: a player running anything else is refused. Worth setting, because the world's own list follows whoever last handed a save over |
 | `--snapshot-every` | `KSAMP_SNAPSHOT_EVERY` | `300` | seconds between fresh saves |
 | `--keep-time` | `KSAMP_KEEP_TIME` | off | let time run with nobody connected |
 | `--warp-answer` | `KSAMP_WARP_ANSWER` | `30` | seconds everyone has to answer a warp |

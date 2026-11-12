@@ -527,6 +527,57 @@ public class ServerTests
         Assert.Equal(a.Id, b.OwnerOf("Rover"));
     }
 
+    [Theory]
+    [InlineData("", "0.1.12+abc", true)]
+    [InlineData("0.1.12", "0.1.12", true)]
+    [InlineData("0.1.12", "0.1.12+8b152a3f", true)]
+    [InlineData("0.1.12", "0.1.120", false)]
+    [InlineData("0.1.12", "0.1.13+8b152a3f", false)]
+    [InlineData("0.1.12+8b15", "0.1.12+8b152a3f", true)]
+    [InlineData("0.1.12+8b15", "0.1.12+2eeedf83", false)]
+    [InlineData("0.1.12", "", false)]
+    public void AModIsHeldToTheVersionAnOperatorNames(string wanted, string has, bool fits) =>
+        Assert.Equal(fits, ModList.Fits(wanted, has));
+
+    [Fact]
+    public void AGameWithAnotherBuildOfAModIsToldWhichOneIsWanted()
+    {
+        (string[] missing, string[] extra, string[] wrong) = ModList.Against(
+            "Core,KSAMultiplayer,FastAndPurrious@0.1.13", "Core@1.0,KSAMultiplayer@0.19.0+f0fd6cb,FastAndPurrious@0.1.12+2eeedf8,KSArmory@0.3.0");
+        Assert.Empty(missing);
+        Assert.Equal(["KSArmory"], extra);
+        Assert.Equal(["FastAndPurrious 0.1.13 (you have 0.1.12+2eeedf8)"], wrong);
+        // A world that names no versions takes any, and one that wants nothing takes anything.
+        Assert.Empty(ModList.Against("Core,FastAndPurrious", "Core@1.0,FastAndPurrious@0.1.12+2eeedf8").Wrong);
+        Assert.Empty(ModList.Against("", "Anything@1").Extra);
+    }
+
+    [Fact]
+    public void AServerHeldToOneBuildOfAModTurnsAwayAnother()
+    {
+        using Rig rig = new(new ServerOptions { Mods = "Core,Cars@0.1.13" });
+        Client a = rig.Join("Alice", mods: "Core,Cars@0.1.13+8b152a3");
+        rig.Until(() => a.Joined, what: "the build that is wanted to be let in");
+
+        Client b = rig.Join("Bob", mods: "Core,Cars@0.1.12+2eeedf8");
+        rig.Until(() => b.Out.Length > 0, what: "the other build to be turned away");
+        Assert.Contains("Cars 0.1.13 (you have 0.1.12+2eeedf8)", b.Out);
+    }
+
+    [Fact]
+    public void AWorldSomebodyBroughtHoldsNobodyToTheVersionsTheyHad()
+    {
+        using Rig rig = new();
+        Client a = rig.Join("Alice", mods: "Core,Cars@0.1.13+8b152a3");
+        rig.Until(() => a.Joined && a.SnapshotWanted is not null, what: "the server to ask Alice for a world");
+        a.SnapshotWanted = null;
+        a.Upload(new Blob(BlobKind.World, "", a.Id, 5000, Rig.FakeWorld()));
+        rig.Until(() => rig.Server.HasWorld, what: "the server to have her world");
+        Client b = rig.Join("Bob", mods: "Core,Cars@0.1.12+2eeedf8");
+        rig.Until(() => b.Joined, what: "Bob to be let in with another build of the same mod");
+        Assert.Equal(["Cars", "Core"], rig.Server.RequiredMods.Order());
+    }
+
     [Fact]
     public void WhatAModSaysOfACraftIsPassedOnFromItsOwnerAndNobodyElse()
     {

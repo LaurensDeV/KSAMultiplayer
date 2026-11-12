@@ -321,9 +321,15 @@ public sealed class GameServer : IDisposable
     public string RequiredBuild => Options.KsaBuild.Length > 0 ? Options.KsaBuild : _worldBuild;
 
     /// <summary>What a player must have enabled: what the operator pinned, or the world's own list when they pinned nothing.</summary>
+    /// <remarks>
+    /// The operator's entries are kept as written, versions and all: <c>FastAndPurrious@0.1.13</c>
+    /// is how a server is held to one build of a mod. The world's own list is ids alone, as it
+    /// always was: whoever gave the world had some version of each mod, and nobody said the next
+    /// player must have that one.
+    /// </remarks>
     public string[] RequiredMods => Options.Mods.Length > 0
         ? [.. Options.Mods.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)]
-        : _worldMods;
+        : [.. _worldMods.SelectMany(ModList.Ids)];
 
     /// <summary>Console lines typed in a game by an admin, for the console program to run as its own.</summary>
     public Queue<(Player Who, string Line)> Asked { get; } = new();
@@ -722,20 +728,17 @@ public sealed class GameServer : IDisposable
         {
             return $"this world is {_worldSystem} and you are playing {hello.System}: start a game in {_worldSystem} to join";
         }
-        HashSet<string> theirs = [.. hello.Mods.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
         string[] wanted = RequiredMods;
-        string[] missing = [.. wanted.Where(m => !theirs.Contains(m)).Order()];
+        (string[] missing, string[] extra, string[] wrong) = ModList.Against(string.Join(',', wanted), hello.Mods);
         if (missing.Length > 0) return $"the server's world needs mods you do not have enabled: {string.Join(", ", missing)}";
         // And none the others lack. A mod that adds parts makes craft nobody else can put together,
         // and the first they hear of it is a craft arriving that their game refuses to build, which
         // reads as the mod being broken rather than as somebody running something extra. Nothing is
         // asked of the player whose world this is about to become: they are the ones who set it.
-        if (wanted.Length == 0) return null;
-        HashSet<string> world = [.. wanted];
-        string[] extra = [.. theirs.Where(m => !world.Contains(m)).Order()];
-        return extra.Length > 0
-            ? $"you are running mods this world does not have ({string.Join(", ", extra)}): turn them off to join"
-            : null;
+        if (extra.Length > 0) return $"you are running mods this world does not have ({string.Join(", ", extra)}): turn them off to join";
+        // And each at the version the operator asked for, where they asked for one: two builds of
+        // one mod are one name and two mods.
+        return wrong.Length > 0 ? $"this server wants {string.Join(", ", wrong)}: install that version to join" : null;
     }
 
     private void SendWorld(Player p)
