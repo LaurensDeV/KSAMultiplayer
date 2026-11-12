@@ -72,6 +72,10 @@ variable "memory_mb" {
 # `mods` is what the server turns a player away for not having, as the `mods` setting is: ids
 # separated by commas, each held to a version after an @ where one is given. Left out, the world
 # wants whatever the first player to bring it a world had enabled.
+#
+# `advertise` lists the world in the public directories, which is what puts it in a game's server
+# list, and `advertise_as` is the name it is listed under: the machine's own, since a directory
+# otherwise lists the address it saw the announcement come from.
 variable "worlds" {
   description = "Other servers on this machine: the name each answers to, its UDP port, and what it does not share."
   type = map(object({
@@ -80,6 +84,8 @@ variable "worlds" {
     mods                   = optional(string)
     ksa_build              = optional(string)
     empty_world            = optional(string)
+    advertise              = optional(bool)
+    advertise_as           = optional(string)
     server_name            = optional(string)
     max_players            = optional(number)
     snapshot_every_seconds = optional(number)

@@ -129,7 +129,9 @@ carries, which for a mod built from a repository ends in the commit: `0.1.12+8b1
 whatever commit built it, and `FastAndPurrious@0.1.12+8b152a3` wants that build and no other. A
 player with another is told which one the server wants. The version a build carries is in its log's
 first lines, and in the refusal of a server that wants a different one. `ksa_build` and
-`empty_world` are the settings of the same names.
+`empty_world` are the settings of the same names, and so are `advertise` and `advertise_as`:
+`advertise = true` with `advertise_as = "mp.ksarmory.com"` puts the world in a game's server list
+under the machine's name and the world's own port.
 
 **Without a release**, `.github/workflows/worlds.yml` applies the other worlds alone. It reads
 them from the repository variable `KSAMP_WORLDS`, which is the same text as `TF_VAR_worlds`, and

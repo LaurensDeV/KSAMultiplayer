@@ -131,8 +131,11 @@ resource "docker_container" "other_world" {
   stdin_open = true
   tty        = true
 
+  # The same port inside as out. A server that advertises says which port it is listening on,
+  # and one listening on 50100 behind another port told every directory it was at 50100, which
+  # is the first server.
   ports {
-    internal = 50100
+    internal = each.value.port
     external = each.value.port
     protocol = "udp"
   }
@@ -147,9 +150,12 @@ resource "docker_container" "other_world" {
   env = concat(
     [
       "KSAMP_NAME=${coalesce(each.value.server_name, each.key)}",
+      "KSAMP_PORT=${each.value.port}",
       "KSAMP_MAX_PLAYERS=${coalesce(each.value.max_players, var.max_players)}",
       "KSAMP_SNAPSHOT_EVERY=${coalesce(each.value.snapshot_every_seconds, var.snapshot_every_seconds)}",
     ],
+    each.value.advertise == true ? ["KSAMP_ADVERTISE=true"] : [],
+    each.value.advertise_as == null ? [] : ["KSAMP_ADVERTISE_AS=${each.value.advertise_as}"],
     each.value.mods == null ? [] : ["KSAMP_MODS=${each.value.mods}"],
     each.value.ksa_build == null ? [] : ["KSAMP_KSA_BUILD=${each.value.ksa_build}"],
     each.value.empty_world == null ? [] : ["KSAMP_EMPTY_WORLD=${each.value.empty_world}"],
