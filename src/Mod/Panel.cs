@@ -843,7 +843,10 @@ internal static class Panel
         ImGui.PopStyleVar();
         ImGui.Columns(2, "###KSAMultiplayerPickRows".AsSpan(), false);
         ImGui.SetColumnWidth(0, half * 0.30f);
-        edited |= Field("Server"u8, "###KSAMultiplayerServer", AddressText);
+        // Only this field is a reason to ask again: a new name or password is said to the same
+        // server, and nothing it answers about itself has changed.
+        bool readdressed = Field("Server"u8, "###KSAMultiplayerServer", AddressText);
+        edited |= readdressed;
         // Said in words where the server has told us it wants none, which every welcome has said
         // since protocol 23. It was a greyed-out box, and an empty box a player cannot type in looks
         // very like an empty box they have not typed in yet. Still a box while nothing is known
@@ -854,7 +857,7 @@ internal static class Panel
         // Asked only where the list has not asked already: a row carries this game's own answer to
         // the same question, and probing a server it has just probed spends a datagram on an answer
         // it has.
-        if (edited) _asked = "";
+        if (readdressed) _asked = "";
         if (!Browser.Rows.Any(r => string.Equals(r.Where, typed, StringComparison.OrdinalIgnoreCase))
             && typed.Length > 0 && _asked.Length == 0 && !Sync.Asking)
         {
@@ -1432,7 +1435,8 @@ internal static class Panel
         bool edited = false;
         if (ImGuiHelper.BeginRegion("Server"u8))
         {
-            edited |= Field("Server"u8, "###KSAMultiplayerJoinServer", AddressText);
+            bool readdressed = Field("Server"u8, "###KSAMultiplayerJoinServer", AddressText);
+            edited |= readdressed;
             edited |= Field("Your name"u8, "###KSAMultiplayerJoinName", NameText);
             // Said in words where the server has told us it wants none, which every welcome has
             // said since protocol 23. It was a greyed-out box, and an empty box a player cannot
@@ -1446,7 +1450,8 @@ internal static class Panel
             else edited |= Field("Password"u8, "###KSAMultiplayerJoinPassword", PasswordText, ImGuiInputTextFlags.Password);
 
             string asking = AddressText.ToString().Trim();
-            if (edited) _asked = "";
+            // Only a change of address is a reason to ask again, as in the window at start.
+            if (readdressed) _asked = "";
             if (!ahead && asking.Length > 0 && _asked.Length == 0 && !Sync.Asking)
             {
                 _asked = asking;

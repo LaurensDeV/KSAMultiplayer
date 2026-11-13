@@ -583,7 +583,15 @@ internal static class Sync
     private static Client? _ahead;
     private static Task<IPEndPoint?>? _aheadFinding;
 
-    public static bool AskingAhead => _ahead is not null;
+    /// <summary>
+    /// Whether a server is being asked which world to start in, which a join has to wait for.
+    ///
+    /// <para>Not while a window is only looking: that asks the same question for the sake of a
+    /// row of text, and nothing waits on it. A look begins the moment the address field is left,
+    /// which for a player who has just typed one is the click on CONNECT: a button greyed for a
+    /// look goes dead under the press, and ImGui counts a press on release.</para>
+    /// </summary>
+    public static bool AskingAhead => _ahead is not null && !_lookOnly;
 
     /// <summary>What the last server asked answered about itself, and the address that was asked.</summary>
     public static ServerFacts? Server { get; private set; }

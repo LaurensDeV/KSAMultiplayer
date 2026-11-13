@@ -1505,3 +1505,23 @@ the receive only while there is; and a socket is closed after its reader has sto
 it. The suite is unchanged over loopback at 256 passed, and a game here closed as it did before.
 Whether a Mac now closes is for the player who reported it to say.
 
+## 2026-11-12 -- CONNECT that took two presses
+
+Reported from a game on `mpcars.ksarmory.com`: after disconnecting in the panel, CONNECT had to
+be pressed twice.
+
+**The first press was on a button that went dead under it.** The game's log has one attempt to
+connect for each of two reconnects, 8.8 s and 6.3 s after the disconnect, so the first press never
+reached `Sync.Connect`. The server's log says what was done in between: the player left as
+"Kitten 1617" and came back as "Laurens". A field that is left after being typed in sets the
+window asking the server about itself again (`Sync.Look`), CONNECT was greyed for as long as any
+ask was in flight, and the click that leaves the name field is the click on CONNECT: the look
+began on the press, the button was disabled before the release, and ImGui counts a press on
+release. By the second press the look had answered.
+
+A look greys nothing now -- only the ask a join waits on does (`Sync.AskingAhead`) -- and only a
+change to the address asks again, since a new name is said to the same server. The same held in
+the window at start. Not seen in a game: it takes a hand on the mouse, and the one game running
+was the player's own. A join, a disconnect and a second join through the bridge went as before on
+2026-11-13 in two games, which says the change broke nothing and not that it mended the press.
+
