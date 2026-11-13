@@ -52,7 +52,7 @@ public static class Card
             <meta property="og:title" content="{t}">
             <meta property="og:description" content="{d}">
             <meta name="twitter:card" content="summary">
-            <meta name="theme-color" content="#f2b33d">
+            <meta name="theme-color" content="#3d7bfa">
             """;
     }
 
