@@ -229,6 +229,36 @@ counts entries and `listed` counts the ones currently in the list; the two diffe
 is how many servers are announcing but not answering. `protocol` is the build it was made from and
 says nothing about what it can list; `probe` is the version of the question it asks, which does.
 
+`GET /` is a page: every server any known directory lists, and for each the mods it needs, with
+what the [Borea mod index](https://ksamodding.github.io/Borea/) says of them and the same link to
+install them that the game offers. It is one file, `src/Directory/Page/index.html`, compiled into
+the program. It reads `GET /v1/all`, which is this directory's own list merged with what every
+directory in `directories.txt` answers, one row to an address:
+
+```json
+{ "v": 1, "directories": ["ksamp.gg", "ksamp.safeshows.dev"],
+  "servers": [ { "listed": { "host": "cars.ksamp.gg", "port": 50101, "name": "Cars" }, "by": ["ksamp.gg", "ksamp.safeshows.dev"] } ] }
+```
+
+Each server has a page of its own under it, `GET /s/cars.ksamp.gg` -- the address as a player
+types it, or with its port written out. It is the same file; what differs is the head, which the
+program writes for each request so that a link pasted into Discord or anywhere else that shows a
+preview says something: under a link to the list, how many servers there are and how many players
+are on them, and under a link to a server, its own count, its address and what it needs. A
+preview is read by something that runs no script, which is why this much is not left to the
+page. An address that names no listed server answers 404 with the page, which says so.
+
+`listed` is a row of `/v1/servers`, the most recently seen where directories differ. Neither is
+part of what a directory has to be, and no game asks for either: a game reads each directory for
+itself. They are here because a browser cannot. It reads another site's document only where that
+site allows it, which a hand-written list on a static host does not, so the merging is done by a
+program that is already on the internet. `/v1/servers` and `/v1/all` both say
+`Access-Control-Allow-Origin: *`, since nothing in a list of public servers depends on who asks;
+a directory of your own need not, and is on the page all the same.
+
+A row may carry `id`, the server's own `id` setting, so that a link to its mods made from a
+listing is known to a mod manager by the same word as the one a game makes.
+
 There is no conformance suite for a directory of your own. The nearest things are this one's
 `/health`, `tests/RosterTests.cs` for the expiry and reachability rules, and pointing a game at your
 URL through its own `directories.json` to see whether rows appear.

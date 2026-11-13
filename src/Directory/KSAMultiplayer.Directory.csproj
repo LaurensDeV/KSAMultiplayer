@@ -26,4 +26,9 @@
     <ProjectReference Include="..\Protocol\KSAMultiplayer.Protocol.csproj" />
   </ItemGroup>
 
+  <!-- The page a browser is shown, compiled in so the image stays one program. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Page\index.html" LogicalName="index.html" />
+  </ItemGroup>
+
 </Project>

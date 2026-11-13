@@ -192,7 +192,7 @@ public sealed class Roster
                 .Select(e => new Listed(
                     e.Host, e.Port, e.Facts!.ServerName, e.Facts.Protocol, e.Facts.KsaBuild,
                     e.Facts.Players, e.Facts.MaxPlayers, e.Facts.Password, e.Facts.System, e.Facts.Mods,
-                    wall.ToUnixTimeSeconds() - (long)Math.Max(0.0, now - e.Answered), e.NameIsEnough))];
+                    wall.ToUnixTimeSeconds() - (long)Math.Max(0.0, now - e.Answered), e.NameIsEnough, e.Facts.LinkId))];
             return new Listing(Listings.Version, name, servers);
         }
     }

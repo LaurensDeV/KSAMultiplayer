@@ -25,6 +25,15 @@ server runs no world at all, which is why it needs no game and runs anywhere .NE
   for how long), `Watch` (the probe that checks an announcement before believing a word of it), and
   an HTTP program round them. Nothing of KSA and nothing of the game server either -- it runs on its
   own machine or none, and a world needs no directory. `docs/DIRECTORY.md` is the specification.
+  `Everywhere` merges this directory's list with every other's into one document, and
+  `Page/index.html` is the web page that reads it: a browser may not read the directories for
+  itself, so the one program that is already on the internet does. `Card` writes the title and
+  the counts into the page's head for each request, and each server has an address of its own
+  (`/s/<address>`), because what draws a preview of a pasted link runs no script and is sent no
+  fragment. The page makes the same
+  `borea://` link `ModLink` does, in its own script, from the listing and the Borea mod index;
+  a mod the server leaves open is given the newest stable release in that index, where a game
+  gives the one it has.
 - **`src/Mod`** is the StarMap mod. `World` is every call into KSA; `Sync` is what a game does each frame;
   `Hooks` are the Harmony prefixes; `Panel` is the window. `Bridge` reads commands from a folder and
   answers in another, so the tools can drive a game; only a developer's install starts it.
@@ -1038,6 +1047,12 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   the source: it takes a server held to a version this game has not got. The pill itself was seen
   2026-11-12, amber `turn mods on` and `no answer` on a plain row and on the chosen one; the muted
   `recent` was not on screen.
+- **The web page of servers, in a browser a person was holding.** It was run on this machine
+  against the three live directories on 2026-11-13 and looked at in headless Chrome, both colour
+  schemes and at 520 px: the list, a server's page, the mods' names, pictures and links, and the
+  link for the cars server. Not clicked through to Borea from the page, not seen on a phone, and
+  not seen deployed. The tags a preview is drawn from were read back as Discord's crawler would
+  ask for them, for the list and for a server; no link has been pasted into Discord.
 - **CONNECT pressed once after a name is typed.** A look no longer greys the button and a new
   name no longer starts one (`Sync.AskingAhead`, and `errors.md` for 2026-11-12). Read out of two
   logs and not pressed: the bridge has no mouse.

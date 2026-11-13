@@ -84,6 +84,9 @@ The window lists every server it can find, a row each:
 | **World** | the system its world is in, or that it has none yet |
 | **Latency** | the round trip, measured by the asking |
 
+The same servers are on the web at **<https://ksamp.gg>**, with the mods each one needs
+and a button that has Borea install them.
+
 Servers with players on them come first, then the ones you could join. **REFRESH** asks again, and
 servers you have connected to before are in the list whether or not a directory carries them, so you
 can see who is on them. Picking a row fills the address in; the **Password** field becomes the words
@@ -369,7 +372,7 @@ be reached -- `tmux` or `screen` is the way to keep one for a service.
 | --- | --- |
 | `src/Protocol/` | what the server and the mod both speak: the wire format, transfers, the clocks, a client session. Nothing of KSA |
 | `src/Server/` | the dedicated server: `GameServer`, the world kept on disk, and the console program |
-| `src/Directory/` | the directory service: the roster, the probe that checks an announcement, the HTTP endpoints. Nothing of KSA |
+| `src/Directory/` | the directory service: the roster, the probe that checks an announcement, the HTTP endpoints, and the page of every server at its root. Nothing of KSA |
 | `src/Mod/` | the StarMap mod: `Sync` runs the session each frame, `World` is every contact with KSA, `Hooks` the patches, `Panel` the window |
 | `tests/` | the protocol and the server driven over loopback |
 | `tools/ksa-mcp/` | commands into a running game through the mod's bridge, for driving a test without a hand on the keyboard |

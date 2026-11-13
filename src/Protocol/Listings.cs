@@ -21,6 +21,11 @@ namespace KSAMultiplayer;
 /// and a player may type it so. A hint like the rest: a game looks the record up for itself
 /// before it drops the port.
 /// </param>
+/// <param name="Id">
+/// What the server's operator calls it, the <c>id</c> setting, empty where they have set none. It
+/// is what a link to the server's mods is known by, so a page that makes such a link from a
+/// listing makes the one a game would.
+/// </param>
 public sealed record Listed(
     string Host,
     int Port,
@@ -33,7 +38,8 @@ public sealed record Listed(
     string System = "",
     string Mods = "",
     long Seen = 0,
-    bool Srv = false);
+    bool Srv = false,
+    string Id = "");
 
 /// <summary>
 /// What a directory answers, and the whole of what one has to be able to do.

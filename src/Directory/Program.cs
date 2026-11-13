@@ -32,6 +32,7 @@ public static class Program
 
         builder.Services.AddSingleton<Ticker>();
         builder.Services.AddSingleton<Roster>();
+        builder.Services.AddSingleton<Everywhere>();
         builder.Services.AddHostedService<Watch>();
 
         // Behind a reverse proxy the address every announcement appears to come from is the proxy's,
@@ -77,8 +78,31 @@ public static class Program
 
         app.MapGet("/v1/servers", (Roster roster, Ticker clock, HttpResponse r) =>
         {
-            r.Headers.CacheControl = $"public, max-age={HoldForSeconds}";
+            Readable(r, HoldForSeconds);
             return Results.Ok(roster.Snapshot(name, clock.Now, clock.Wall));
+        }).RequireRateLimiting("reading");
+
+        // Not part of what a directory has to be: a game reads each directory for itself and
+        // never asks this. It is for a reader that cannot, which is a page in a browser.
+        app.MapGet("/v1/all", async (Everywhere everywhere, HttpResponse r, CancellationToken stop) =>
+        {
+            Readable(r, HoldForSeconds);
+            return Results.Ok(await everywhere.NowAsync(name, stop).ConfigureAwait(false));
+        }).RequireRateLimiting("reading");
+
+        // The page, and a page for each server. They are one file; what differs is the few tags
+        // in its head that say what a link to it shows where it is pasted.
+        app.MapGet("/", async (Everywhere everywhere, HttpResponse r) =>
+            Shown(r, Card.Head(await everywhere.SoonAsync(name).ConfigureAwait(false)))).RequireRateLimiting("reading");
+
+        app.MapGet(Card.Under + "{where}", async (string where, Everywhere everywhere, HttpResponse r) =>
+        {
+            Everything all = await everywhere.SoonAsync(name).ConfigureAwait(false);
+            if (Card.Find(all, where) is { } one) return Shown(r, Card.Head(all, one));
+            // The page still comes, and says so itself: a server that has just stopped is an
+            // ordinary thing for a link to point at.
+            r.StatusCode = StatusCodes.Status404NotFound;
+            return Shown(r, Card.Gone());
         }).RequireRateLimiting("reading");
 
         app.MapPost("/v1/announce", ([FromBody] Announcement said, Roster roster, Ticker clock, HttpContext http) =>
@@ -106,6 +130,43 @@ public static class Program
                                   name, Wire.Version, Wire.ProbeVersion, Listings.Version);
         await app.RunAsync().ConfigureAwait(false);
         return 0;
+    }
+
+    // Compiled in, so the image is still one program and a directory is still one thing to run.
+    // In two halves, either side of the tags that are written for each request.
+    private static readonly Lazy<(string Before, string After)> Page = new(() =>
+    {
+        const string open = "<!--card-->", close = "<!--/card-->";
+        using Stream? from = typeof(Program).Assembly.GetManifestResourceStream("index.html");
+        if (from is null) return ("<!doctype html>", "<p>This build carries no page. The list is at <a href=\"/v1/all\">/v1/all</a>.");
+        using StreamReader read = new(from);
+        string page = read.ReadToEnd();
+        int at = page.IndexOf(open, StringComparison.Ordinal), end = page.IndexOf(close, StringComparison.Ordinal);
+        return at < 0 || end < at ? (page, "") : (page[..at], page[(end + close.Length)..]);
+    });
+
+    private static IResult Shown(HttpResponse r, string head)
+    {
+        // Held as long as the list is: the counts in its head are the list's.
+        r.Headers.CacheControl = $"public, max-age={HoldForSeconds}";
+        // The page runs no script but its own and frames nowhere. It reads the mod index and
+        // shows the pictures that index names, which are on hosts of their authors' choosing.
+        r.Headers.ContentSecurityPolicy = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+            + "img-src https: data:; connect-src 'self' https://ksamodding.github.io; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+        r.Headers.XContentTypeOptions = "nosniff";
+        (string before, string after) = Page.Value;
+        return Results.Content(before + head + after, "text/html; charset=utf-8");
+    }
+
+    /// <summary>
+    /// A list anybody may hold for a while and any page may read. The second is said out loud
+    /// because a browser assumes the opposite: a list of public servers with nothing in it that
+    /// depends on who asks is not a thing to keep from a page on another site.
+    /// </summary>
+    private static void Readable(HttpResponse r, int holdForSeconds)
+    {
+        r.Headers.CacheControl = $"public, max-age={holdForSeconds}";
+        r.Headers.AccessControlAllowOrigin = "*";
     }
 
     private static string Caller(HttpContext http) => http.Connection.RemoteIpAddress?.ToString() ?? "nowhere";
