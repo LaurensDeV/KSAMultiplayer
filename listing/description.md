@@ -19,7 +19,7 @@ It keeps the world between runs, saves periodically, and has a console: `clear` 
 
 Set `advertise = true` and it lists itself in the public directories, so players find it in that window instead of having to be sent an address. Off by default, because listing a server at home publishes a household's address.
 
-There is a server at **`mp.ksarmory.com`** to try it on.
+There is a server at **`ksamp.gg`** to try it on.
 
 ### What you need
 

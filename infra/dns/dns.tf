@@ -8,9 +8,14 @@
 # Declared here rather than added to the zone's own subdomains: that set is CNAMEs for names Caddy
 # serves, and every one of them needs a site block in its Caddyfile. Nothing here is served by Caddy.
 
+locals {
+  # The first server's whole name: the domain itself where no host is given.
+  server_name = var.host == "" ? var.domain : "${var.host}.${var.domain}"
+}
+
 resource "cloudflare_dns_record" "server" {
   zone_id = var.zone_id
-  name    = "${var.host}.${var.domain}"
+  name    = local.server_name
   type    = "A"
   content = var.vps_ipv4
   ttl     = var.ttl
@@ -72,3 +77,22 @@ resource "cloudflare_dns_record" "world_srv" {
     ignore_changes = [priority]
   }
 }
+
+# The directory of servers, which is HTTPS and so is Caddy's to serve on the same machine. An
+# address record and unproxied like the rest: Caddy gets its own certificate for the name, and a
+# zone whose every record is the machine itself has no reason to send one of them round by
+# Cloudflare. The site block that answers at this name is in the layer that owns the machine's
+# Caddy, not here.
+resource "cloudflare_dns_record" "directory" {
+  count = var.directory_host == null ? 0 : 1
+
+  zone_id = var.zone_id
+  name    = "${var.directory_host}.${var.domain}"
+  type    = "A"
+  content = var.vps_ipv4
+  ttl     = var.ttl
+  proxied = false
+
+  comment = "KSA Multiplayer server directory, HTTPS through the machine's Caddy. Not proxied."
+}
+

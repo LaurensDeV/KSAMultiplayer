@@ -1,6 +1,6 @@
 output "address" {
   description = "Where the server answers, as a player types it."
-  value       = var.port == 50100 ? "mp.ksarmory.com" : "mp.ksarmory.com:${var.port}"
+  value       = var.port == 50100 ? "ksamp.gg" : "ksamp.gg:${var.port}"
 }
 
 output "deployed_image" {

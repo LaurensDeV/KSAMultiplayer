@@ -40,10 +40,10 @@ GET https://your.directory/v1/servers
 ```json
 {
   "v": 1,
-  "directory": "ksarmory",
+  "directory": "ksamp.gg",
   "servers": [
     {
-      "host": "mp.ksarmory.com",
+      "host": "ksamp.gg",
       "port": 50100,
       "name": "KSArmory",
       "protocol": 23,

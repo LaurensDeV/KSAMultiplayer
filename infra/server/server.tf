@@ -55,11 +55,19 @@ resource "docker_container" "server" {
   }
 
   # The image's entrypoint already passes --data /data; everything else is read from the environment.
-  env = [
-    "KSAMP_NAME=${var.server_name}",
-    "KSAMP_MAX_PLAYERS=${var.max_players}",
-    "KSAMP_SNAPSHOT_EVERY=${var.snapshot_every_seconds}",
-  ]
+  env = concat(
+    [
+      "KSAMP_NAME=${var.server_name}",
+      "KSAMP_MAX_PLAYERS=${var.max_players}",
+      "KSAMP_SNAPSHOT_EVERY=${var.snapshot_every_seconds}",
+    ],
+    # Here and not in the file on the machine, where they were typed once at a console: the name
+    # a server is listed under is part of what this machine is, and a file nobody can read from
+    # this repository is where a change of domain goes to be forgotten.
+    var.advertise ? ["KSAMP_ADVERTISE=true"] : [],
+    var.advertise_as == "" ? [] : ["KSAMP_ADVERTISE_AS=${var.advertise_as}"],
+    var.server_id == "" ? [] : ["KSAMP_ID=${var.server_id}"],
+  )
 
   # Two cores and 8 GB are shared with the site. A relay of craft states needs very little of
   # either, and a bound means a server that misbehaves cannot take the rest of the machine with it.

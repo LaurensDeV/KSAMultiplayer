@@ -88,9 +88,11 @@ public static class Listings
     ///
     /// <para>The last resort and not the first, because a list compiled into a build is a list that
     /// cannot be fixed: a directory that stops answering has to be replaceable without shipping
-    /// anything, which is what <see cref="KnownAt"/> is for.</para>
+    /// anything, which is what <see cref="KnownAt"/> is for. This one answered first at
+    /// servers.ksarmory.com and still does, for the games that have that name compiled in; it
+    /// is one directory, so only one of its names is asked.</para>
     /// </summary>
-    public static readonly string[] BuiltIn = ["https://servers.ksarmory.com/v1/servers"];
+    public static readonly string[] BuiltIn = ["https://servers.ksamp.gg/v1/servers"];
 
     /// <summary>Where the list of directories is kept, so that retiring one is a commented-out line rather than a release.</summary>
     public static string KnownAt { get; set; } = "https://raw.githubusercontent.com/LaurensDeV/KSAMultiplayer/main/directories.txt";

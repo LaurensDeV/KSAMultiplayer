@@ -122,12 +122,35 @@ variable "directory_image" {
   default     = ""
 }
 
+# The first server in the public directories, and the name it is listed under: the domain itself,
+# which is all a player types. A directory lists a server at the name it says and only once it
+# has answered there, so a name that does not resolve yet is a server on no list.
+variable "advertise" {
+  description = "Whether the first server lists itself in the public directories."
+  type        = bool
+  default     = true
+}
+
+variable "advertise_as" {
+  description = "The hostname the first server is listed under. Empty to be listed at the address a directory sees."
+  type        = string
+  default     = "ksamp.gg"
+}
+
+# What a mod manager knows the first server's mods by, which has to outlast its name and its
+# address: it has had two addresses already.
+variable "server_id" {
+  description = "The first server's id setting. Empty to be known by address."
+  type        = string
+  default     = "mp"
+}
+
 # Shown on a row of the mod's server list, so a player who does not like what a directory carries
 # knows which one to take out of their own list.
 variable "directory_name" {
   description = "What the directory calls itself in a listing."
   type        = string
-  default     = "ksarmory"
+  default     = "ksamp.gg"
 }
 
 # This machine's Caddy belongs to the KSArmory repository and nothing here can edit its config.

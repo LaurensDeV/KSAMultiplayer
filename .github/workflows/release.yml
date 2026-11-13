@@ -226,7 +226,7 @@ jobs:
           anything else: pick a server from the list it shows, or type an address, and press
           **CONNECT**.
 
-          There is a server at **\`mp.ksarmory.com\`** to try it on.
+          There is a server at **\`ksamp.gg\`** to try it on.
 
           Hold **Tab** for who is playing and their ping, **Enter** for a chat line. A craft someone
           else is flying carries their name and is theirs: you can watch it, not fly it. Changing the
@@ -329,7 +329,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # Whether the server behind mp.ksarmory.com updates itself. A job of its own because a job's `if`
+  # Whether the server behind ksamp.gg updates itself. A job of its own because a job's `if`
   # cannot read secrets, and a release must not fail on a repository that has none of these set: a
   # fork, or this one before the secrets were added.
   deployable:
@@ -349,7 +349,7 @@ jobs:
   # the container, so this is the same apply an operator would run, with the same state: deploying
   # another way would leave that state describing a container that is no longer there.
   deploy:
-    name: The server behind mp.ksarmory.com
+    name: The server behind ksamp.gg
     needs: [image, directory, publish, deployable]
     if: needs.deployable.outputs.ok == 'true'
     runs-on: ubuntu-latest

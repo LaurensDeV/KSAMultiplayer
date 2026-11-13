@@ -15,10 +15,21 @@ variable "domain" {
   default     = "ksarmory.com"
 }
 
+# Empty for the domain itself: ksamp.gg is the first server's whole address, where mp.ksarmory.com
+# was a name under somebody else's. A site at the same name can share it, on another port of the
+# same machine, for as long as the name is never put behind Cloudflare's proxy.
 variable "host" {
-  description = "The name under that domain."
+  description = "The name under that domain, or empty for the domain itself."
   type        = string
   default     = "mp"
+}
+
+# Only where this layer owns the zone. Under ksarmory.com the directory's name is one of the
+# site's own, kept with them; under a zone that holds nothing else it is declared here.
+variable "directory_host" {
+  description = "The name under that domain the server directory answers at over HTTPS, or null where another layer owns it."
+  type        = string
+  default     = null
 }
 
 # Given rather than read from the machine's own state, as the zone's other records are: the two

@@ -27,7 +27,7 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
    loaded), with KSA's welcome held until you have joined or pressed **PLAY ALONE**, which hands the
    configuration back. Pick a server from the list it shows, or type an address -- a host on its
    own, or `host:port` -- then put in your name and the password if there is one, and press
-   **CONNECT**. There is a server at **`mp.ksarmory.com`** to try it on.
+   **CONNECT**. There is a server at **`ksamp.gg`** to try it on.
 
    Your name starts as something like `Kitten 4821` rather than your Windows account name, so
    nothing of yours reaches a server's player list unless you put it there. Change it to whatever
@@ -340,7 +340,7 @@ password in there, or with `set` at the console.
 A `-e KSAMP_NAME`, or an `Environment=` line in the unit, wins over the file for good -- `set name`
 at the console then writes a name into the file that players never see. So put it in the environment
 where the machine's configuration is the source of truth and the console is not meant to override it,
-which is what `infra/` does for `mp.ksarmory.com`, and in the file where you want to change it from
+which is what `infra/` does for `ksamp.gg`, and in the file where you want to change it from
 the console.
 
 The commands above are read from standard input, so a container wants `-it` to have a console at
@@ -374,7 +374,7 @@ be reached -- `tmux` or `screen` is the way to keep one for a service.
 | `tests/` | the protocol and the server driven over loopback |
 | `tools/ksa-mcp/` | commands into a running game through the mod's bridge, for driving a test without a hand on the keyboard |
 | `deploy/` | a systemd unit and a Dockerfile |
-| `infra/` | `mp.ksarmory.com` and the server behind it, as OpenTofu |
+| `infra/` | `ksamp.gg` and the server behind it, as OpenTofu |
 | `docs/DESIGN.md` | how it works, and what it cannot do yet |
 | `docs/DIRECTORY.md` | what a directory answers, and what running one takes |
 | `docs/SERVER-BROWSER.md` | the research the server list came out of |

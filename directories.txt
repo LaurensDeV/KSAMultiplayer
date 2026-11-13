@@ -14,5 +14,8 @@
 # trailing /servers. docs/DIRECTORY.md is the whole specification; it is short on purpose, so that
 # standing one up is an afternoon rather than a project.
 
+https://servers.ksamp.gg/v1/servers
+# The same directory at the name it had first, for a game whose resolver has not caught up with
+# the newer one. A server both lines carry is one row in a game's list.
 https://servers.ksarmory.com/v1/servers
 https://ksamp.safeshows.dev/v1/servers

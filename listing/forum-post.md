@@ -49,7 +49,7 @@ It keeps the world between runs, saves periodically, and has a console: [ICODE]c
 
 Set [ICODE]advertise = true[/ICODE] and it lists itself in the public directories, so players find it in that window instead of having to be sent an address. Off by default, because listing a server at home publishes a household's address.
 
-There is a server at [B]mp.ksarmory.com[/B] to try it on.
+There is a server at [B]ksamp.gg[/B] to try it on.
 
 [SIZE=4][B]Installing[/B][/SIZE]
 

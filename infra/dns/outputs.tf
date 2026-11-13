@@ -1,6 +1,6 @@
 output "address" {
   description = "What a player types into the mod's Server field."
-  value       = var.port == 50100 ? "${var.host}.${var.domain}" : "${var.host}.${var.domain}:${var.port}"
+  value       = var.port == 50100 ? local.server_name : "${local.server_name}:${var.port}"
 }
 
 # What a player types for each of the other worlds. A port is shown because a mod that does not read
@@ -17,3 +17,9 @@ output "worlds" {
     }
   }
 }
+
+output "directory" {
+  description = "Where the server directory answers, where this layer holds its name."
+  value       = var.directory_host == null ? null : "https://${var.directory_host}.${var.domain}/v1/servers"
+}
+

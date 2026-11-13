@@ -1,7 +1,8 @@
 # Infrastructure
 
-`mp.ksarmory.com`, the dedicated server behind it and the server directory at
-`servers.ksarmory.com`, as code. OpenTofu, two layers, the same R2 bucket for state that the
+`ksamp.gg`, the dedicated server behind it and the server directory at `servers.ksamp.gg`, as
+code. Both answer at the names they had first as well, `mp.ksarmory.com` and
+`servers.ksarmory.com`, which games from before the newer names have compiled in and remembered. OpenTofu, two layers, the same R2 bucket for state that the
 domain's other infrastructure uses.
 
 | Layer | State key | What it owns |
@@ -34,15 +35,16 @@ A `tofu destroy` here removes this project's DNS records, its containers and not
 
 ## The directory
 
-`servers.ksarmory.com` is the list of servers the mod's browser reads, and it is a container of this
+`servers.ksamp.gg` is the list of servers the mod's browser reads, and it is a container of this
 layer's like any other: `directory_image` by digest, `directory_name` for what it calls itself on a
 row. Empty `directory_image` means not deployed, which is also how it is taken away.
 
 **Two halves, in two repositories.** This layer owns the container. The name and the TLS in front of
 it belong to KSArmory, which owns this machine's Caddy, so standing the directory up took one line
-in that repository's Caddyfile and one entry in its `subdomains`:
+in that repository's Caddyfile and one entry in its `subdomains`, and a second name on the same
+line since:
 
-    servers.ksarmory.com -> reverse_proxy ksamp-directory:8080
+    servers.ksarmory.com, servers.ksamp.gg -> reverse_proxy ksamp-directory:8080
 
 Nothing here can make that change, because nothing here owns that state. With `directory_network`
 set, Caddy reaches the container by name on the shared network, exactly as it reaches feedback; with
@@ -64,21 +66,41 @@ for one heartbeat interval.
 One address carries one UDP port once, so a second world needs a port of its own. An address record
 cannot carry a port, so each world past the first also gets an **SRV record**, which can:
 
-    _ksamp._udp.mpcars.ksarmory.com.  300  IN  SRV  0 0 50101 mpcars.ksarmory.com.
+    _ksamp._udp.cars.ksamp.gg.  300  IN  SRV  0 0 50101 cars.ksamp.gg.
 
 Set `worlds` and both records are made for each:
 
-    export TF_VAR_worlds='{ mpcars = { port = 50101 } }'
+    export TF_VAR_worlds='{ cars = { port = 50101 } }'
 
-The mod reads SRV, so a player types `mpcars.ksarmory.com` and nothing else. It asks only when no
-port was typed: `mpcars.ksarmory.com:50101` is the player being specific and is dialled as written,
+The mod reads SRV, so a player types `cars.ksamp.gg` and nothing else. It asks only when no
+port was typed: `cars.ksamp.gg:50101` is the player being specific and is dialled as written,
 which is also the way in when a resolver mangles SRV or drops it. The address record is there so
 that fallback works and so the name resolves for everything else.
 
 Two things to know when it looks broken. Nothing but the mod consults an SRV record -- `ping` and a
-browser never will -- so check it with `dig +short SRV _ksamp._udp.mpcars.ksarmory.com` and not by
+browser never will -- so check it with `dig +short SRV _ksamp._udp.cars.ksamp.gg` and not by
 pinging the name. And a world's record must stay unproxied: a proxied name resolves to Cloudflare,
 which carries no UDP, so the name would resolve perfectly and never connect.
+
+## Two zones
+
+The records are kept once for each zone, by the same files, in a workspace apiece. `default` is
+`ksarmory.com`, where the first server is `mp` and the directory's name is the site's own.
+`ksamp-gg` is `ksamp.gg`, a zone with nothing else in it: the first server is the domain itself
+(`host` empty), the cars world is `cars`, and the directory's name is declared here
+(`directory_host`), though the site block that answers at it is still in whichever layer owns the
+machine's Caddy.
+
+    set -a; source .env.ksamp-gg; set +a      # the zone's own token and id, and TF_VAR_domain
+    export TF_VAR_host="" TF_VAR_directory_host=servers TF_VAR_worlds='{ cars = { port = 50101 } }'
+    tofu init -backend-config=backend.hcl
+    tofu workspace select -or-create ksamp-gg
+    tofu plan
+
+A world's name in a zone is only what a player types. The world itself -- its container, its
+volume and the `id` a mod manager knows it by -- is its key in `infra/server`'s map, which stays
+`mpcars` whatever it is called under either domain. Both zones' names go to the one machine, and
+the older ones are kept: a game from before the newer names has them compiled in and remembered.
 
 `infra/server` takes the same map and gives each world a container and a volume of its own:
 
@@ -134,8 +156,9 @@ whatever commit built it, and `FastAndPurrious@0.1.12+8b152a3` wants that build 
 player with another is told which one the server wants. The version a build carries is in its log's
 first lines, and in the refusal of a server that wants a different one. `ksa_build` and
 `empty_world` are the settings of the same names, and so are `advertise` and `advertise_as`:
-`advertise = true` with `advertise_as = "mp.ksarmory.com"` puts the world in a game's server list
-under the machine's name and the world's own port.
+`advertise = true` with `advertise_as = "cars.ksamp.gg"` puts the world in a game's server list
+under that name and the world's own port. The first server's are variables of their own,
+`advertise`, `advertise_as` and `server_id`.
 
 **Without a release**, `.github/workflows/worlds.yml` applies the other worlds alone. It reads
 them from the repository variable `KSAMP_WORLDS`, which is the same text as `TF_VAR_worlds`, and
@@ -205,7 +228,7 @@ To deploy by hand anyway -- an image from `main`, or a release whose deploy fail
 
 **Set both, every time.** `directory_image` defaults to empty and empty means *not deployed*, so an
 apply with only `TF_VAR_server_image` in the environment plans the directory's container away and
-takes `servers.ksarmory.com` down. The release workflow exports both for this reason. Read the plan
+takes `servers.ksamp.gg` down. The release workflow exports both for this reason. Read the plan
 before confirming it: a destroy you did not mean to ask for is in there in black and white.
 
 By digest rather than by tag, so the machine runs the image that was built. A run whose summary has
@@ -224,7 +247,7 @@ deployed ahead of the mod zip is a server nobody can join.
 
 ## The port
 
-UDP **50100**, the mod's default, so a player types `mp.ksarmory.com` and nothing else.
+UDP **50100**, the mod's default, so a player types `ksamp.gg` and nothing else.
 
 `ufw` on that machine defaults to deny and lists 22, 80 and 443. Docker publishes a port by
 rewriting the destination before the firewall's input chain sees it, so the server is reachable

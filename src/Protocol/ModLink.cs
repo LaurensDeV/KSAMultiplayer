@@ -90,7 +90,7 @@ public static class ModLink
 
     /// <summary>
     /// Which server a list is for where its operator has not said, from the address a player
-    /// reaches it by: <c>ksamp-mpcars.ksarmory.com</c>. Empty for no address.
+    /// reaches it by: <c>ksamp-cars.ksamp.gg</c>. Empty for no address.
     /// </summary>
     public static string Id(string where)
     {
