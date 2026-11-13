@@ -41,10 +41,14 @@ row. Empty `directory_image` means not deployed, which is also how it is taken a
 
 **Two halves, in two repositories.** This layer owns the container. The name and the TLS in front of
 it belong to KSArmory, which owns this machine's Caddy, so standing the directory up took one line
-in that repository's Caddyfile and one entry in its `subdomains`, and a second name on the same
+in that repository's Caddyfile and one entry in its `subdomains`, and two more names on the same
 line since:
 
-    servers.ksarmory.com, servers.ksamp.gg -> reverse_proxy ksamp-directory:8080
+    servers.ksarmory.com, servers.ksamp.gg, ksamp.gg -> reverse_proxy ksamp-directory:8080
+
+The last is the domain itself, over HTTPS: the directory's page of every server is what a browser
+gets at `https://ksamp.gg`, while the same name over UDP 50100 is the first server. The two do not
+meet, since Caddy holds 80 and 443 and nothing else.
 
 Nothing here can make that change, because nothing here owns that state. With `directory_network`
 set, Caddy reaches the container by name on the shared network, exactly as it reaches feedback; with
@@ -167,6 +171,10 @@ reads what the first server and the directory run now out of the state, so neith
     gh variable set KSAMP_WORLDS --body '{ mpcars = { port = 50101, image = "...", mods = "..." } }'
     gh workflow run Worlds                 # shows the plan
     gh workflow run Worlds -f apply=true
+
+Given `-f directory=ghcr.io/<owner>/ksamp-directory@sha256:...`, the digest the Directory image
+workflow prints, it puts the directory on that build as well: the directory's page changes
+between releases, and nothing a player installs changes with it.
 
 A release's deploy passes the same variable, so a release leaves these worlds as they are: taken
 out of it, a release would plan to remove their containers and stop at their volumes. The

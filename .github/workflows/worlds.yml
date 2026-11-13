@@ -5,6 +5,12 @@
 #   gh workflow run Worlds                 # the plan, for reading
 #   gh workflow run Worlds -f apply=true   # and done
 #
+# It is also how the directory is put on a newer build between releases, since the directory's
+# page changes without anything a player installs changing with it. The Directory image workflow
+# prints the digest:
+#
+#   gh workflow run Worlds -f directory=ghcr.io/<owner>/ksamp-directory@sha256:... -f apply=true
+#
 # A world that names an `image` runs that build until its entry changes, whatever is released
 # meanwhile; the Server image workflow builds one from any branch (`gh workflow run "Server image"
 # --ref <branch>`) and prints its digest. infra/README.md has the rest: the firewall rule, which is
@@ -19,6 +25,10 @@ on:
         description: "Apply the plan. Left off, the plan is only shown."
         type: boolean
         default: false
+      directory:
+        description: "An image for the directory, by digest. Left empty, it keeps the one it runs."
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -66,6 +76,7 @@ jobs:
         working-directory: infra/server
         env:
           WORLDS: ${{ vars.KSAMP_WORLDS }}
+          DIRECTORY: ${{ inputs.directory }}
           TF_VAR_ssh_private_key: ~/.ssh/deploy
           TF_IN_AUTOMATION: "1"
         run: |
@@ -77,6 +88,15 @@ jobs:
           image_of() { tofu state show -no-color "$1" 2>/dev/null | sed -n 's/^ *name *= *"\(.*\)"$/\1/p' | head -1; }
           server=$(image_of 'docker_image.server[0]')
           directory=$(image_of 'docker_image.directory[0]')
+          if [[ -n "$DIRECTORY" ]]; then
+              # By digest, so that what is typed into a form is one build of the directory and
+              # not whatever a tag points at today.
+              if [[ ! "$DIRECTORY" =~ ^ghcr\.io/[a-z0-9._/-]+/ksamp-directory@sha256:[0-9a-f]{64}$ ]]; then
+                  echo "::error::the directory image has to be ghcr.io/<owner>/ksamp-directory@sha256:<digest>, as the Directory image workflow prints it."
+                  exit 1
+              fi
+              directory="$DIRECTORY"
+          fi
           if [[ -z "$server" ]]; then
               echo "::error::the state has no server in it. A release puts one there; this only adds worlds beside it."
               exit 1
