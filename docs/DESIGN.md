@@ -1047,12 +1047,14 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   the source: it takes a server held to a version this game has not got. The pill itself was seen
   2026-11-12, amber `turn mods on` and `no answer` on a plain row and on the chosen one; the muted
   `recent` was not on screen.
-- **The web page of servers, in a browser a person was holding.** It was run on this machine
-  against the three live directories on 2026-11-13 and looked at in headless Chrome, both colour
-  schemes and at 520 px: the list, a server's page, the mods' names, pictures and links, and the
-  link for the cars server. Not clicked through to Borea from the page, not seen on a phone, and
-  not seen deployed. The tags a preview is drawn from were read back as Discord's crawler would
-  ask for them, for the list and for a server; no link has been pasted into Discord.
+- **The web page of servers, in a browser a person was holding.** It is deployed at
+  `https://ksamp.gg` and was looked at there on 2026-11-13 in headless Chrome: the list, a
+  server's page, the mods' names, pictures and links, and the cars server's link, which carries
+  the `ksamp-mpcars` a game's own does. Before that it was run on this machine against the live
+  directories in both colour schemes and at 520 px. The tags a preview is drawn from were read
+  back from the live addresses as Discord's crawler asks for them, for the list and for a server.
+  Not clicked through to Borea from the page, not seen on a phone, and no link has been pasted
+  into Discord.
 - **CONNECT pressed once after a name is typed.** A look no longer greys the button and a new
   name no longer starts one (`Sync.AskingAhead`, and `errors.md` for 2026-11-12). Read out of two
   logs and not pressed: the bridge has no mouse.
