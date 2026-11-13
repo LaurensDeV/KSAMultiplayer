@@ -190,7 +190,7 @@ The image is published and public, so nothing has to be built or cloned:
 ```bash
 docker run -d --name ksamp-directory -p 8080:8080 \
     -e KSAMP_DIRECTORY_NAME="your name here" \
-    ghcr.io/laurensdev/ksamp-directory:v0.20.0
+    ghcr.io/laurensdev/ksamp-directory:v0.20.1
 ```
 
 Pin the tag to a release rather than tracking `main`. It has to be one that speaks protocol 26 or
