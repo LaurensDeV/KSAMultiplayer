@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KSA Multiplayer server</title>
+  <link rel="stylesheet" href="/viewer.css">
+  <script type="module" src="/viewer.js"></script>
+</head>
+<body>
+  <header>
+    <div>
+      <h1 id="name">KSA Multiplayer</h1>
+      <p id="facts" class="quiet">connecting…</p>
+    </div>
+    <div class="clock">
+      <span id="universe">—</span>
+      <span id="warp" class="quiet"></span>
+      <span id="live" class="dot" title="live feed"></span>
+    </div>
+  </header>
+
+  <nav>
+    <button data-tab="status" class="on">Status</button>
+    <button data-tab="map">Map</button>
+    <button data-tab="system">System</button>
+    <button data-tab="admin">Admin</button>
+  </nav>
+
+  <main>
+    <section id="tab-status" class="tab on">
+      <div class="cols">
+        <div>
+          <h2>Players</h2>
+          <table id="players">
+            <thead><tr><th>Name</th><th>Ping</th><th>Flying</th><th>Manages</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <p id="nobody" class="quiet">Nobody is playing.</p>
+          <h2>Craft</h2>
+          <table id="crafts">
+            <thead><tr><th>Craft</th><th>Owner</th><th>Around</th><th>State</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div>
+          <h2>Chat</h2>
+          <ol id="chat"></ol>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-map" class="tab">
+      <div class="bar">
+        <label>Body <select id="body"></select></label>
+        <span class="quiet">Orbits from each craft's last word, run on between them.</span>
+      </div>
+      <canvas id="map2d"></canvas>
+      <h3>On the ground</h3>
+      <canvas id="ground"></canvas>
+    </section>
+
+    <section id="tab-system" class="tab">
+      <div class="bar">
+        <label><input type="checkbox" id="show-orbits" checked> Orbits</label>
+        <label><input type="checkbox" id="show-labels" checked> Labels</label>
+        <label><input type="checkbox" id="show-debris"> Debris</label>
+        <label>Follow <select id="follow"><option value="">nobody</option></select></label>
+        <span id="system-note" class="quiet"></span>
+      </div>
+      <div class="stage">
+        <canvas id="map3d"></canvas>
+        <canvas id="map3d-labels"></canvas>
+      </div>
+    </section>
+
+    <section id="tab-admin" class="tab">
+      <p id="admin-off" class="quiet" hidden>Web admin is off on this server: it has no web-admin-password.</p>
+      <form id="login" hidden>
+        <label>Password <input type="password" id="password" autocomplete="current-password"></label>
+        <button type="submit">Log in</button>
+        <span id="login-said" class="quiet"></span>
+      </form>
+      <div id="console" hidden>
+        <div class="bar" id="quick">
+          <button data-line="players">players</button>
+          <button data-line="status">status</button>
+          <button data-line="save">save</button>
+          <button data-fill="say ">say…</button>
+          <button data-fill="kick ">kick…</button>
+          <button data-fill="clear ">clear…</button>
+          <button id="logout" type="button">Log out</button>
+        </div>
+        <form id="command">
+          <input id="line" autocomplete="off" placeholder="a console command, as typed at the server" maxlength="200">
+          <button type="submit">Run</button>
+        </form>
+        <pre id="output"></pre>
+        <p class="quiet">Not here: <code>op</code> and <code>deop</code>, since a token is said once and to a game;
+          <code>set</code>, <code>settings</code>, <code>fresh</code> and <code>quit</code>, which are the server
+          console's alone, so a stolen session cannot change the password, the data folder or the world.</p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

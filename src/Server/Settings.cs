@@ -41,7 +41,14 @@ public static class Settings
         new("advertise", Kind.Flag, "false", "list this server in the public directories so players can find it; its address becomes public", true),
         new("advertise-as", Kind.Text, "", "the hostname to be listed under; empty to be listed at the address a directory sees", true),
         new("directories", Kind.Text, "", "where to announce, separated by commas; empty to read the shared list, which only an advertising server does", true),
+        new("web-port", Kind.Whole, "0", "TCP port for the web viewer, which shows this server's world to anybody who can reach it; 0 for none", false),
+        new("web-bind", Kind.Text, "127.0.0.1", "address the web viewer listens on; loopback by default, so a reverse proxy is the way out; empty for every address", false),
+        new("web-admin-password", Kind.Text, "", "password for admin commands on the web viewer; empty turns web admin off", true),
+        new("web-trust-proxy", Kind.Text, "", "addresses of reverse proxies whose X-Forwarded headers the web viewer believes, separated by commas", false),
     ];
+
+    /// <summary>The settings whose values are never said: not in the log, not in a listing.</summary>
+    public static bool Secret(string key) => key is "password" or "web-admin-password";
 
     public const string FileName = "ksamp-server.toml";
 
@@ -115,6 +122,15 @@ public static class Settings
                 : throw new FormatException($"id from {from} is '{id}', which is not 1 to {Wire.IdChars} letters, digits, dots, dashes and underscores beginning and ending with a letter or digit");
         }
 
+        int WebPort()
+        {
+            int p = Whole("web-port");
+            return p is >= 0 and <= 65535 ? p : throw new FormatException($"web-port {p} is not a port");
+        }
+
+        string WebAddress(string key, string v) =>
+            v.Trim() is not { Length: > 0 } a ? "" : IPAddress.TryParse(a, out _) ? a : throw new FormatException($"{key} has '{a}', which is not an address");
+
         int port = Whole("port");
         if (port is < 0 or > 65535) throw new FormatException($"port {port} is not a port");
         ServerOptions options = new()
@@ -135,6 +151,11 @@ public static class Settings
             Advertise = Flag("advertise"),
             AdvertiseAs = Text("advertise-as").Trim(),
             Directories = Text("directories").Trim(),
+            WebPort = WebPort(),
+            WebBind = WebAddress("web-bind", Text("web-bind")),
+            WebAdminPassword = Text("web-admin-password"),
+            WebTrustProxy = string.Join(',', Text("web-trust-proxy").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(a => WebAddress("web-trust-proxy", a))),
         };
         IPAddress? bind = Text("bind").Trim() is { Length: > 0 } b
             ? IPAddress.TryParse(b, out IPAddress? at) ? at : throw new FormatException($"bind is '{b}', which is not an address")

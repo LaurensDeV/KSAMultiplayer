@@ -78,6 +78,18 @@ public sealed record ServerOptions
 
     /// <summary>Where to announce to, separated by commas; empty for the built-in list.</summary>
     public string Directories { get; init; } = "";
+
+    /// <summary>The TCP port the web viewer listens on; zero for no viewer.</summary>
+    public int WebPort { get; init; }
+
+    /// <summary>Where the viewer listens: loopback unless told otherwise, so a reverse proxy is the way out.</summary>
+    public string WebBind { get; init; } = "127.0.0.1";
+
+    /// <summary>The password for admin commands on the viewer; empty for no web admin at all.</summary>
+    public string WebAdminPassword { get; init; } = "";
+
+    /// <summary>Reverse proxies whose X-Forwarded-For and X-Forwarded-Proto are believed, separated by commas.</summary>
+    public string WebTrustProxy { get; init; } = "";
 }
 
 /// <summary>
@@ -88,7 +100,7 @@ public sealed record ServerOptions
 ///
 /// <para>Ticked from one thread; datagrams are read on the socket's own and queued.</para>
 /// </summary>
-public sealed class GameServer : IDisposable
+public sealed partial class GameServer : IDisposable
 {
     public sealed class Player(byte id, string name, IPEndPoint at, double now)
     {
@@ -163,6 +175,9 @@ public sealed class GameServer : IDisposable
         public bool WorldGiven => !Seeding && !WaitingForWorld;
 
         public string Controlling { get; set; } = "";
+
+        /// <summary>Asked to describe its system for the web viewer, and has not yet: only then is a description taken from it.</summary>
+        public bool BodiesAsked { get; set; }
 
         /// <summary>The player's round trip, s, as that player measured it; negative until it has one.</summary>
         public float Rtt { get; set; } = -1f;
@@ -680,7 +695,11 @@ public sealed class GameServer : IDisposable
         Wire.Facts facts = new(Options.Name, _worldSystem, _world is not null, WorldMods,
                                (byte)Math.Min(_players.Count, 255), (byte)Math.Min(Options.MaxPlayers, 255),
                                Options.Password.Length > 0 ? Wire.WelcomeFlags.Password : Wire.WelcomeFlags.None, RequiredBuild,
-                               LinkId: Options.Id);
+                               LinkId: Options.Id,
+                               // Only a viewer listening where the asker can reach it: one on loopback is
+                               // behind a proxy whose port is not this one.
+                               WebPort: Options.WebPort > 0 && !System.Net.IPAddress.IsLoopback(System.Net.IPAddress.TryParse(Options.WebBind, out System.Net.IPAddress? wb) ? wb : System.Net.IPAddress.Any)
+                                   ? (ushort)Options.WebPort : (ushort)0);
         // Only a name, a build and three hundred characters of mods, none of them in ASCII, come
         // to more than an ask. Said without the mods then, as a list too long is said clipped:
         // the handshake is what compares them.
@@ -752,6 +771,7 @@ public sealed class GameServer : IDisposable
 
         bool seeding = _world is null && _players.Values.All(q => !q.Seeding);
         _udp.Send(new Wire.Welcome(id, "", Options.Name, !seeding, System: _worldSystem), from);
+        View(new ViewEvent("joined", name, ""));
         Log($"{name} has joined from {from}{(p.Admin ? " as an admin" : "")}{(seeding ? ", and their world becomes the server's" : "")}");
         // Said only when there is something to say: that they are an admin, or that the token they
         // offered is no good, which is how a game deopped while it was away forgets the one it kept.
@@ -846,6 +866,7 @@ public sealed class GameServer : IDisposable
         foreach ((string key, double at) in _gone) if (at >= since) _udp.Send(new Wire.Gone(key), p.At);
         foreach (Wire.Owners page in OwnerPages()) _udp.Send(page, p.At);
         Log($"{p.Name} is in the world");
+        AskForBodies(p);
         _rosterNext = 0.0;
     }
 
@@ -868,6 +889,9 @@ public sealed class GameServer : IDisposable
                 SetWorld(blob, p.KsaBuild, p.Mods, p.System);
                 Log($"{p.Name} saved the world: {Blob.Size(blob.Data.Length)} at universe time {blob.Universe:F0} s");
                 if (p.Seeding) OnLoaded(p, blob.Universe);
+                return;
+            case BlobKind.Bodies:
+                OnBodies(p, blob);
                 return;
             case BlobKind.Vehicle when p.Loaded && blob.Key.Length > 0:
                 // A definition under a name this player was refused is dropped; the claim that goes with
@@ -954,6 +978,7 @@ public sealed class GameServer : IDisposable
             _gone.Remove(fresh);
             OwnersChanged();
             _udp.Send(new Wire.Rename(key, fresh), p.At);
+            View(new ViewEvent("rename", p.Name, $"{key} is {fresh}"));
             Log($"{holder.Name} already has a craft called {key}, so {p.Name}'s is {fresh} here");
             return fresh;
         }
@@ -1572,6 +1597,7 @@ public sealed class GameServer : IDisposable
     private void Remove(Player p, string why)
     {
         if (!_players.Remove(p.Id)) return;
+        View(new ViewEvent("left", p.Name, why));
         _udp.Send(new Wire.Bye(why == "has left" ? "" : why), p.At);
         bool released = false;
         foreach (Craft c in _crafts.Values.Where(c => c.Owner == p.Id))
@@ -1814,6 +1840,13 @@ public sealed class GameServer : IDisposable
     private void Broadcast(Wire.Message m, Func<Player, bool> to)
     {
         foreach (Player p in _players.Values) if (to(p)) _udp.Send(m, p.At);
+        if (Viewed is null) return;
+        switch (m)
+        {
+            case Wire.Chat c: View(new ViewEvent("chat", c.From == 0 ? "" : Named(c.From), c.Text)); break;
+            case Wire.Gone g: View(new ViewEvent("gone", "", g.Key)); break;
+            case Wire.Dock d: View(new ViewEvent("dock", Named(d.By), $"{d.Consumed} into {d.Survivor}")); break;
+        }
     }
 
     /// <summary>

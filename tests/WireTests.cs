@@ -91,6 +91,9 @@ public class WireTests
                      RoundTrip(new Wire.Welcome(0, "", "Moon base", true, "c00kie", "SolLite", LinkId: "moon-base")));
         Assert.Equal(new Wire.Facts("Moon base", "SolLite", true, "Core", 3, 16, Wire.WelcomeFlags.None, "B1", LinkId: "moon-base"),
                      RoundTrip(new Wire.Facts("Moon base", "SolLite", true, "Core", 3, 16, Wire.WelcomeFlags.None, "B1", LinkId: "moon-base")));
+        // The viewer's port rides at the very end, where a reader of an older probe stops before it.
+        Assert.Equal(new Wire.Facts("Moon base", "SolLite", true, "Core", 3, 16, Wire.WelcomeFlags.None, "B1", LinkId: "moon-base", WebPort: 8080),
+                     RoundTrip(new Wire.Facts("Moon base", "SolLite", true, "Core", 3, 16, Wire.WelcomeFlags.None, "B1", LinkId: "moon-base", WebPort: 8080)));
         Assert.Equal(new Wire.Ask(), RoundTrip(new Wire.Ask()));
         Assert.Equal(new Wire.Facts("Moon base", "SolLite", true, "Core,KSAMultiplayer", 3, 16, Wire.WelcomeFlags.Password, "2026.11.10.5801"),
                      RoundTrip(new Wire.Facts("Moon base", "SolLite", true, "Core,KSAMultiplayer", 3, 16, Wire.WelcomeFlags.Password, "2026.11.10.5801")));
@@ -173,9 +176,10 @@ public class WireTests
         // A field added after the ones a reader knows is not a new form of the answer.
         buffer[n] = 7;
         Assert.Equal(told, Wire.Read(buffer.AsSpan(0, n + 1), out _));
-        // Nor is one this reader knows and the server was built before: the id, which is the
-        // last thing written and here the one byte saying it is empty.
-        Assert.Equal(told, Wire.Read(buffer.AsSpan(0, n - 1), out _));
+        // Nor is one this reader knows and the server was built before: the viewer's port, which
+        // is the last thing written, and before it the id, here the one byte saying it is empty.
+        Assert.Equal(told, Wire.Read(buffer.AsSpan(0, n - 2), out _));
+        Assert.Equal(told, Wire.Read(buffer.AsSpan(0, n - 3), out _));
 
         // A form of the answer this cannot read is a server that answered, and no more than that.
         buffer[7] = (byte)(Wire.ProbeVersion + 1);

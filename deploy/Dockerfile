@@ -25,5 +25,8 @@ COPY --from=build /out /app
 RUN useradd --system --home /data ksamp && chown ksamp /data
 USER ksamp
 EXPOSE 50100/udp
+# The web viewer's port, for -e KSAMP_WEB_PORT=8080 -e KSAMP_WEB_BIND= and -p 8080:8080. Off unless
+# both are given: it shows the whole world to anybody who can reach it.
+EXPOSE 8080/tcp
 VOLUME /data
 ENTRYPOINT ["dotnet", "/app/ksamp-server.dll", "--config", "/data/ksamp-server.toml", "--data", "/data"]

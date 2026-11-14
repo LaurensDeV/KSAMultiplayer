@@ -14,6 +14,8 @@ dedicated server (`ksamp-server`) that runs on Linux with no game installed.
 - `src/Protocol` and `src/Server` must never reference KSA: the server runs without the game, and the
   tests drive both over loopback. Only `src/Mod` touches KSA, and `src/Mod/World.cs` holds nearly all of it.
 - The mod compiles `src/Protocol/*.cs` into its own DLL, so a player installs one assembly.
+- The web viewer (`src/Server/Web`, off unless `web-port` is set) never touches `GameServer` off the
+  tick thread: it reads an immutable view the tick builds, and hands commands back through a queue.
 - Change `Wire.Version` whenever what a datagram means changes. `Wire.ProbeVersion` is `Ask` and
   `Facts` alone, which directories of other versions read: it changes only when a field already in
   a `Facts` does, never for one added at the end.

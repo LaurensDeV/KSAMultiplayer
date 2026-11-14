@@ -46,10 +46,14 @@ public sealed class Rig : IDisposable
         return c;
     }
 
+    /// <summary>After every tick, on the ticking thread, as a server's own loop runs what else it runs.</summary>
+    public event Action? Ticked;
+
     public void Tick()
     {
         Server.Tick();
         foreach (Client c in Clients) c.Update();
+        Ticked?.Invoke();
     }
 
     /// <summary>Ticks until a condition holds, failing after so long.</summary>

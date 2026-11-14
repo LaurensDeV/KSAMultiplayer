@@ -622,6 +622,68 @@ internal static class World
         if (found) File.WriteAllLines(meta, lines);
     }
 
+    // ------------------------------------------------------------------ the system, for a web viewer
+
+    private static readonly System.Reflection.FieldInfo? InitialRotation = AccessTools.Field(typeof(Celestial), "InitialRotation");
+
+    /// <summary>
+    /// Every body of this world's system as the game itself computed it, for the server's web
+    /// viewer to draw without the game: each orbit as its periapsis, eccentricity, time at periapsis
+    /// and the rotation into its parent's ecliptic axes, and each body's frame and spin as rotations
+    /// and angles rather than as the elements authored, whose frames differ from body to body. Null
+    /// with no system, or one the description cannot hold.
+    /// </summary>
+    public static SystemDescription? DescribeSystem()
+    {
+        if (KSA.Universe.CurrentSystem is not { } system) return null;
+        List<BodyDescription> bodies = [];
+        foreach (Astronomical a in system.All.AsSpan())
+        {
+            if (a is not IParentBody body) continue;
+            Orbit? orbit = a switch
+            {
+                Celestial c => c.Orbit,
+                OrbitingStar s => s.Orbit,
+                _ => null,
+            };
+            string parent = orbit?.Parent is IObjectId p ? p.Id : "";
+            string kind = a switch
+            {
+                StellarBody => "star",
+                Barycenter => "barycenter",
+                MinorBody => "minor",
+                Celestial c when c.IsMoon() => "moon",
+                _ => "planet",
+            };
+            double atmosphere = Math.Max(0.0, body.GetAtmosphereRadius() - a.MeanRadius);
+            double soi = a switch
+            {
+                Celestial c => c.SphereOfInfluence,
+                StellarBody s => s.SphereOfInfluence,
+                _ => 0.0,
+            };
+            (double rate, double phase) = a is Celestial spun
+                ? (spun.GetAngularVelocity(), InitialRotation?.GetValue(spun) is double r0 ? r0 : 0.0)
+                : (0.0, 0.0);
+            BodyOrbit? said = orbit is null || parent.Length == 0 ? null : new BodyOrbit(
+                orbit.Periapsis, orbit.Eccentricity, orbit.TimeAtPeriapsis.Seconds(), orbit.Period, orbit.Mu, Q(orbit.GetOrb2ParentCce()));
+            bodies.Add(new BodyDescription(a.Id, said is null ? "" : parent, kind, Math.Max(0.0, a.MeanRadius), body.Mu, atmosphere,
+                                           double.IsFinite(soi) ? Math.Max(0.0, soi) : 0.0,
+                                           said is null ? V(a.GetPositionEcl()) : null, said, Q(body.GetCci2Cce()), rate, phase));
+        }
+        SystemDescription described = new(system.Id, KsaBuild, [.. bodies]);
+        // Checked as the server will check it, so a description it would refuse is never sent.
+        return SystemDescription.Decode(described.Encode(), out string why) is { } ok ? ok : Refused(why);
+
+        static SystemDescription? Refused(string why)
+        {
+            Log.Warn($"could not describe this system for the server's web viewer: {why}");
+            return null;
+        }
+    }
+
+    private static Quat Q(doubleQuat q) => new(q.X, q.Y, q.Z, q.W);
+
     // ------------------------------------------------------------------ craft definitions
 
     // Built once: an XmlSerializer for a type this size takes seconds to make.
