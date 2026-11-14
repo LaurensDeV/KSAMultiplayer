@@ -773,7 +773,7 @@ tick thread drains with the console's, and its answer comes back in a `TaskCompl
 name, what they fly and their ping.
 
 **The bodies come from a game.** While a viewer runs, a loaded player whose system and build are
-the world's is asked with `Describe` (protocol 27) to send a `SystemDescription` as a `Bodies`
+the world's is asked with `Describe` (protocol 36) to send a `SystemDescription` as a `Bodies`
 blob: every body's orbit and frame as the game computed them, not as authored. As with worlds, a
 description nobody asked for is dropped. The server checks it: everything finite, rotations unit
 length, every parent described, no loops, at most 256 bodies and 512 KB. It keeps the first good
@@ -785,7 +785,9 @@ a minute stops being waited on.
 parent's ecliptic axes and summed up the tree: positions add up in CCE only, since every body's
 CCI is tilted. A craft on rails is propagated from its last word by universal-variable Kepler. A
 landed craft is spun with its body, and anything else runs on in a straight line for at most two
-seconds. The 3D view is plain canvas, drawn relative to whatever is in focus.
+seconds. The 3D view is three.js, vendored beside the page, with a logarithmic depth buffer and
+everything placed relative to whatever is in focus. Labels go on a 2D canvas over it, and none is
+drawn where a body stands between it and the eye.
 
 ## Commands from inside a game
 

@@ -507,7 +507,7 @@ void Run(string line, GameServer.Player? who, Action<string> Answer, bool fromWe
                     + $"{(p.Controlling.Length > 0 ? $", flying {p.Controlling}" : "")}"
                     + $"{(p.Rtt >= 0f ? $", ping {p.Rtt * 1000.0:0} ms" : "")}"
                     + $"{(double.IsFinite(p.Loss) ? $", {p.Loss:0.#%} lost" : "")}"
-                    + $"{(who is null ? $", from {p.At}" : "")}, KSA {p.KsaBuild}");
+                    + $"{(console ? $", from {p.At}" : "")}, KSA {p.KsaBuild}");
             }
             break;
         case "say":

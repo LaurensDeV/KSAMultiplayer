@@ -154,7 +154,8 @@ export { add, mul, len };
 export function colourOf(name) {
   let h = 0;
   for (const ch of name || "") h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return name ? `hsl(${h % 360} 70% 62%)` : "hsl(220 10% 60%)";
+  // With commas, which three.js reads as well as a canvas does; the newer form it takes for white.
+  return name ? `hsl(${h % 360}, 70%, 62%)` : "hsl(220, 10%, 60%)";
 }
 
 // Every body's inertial frame has its pole on +Z, so a body seen from above its pole is x and y.
