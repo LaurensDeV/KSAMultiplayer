@@ -293,6 +293,27 @@ Say(server.HasWorld ? "a world is ready to hand out" : "no world yet: the first 
 // the setting is there. A list nobody opts into is an empty list.
 Say(announcer.Standing());
 
+// After the socket, as the announcer is, and said whichever way it is set, as the announcer is.
+WebHost? web = null;
+if (options.WebPort > 0)
+{
+    try
+    {
+        web = await WebHost.StartAsync(options, options.WebPort, Wall);
+        server.Viewed = web.Feed.Event;
+        server.WantBodies = true;
+    }
+    catch (IOException e)
+    {
+        Console.Error.WriteLine($"could not start: the web viewer on {options.WebBind}:{options.WebPort}: {e.Message}");
+        server.Dispose();
+        return 1;
+    }
+    Say($"web viewer on http://{web.At}/, open to anybody who can reach it"
+        + (options.WebAdminPassword.Length > 0 ? ", with admin behind its password" : ", with no admin (web-admin-password is empty)"));
+}
+else Say("web viewer off; set web-port to turn it on");
+
 // Shared for reading, because whatever reads it does so while this is still writing.
 ClockTrace? trace = null;
 if (tracePath is not null)
@@ -359,16 +380,20 @@ if (!Console.IsInputRedirected || Environment.GetEnvironmentVariable("KSAMP_STDI
 
 // who is null for the console, and the player who typed it in a game otherwise: an admin asks for
 // the same things, and hears the answer in their own chat rather than in a log they cannot see.
-void Command(string line, GameServer.Player? who = null)
+// web is the viewer's admin, who hears the answer in the page and is no more the console than a
+// player is.
+void Command(string line, GameServer.Player? who = null, Action<string>? web = null)
 {
     void Answer(string text)
     {
-        if (who is null) Say(text);
+        if (web is not null) web(text);
+        else if (who is null) Say(text);
         else server.Tell(who, text);
     }
 
     string[] parts = line.Split(' ', 2, StringSplitOptions.TrimEntries);
     string rest = parts.Length > 1 ? parts[1] : "";
+    bool console = who is null && web is null;
     switch (parts[0].ToLowerInvariant())
     {
         case "players" or "list":
@@ -391,6 +416,10 @@ void Command(string line, GameServer.Player? who = null)
         case "kick":
             string[] k = rest.Split(' ', 2, StringSplitOptions.TrimEntries);
             if (k[0].Length == 0 || !server.Kick(k[0], k.Length > 1 ? k[1] : "")) Answer($"nobody called '{k[0]}'");
+            break;
+        // Not from the web: a token is said once, to a game, and a page is no place to hand one out.
+        case "op" or "deop" when web is not null:
+            Answer($"{parts[0]} is the console's and an in-game admin's, not the web viewer's");
             break;
         case "op":
             if (rest.Length == 0) Answer("op <name>, of somebody who is playing");
@@ -446,12 +475,12 @@ void Command(string line, GameServer.Player? who = null)
         // more than their name said it underneath, which left the rest looking like they needed none.
         case "help" or "?":
             // Said as it has to be typed: bare at the console, behind a / by an admin in a game.
-            string slash = who is null ? "" : "/";
+            string slash = who is null || web is not null ? "" : "/";
             foreach ((string what, string does) in Commands)
             {
                 Answer($"  {slash}{what.PadRight(18)} {does}");
             }
-            if (who is null)
+            if (console)
             {
                 Answer($"  {"fresh".PadRight(18)} throw the world away and start on an empty one");
                 Answer($"  {"settings".PadRight(18)} read the settings file again");
@@ -464,16 +493,16 @@ void Command(string line, GameServer.Player? who = null)
         // other player out, and one who could set the data folder could point it anywhere.
         // The console's alone, with quit: it throws away the world everybody is standing in, and
         // there is no undoing it from a chat window.
-        case "fresh" when who is null:
+        case "fresh" when console:
             Answer(server.Fresh("the operator started the world over"));
             break;
         case "fresh":
             Answer("fresh is the console's alone");
             break;
-        case "settings" when who is null:
+        case "settings" when console:
             Reapply(null);
             break;
-        case "set" when who is null:
+        case "set" when console:
             Set(rest);
             break;
         case "settings" or "set":
@@ -482,7 +511,7 @@ void Command(string line, GameServer.Player? who = null)
         case "quit" or "exit" or "stop":
             // The console's alone: a server nobody can start again is not something to hand to an admin
             // who meant to leave the world rather than end it.
-            if (who is not null) Answer("quit is the console's alone");
+            if (!console) Answer("quit is the console's alone");
             else stop.Cancel();
             break;
         default:
@@ -519,16 +548,19 @@ void Reapply((Settings.Setting Setting, string Value)? change)
     foreach (Settings.Setting s in Settings.All)
     {
         (string value, string from) = next[s.Key];
+        // Said of a password only that it changed: the console is the log.
+        string shown = Settings.Secret(s.Key) ? (value.Length > 0 ? "(set)" : "(none)") : $"'{value}'";
         if (from is not ("the settings file" or "its default"))
         {
-            if (change?.Setting == s) Say($"{s.Key} is written to the file, but {from} still gives it as '{value}'");
+            if (change?.Setting == s) Say($"{s.Key} is written to the file, but {from} still gives it as {shown}");
             continue;
         }
         if (value == started[s.Key].Value) continue;
-        Say(s.Live ? $"{s.Key} is now '{value}'" : $"{s.Key} is '{value}' in the file; a restart takes it up");
+        Say(s.Live ? $"{s.Key} is now {shown}" : $"{s.Key} is {shown} in the file; a restart takes it up");
     }
     server.Reconfigure(nextOptions);
     announcer.Reconfigure(nextOptions);
+    web?.Reconfigure(nextOptions);
     foreach ((string key, (string Value, string From) v) in next) if (Settings.Find(key)!.Live) started[key] = v;
 }
 
@@ -540,7 +572,7 @@ void Set(string rest)
         foreach (Settings.Setting s in Settings.All)
         {
             // The password is the one value not to put in a log, which is where the console goes.
-            string shown = s.Key == "password" ? (started[s.Key].Value.Length > 0 ? "(set)" : "(none)") : $"'{started[s.Key].Value}'";
+            string shown = Settings.Secret(s.Key) ? (started[s.Key].Value.Length > 0 ? "(set)" : "(none)") : $"'{started[s.Key].Value}'";
             Say($"  {s.Key.PadRight(15)} {shown}, from {started[s.Key].From}");
         }
         return;
@@ -553,6 +585,21 @@ void Set(string rest)
     Reapply((setting, kv.Length > 1 ? kv[1] : ""));
 }
 
+// A web admin's line, run as an in-game admin's would be and answered into the page. Logged with who
+// asked from where; a line that would carry a password is refused before it is written anywhere.
+void RunFromWeb(WebCommand c)
+{
+    if (WebHost.NotForTheWeb(c.Line) is { } verb)
+    {
+        Say($"web admin from {c.From} asked for '{verb}', which is not the web's");
+        c.Done.TrySetResult([$"{verb} is the console's alone"]);
+        return;
+    }
+    Say($"web admin from {c.From}: {c.Line}");
+    Command(c.Line, null, c.Lines.Add);
+    c.Done.TrySetResult([.. c.Lines]);
+}
+
 // Ticked often enough that a state is passed on within a frame of its arriving.
 const int TickMs = 5;
 while (!stop.IsCancellationRequested)
@@ -563,7 +610,9 @@ while (!stop.IsCancellationRequested)
         trace?.Before(server, Now(), Wall());
         while (commands.TryDequeue(out string? c)) Command(c);
         while (server.Asked.TryDequeue(out (GameServer.Player Who, string Line) a)) Command(a.Line, a.Who);
+        while (web is not null && web.Commands.TryDequeue(out WebCommand? wc)) RunFromWeb(wc);
         server.Tick();
+        web?.Tick(server, Now());
         trace?.After(server, Now(), Wall());
         announcer.Tick();
         while (server.Said.TryDequeue(out string? s)) Say(s);
@@ -578,6 +627,7 @@ while (!stop.IsCancellationRequested)
 }
 
 Say("shutting down");
+if (web is not null) await web.DisposeAsync();
 announcer.Dispose();
 while (announcer.Said.TryDequeue(out string? last)) Say(last);
 server.Dispose();

@@ -11,6 +11,9 @@ public enum BlobKind : byte
 
     /// <summary>One craft as KSA saves it, gzipped XML: what every other game builds it from.</summary>
     Vehicle = 2,
+
+    /// <summary>A <see cref="SystemDescription"/>, as JSON: what a web viewer draws the bodies from.</summary>
+    Bodies = 3,
 }
 
 /// <summary>
@@ -43,7 +46,7 @@ public sealed record Blob(BlobKind Kind, string Key, byte Owner, double Universe
         {
             using BinaryReader r = new(new MemoryStream(bytes));
             BlobKind kind = (BlobKind)r.ReadByte();
-            if (kind is not (BlobKind.World or BlobKind.Vehicle)) return null;
+            if (kind is not (BlobKind.World or BlobKind.Vehicle or BlobKind.Bodies)) return null;
             string key = Encoding.UTF8.GetString(r.ReadBytes(r.ReadByte()));
             byte owner = r.ReadByte();
             double universe = r.ReadDouble();
