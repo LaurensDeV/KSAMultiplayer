@@ -298,6 +298,10 @@ like `quit`.
 | `--discord-operators` | `KSAMP_DISCORD_OPERATORS` | none | Discord user ids, comma separated, who are [operators](#operators-and-the-servers-log): admins who may also download the server's log |
 | `--discord-trusted` | `KSAMP_DISCORD_TRUSTED` | none | Discord user ids, comma separated, who are [trusted](#trusted-players) whenever they log in with Discord |
 | `--discord-login` | `KSAMP_DISCORD_LOGIN` | `https://servers.ksamp.gg/v1/discord` | the service that vouches for who a player is on Discord, [asked only once there is a Discord admin](#admins-by-discord); empty to take no Discord logins |
+| `--web-port` | `KSAMP_WEB_PORT` | `0`, off | TCP port for the [web viewer](#web-viewer) |
+| `--web-bind` | `KSAMP_WEB_BIND` | `127.0.0.1` | address the viewer listens on; empty for every address |
+| `--web-admin-password` | `KSAMP_WEB_ADMIN_PASSWORD` | none, no web admin | password for running commands from the viewer |
+| `--web-trust-proxy` | `KSAMP_WEB_TRUST_PROXY` | none | reverse proxies whose `X-Forwarded-For`/`-Proto` headers are believed, separated by commas |
 
 Commands typed into the server's console: `help`, `players`, `say <text>`, `kick <name> [why]` (or `kick #<id>` by the number `players` shows; a name may have spaces in it), `op <name>`, `trust <name>`, `deop <name>`, `admins`,
 `clear [name]`, `debris [name]`, `remove <craft>`, `protect <craft>`, `unprotect <craft>`, `protected`, `rename <craft> -> <new name>`, `reload` (or `reset`), `save [name]`,
@@ -563,6 +567,38 @@ Nobody loads a save of their own while in a server, admin or not: it would put t
 world the others are not in. KSA says so where the save was picked, and **DISCONNECT** is the way to
 one's own saves.
 
+### Web viewer
+
+Set `web-port` and the server also serves a page of what is happening in its world: who is
+playing and what they fly, the chat, universe time and any warp, a map of each body with the craft
+around it and their orbits, and a 3D view of the whole system. **Anybody who can reach the port sees
+all of it,** so turning it on is the operator's decision for everybody on the server. It is off by
+default.
+
+It listens on `127.0.0.1` unless `web-bind` says otherwise, so the way out is a reverse proxy that
+passes WebSockets through. For Caddy:
+
+```
+viewer.example.com {
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+With `web-bind = ""` it listens on every address instead; open the TCP port in the firewall too.
+Behind a proxy, put the proxy's address in `web-trust-proxy`, so the viewer limits requests by the
+visitor's address rather than the proxy's.
+
+With `web-admin-password` set, the Admin tab logs in with it and runs console commands: `players`,
+`say`, `kick`, `save`, `status`, `clear` and the rest. It is a password of its own and not an in-game
+admin's token. `op`, `deop`, `set`, `settings`, `fresh` and `quit` stay the console's, so a stolen
+session cannot change the password, the data folder or the world. Every command run from the web is
+logged with the address it came from, and a new password ends every session.
+
+The bodies come from a game: while the viewer is on, the first player in the world on the server's
+KSA build is asked once to describe its system, and the answer is kept beside the world as
+`bodies-<system>-<build>.json`. Until then the map shows the craft without the bodies and their
+orbits, and the 3D view waits.
+
 ### As a service
 
 Every release publishes a container image, so there is nothing to build or clone:
@@ -598,6 +634,10 @@ steps in its header:
 ```bash
 docker build -f deploy/Dockerfile -t ksamp-server .
 ```
+
+For the [web viewer](#web-viewer) in a container, publish its port and bind it to every address
+inside the container, which is still only what you publish: `-p 8080:8080 -e KSAMP_WEB_PORT=8080
+-e KSAMP_WEB_BIND=`.
 
 Its settings file is `/data/ksamp-server.toml`, in the volume, and the systemd unit's is
 `/var/lib/ksamp/ksamp-server.toml`: beside the executable is read-only in both. Set the name and the

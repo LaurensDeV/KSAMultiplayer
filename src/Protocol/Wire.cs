@@ -213,8 +213,12 @@ public static class Wire
     /// <para>35 is <see cref="Player.Watching"/> on every row of a <see cref="Roster"/>, which a game
     /// of 34 would read as the start of the next row; <see cref="Give"/>; and
     /// <see cref="State.Thrusters"/>.</para>
+    ///
+    /// <para>36 adds <see cref="Describe"/>, a server asking a game for its system, and a blob kind
+    /// to answer it with: what a web viewer draws the bodies from. Only a server whose viewer is on
+    /// asks, and a game of 35 would read the kind as one it does not know.</para>
     /// </summary>
-    public const ushort Version = 35;
+    public const ushort Version = 36;
 
     /// <summary>
     /// The version of <see cref="Ask"/> and <see cref="Facts"/> alone, in the first byte of each.
@@ -370,6 +374,7 @@ public static class Wire
         Closing = 35,
         LogsWanted = 36,
         Give = 37,
+        Describe = 39,
     }
 
     /// <summary>Where a warp has got to: nobody has asked, somebody has and is waiting, or it is running.</summary>
@@ -445,12 +450,16 @@ public static class Wire
     /// rest is a row of a list, and this is whether the row can be joined.
     /// </param>
     /// <param name="LinkId">
-    /// As on a <see cref="Welcome"/>. The last field, and so absent from a server that was built
-    /// before it, which a reader takes as not said.
+    /// As on a <see cref="Welcome"/>. Absent from a server that was built before it, which a reader
+    /// takes as not said.
+    /// </param>
+    /// <param name="WebPort">
+    /// The TCP port of the server's web viewer, at the address it was asked at; 0 for none, or for
+    /// one only a reverse proxy reaches. The last field, and so absent from a server built before it.
     /// </param>
     /// <param name="Optional">As on a <see cref="Welcome"/>, after <paramref name="LinkId"/>.</param>
     public sealed record Facts(string ServerName, string System, bool HasWorld, string Mods, byte Players, byte MaxPlayers,
-                               WelcomeFlags Flags, string KsaBuild, ushort Speaks = Version, string LinkId = "", string Optional = "") : Message(Kind.Facts);
+                               WelcomeFlags Flags, string KsaBuild, ushort Speaks = Version, string LinkId = "", string Optional = "", ushort WebPort = 0) : Message(Kind.Facts);
 
     /// <param name="Rtt">The player's round trip to the server, s, as that player last measured it; negative until it has.</param>
     /// <param name="Can">The speed that player's game is managing, as a multiple of real time:
@@ -855,6 +864,13 @@ public static class Wire
     /// <summary>The server asking a player for a save of its world, to hand players who join after.</summary>
     public sealed record Snapshot(string Why) : Message(Kind.Snapshot);
 
+    /// <summary>
+    /// The server asking a game in the world to describe its system, once, for the web viewer: a
+    /// <see cref="SystemDescription"/> sent back as a blob of <see cref="BlobKind.Bodies"/>. A
+    /// description nobody asked for is dropped, as a world nobody asked for is.
+    /// </summary>
+    public sealed record Describe() : Message(Kind.Describe);
+
     /// <param name="Why">Why this game will not hand its world over, said to everyone.</param>
     /// <remarks>A world KSA cannot load is worse than a world an hour old: a game that has one keeps
     /// it to itself and the server asks somebody else.</remarks>
@@ -911,6 +927,7 @@ public static class Wire
                 w.Text(f.KsaBuild, 64);
                 w.Text(f.LinkId, IdChars);
                 w.Text(f.Optional, OptionalChars);
+                w.U16(f.WebPort);
                 break;
             case Roster r:
                 w.U8((byte)Math.Min(r.Players.Length, 64));
@@ -1096,6 +1113,8 @@ public static class Wire
             case Snapshot s:
                 w.Text(s.Why, 200);
                 break;
+            case Describe:
+                break;
             case NoWorld n:
                 w.Text(n.Why, 200);
                 break;
@@ -1128,7 +1147,7 @@ public static class Wire
                     // which is what a datagram of another version already is to whoever asked.
                     if (r.U8() != ProbeVersion) return null;
                     return new Facts(r.Text(64), r.Text(NameChars), r.U8() != 0, r.LongText(ProbeModsChars), r.U8(), r.U8(), (WelcomeFlags)r.U8(), r.Text(64), version,
-                                     r.More ? r.Text(IdChars) : "", r.More ? r.Text(OptionalChars) : "");
+                                     r.More ? r.Text(IdChars) : "", r.More ? r.Text(OptionalChars) : "", r.More ? r.U16() : (ushort)0);
             }
             if (version != Version) return null;
             Message m = (Kind)data[6] switch
@@ -1171,6 +1190,7 @@ public static class Wire
                 Kind.DiscordProof => new DiscordProof(r.LongText(KSAMultiplayer.Discord.CertChars), r.Text(255), r.Text(KSAMultiplayer.Discord.SignatureChars)),
                 Kind.DiscordUser => new DiscordUser(r.Text(KSAMultiplayer.Discord.IdChars), r.Text(NameChars * 2), r.Text(200)),
                 Kind.Snapshot => new Snapshot(r.Text(200)),
+                Kind.Describe => new Describe(),
             Kind.NoWorld => new NoWorld(r.Text(200)),
                 _ => throw new FormatException(),
             };

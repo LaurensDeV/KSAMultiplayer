@@ -754,6 +754,39 @@ sent a piece that was due or asked for or heard anything. What it carries says w
 the craft's Id, its owner and the universe time. A zip from another machine is unpacked only into its
 own folder: a name that climbs out of it is refused.
 
+## The web viewer
+
+`src/Server/Web` is a page and a few routes served by Kestrel inside the server process, on a TCP
+port of its own, and off unless `web-port` is set. The plan it was built from, with what KSA's
+system model turned out to be, is `docs/WEB-VIEWER.md`.
+
+**One writer.** `GameServer` is not thread-safe and the web never touches it. Every 0.2 s the tick
+thread builds an immutable `ServerView` (players, warp, clock, every craft's last `State`) and puts
+it in a slot the web reads. Events (chat, joins, leaves, gone, docks, renames) come from
+`GameServer.Viewed`, which is null with no viewer. Its one subscriber does a `TryWrite` into a
+bounded channel that drops its oldest. The feed's own timer turns these into a delta per socket:
+the craft being flown at 5 Hz, the rest at 1 Hz, and only crafts whose `Sequence` moved. A socket
+whose queue fills is aborted rather than waited for. A web admin's command goes into a queue the
+tick thread drains with the console's, and its answer comes back in a `TaskCompletionSource`.
+
+**Nothing private goes in a view.** No token, cookie, password or address: a player is an id, a
+name, what they fly and their ping.
+
+**The bodies come from a game.** While a viewer runs, a loaded player whose system and build are
+the world's is asked with `Describe` (protocol 27) to send a `SystemDescription` as a `Bodies`
+blob: every body's orbit and frame as the game computed them, not as authored. As with worlds, a
+description nobody asked for is dropped. The server checks it: everything finite, rotations unit
+length, every parent described, no loops, at most 256 bodies and 512 KB. It keeps the first good
+one per system and build as `bodies-<system>-<build>.json` in the data folder, so the viewer
+shows the bodies with nobody online and nobody is asked twice. A game that does not answer within
+a minute stops being waited on.
+
+**The page draws in doubles.** Bodies move on Kepler orbits from periapsis, turned into their
+parent's ecliptic axes and summed up the tree: positions add up in CCE only, since every body's
+CCI is tilted. A craft on rails is propagated from its last word by universal-variable Kepler. A
+landed craft is spun with its body, and anything else runs on in a straight line for at most two
+seconds. The 3D view is plain canvas, drawn relative to whatever is in focus.
+
 ## Commands from inside a game
 
 A line typed into the chat behind a `/` goes to the server as a `Command` rather than to everyone as
@@ -1394,6 +1427,15 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   roster following the name -- the server's half of the first three is in its tests.
 
 ## What has not been tried
+
+- **The web viewer with a game in the world.** The server half is tested over loopback with real
+  sockets: views, chat over the socket, admin, the rates a socket is sent craft at, a stalled
+  socket dropped, descriptions refused, kept and outliving a restart. The page has been seen
+  against a running server: the roster, chat from a web `say`, admin, and the 3D view drawing a
+  description put in the data folder by hand. What has not been seen is `World.DescribeSystem`
+  answering in a game (the `InitialRotation` field is read by reflection), the bodies it sends
+  lining up with KSA's own `GetPositionEcl`, or a real craft's `PositionCci` landing on its orbit
+  in the 2D and 3D views.
 
 - **Players' logs to the test server, on `ksamp.gg` itself.** Seen with two games pointed at the
   rig's server by `KSAMP_LOGS_TO`: each sent its last three sessions as it joined, the server kept

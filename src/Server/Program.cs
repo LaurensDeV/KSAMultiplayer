@@ -349,6 +349,27 @@ if (server.DiscordOn)
 // the setting is there. A list nobody opts into is an empty list.
 Say(announcer.Standing());
 
+// After the socket, as the announcer is, and said whichever way it is set, as the announcer is.
+WebHost? web = null;
+if (options.WebPort > 0)
+{
+    try
+    {
+        web = await WebHost.StartAsync(options, options.WebPort, Wall);
+        server.Viewed = web.Feed.Event;
+        server.WantBodies = true;
+    }
+    catch (IOException e)
+    {
+        Console.Error.WriteLine($"could not start: the web viewer on {options.WebBind}:{options.WebPort}: {e.Message}");
+        server.Dispose();
+        return 1;
+    }
+    Say($"web viewer on http://{web.At}/, open to anybody who can reach it"
+        + (options.WebAdminPassword.Length > 0 ? ", with admin behind its password" : ", with no admin (web-admin-password is empty)"));
+}
+else Say("web viewer off; set web-port to turn it on");
+
 // Shared for reading, because whatever reads it does so while this is still writing.
 ClockTrace? trace = null;
 if (tracePath is not null)
@@ -447,26 +468,30 @@ if (!Console.IsInputRedirected || Environment.GetEnvironmentVariable("KSAMP_STDI
 
 // who is null for the console, and the player who typed it in a game otherwise: an admin asks for
 // the same things, and hears the answer in their own chat rather than in a log they cannot see.
-void Command(string line, GameServer.Player? who = null)
+// web is the viewer's admin, who hears the answer in the page and is no more the console than a
+// player is.
+void Command(string line, GameServer.Player? who = null, Action<string>? web = null)
 {
     // The first thing said back, which is what the audit log keeps of how it went.
     string? answered = null;
     void Answer(string text)
     {
         answered ??= text;
-        if (who is null) Say(text);
+        if (web is not null) web(text);
+        else if (who is null) Say(text);
         else server.Tell(who, text);
     }
-    Run(line, who, Answer);
+    Run(line, who, Answer, web is not null);
     // The password is kept out of a file that is read by whoever reads the log.
     string written = line.StartsWith("set password", StringComparison.OrdinalIgnoreCase) ? "set password (not written here)" : line;
-    if (Permissions.Audits(line)) server.Audit.Write(who is null ? "console" : AuditLog.Who(who), written, answered ?? "");
+    if (Permissions.Audits(line)) server.Audit.Write(web is not null ? "web admin" : who is null ? "console" : AuditLog.Who(who), written, answered ?? "");
 }
 
-void Run(string line, GameServer.Player? who, Action<string> Answer)
+void Run(string line, GameServer.Player? who, Action<string> Answer, bool fromWeb = false)
 {
     string[] parts = line.Split(' ', 2, StringSplitOptions.TrimEntries);
     string rest = parts.Length > 1 ? parts[1] : "";
+    bool console = who is null && !fromWeb;
     switch (parts[0].ToLowerInvariant())
     {
         case "players" or "list":
@@ -657,11 +682,11 @@ void Run(string line, GameServer.Player? who, Action<string> Answer)
             // Said as it has to be typed: bare at the console, behind a / by an admin in a game.
             string slash = who is null ? "" : "/";
             // In a game, only what this player may run: a list of commands they would be refused is a list of refusals.
-            foreach ((string what, string does) in Commands.Where(c => who is null || (Permissions.Need(c.What) <= who.Role && !Permissions.OnlyAtTheConsole(c.What))))
+            foreach ((string what, string does) in Commands.Where(c => console || ((who is null || Permissions.Need(c.What) <= who.Role) && !Permissions.OnlyAtTheConsole(c.What))))
             {
                 Answer($"  {slash}{what.PadRight(18)} {does}");
             }
-            if (who is null)
+            if (console)
             {
                 Answer($"  {"settings".PadRight(18)} read the settings file again");
                 Answer($"  {"set <key> <value>".PadRight(18)} change a setting and keep it in the file; set alone lists them");
@@ -677,10 +702,10 @@ void Run(string line, GameServer.Player? who, Action<string> Answer)
             break;
         // The console's alone, as quit is: an admin who could set the password could lock every
         // other player out, and one who could set the data folder could point it anywhere.
-        case "settings" when who is null:
+        case "settings" when console:
             Reapply(null);
             break;
-        case "set" when who is null:
+        case "set" when console:
             Set(rest);
             break;
         case "settings" or "set":
@@ -689,7 +714,7 @@ void Run(string line, GameServer.Player? who, Action<string> Answer)
         case "quit" or "exit" or "stop":
             // The console's alone: a server nobody can start again is not something to hand to an admin
             // who meant to leave the world rather than end it.
-            if (who is not null) Answer("quit can only be run from the server console");
+            if (!console) Answer("quit can only be run from the server console");
             else AskStop(rest.Length > 0 ? rest : "the operator stopped the server");
             break;
         default:
@@ -706,7 +731,7 @@ void Run(string line, GameServer.Player? who, Action<string> Answer)
 // data stay as the server was started with until it is started again.
 // The values not to put in a log, which is where the console goes.
 string Shown(string key, string value) =>
-    key is "password" ? (value.Length > 0 ? "(set)" : "(none)") : $"'{value}'";
+    Settings.Secret(key) ? (value.Length > 0 ? "(set)" : "(none)") : $"'{value}'";
 
 void Reapply((Settings.Setting Setting, string Value)? change)
 {
@@ -733,6 +758,7 @@ void Reapply((Settings.Setting Setting, string Value)? change)
     foreach (Settings.Setting s in Settings.All)
     {
         (string value, string from) = next[s.Key];
+        // Said of a password only that it changed: the console is the log.
         if (from is not ("the settings file" or "its default"))
         {
             if (change?.Setting == s) Say($"{s.Key} is written to the file, but {from} still gives it as {Shown(s.Key, value)}");
@@ -743,6 +769,7 @@ void Reapply((Settings.Setting Setting, string Value)? change)
     }
     server.Reconfigure(nextOptions);
     announcer.Reconfigure(nextOptions);
+    web?.Reconfigure(nextOptions);
     foreach ((string key, (string Value, string From) v) in next) if (Settings.Find(key)!.Live) started[key] = v;
 }
 
@@ -765,6 +792,21 @@ void Set(string rest)
     Reapply((setting, kv.Length > 1 ? kv[1] : ""));
 }
 
+// A web admin's line, run as an in-game admin's would be and answered into the page. Logged with who
+// asked from where; a line that would carry a password is refused before it is written anywhere.
+void RunFromWeb(WebCommand c)
+{
+    if (WebHost.NotForTheWeb(c.Line) is { } verb)
+    {
+        Say($"web admin from {c.From} asked for '{verb}', which is not the web's");
+        c.Done.TrySetResult([$"{verb} is the console's alone"]);
+        return;
+    }
+    Say($"web admin from {c.From}: {c.Line}");
+    Command(c.Line, null, c.Lines.Add);
+    c.Done.TrySetResult([.. c.Lines]);
+}
+
 // Ticked often enough that a state is passed on within a frame of its arriving.
 const int TickMs = 5;
 // Long enough for a game to write and send a world of a few hundred KB; a host stopping this process gives it only so long.
@@ -780,7 +822,9 @@ while (!stop.IsCancellationRequested)
         trace?.Before(server, Now(), Wall());
         while (commands.TryDequeue(out string? c)) Command(c);
         while (server.Asked.TryDequeue(out (GameServer.Player Who, string Line) a)) Command(a.Line, a.Who);
+        while (web is not null && web.Commands.TryDequeue(out WebCommand? wc)) RunFromWeb(wc);
         server.Tick();
+        web?.Tick(server, Now());
         trace?.After(server, Now(), Wall());
         announcer.Tick();
         while (server.Said.TryDequeue(out string? s)) Say(s);
@@ -816,6 +860,7 @@ while (!stop.IsCancellationRequested)
 }
 
 Say("shutting down");
+if (web is not null) await web.DisposeAsync();
 // The goodbye before the directories: withdrawing takes seconds, and a host stopping this
 // process does not wait long.
 server.Dispose();

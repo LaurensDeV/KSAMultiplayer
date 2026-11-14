@@ -1963,6 +1963,7 @@ internal static class Sync
                     Play(c);
                     TakeWhatIsWatched(c);
                     AgreeForThePlayer(c);
+                    Describe(c);
                     break;
             }
             HoldTheClock(c);
@@ -2065,6 +2066,17 @@ internal static class Sync
     // cannot be answered at all. KSA writes no save while the vehicle editor is open, and a player who
     // closes it a second later is still the one whose world this is -- so the ask is kept rather than
     // answered with a world that was never written.
+    // The server's web viewer asking what this world's system is. Answered once, from the game's
+    // own numbers, and only from inside the world, which is the only place they are this world's.
+    private static void Describe(Client c)
+    {
+        if (!c.DescribeWanted) return;
+        c.DescribeWanted = false;
+        if (World.DescribeSystem() is not { } system) return;
+        c.Upload(new Blob(BlobKind.Bodies, "", c.Id, World.Universe, system.Encode()));
+        Log.Info($"described {system.System} for the server's web viewer: {system.Bodies.Length} bodies");
+    }
+
     private static bool? Snapshot(Client c)
     {
         if (c.SnapshotWanted is not { } why) return null;
