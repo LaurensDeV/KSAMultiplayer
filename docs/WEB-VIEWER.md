@@ -12,7 +12,7 @@ needs a game is in `docs/DESIGN.md` under "What has not been tried".
 
 - **Phase 0** is answered below, under "How KSA models the system".
 - **Web stack:** ASP.NET Core inside the server, as planned. The linux-x64 single file went from
-  37.5 MB (39,357,653 bytes) to 49.4 MB (51,819,527 bytes): **+11.9 MB**. Everything web is in
+  37.5 MB (39,357,653 bytes) to 49.6 MB (51,992,970 bytes): **+12.0 MB**, three.js included. Everything web is in
   `src/Server/Web`, and only `WebHost.cs` knows Kestrel, so the `HttpListener` fallback touches
   that file.
 - **Tick cost:** a view of 16 players and 200 craft takes **0.068 ms** to build
@@ -27,10 +27,13 @@ needs a game is in `docs/DESIGN.md` under "What has not been tried".
   ecliptic axes, and each body's `Cci2Cce` and spin rate and phase. The XML's units and frames
   differ from body to body, and a viewer that re-derived them would be a second place to get
   them wrong.
-- **The 3D view is plain canvas, not three.js.** Vendoring three.js meant downloading it, and
-  canvas covers what the view draws: spheres, lines, markers and labels. Positions stay doubles
-  until they are drawn relative to the focus, so the float32 jitter the plan worried about does
-  not arise.
+- **The 3D view is three.js r170**, vendored as `src/Server/Web/Page/three.module.min.js` (MIT,
+  licence header kept; 692 KB). It came from the npm package, whose sha512 was checked against
+  the registry's. A first version on a 2D canvas could not get depth right: a canvas paints whole
+  objects in order, so the half of an orbit in front of a planet was painted over, and craft behind
+  one showed through it. three.js draws with a logarithmic depth buffer, everything is placed
+  relative to the focus from doubles (the floating origin), and labels are drawn over it on a 2D
+  canvas, hidden where a body blocks the line of sight to them.
 - **`WebPort` in `Facts`** is said only for a viewer bound to an address the asker can reach. One
   on loopback is behind a proxy whose port is not this one.
 - **Web admin may not run** `op`, `deop`, `set`, `settings`, `fresh` or `quit`. Such a line is

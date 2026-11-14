@@ -406,7 +406,7 @@ void Command(string line, GameServer.Player? who = null, Action<string>? web = n
                 Answer($"  {p.Id,3} {p.Name,-24} {(p.Loaded ? "playing" : p.WaitingForWorld ? "waiting for the world" : "loading")}"
                     + $"{(p.Admin ? ", admin" : "")}"
                     + $"{(p.Controlling.Length > 0 ? $", flying {p.Controlling}" : "")}"
-                    + $"{(who is null ? $", from {p.At}" : "")}, KSA {p.KsaBuild}");
+                    + $"{(console ? $", from {p.At}" : "")}, KSA {p.KsaBuild}");
             }
             break;
         case "say":

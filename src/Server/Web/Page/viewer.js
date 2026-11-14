@@ -111,8 +111,8 @@ function addChat(line) {
       if (line.who) { li.append(el("span", line.who, "who"), document.createTextNode(line.text)); }
       else li.append(el("span", line.text, "server"));
       break;
-    case "joined": li.append(el("span", `${line.who} joined`, "server")); break;
-    case "left": li.append(el("span", `${line.who} ${line.text}`, "server")); break;
+    // The server says joins and leaves in the chat itself, so these would only say them twice.
+    case "joined": case "left": return;
     case "gone": li.append(el("span", `${line.text} is gone`, "server")); break;
     case "dock": li.append(el("span", `${line.who} docked ${line.text}`, "server")); break;
     case "rename": li.append(el("span", `${line.who}'s ${line.text} here`, "server")); break;
@@ -174,7 +174,7 @@ for (const b of document.querySelectorAll("nav button")) {
 }
 
 const map2d = new Map2d($("map2d"), $("ground"), state, universeNow);
-const system3d = new System3d($("map3d"), state, universeNow, {
+const system3d = new System3d($("map3d"), $("map3d-labels"), state, universeNow, {
   orbits: $("show-orbits"), labels: $("show-labels"), debris: $("show-debris"), follow: $("follow"), note: $("system-note"),
 });
 

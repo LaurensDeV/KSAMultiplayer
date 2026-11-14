@@ -66,7 +66,9 @@ th { color: var(--quiet); font-weight: 500; }
 canvas { width: 100%; display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
 #map2d { aspect-ratio: 1 / 1; max-height: 70vh; }
 #ground { aspect-ratio: 2 / 1; max-height: 30vh; }
-#map3d { height: 72vh; cursor: grab; }
+.stage { position: relative; height: 72vh; }
+#map3d { height: 100%; cursor: grab; }
+#map3d-labels { position: absolute; inset: 0; height: 100%; pointer-events: none; background: none; border-color: transparent; }
 
 input, select, button {
   background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 4px;

@@ -16,6 +16,8 @@ internal static class Page
         ("viewer.js", "text/javascript; charset=utf-8"),
         ("map2d.js", "text/javascript; charset=utf-8"),
         ("map3d.js", "text/javascript; charset=utf-8"),
+        // three.js r170, MIT, vendored from the npm package with its licence header kept: nothing is fetched from elsewhere.
+        ("three.module.min.js", "text/javascript; charset=utf-8"),
     ];
 
     private static readonly Dictionary<string, byte[]> Read = Files.ToDictionary(f => f.Path, f => Load(f.Path));

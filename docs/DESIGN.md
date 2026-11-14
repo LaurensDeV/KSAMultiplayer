@@ -402,7 +402,9 @@ a minute stops being waited on.
 parent's ecliptic axes and summed up the tree: positions add up in CCE only, since every body's
 CCI is tilted. A craft on rails is propagated from its last word by universal-variable Kepler. A
 landed craft is spun with its body, and anything else runs on in a straight line for at most two
-seconds. The 3D view is plain canvas, drawn relative to whatever is in focus.
+seconds. The 3D view is three.js, vendored beside the page, with a logarithmic depth buffer and
+everything placed relative to whatever is in focus. Labels go on a 2D canvas over it, and none is
+drawn where a body stands between it and the eye.
 
 ## Commands from inside a game
 
