@@ -41,9 +41,8 @@ pip install -r tools/requirements.txt && python3 tools/check_schema.py
 ## Images
 
 `icon.png` is the listing's tile: four kittens on EVA with three players' names over them, cut
-square from a screenshot of a shared world. It is not in `borea.toml` yet, and until it is the
-listing shows Borea's default tile: its record goes under `[images.icon]` as a `url`, `sha256`,
-`width`, `height` and `size`, and the URL has to name a commit that holds the file.
+square from a screenshot of a shared world. Its record is in `borea.toml` under `[images.icon]`:
+a `url`, `sha256`, `width`, `height` and `size`, where the URL names a commit that holds the file.
 
 The schema asks for a square icon of 256-2048 px and at most 256 KiB, and allows up to 16
 description images, each at most 2048 px and 1 MiB, PNG or JPEG for anything photographic. Those

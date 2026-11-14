@@ -55,3 +55,10 @@ game_min = "2026.11.10.5801"
 [loader]
 id = "StarMap"
 min = "0.5.3"
+
+[images.icon]
+url = "https://raw.githubusercontent.com/LaurensDeV/KSAMultiplayer/3fb168ac05946b71a5fd09a2d128da1530ae2392/listing/icon.png"
+sha256 = "3317cdb77d3a1d5a9037426af795732e864f2e4a29fc5be2c9ba6e12d7f6c90b"
+width = 512
+height = 512
+size = 214311
