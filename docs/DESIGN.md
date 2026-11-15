@@ -255,8 +255,9 @@ datagrams the first of two can finish arriving after the second, and the last to
 every other game built and what everybody who joined later was given.
 
 **A server can be held to a build of a mod.** A game says what it has enabled with the version each
-mod's own assembly carries (`World.Mods`, read off the assembly each mod's `mod.toml` names, since
-KSA knows a mod's name and nothing of its version), and an operator's `mods` may name a version
+mod's own assembly carries (`World.Mods`, read off the file of the assembly each mod's `mod.toml`
+names, found from the mod's name where StarMap finds it, since KSA knows a mod's name and nothing
+of its version), and an operator's `mods` may name a version
 after an `@`: a release, or a release and the beginning of the commit it was built from
 (`ModList`). Two builds of one mod are one name and two mods -- a car mod that says how its cars
 are steering and one that does not. The list a world's first player brought is still ids alone.
@@ -1059,6 +1060,15 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   asked at the default one, which on a machine with two servers is the other server
   (`Browser.Place`, `Row.Serial`, and `errors.md` for 2026-11-14). Read out of a game's log and
   built; the list has not been looked at since.
+- **A mod's version, where a mod manager installed the mod.** It was looked up by the folder
+  its loaded assembly said it came from, which need not be the folder KSA knows the mod by
+  (`World.VersionOf`, and `errors.md` for 2026-11-15). Read out of Borea's source and one
+  player's account; the file's version was read by hand off both mods as Borea stores them, and
+  no game has been started on it.
+- **A world in another system, from a game started without KSA's configuration.** The window
+  offers to have KSA start in the world's system next time (`World.StartNextIn`,
+  `Panel.PressStartThere`, the bridge's `mp {"start_there": true}`). Not pressed, and no game
+  has been restarted on it.
 - **CONNECT pressed once after a name is typed.** A look no longer greys the button and a new
   name no longer starts one (`Sync.AskingAhead`, and `errors.md` for 2026-11-12). Read out of two
   logs and not pressed: the bridge has no mouse.

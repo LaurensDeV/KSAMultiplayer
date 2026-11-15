@@ -1471,11 +1471,29 @@ internal static class Panel
         // system it was built in is the system this game has until it is started again. Above the
         // button rather than under it, since the button is the floor of the window.
         string typed = AddressText.ToString().Trim();
-        if (!ahead && Sync.ServerAsked == typed && Sync.Server is { } there
-            && there.HasWorld && there.System.Length > 0 && World.System.Length > 0 && there.System != World.System)
+        if (!ahead && Elsewhere(typed) is { } system)
         {
-            ImGui.TextColored(in ConsoleStyle.Danger,
-                              $"This world is in {Named(there.System)}; you are in {Named(World.System)}. Restart KSA to join it.");
+            string world = Named(system), here = Named(World.System);
+            // KSA started with its configuration is this mod's window at start, which asks the
+            // server and starts where it says. Started without, it is the system it was last in
+            // and no window: a restart alone comes back here, so the system is chosen from here.
+            if (World.AsksAtStart)
+            {
+                ImGui.TextColored(in ConsoleStyle.Danger, $"This world is in {world}; you are in {here}. Restart KSA to join it.");
+            }
+            else if (World.StartsNextIn == system)
+            {
+                ImGui.TextColored(in ConsoleStyle.Positive, $"KSA starts in {world} next time. Restart it to join this world.");
+            }
+            else if (!World.Has(system))
+            {
+                ImGui.TextColored(in ConsoleStyle.Danger, $"This world is in {world}, which this game does not have.");
+            }
+            else
+            {
+                ImGui.TextColored(in ConsoleStyle.Danger, $"This world is in {world}; you are in {here}, and KSA starts in {here} again.");
+                if (ConsoleWidgets.Button($"START IN {world.ToUpperInvariant()} NEXT TIME".AsSpan())) PressStartThere();
+            }
         }
 
         bool ready = typed.Length > 0 && NameText.ToString().Trim().Length > 0 && !Sync.AskingAhead && !WouldBeRefused;
@@ -1488,6 +1506,32 @@ internal static class Panel
             else Sync.Connect(AddressText.ToString(), NameText.ToString(), PasswordText.ToString());
         }
         ImGui.EndDisabled();
+    }
+
+    /// <summary>
+    /// The system of the world at the address typed, where this game is in another: the one
+    /// refusal the window can see coming, a universe being built once.
+    /// </summary>
+    private static string? Elsewhere(string typed) =>
+        Sync.ServerAsked == typed && Sync.Server is { } there
+        && there.HasWorld && there.System.Length > 0 && World.System.Length > 0 && there.System != World.System
+            ? there.System
+            : null;
+
+    /// <summary>
+    /// The button that has KSA start in the world's system next time, pressed, by the player or
+    /// by the bridge: the system chosen, or null and why nothing was.
+    /// </summary>
+    public static (string? System, string Why) PressStartThere()
+    {
+        if (Elsewhere(AddressText.ToString().Trim()) is not { } system) return (null, "the window names no world in another system");
+        if (!World.StartNextIn(system, out string why))
+        {
+            Log.Warn($"could not have KSA start in {system} next time: {why}");
+            return (null, why);
+        }
+        Log.Info($"KSA starts in {system} next time, for the world at {AddressText.ToString().Trim()}");
+        return (system, "");
     }
 
     /// <summary>

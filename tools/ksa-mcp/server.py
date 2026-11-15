@@ -224,6 +224,7 @@ TOOLS = {
                 "body": {"type": "string", "description": "with pads=true and site: the body to launch from, as KSA names it (Luna)"},
                 "site": {"type": "string", "description": "with pads=true and body: the place on it (Apollo11)"},
                 "mods_link": {"type": "boolean", "description": "press the connect window's button that hands a server's mods to Borea; answers with the link and what the window said"},
+                "start_there": {"type": "boolean", "description": "press the connect window's button that has KSA start in the typed server's system next time, offered in a game started without KSA's configuration; answers with the system"},
                 "board": _num("show the player list for this many seconds, as holding Tab does"),
                 "warp": _num("ask everyone for the world to run at this speed; 0 pauses"),
                 "vote": {"type": "boolean", "description": "answer the warp somebody asked for"}}, [],

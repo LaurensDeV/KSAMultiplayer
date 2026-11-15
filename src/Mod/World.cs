@@ -117,44 +117,60 @@ internal static class World
     /// </summary>
     public static string Mods =>
         ModLibrary.Manifest is { } manifest
-            ? string.Join(',', manifest.Mods.Where(m => m.Enabled).Select(m => ModVersions().TryGetValue(m.Id, out string? at) ? $"{m.Id}@{at}" : m.Id))
+            ? string.Join(',', manifest.Mods.Where(m => m.Enabled).Select(m => VersionOf(m.Id) is { Length: > 0 } at ? $"{m.Id}@{at}" : m.Id))
             : "";
 
-    private static Dictionary<string, string>? _modVersions;
+    // Empty for a mod that brought no code, which is an answer too and is not looked for again.
+    private static readonly Dictionary<string, string> ModVersions = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// The version of each mod that brought code, by the folder it was loaded from: KSA knows a
-    /// mod's name and where it is and nothing of what version it is at, so it is read off the
-    /// assembly the mod's own <c>mod.toml</c> names. Looked for until something is found, since a
-    /// game may ask before every mod has loaded.
+    /// The version of a mod that brought code, or empty: KSA knows a mod's name and where it is
+    /// and nothing of what version it is at, so it is read off the assembly the mod's own
+    /// <c>mod.toml</c> names.
+    ///
+    /// <para>Found from the mod's name, where StarMap finds it, and read off the file. Not found
+    /// among the assemblies already loaded by the folder each says it came from: a mod manager
+    /// puts a mod in as a link to a folder it names after the version, the runtime may say the
+    /// folder the link leads to, and a mod asked about before StarMap has reached it is not
+    /// loaded at all. Either way the mod was there with no version, and a server that wants one
+    /// refused a player who had exactly the mod it asked for.</para>
     /// </summary>
-    private static Dictionary<string, string> ModVersions()
+    private static string VersionOf(string id)
     {
-        if (_modVersions is { Count: > 0 } known) return known;
-        Dictionary<string, string> found = new(StringComparer.OrdinalIgnoreCase);
-        foreach (global::System.Reflection.Assembly a in AppDomain.CurrentDomain.GetAssemblies())
+        if (ModVersions.TryGetValue(id, out string? known)) return known;
+        string version = "";
+        try
         {
-            try
+            // Where StarMap looks, in its order: beside the game, then the player's own mods.
+            string? folder = new[] { Path.Combine("Content", id), Path.Combine(ModLibrary.LocalModsFolderPath, id) }
+                .FirstOrDefault(f => File.Exists(Path.Combine(f, ModLibrary.MOD_TOML)));
+            if (folder is not null)
             {
-                if (a.IsDynamic || a.Location is not { Length: > 0 } at || Path.GetDirectoryName(at) is not { } folder) continue;
-                string toml = Path.Combine(folder, ModLibrary.MOD_TOML);
-                if (!File.Exists(toml)) continue;
-                global::System.Text.RegularExpressions.Match entry =
-                    global::System.Text.RegularExpressions.Regex.Match(File.ReadAllText(toml), "EntryAssembly\\s*=\\s*\"([^\"]+)\"");
-                string named = entry.Success ? Path.GetFileNameWithoutExtension(entry.Groups[1].Value) : "";
-                if (!string.Equals(named, a.GetName().Name, StringComparison.OrdinalIgnoreCase)) continue;
-                string? version = a.GetCustomAttributes(typeof(global::System.Reflection.AssemblyInformationalVersionAttribute), false)
-                    .OfType<global::System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion;
-                version ??= a.GetName().Version?.ToString(3);
-                // Nothing in it that would be read as the end of an entry or the start of a version.
-                if (version is { Length: > 0 } && !version.Contains(',') && !version.Contains('@')) found[Path.GetFileName(folder)] = version;
-            }
-            catch (Exception)
-            {
-                // An assembly that will not say where it is from is not a mod's.
+                global::System.Text.RegularExpressions.Match entry = global::System.Text.RegularExpressions.Regex.Match(
+                    File.ReadAllText(Path.Combine(folder, ModLibrary.MOD_TOML)), "EntryAssembly\\s*=\\s*\"([^\"]+)\"");
+                // A mod that names none is looked for under its own name, as StarMap does it.
+                string named = entry.Success ? entry.Groups[1].Value.Trim() : id;
+                if (named.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)) named = named[..^4];
+                string dll = Path.Combine(folder, named + ".dll");
+                if (File.Exists(dll)) version = Carried(dll);
             }
         }
-        return _modVersions = found;
+        catch (Exception e)
+        {
+            // Said once, since it is kept: a mod whose version cannot be read is one a server
+            // that wants a version turns away, and the player is owed the reason.
+            Log.Warn($"could not read what version {id} is at: {e.GetBaseException().Message}");
+        }
+        return ModVersions[id] = version;
+    }
+
+    /// <summary>The version an assembly's file says it is, with the commit it was built from where it carries one.</summary>
+    private static string Carried(string dll)
+    {
+        string? version = global::System.Diagnostics.FileVersionInfo.GetVersionInfo(dll).ProductVersion?.Trim();
+        if (version is not { Length: > 0 }) version = global::System.Reflection.AssemblyName.GetAssemblyName(dll).Version?.ToString(3);
+        // Nothing in it that would be read as the end of an entry or the start of a version.
+        return version is { Length: > 0 } && !version.Contains(',') && !version.Contains('@') ? version : "";
     }
 
     /// <summary>The longest step KSA takes a frame, s: a frame slower than this loses the rest.</summary>
@@ -567,6 +583,44 @@ internal static class World
         }
         if (start) configuration.Active = false;
         return true;
+    }
+
+    /// <summary>Whether KSA shows its configuration at start, which is where this mod's window asks a server what system to start in.</summary>
+    public static bool AsksAtStart => GameSettings.Current.System.ConfigOnStart;
+
+    /// <summary>The system KSA starts in next time where nothing at start says otherwise.</summary>
+    public static string StartsNextIn => GameSettings.Current.System.LastSystemId ?? "";
+
+    /// <summary>Whether a system is one this game can be started in.</summary>
+    public static bool Has(string system) => SystemLibrary.PickerSystems().Any(s => s.Id == system);
+
+    /// <summary>
+    /// The system KSA starts in next time, chosen from a game that is already in another.
+    ///
+    /// <para>For a player who has turned KSA's configuration at start off. KSA then starts in
+    /// the system it was last in and shows nothing, this mod's window among the nothing, so
+    /// there was no way into a world in another system: being told to restart led back to the
+    /// same one. The one setting KSA reads on that path is the one written here.</para>
+    /// </summary>
+    public static bool StartNextIn(string system, out string why)
+    {
+        why = "";
+        try
+        {
+            if (!Has(system))
+            {
+                why = $"this game does not have {system}";
+                return false;
+            }
+            GameSettings.Current.System.LastSystemId = system;
+            GameSettings.Current.Save();
+            return true;
+        }
+        catch (Exception e)
+        {
+            why = e.GetBaseException().Message;
+            return false;
+        }
     }
 
     /// <summary>A world from the server written as the handover save and loaded in place of this one, or false and why not.</summary>

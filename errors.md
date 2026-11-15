@@ -1551,3 +1551,49 @@ A remembered name with no port is now asked for one before it is given a row, as
 asks before a join: from a directory that says the name alone finds a server, from a row already
 found that way, or from the record itself (`Browser.Place`). A row's id is a number of its own
 (`Row.Serial`). Built and not seen in a game: the one running was the player's own.
+
+
+## 2026-11-15 -- a mod at a version the game could not say, and a system no restart reached
+
+Two things from Beik, after an evening on the cars server.
+
+**"It kept saying my mod version was wrong, but it couldn't check what the version was. Installing
+it manually solved it."** The cars world wants `FastAndPurrious@0.1.14`. The server's log has no
+refusal of Beik at all, so it was their own game that said no, before a hello was sent: its list
+of its own mods had `FastAndPurrious` with no version after it, and a mod with no version does not
+fit a world that names one (`ModList.Fits`).
+
+`World.ModVersions` went through every loaded assembly, took the folder each said it was loaded
+from, and filed the version under that folder's name, which was then looked up by the mod's id.
+Two ways for that to miss, and the account fits either:
+
+- Borea does not copy a mod into an instance. `mods/FastAndPurrious` is a link to
+  `Static Mod Files/FastAndPurrious/0.1.14-468776087482`: a junction on Windows, a symbolic link
+  anywhere else (`DirectoryLinker`). StarMap hands the path to .NET's resolver of a component's
+  dependencies, and where that answers with the folder the link leads to, the version is filed
+  under `0.1.14-468776087482` and never found. A mod unzipped by hand is a real folder of the
+  right name, which is what mended it.
+- What was found was kept for good as soon as it held anything. StarMap loads and starts mods one
+  at a time in the manifest's order, so a list asked for between this mod and a later one held
+  this mod's version and nothing else, for the rest of the game.
+
+On this machine the same instance, with the same links, reads both versions, so which of the two
+it was on Beik's is not known. Neither is possible now: a mod's folder is found from its id where
+StarMap finds it, and the version is read off the file of the assembly its `mod.toml` names
+(`World.VersionOf`), once for each mod, whether or not it is loaded and wherever it was loaded
+from. The file says what the loaded assembly said: `0.1.14+6489f6d...` and `0.20.1+546c2ec...`,
+read by hand off the two as Borea stores them. An entry assembly with a dot in its name was also
+cut at the dot and never matched.
+
+**"If I have 'don't show config' in my game settings, the mod doesn't offer to show it and I end
+up not getting the right solar system."** With `selectSystemOnStart` off KSA shows nothing at
+start, this mod's window among the nothing, and starts in `lastSystemId`
+(`SystemLibrary.ChooseStart`). The window over the running game then said *This world is in Earth
+and Moon; you are in Sol. Restart KSA to join it* -- and a restart started in Sol again.
+
+The window now has a button there, `START IN ... NEXT TIME`, which writes that one setting
+(`World.StartNextIn`) and then says KSA starts there next time. A game that does show its
+configuration is told to restart as before, since its start window asks the server. KSA's own
+setting is left as the player set it.
+
+Both built, neither seen in a game: the one running was the player's own.

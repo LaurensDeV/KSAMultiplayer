@@ -39,6 +39,10 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
    server's system already chosen, and KSA's own **Start** then joins. **BACK TO MULTIPLAYER** in
    that screen's footer brings this window back, as does an entry in KSA's **Mods** menu once you
    are in a game.
+
+   With KSA's configuration screen turned off the game is already in a system when the window
+   comes up, and a world in another one cannot be joined from it. The window says so and offers
+   **START IN ... NEXT TIME**: press it, restart KSA, and it starts in the server's system.
 4. Connecting **replaces your open world with the server's**: save first. If the server has no world
    yet, yours becomes the server's world instead, and nothing is replaced: joined straight from
    the start, that is the new game KSA opens on. A game set to start in sandbox, at no craft, waits
