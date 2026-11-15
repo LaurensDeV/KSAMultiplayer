@@ -190,12 +190,16 @@ The image is published and public, so nothing has to be built or cloned:
 ```bash
 docker run -d --name ksamp-directory -p 8080:8080 \
     -e KSAMP_DIRECTORY_NAME="your name here" \
-    ghcr.io/laurensdev/ksamp-directory:v0.20.1
+    ghcr.io/laurensdev/ksamp-directory:latest
 ```
 
-Pin the tag to a release rather than tracking `main`. It has to be one that speaks protocol 26 or
-later: before that a directory read a server through the handshake a join begins with, in the one
-protocol version it was built against, and listed nothing once servers had moved past it.
+`latest` is the newest release, and a directory is safe to keep on it: it lists servers of any
+protocol version from 26 on, so a release does not empty its list. A container keeps the build it
+was started with until you `docker pull` and start it again. To hold one release instead, name
+it: `ksamp-directory:v0.20.1`. That has to be 0.20.0 or later: before it a directory read a
+server through the handshake a join begins with, in the one protocol version it was built
+against, and listed nothing once servers had moved past it. The `main` tag is whatever was last
+pushed, between releases, and is not for running.
 
 It serves plain HTTP, so put TLS in front of it — any reverse proxy will do. What you submit to
 `directories.txt` has to be `https://`, and an `http://` URL is skipped by every reader without a

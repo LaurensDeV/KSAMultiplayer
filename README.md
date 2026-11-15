@@ -327,11 +327,24 @@ remembered under follows whoever last joined with it, so `deop` names the player
 Every release publishes a container image, so there is nothing to build or clone:
 
 ```bash
-docker run -dit --name ksamp -p 50100:50100/udp -v ksamp-data:/data ghcr.io/laurensdev/ksamp-server:v0.20.1
+docker run -dit --name ksamp -p 50100:50100/udp -v ksamp-data:/data ghcr.io/laurensdev/ksamp-server:latest
 ```
 
-A release's notes carry the same line pinned to that build's digest, which is what to run on a
-machine you care about: a tag moves and a digest does not.
+`latest` is the newest release, which is the one players who keep the mod up to date are on. A
+container keeps the build it was started with, so a release reaches your server when you fetch it
+and not before; the world is in the volume and is still there afterwards:
+
+```bash
+docker pull ghcr.io/laurensdev/ksamp-server:latest
+docker rm -f ksamp
+docker run -dit --name ksamp -p 50100:50100/udp -v ksamp-data:/data ghcr.io/laurensdev/ksamp-server:latest
+```
+
+A server and its players have to speak the same protocol, and a release's notes say when it
+changes that, so the time to update is when your players do. To stay on one release whatever
+comes out after it, name it in place of `latest`: `ksamp-server:v0.20.1`. A release's notes also
+carry the line pinned to that build's digest, which is what to run on a machine you care about:
+a tag moves and a digest does not.
 [`deploy/Dockerfile`](deploy/Dockerfile) builds one yourself from the repository root, and
 [`deploy/ksamp-server.service`](deploy/ksamp-server.service) is a systemd unit with the install
 steps in its header:
