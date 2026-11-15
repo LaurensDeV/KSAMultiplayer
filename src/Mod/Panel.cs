@@ -1123,14 +1123,15 @@ internal static class Panel
         ImGui.TableNextRow();
         ImGui.TableNextColumn();
         string locked = r.Facts is { Password: true } ? "  (password)" : "";
-        // The id is the address and the label is the name, so a server that renames itself mid-list
-        // does not become a different row and lose what the player had picked.
+        // The id is the row's own number and the label is the name, so a server that renames
+        // itself mid-list is the same row, and two rows shown under one address for a moment are
+        // two: ImGui stops everything to say so where two things in a window share an id.
         // As tall as the row. ImGui fills a selectable half the item spacing past its text each
         // way, and a row is the cell padding past it: with the two unlike, the fill of a chosen
         // row stopped three pixels short of the band its neighbour is shaded with, top and
         // bottom, and one row of two read as the shorter.
         ImGui.PushStyleVarY(ImGuiStyleVar.ItemSpacing, CellPadding.Y * 2f);
-        bool picked = ImGui.Selectable($"{r.Title}{locked}###KSAMultiplayerRow{r.Where}", chosen, ImGuiSelectableFlags.SpanAllColumns);
+        bool picked = ImGui.Selectable($"{r.Title}{locked}###KSAMultiplayerRow{r.Serial}", chosen, ImGuiSelectableFlags.SpanAllColumns);
         ImGui.PopStyleVar();
         // One marker, against the right of the server's own column: why this game cannot go there,
         // or that the player has been before. Short enough to read without stopping, with the whole

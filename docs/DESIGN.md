@@ -1055,6 +1055,10 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   back from the live addresses as Discord's crawler asks for them, for the list and for a server.
   Not clicked through to Borea from the page, not seen on a phone, and no link has been pasted
   into Discord.
+- **A server joined by name, in the list afterwards.** A name remembered without a port was
+  asked at the default one, which on a machine with two servers is the other server
+  (`Browser.Place`, `Row.Serial`, and `errors.md` for 2026-11-14). Read out of a game's log and
+  built; the list has not been looked at since.
 - **CONNECT pressed once after a name is typed.** A look no longer greys the button and a new
   name no longer starts one (`Sync.AskingAhead`, and `errors.md` for 2026-11-12). Read out of two
   logs and not pressed: the bridge has no mouse.

@@ -30,6 +30,18 @@ internal static class Browser
         public required string Host { get; init; }
         public required int Port { get; init; }
 
+        /// <summary>
+        /// The name to look the address up under, where a record for the service points the
+        /// player's name at another: null where they are the same name.
+        /// </summary>
+        public string? Target { get; init; }
+
+        /// <summary>
+        /// A number of its own, for the window to tell rows apart by. Not the address: two rows
+        /// may be shown under one address for as long as it takes to find out they are one server.
+        /// </summary>
+        public int Serial { get; } = ++_rows;
+
         /// <summary>The directories carrying it, by name, so a player can see which one to switch off.</summary>
         public List<string> Found { get; } = [];
 
@@ -68,6 +80,8 @@ internal static class Browser
             : Hint is { Name.Length: > 0 } said ? said.Name
             : Where;
     }
+
+    private static int _rows;
 
     private static readonly List<Row> Listed = [];
     private static Probes? _probes;
@@ -303,7 +317,22 @@ internal static class Browser
         // theirs that survives.
         foreach (string address in Remembered)
         {
-            if (!Sync.TryAddress(address, out string host, out int port, out _)) continue;
+            if (!Sync.TryAddress(address, out string host, out int port, out bool portGiven)) continue;
+            // A name remembered without a port is not a server on the default one: it is a name
+            // to ask for a port, as joining it does. Asked at the default, a name that shares a
+            // machine with another server is answered by that server, and the row becomes it.
+            if (!portGiven && !IPAddress.TryParse(host, out _))
+            {
+                // A directory that has looked says which port, and so does a row already found
+                // by its name: either way the server has a row, and this is the player's mark on it.
+                if (got.Servers.Select(g => g.Server).FirstOrDefault(g => g.Srv && Same(g.Host, host)) is { } listed) port = listed.Port;
+                else if (Listed.FirstOrDefault(r => r.NameIsEnough && Same(r.Host, host)) is { } known) port = known.Port;
+                else if (!by.ContainsKey($"{host}:{port}"))
+                {
+                    Place(host);
+                    continue;
+                }
+            }
             string key = $"{host}:{port}";
             still.Add(key);
             if (!by.TryGetValue(key, out Row? row))
@@ -357,7 +386,7 @@ internal static class Browser
             }, TaskScheduler.Default);
         }
         _resolving++;
-        Task<IPAddress[]> finding = Dns.GetHostAddressesAsync(row.Host, AddressFamily.InterNetwork);
+        Task<IPAddress[]> finding = Dns.GetHostAddressesAsync(row.Target ?? row.Host, AddressFamily.InterNetwork);
         _ = finding.ContinueWith(t =>
         {
             // Back onto the list on the next frame: Found is the frame thread's, as is everything
@@ -368,6 +397,27 @@ internal static class Browser
 
     private static readonly System.Collections.Concurrent.ConcurrentQueue<(Row Row, IPEndPoint? At)> Pending = new();
     private static readonly System.Collections.Concurrent.ConcurrentQueue<Row> Named = new();
+    private static readonly System.Collections.Concurrent.ConcurrentQueue<(string Host, (string Host, int Port)? Said)> Placed = new();
+
+    // The names being asked for a port, so one is asked once however often the list is taken.
+    private static readonly HashSet<string> Placing = new(StringComparer.OrdinalIgnoreCase);
+
+    private static bool Same(string a, string b) => string.Equals(a.Trim().TrimEnd('.'), b.Trim().TrimEnd('.'), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Asks a remembered name which port its server is on, and gives it a row once that is
+    /// known: on the port a record names, or on the default one where there is no record.
+    /// </summary>
+    private static void Place(string host)
+    {
+        if (!Placing.Add(host)) return;
+        _resolving++;
+        _ = Srv.LookupAsync(host, PortWait).ContinueWith(
+            t => Placed.Enqueue((host, t.IsCompletedSuccessfully ? t.Result : null)), TaskScheduler.Default);
+    }
+
+    /// <summary>As long as a join waits for the same answer, so the list and the join agree on which server a name is.</summary>
+    private static readonly TimeSpan PortWait = TimeSpan.FromSeconds(1.5);
 
     private static void Ask(IPEndPoint at, Row row)
     {
@@ -380,6 +430,31 @@ internal static class Browser
     private static void Resolved()
     {
         while (Named.TryDequeue(out Row? named)) named.NameIsEnough = true;
+        while (Placed.TryDequeue(out (string Host, (string Host, int Port)? Said) p))
+        {
+            _resolving--;
+            Placing.Remove(p.Host);
+            // Forgotten while it was being asked about, which a player can do from the window.
+            if (!Remembered.Any(a => Sync.TryAddress(a, out string h, out _, out bool given) && !given && Same(h, p.Host))) continue;
+            int port = p.Said?.Port ?? Wire.DefaultPort;
+            if (Listed.FirstOrDefault(r => r.Port == port && Same(r.Host, p.Host)) is not { } row)
+            {
+                row = new Row
+                {
+                    Host = p.Host,
+                    Port = port,
+                    Target = p.Said is { } said && !Same(said.Host, p.Host) ? said.Host : null,
+                    // The record was this game's own to read, and it is what a join will read.
+                    NameIsEnough = p.Said is not null,
+                    Hint = new Listed(p.Host, port),
+                };
+                Listed.Add(row);
+                Start(row);
+                _told = false;
+            }
+            if (!row.Found.Contains(Yours)) row.Found.Add(Yours);
+            Sort();
+        }
         while (Pending.TryDequeue(out (Row Row, IPEndPoint? At) r))
         {
             // Counted down before anything else, including for a row the list no longer has: a

@@ -1525,3 +1525,29 @@ the window at start. Not seen in a game: it takes a hand on the mouse, and the o
 was the player's own. A join, a disconnect and a second join through the bridge went as before on
 2026-11-13 in two games, which says the change broke nothing and not that it mended the press.
 
+
+## 2026-11-14 -- two rows of the server list under one name
+
+A red box from Dear ImGui over the start window: *2 visible items with conflicting ID*, with
+`Cars` and `Multiplayer test server` the only rows.
+
+**Both rows were `cars.ksamp.gg`.** The game's own log, from a Borea instance whose remembered
+servers were `cars.ksamp.gg` and `ksamp.gg`:
+
+    server list: 1 of 2 can be joined; cars.ksamp.gg ok; cars.ksamp.gg turn off FastAndPurrious
+
+The cars world is found by its name alone, through an SRV record that gives port 50101, so picking
+its row and joining remembers `cars.ksamp.gg` with no port. The list read that back as a server on
+the default port and asked `cars.ksamp.gg:50100`, which is the same machine and so the first
+server: it answered, the remembered row became it, and `Collapse` -- which takes two rows answered
+from one socket for one server -- kept that row over the first server's own. One row was the cars
+world at `cars.ksamp.gg`, the other the first server at `cars.ksamp.gg`; a row's id in the window
+was its address. Picking the second filled in the cars world's address.
+
+It had to wait for a name whose default port is somebody else's server: `mpcars.ksarmory.com` was
+that as well, and nobody had joined it by name and then looked at the list.
+
+A remembered name with no port is now asked for one before it is given a row, as `Sync.Find`
+asks before a join: from a directory that says the name alone finds a server, from a row already
+found that way, or from the record itself (`Browser.Place`). A row's id is a number of its own
+(`Row.Serial`). Built and not seen in a game: the one running was the player's own.
