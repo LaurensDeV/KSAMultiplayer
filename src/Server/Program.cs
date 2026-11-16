@@ -27,6 +27,10 @@ const string Usage = """
       --snapshot-every <s>   seconds between fresh saves of the world (default 300)
       --warp-answer <s>      seconds everyone has to answer a warp (default 30)
       --keep-time            let universe time run with nobody playing
+      --life-support <bool>  whether kittens need food, water and air, for every player
+                             (default true)
+      --radiation <bool>     whether kittens take a dose from radiation, for every player
+                             (default true)
       --speed <x>            how fast universe time runs (default 1)
       --lapse-within <s>     seconds a craft stays its owner's while they are not near it (default 10)
       --advertise            list this server in the public directories so players can find it.
@@ -66,8 +70,9 @@ const string Usage = """
     system and the server starts with an empty world of its own instead.
 
     Console commands, on standard input: players, say <text>, kick <name> [why],
-    op <name>, deop <name>, admins, clear [name], reload, save, status, version, help, fresh,
-    quit, settings, set <key> <value>.
+    op <name>, deop <name>, admins, clear [name], protect <craft>, unprotect <craft>, protected,
+    reload, save [name], saves, load <name>, delete <name>, status, version, help, fresh, quit,
+    settings, set <key> <value>.
 
     An admin can type those same commands into a game's chat with a / in front. op hands the player
     a token their game keeps and offers at every join after, so they stay an admin without a
@@ -91,6 +96,18 @@ const string Usage = """
     it. reload does that on its own, with the world as it stands; it is also the only thing that
     puts universe time back, since a game's own time comes down by loading a world and no other way.
     Nobody reconnects for either.
+
+    protect <craft> keeps a craft out of every clear that does not name it exactly -- clear *
+    and clear Station* leave it, clear Station takes it -- and out of reach of a player's Abandon
+    and Delete. Two craft that dock are one, and protected if either was. unprotect <craft> takes
+    it off the list and protected lists them; the list is protected.json beside the world.
+
+    save <name> keeps the world under a name, in saves/ under the data folder, and load <name>
+    puts one of those in place of the world for everybody where they stand: every craft as it was,
+    universe time back to when it was kept. The world it replaces is kept first, as
+    'before load <when>', so a load can be taken back by loading that; the newest five of those
+    are held on to, and only the console deletes them. saves lists them and delete <name> throws
+    one away. A KSA save zipped and copied into that folder is one of them.
     """;
 
 Dictionary<string, string> opts = [];
@@ -344,17 +361,23 @@ if (!Console.IsInputRedirected || Environment.GetEnvironmentVariable("KSAMP_STDI
 // in it, so a command added without a line here is a command nobody is told about.
 (string What, string Does)[] Commands =
 [
-    ("players", "who is here, what they are flying and where from"),
-    ("say <text>", "a line from the server to everybody"),
-    ("kick <name> [why]", "send a player away; nothing stops them coming back"),
-    ("op <name>", "make a player who is here an admin: their game keeps a token and stays one"),
-    ("deop <name>", "take that back, playing or not; the token stops working at once"),
-    ("admins", "who is an admin"),
-    ("clear [name]", "take every craft nobody is flying out of every game; clear Rocket_* narrows it"),
-    ("reload", "hand the world out again, the only thing that puts universe time back; also reset"),
-    ("save", "ask the longest-playing player for a fresh save of the world"),
-    ("status", "players, craft, universe time, and what has crossed the wire"),
-    ("version", "what this server is, what it speaks, and the KSA build it holds players to"),
+    ("players", "list who is connected and what they're flying"),
+    ("say <text>", "send a chat message from the server to everyone"),
+    ("kick <name> [why]", "disconnect a player (they can rejoin)"),
+    ("op <name>", "make a connected player an admin; they stay one when they rejoin"),
+    ("deop <name>", "remove a player's admin rights, whether or not they're connected"),
+    ("admins", "list the admins"),
+    ("clear [name]", "remove every craft nobody is flying; clear Rocket_* removes only matching ones"),
+    ("protect <craft>", "keep a craft safe from clear (unless named exactly) and from being abandoned"),
+    ("unprotect <craft>", "take a craft off the protected list"),
+    ("protected", "list the protected craft"),
+    ("reload", "reload the world for everyone, which also resets universe time (alias: reset)"),
+    ("save [name]", "save the world now; with a name, keep it as a named save"),
+    ("saves", "list the named saves"),
+    ("load <name>", "load a named save for everyone; the current world is saved first"),
+    ("delete <name>", "delete a named save"),
+    ("status", "player count, craft count, universe time and network totals"),
+    ("version", "server version, protocol version and required KSA build"),
 ];
 
 // who is null for the console, and the player who typed it in a game otherwise: an admin asks for
@@ -393,27 +416,27 @@ void Command(string line, GameServer.Player? who = null)
             if (k[0].Length == 0 || !server.Kick(k[0], k.Length > 1 ? k[1] : "")) Answer($"nobody called '{k[0]}'");
             break;
         case "op":
-            if (rest.Length == 0) Answer("op <name>, of somebody who is playing");
-            else if (server.Op(rest) is not { } opped) Answer($"nobody called '{rest}' is playing: a token has to reach a game, and is said once");
-            else Answer($"{opped} is an admin, and their game keeps the token to stay one");
+            if (rest.Length == 0) Answer("usage: op <name> (the player must be connected)");
+            else if (server.Op(rest) is not { } opped) Answer($"nobody called '{rest}' is connected: a player has to be online to be made an admin");
+            else Answer($"{opped} is now an admin, and will stay one when they rejoin; their old token works until their game has saved the new one");
             break;
         case "deop":
-            if (rest.Length == 0) Answer("deop <name>, playing or not");
+            if (rest.Length == 0) Answer("usage: deop <name> (they don't need to be connected)");
             // Not the sentence the server logs for itself, or the console says it twice.
             else Answer(server.Deop(rest)
-                ? $"{rest} is no admin now, and the token their game kept is no good"
+                ? $"{rest} is no longer an admin"
                 : $"{rest} was not an admin");
             break;
         case "admins":
             Answer(server.Admins.Names.Count == 0
-                ? "nobody is an admin; op <name> makes one of somebody who is playing"
+                ? "there are no admins yet: op <name> makes a connected player one"
                 : $"admins: {string.Join(", ", server.Admins.Names)}");
             break;
         case "reload" or "reset":
-            int put = server.ReloadAll("the operator asked");
+            int put = server.ReloadAll("an admin asked for it");
             Answer(put == 0
-                ? server.HasWorld ? "nobody to hand the world to" : "there is no world to hand out"
-                : $"handing the world to {put} player{(put == 1 ? "" : "s")} again; their games load it and come back in");
+                ? server.HasWorld ? "nobody is connected to reload the world for" : "there is no world to reload yet"
+                : $"reloading the world for {put} player{(put == 1 ? "" : "s")}: their games will load it and rejoin");
             break;
         case "clear" or "sweep":
             List<string> swept = server.Sweep(rest);
@@ -421,12 +444,43 @@ void Command(string line, GameServer.Player? who = null)
             // by nobody, so it is the games that find it, each in its own world.
             // What the sweep found here is logged by the server itself, detail and all; this is
             // only the console answering the operator who typed it.
-            Answer($"sweeping every game by '{(rest.Length > 0 ? rest : "*")}', bar what is being flown"
-                + $"{(swept.Count > 0 ? $" -- {swept.Count} known here" : "")}");
+            Answer($"clearing craft matching '{(rest.Length > 0 ? rest : "*")}' from every game, except ones being flown"
+                + $"{(swept.Count > 0 ? $" ({swept.Count} known to the server)" : "")}");
+            break;
+        case "protect":
+            Answer(server.Protect(rest, who));
+            break;
+        case "unprotect":
+            Answer(server.Unprotect(rest, who));
+            break;
+        case "protected":
+            if (server.Protected.Names.Count == 0) Answer("no craft are protected; protect <craft> adds one");
+            // A line each: a chat line is two hundred characters, and a list in one is cut short.
+            foreach (string name in server.Protected.Names.Order()) Answer($"  {name}");
+            break;
+        case "save" or "snapshot" when rest.Length > 0:
+            Answer(server.Keep(rest, who));
+            break;
+        case "saves":
+            IReadOnlyList<SavedWorld> kept = server.Saves.List();
+            if (kept.Count == 0) Answer("there are no saves yet; save <name> makes one");
+            foreach (SavedWorld s in kept)
+            {
+                Answer($"  {s.Name,-28} {s.SavedUtc:yyyy-MM-dd HH:mm} UTC, {Blob.Size(s.Bytes)}"
+                    + $"{(s.Universe > 0 ? $", universe time {s.Universe:F0} s" : "")}"
+                    + $"{(s.System.Length > 0 ? $", {s.System}" : "")}"
+                    + $"{(s.Auto ? ", automatic" : s.By.Length > 0 ? $", by {s.By}" : ", copied in by hand")}");
+            }
+            break;
+        case "load":
+            Answer(rest.Length == 0 ? "usage: load <name> (saves lists the names)" : server.LoadSave(rest, who));
+            break;
+        case "delete":
+            Answer(rest.Length == 0 ? "usage: delete <name> (saves lists the names)" : server.DeleteSave(rest, who));
             break;
         case "save" or "snapshot":
             server.SnapshotNow();
-            Answer(server.Players.Any(p => p.Loaded) ? "asked the longest-playing player for a save" : "nobody is in the world to save it");
+            Answer(server.Players.Any(p => p.Loaded) ? "asked the longest-connected player for a fresh save" : "nobody is in the world to save it");
             break;
         case "version":
             // The protocol, not just the release: it is the number that decides who can join, and the
@@ -453,12 +507,12 @@ void Command(string line, GameServer.Player? who = null)
             }
             if (who is null)
             {
-                Answer($"  {"fresh".PadRight(18)} throw the world away and start on an empty one");
+                Answer($"  {"fresh".PadRight(18)} discard the world and start an empty one");
                 Answer($"  {"settings".PadRight(18)} read the settings file again");
                 Answer($"  {"set <key> <value>".PadRight(18)} change a setting and keep it in the file; set alone lists them");
                 Answer($"  {"quit".PadRight(18)} stop the server");
             }
-            else Answer("  fresh, quit, settings and set are the console's alone");
+            else Answer("  fresh, quit, settings and set can only be run from the server console");
             break;
         // The console's alone, as quit is: an admin who could set the password could lock every
         // other player out, and one who could set the data folder could point it anywhere.
@@ -468,7 +522,7 @@ void Command(string line, GameServer.Player? who = null)
             Answer(server.Fresh("the operator started the world over"));
             break;
         case "fresh":
-            Answer("fresh is the console's alone");
+            Answer("fresh can only be run from the server console");
             break;
         case "settings" when who is null:
             Reapply(null);
@@ -477,12 +531,12 @@ void Command(string line, GameServer.Player? who = null)
             Set(rest);
             break;
         case "settings" or "set":
-            Answer("settings and set are the console's alone");
+            Answer("settings and set can only be run from the server console");
             break;
         case "quit" or "exit" or "stop":
             // The console's alone: a server nobody can start again is not something to hand to an admin
             // who meant to leave the world rather than end it.
-            if (who is not null) Answer("quit is the console's alone");
+            if (who is not null) Answer("quit can only be run from the server console");
             else stop.Cancel();
             break;
         default:

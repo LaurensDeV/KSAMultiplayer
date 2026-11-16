@@ -1200,7 +1200,7 @@ internal sealed class Bridge
         try
         {
             GameSaves.Refresh();
-            GameSaves.LoadSaveGame(save);
+            World.LoadNamed(save);
             return null;
         }
         catch (Exception e)

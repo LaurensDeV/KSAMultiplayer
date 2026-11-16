@@ -1597,3 +1597,27 @@ configuration is told to restart as before, since its start window asks the serv
 setting is left as the player set it.
 
 Both built, neither seen in a game: the one running was the player's own.
+
+## 2026-11-16 -- every admin lost with the server's name, and taken for a deploy wiping the list
+
+After the public server went from `mp.ksarmory.com` to `ksamp.gg` (0.20.1, 2026-11-13) admins
+joined as players, and it read as the redeploy having emptied `admins.json`. It had not. The file
+in the data volume held eight admins, the oldest from 2026-11-05 and through some twenty-five
+releases, and two of them were let in "as an admin" after the redeploy of 2026-11-15.
+
+What was lost was on each game's side. `tokens.json` filed a token under the server's address
+exactly as typed, so a game joining `ksamp.gg` looked under a name nothing was filed under, offered
+no token and was nobody. `host` and `host:port` are two names the same way, and the list of servers
+moves a row between them when an SRV record answers (`Browser.Row.Where`). The file is also one
+StarMap or Borea instance's, so a new instance starts with none.
+
+A token is now filed under where the join's datagrams went as well, and found there when the typed
+address has nothing (`TokenBook`). Not under anything a server says of itself: the token goes out
+in the first `Hello`, and a server claiming another's name would be handed its admin.
+
+Read out of the code the same day and never seen happen: `op` sent the new token as one datagram,
+after the name's old hash had already been replaced. Lost, the old token was dead and nobody held
+the new one. An `Op` is now said until the game says it back, the game answers for a token only
+once it is on disk, and the old hash goes only then. `Wire.Version` is 27.
+
+Tested over loopback; the mod's side built and not started in a game.

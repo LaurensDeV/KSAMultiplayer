@@ -3,7 +3,7 @@ using System.Text;
 
 namespace KSAMultiplayer;
 
-/// <summary>What a transfer carries: a whole world, or one craft's definition.</summary>
+/// <summary>What a transfer carries: a whole world, one craft's definition, or a list the server keeps and a game needs whole.</summary>
 public enum BlobKind : byte
 {
     /// <summary>A save folder, zipped: what a player joining is put in.</summary>
@@ -11,6 +11,12 @@ public enum BlobKind : byte
 
     /// <summary>One craft as KSA saves it, gzipped XML: what every other game builds it from.</summary>
     Vehicle = 2,
+
+    /// <summary>The worlds a server keeps under names, for an admin's game: see <see cref="SaveList"/>.</summary>
+    Saves = 3,
+
+    /// <summary>The craft a server will not clear, for every game: see <see cref="ProtectedList"/>.</summary>
+    Protected = 4,
 }
 
 /// <summary>
@@ -43,7 +49,7 @@ public sealed record Blob(BlobKind Kind, string Key, byte Owner, double Universe
         {
             using BinaryReader r = new(new MemoryStream(bytes));
             BlobKind kind = (BlobKind)r.ReadByte();
-            if (kind is not (BlobKind.World or BlobKind.Vehicle)) return null;
+            if (kind is not (BlobKind.World or BlobKind.Vehicle or BlobKind.Saves or BlobKind.Protected)) return null;
             string key = Encoding.UTF8.GetString(r.ReadBytes(r.ReadByte()));
             byte owner = r.ReadByte();
             double universe = r.ReadDouble();

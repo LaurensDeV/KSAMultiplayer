@@ -168,8 +168,22 @@ public static class Wire
     /// so that a server from before them answers an ask the way it answers anything of another
     /// version, by saying which it speaks; left at 25, such a server would drop the ask as a kind it
     /// does not know, and an old server would read on every list as an unreachable one.</para>
+    ///
+    /// <para>27 is three things, two of which every game in a world has to agree on. A
+    /// <see cref="Clock"/> carries whether life support and radiation are on, which each game
+    /// otherwise takes from its own settings: in a room where they differ, one player's kittens
+    /// starve in a craft another is flying. And a <see cref="Swept"/> says which state of the list
+    /// of craft not to clear it was made against (<see cref="ProtectedList"/>). Every game sweeps
+    /// its own world, so a game that does not know the list sweeps a station the operator protected
+    /// -- and if it is the one asked for the save that follows a sweep, the station is gone from
+    /// the server too.</para>
+    ///
+    /// <para>The third is an <see cref="Op"/> said until it is said back, where it was said once.
+    /// No byte of it moved, and the number would move for it alone: a game from before says nothing
+    /// back, so a server would hand it the same token twice a second for as long as it stayed, to
+    /// be written to disk each time, and would never retire the token it replaced.</para>
     /// </summary>
-    public const ushort Version = 26;
+    public const ushort Version = 27;
 
     /// <summary>
     /// The version of <see cref="Ask"/> and <see cref="Facts"/> alone, in the first byte of each.
@@ -407,7 +421,27 @@ public static class Wire
     /// <param name="Universe">The server's universe time, s.</param>
     /// <param name="Sent">When it was that, on the server's own clock, s.</param>
     /// <param name="Speed">How fast universe time runs there: 1, or 0 while it is held.</param>
-    public sealed record Clock(double Universe, double Sent, float Speed) : Message(Kind.Clock);
+    /// <param name="Rules">
+    /// Which of KSA's rules this world is played by. On the clock because it is said five times a
+    /// second to everybody and wants nothing more: a rule the operator changes is every game's
+    /// within the second, and a datagram lost costs nothing.
+    /// </param>
+    public sealed record Clock(double Universe, double Sent, float Speed, WorldRules Rules = WorldRules.All) : Message(Kind.Clock);
+
+    /// <summary>The rules of KSA's that a server decides for everybody in its world.</summary>
+    [Flags]
+    public enum WorldRules : byte
+    {
+        None = 0,
+
+        /// <summary>Kittens need food, water and air.</summary>
+        LifeSupport = 1,
+
+        /// <summary>Kittens take a dose from radiation.</summary>
+        Radiation = 2,
+
+        All = LifeSupport | Radiation,
+    }
 
     public sealed record Chunk(uint Transfer, ushort Index, ushort Count, byte[] Data) : Message(Kind.Chunk);
 
@@ -537,7 +571,12 @@ public static class Wire
     /// own, and a game that owns the craft is right to ignore it. This is the world being told what
     /// is no longer in it, which is nobody's to disagree with.</para>
     /// </summary>
-    public sealed record Swept(string Like) : Message(Kind.Swept);
+    /// <param name="Protected">
+    /// Which state of the list of craft not to clear this was made against. The list goes by a
+    /// transfer and this by a datagram, so a game sweeps only once it holds that state or a later
+    /// one: swept first, a craft protected a moment before the sweep would go with the debris.
+    /// </param>
+    public sealed record Swept(string Like, uint Protected = 0) : Message(Kind.Swept);
 
     /// <summary>
     /// Whether a craft's name matches what the operator swept by: empty or "*" is everything, and
@@ -595,6 +634,11 @@ public static class Wire
     /// <summary>A console line typed into a game's chat, which the server runs only for an admin.</summary>
     public sealed record Command(string Line) : Message(Kind.Command);
 
+    /// <summary>
+    /// What a player is on this server, said by the server until the game says the same back. A
+    /// game answers a token only once it is written down, so a server that has heard one back
+    /// knows the one it replaces can stop working.
+    /// </summary>
     /// <param name="Admin">What this player is on this server from now. A game told it is no admin
     /// throws away whatever token it had for that server, so revoking one needs nothing else said.</param>
     /// <param name="Token">A token to keep and offer at the next join, empty when there is nothing new
@@ -689,6 +733,7 @@ public static class Wire
                 w.F64(c.Universe);
                 w.F64(c.Sent);
                 w.F32(c.Speed);
+                w.U8((byte)c.Rules);
                 break;
             case Chunk c:
                 w.U32(c.Transfer);
@@ -778,6 +823,7 @@ public static class Wire
                 break;
             case Swept s2:
                 w.Text(s2.Like, KeyChars);
+                w.U32(s2.Protected);
                 break;
             case Chat c:
                 w.U8(c.From);
@@ -838,7 +884,7 @@ public static class Wire
                 Kind.Alive => new Alive(),
                 Kind.Ping => new Ping(r.F64(), r.F32(), r.F32(), r.F32(), r.U8() != 0, r.Text(KeyChars)),
                 Kind.Pong => new Pong(r.F64(), r.F64()),
-                Kind.Clock => new Clock(r.F64(), r.F64(), r.F32()),
+                Kind.Clock => new Clock(r.F64(), r.F64(), r.F32(), (WorldRules)r.U8() & WorldRules.All),
                 Kind.Chunk => new Chunk(r.U32(), r.U16(), r.U16(), r.Take(r.U16()).ToArray()),
                 Kind.Need => ReadNeed(ref r),
                 Kind.Got => new Got(r.U32()),
@@ -854,7 +900,7 @@ public static class Wire
                 Kind.Gone => new Gone(r.Text(KeyChars)),
                 Kind.Dock => new Dock(r.Text(KeyChars), r.Text(KeyChars), r.U8()),
                 Kind.Extra => new Extra(r.U8(), r.Text(KeyChars), r.Text(ChannelChars), r.Take(Math.Min((int)r.U8(), ExtraBytes)).ToArray()),
-                Kind.Swept => new Swept(r.Text(KeyChars)),
+                Kind.Swept => new Swept(r.Text(KeyChars), r.U32()),
                 Kind.Chat => new Chat(r.U8(), r.Text(ChatChars)),
                 Kind.Command => new Command(r.Text(ChatChars)),
                 Kind.Op => new Op(r.U8() != 0, r.Text(TokenChars)),

@@ -461,7 +461,7 @@ internal static class Browser
             // lookup that is finished is finished whatever became of what asked for it.
             _resolving--;
             if (!Listed.Contains(r.Row)) continue;
-            if (r.At is null) r.Row.Trouble = "that name does not resolve";
+            if (r.At is null) r.Row.Trouble = "that name can't be found";
             else Ask(r.At, r.Row);
         }
     }

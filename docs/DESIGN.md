@@ -62,17 +62,61 @@ stranger sent it.
   arriving unasked is left where it came from, since the world is written to disk with its sender's
   build and mods and everybody else is then held to those, so a single client could otherwise lock
   every other player out of the server and out of each restart of it.
+- **Worlds under names.** `saves/` in `--data`, a zip and a `.json` each (`SaveShelf`): what an admin
+  keeps to come back to and loads over the world for everybody. Keeping one asks the admin's own
+  game for a fresh save and files it when it comes, or files the world as held after twenty seconds
+  without. Only that game's answer is taken: the server's own periodic save is asked of whoever has
+  been in longest, and what goes into a save an admin named is not theirs to choose. Saves still
+  waiting on an answer count towards the hundred and the gigabyte that are kept, or a burst of asks
+  would all pass a limit none had reached.
+  Loading one is `fresh` with a world that is not empty -- craft forgotten, the clock forgotten and
+  set from the save, everybody handed it where they stand -- after two things `fresh` does not do.
+  The world it replaces is kept as `before load <when>`, so a load is the one command here that
+  can be taken back -- the newest five, none when the world being replaced is already on the shelf
+  (`_worldKept`: nobody has played since it was loaded or saved), and deleted or written over only
+  from the console. One slot written over by every load lost the world everybody had been in to the
+  second load in a row, and one an admin could delete made `load` and `delete` together the `fresh`
+  that is refused them. And every outstanding ask for a save is withdrawn: one already on its way in is
+  of the world that is going, and written down as the server's it would undo the load for everybody
+  who joined after. It is refused while a player here is in another system, lacks a mod the save
+  was made with, or runs one it was made without: their game would be handed a world it cannot
+  open, or be turned away for its mods at the next join of a world it had been playing in. A warp
+  that is running is ended first. A name is a file name on
+  whichever system the server runs, so it is held to what is one on all of them
+  (`SaveList.Name`; no `#` either, two of which end a label in the game's windows), and a zip copied in by hand is listed under its file's name with its time left
+  to whoever loads it first, as an imported world's is.
+- **Which craft are not debris.** `protected.json` in `--data`, names alone (`ProtectedCraft`).
+  `clear` leaves a craft on it unless the name swept by is that craft's own in full
+  (`ProtectedList.Spares`), and since every game sweeps its own world, every game is sent the list:
+  whole, as a `Blob` of a fourth kind, at the join and whenever it changes. A `Swept` carries which
+  state of the list it was made against and a game holds the sweep until it has that state, five
+  seconds at most -- the list goes by a transfer and the sweep by a datagram, and swept in the wrong
+  order a craft protected a moment before goes with the debris. A craft that docks with a protected
+  one is protected (`OnDock`), and the name that went stays on the list, being the name KSA gives
+  the half that comes away again. `fresh` empties it: a name left behind would protect whatever was
+  next called it. In a game, a protected craft is not removed by Abandon, Recover or the manifest's
+  Delete either (`BeforeDelete`, `BeforeRecover`). That half is the mod's alone: the server cannot
+  tell a craft deleted from one that crashed, and one that crashed has to go from every world.
+- **KSA's rules.** Whether life support and radiation are on is the `life-support` and `radiation`
+  settings, both on unless the operator says otherwise, and said in every `Clock`
+  (`Wire.WorldRules`): five times a second to everybody, so a change is every game's within the
+  second and a lost datagram costs nothing. A game sets `Universe.Rules` to match each frame it is
+  in the world (`Sync.FollowRules`), which also undoes KSA's own menu and whatever a loaded save
+  was written with.
 - **Who is in the world.** A game says so once it has loaded, and only a game the world was handed to
   is believed: a player in the world claims craft, counts in every warp vote and, on a server whose
   world came off disk, sets the clock the whole room then follows, and none of that is anyone's to do
   from outside the world. A universe time that is not a number is not a time either.
-- **Who may run commands.** `admins.json` in `--data`: a name and the SHA-256 of a token, one line
-  per admin. The token itself exists in two places and neither is that file -- the operator's console
-  for the moment it is said, and the machine it was said to. So the list is enough to take an admin
-  away and not enough to become one, and a server whose data directory leaks has leaked no admin. A
-  name has to be connected to be opped, since a token that reaches nobody is only a row in a file;
-  the name is then kept up to date from whoever last joined with that token, so revoking admin names
-  the player an operator can see rather than the one who was opped months ago.
+- **Who may run commands.** `admins.json` in `--data`: a name and the SHA-256 of a token, one row
+  per token. The token itself exists in two places and neither is that file -- the server's memory
+  for as long as it takes the game to answer for it, and the machine it was said to. So the list is
+  enough to take an admin away and not enough to become one, and a server whose data directory leaks
+  has leaked no admin. A name has to be connected to be opped, since a token that reaches nobody is
+  only a row in a file; the name is then kept up to date from whoever last joined with that token, so
+  revoking admin names the player an operator can see rather than the one who was opped months ago.
+  A row is `Offered` from when its token is sent until the token is shown back, and a name's other
+  rows are removed only then, so a name being opped again has two rows for a moment and either token
+  is an admin's. A file from before the field reads as every token having arrived.
 - **Every player's ping.** A game measures its own round trip to the server and says it with each
   `Ping`; the server passes them all on in the roster, so each game can show what everyone's line is
   like. Held Tab shows that list in game.
@@ -386,10 +430,43 @@ console's, because a server nobody can start again is not something to hand out 
 to leave the world rather than end it.
 
 Being an admin is a machine's, not a name's. `op` makes 32 random bytes, keeps their hash and sends the
-token itself once; the game writes it beside that server's address and offers it in every `Hello` after.
-Nothing is asked of the player, and nothing they could be shoulder-surfed typing. Revoking it removes
-the hash, so the token stops working at once even for a game that still has it, and tells a game that is
-connected to throw it away -- which is said by `Op(Admin: false)` and needs nothing else on the wire.
+token itself; the game writes it down and offers it in every `Hello` after. Nothing is asked of the
+player, and nothing they could be shoulder-surfed typing. Revoking it removes the hash, so the token
+stops working at once even for a game that still has it, and tells a game that is connected to throw
+it away -- which is said by `Op(Admin: false)` and needs nothing else on the wire.
+
+**An `Op` is said until it is said back.** The server sends it twice a second until the game returns
+the same datagram: that it is an admin, recognised at the join; that it is one no longer; or a token to
+keep. The first two are answered on arrival. A token is answered by `Client.Kept`, which the mod calls
+once `tokens.json` is written, because a token that could not be written is gone when the game closes
+and the one still on disk has to be worth something then. Only when a token comes back does the server
+remove what that name was an admin by before (`Admins.Check`, which is also what a `Hello` goes
+through, so a token shown at a join counts the same). Said once, with the old hash already replaced, a
+single lost datagram left a name on the list that no machine held the token of. A player who leaves
+before their game answered is an admin by either token, and the one they come back with stays; `deop`
+removes both. The answer is the token itself in the clear, as every `Hello` already carries it. No byte
+of the datagram changed and `Wire.Version` moved to 27 all the same: a game from before answers
+nothing, so it would be handed the same token twice a second, write it down each time, and never have
+the old one retired.
+
+**Where a game files a token** is `TokenBook`, in the protocol so the tests can drive it: under the
+address as typed, and under the IP address and port the join's datagrams went to. The typed address is
+looked under first and the other only when nothing is there. A token the server takes at a join is
+filed again under both, which is how one kept by an earlier mod, or found by its second key, comes to
+be under the first. Filed by the typed address alone, every admin's game looked under a name nothing
+was filed under the day the public server went from `mp.ksarmory.com` to `ksamp.gg`, and joined as a
+player; the server's list had not changed. A list of servers does the same in miniature each time an
+SRV record turns `host:port` into `host` (`Browser.Row.Where`).
+
+It is never filed under anything the server says of itself -- its name, its `LinkId`. The token is a
+bearer secret that goes out in the first `Hello`, before the far end has shown anything, so a key the
+far end chooses is a way to ask for somebody else's token: a server claiming to be another would be
+handed that one's admin. Where the datagrams go is the one thing in a join a server does not get to
+say. That makes the second key exactly as strong as the first: an IP address that has passed to
+another machine is offered the token once, as a name that has passed to another machine always was,
+and a private address means a different machine on every network it is typed on. A refusal throws away
+only the token refused, and only where it is filed under those two addresses, so a machine that has
+taken over an address cannot make a game forget what it holds for the same server under another name.
 
 None of it is secret from somebody watching the line. A token goes out in the clear in every `Hello`,
 as the password does, so it is worth what the network between the game and the server is worth: enough
@@ -439,6 +516,24 @@ fresh port each time it connects and a session is held under its address. A sess
 heard from for three seconds is let go of when a game joins under its name, which is what makes a
 reconnect get its own name and its own craft back rather than becoming "name 2" and watching its own
 rocket for ten seconds -- or two minutes, when the drop was mid-load.
+
+**An admin's game is told which worlds are kept without asking.** The list goes to every admin
+when they join or are opped and whenever it changes, as a `Blob` of a third kind (`BlobKind.Saves`,
+`SaveList`) over the same `Link` a world takes: it has to arrive, and a hundred rows do not fit a
+datagram. `Client` keeps the latest and hands it to nothing else, forgets it when told it is no
+admin, and drops any row whose name it could not have asked for: the rows are drawn in a window and
+sent back as commands. `Wire.Version` did not move for it: no datagram changed, a game from before reads a blob of a
+kind it does not know as nothing, and a server from before answers `saves` as it answers any command
+it does not have.
+
+**In a server the save window is the server's.** `ServerSaves` is a subclass of KSA's own
+`ImGuiWindow`, so the frame, the menu strip and the footer are the game's and the table is laid out
+as `GameSaves` lays out its own; every button sends the console line an admin could have typed.
+`GameSaves.Toggle` is patched to open it instead while this game is in a server, and the frame hook
+puts KSA's window away if it opened anyway, which is what is left if KSA moves that method. A save of
+this machine's is refused in `UncompressedSave.Load` unless this mod asked for it
+(`World.LoadNamed`: the server's world, and the bridge): loading one used to leave the shared world
+without a word, and is now a sentence saying to disconnect first.
 
 **What an admin is told is not what the console is told.** `players` names everybody, what they are
 flying and which KSA build they have, but where they are from only in the server's own console: an
@@ -855,6 +950,17 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
 
 ## What has not been tried
 
+- **Protected craft and the server's rules, in a game.** The list reaching every game, the sweep
+  waiting for it, docking and the rules on the clock are driven over loopback by `ProtectTests`.
+  Unseen: a sweep in a game leaving a protected craft standing, the alert on Abandon, Recover and
+  Delete, and a kitten's needs stopping or starting when `life-support` is changed under it.
+- **The server's saves, in a game.** Keeping, loading, deleting and the list reaching an admin are
+  driven over loopback by `SaveTests`. Nothing of the mod's side has been run: the SERVER SAVES
+  window has compiled and never been drawn, so its layout, its sorting and whether KSA's popups
+  call back into it are unseen; so are both patches -- whether `GameSaves.Toggle` is reached or has
+  been inlined into the key handler, and whether refusing `UncompressedSave.Load` leaves KSA's
+  window in a state it minds. A load with players in the room rides on `reload`, which has been
+  seen, but with a world whose craft are not the ones their games hold.
 - **A server reading the shared list of directories.** An advertising server reads
   `directories.txt` once an hour, announces to every directory in it, and withdraws from any that
   has left the list -- so retiring one is a commented-out line for servers and not only for players.
@@ -1060,6 +1166,16 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   asked at the default one, which on a machine with two servers is the other server
   (`Browser.Place`, `Row.Serial`, and `errors.md` for 2026-11-14). Read out of a game's log and
   built; the list has not been looked at since.
+- **An admin kept through a server's change of name, and a token handed over a line that loses
+  it.** All of the mod's side is a few lines of `Sync.Update` and `Tokens`, which only says where
+  the file is; the rest is `TokenBook`, `Client` and the server, driven over loopback with every
+  datagram one way lost and with a third of them lost both ways. Built against KSA, and no game
+  has been started on it. Not seen: a `tokens.json` written by 0.20.2 read by this mod in a real
+  documents folder and filed under where the server is at the next join; a game opped as
+  `mp.ksarmory.com` being an admin as `ksamp.gg`, or as `host` after `host:port`; a token that
+  could not be written leaving the one before it good; and a server's own `admins.json` of eight
+  admins read by a server that writes `Offered`. A game instance made afresh has a documents
+  folder of its own and no tokens, which is not changed and only said in the README.
 - **A mod's version, where a mod manager installed the mod.** It was looked up by the folder
   its loaded assembly said it came from, which need not be the folder KSA knows the mod by
   (`World.VersionOf`, and `errors.md` for 2026-11-15). Read out of Borea's source and one
@@ -1180,7 +1296,8 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   now goes on saying for five seconds; and a game's word that it is in the world, which it now
   repeats until the roster shows the server knows. That a craft has gone is said three times by
   the server while its name stays gone, and again by its owner's game for as long as the roster
-  still gives it the craft. Still said once: a line of chat, an ask for a warp and a vote on one.
+  still gives it the craft. What a game is told of being an admin, a new token among it, is said
+  until the game says it back. Still said once: a line of chat, an ask for a warp and a vote on one.
 - **A world with nothing in physics closes a gap in a moment.** KSA works a craft on rails or
   sitting still out in closed form, so a step of an hour costs what a step of a frame costs, while a
   craft being stepped through physics costs an hour of stepping. So how far a world may be warped to

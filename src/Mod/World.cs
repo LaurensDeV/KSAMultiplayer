@@ -323,7 +323,7 @@ internal static class World
     /// <summary>Whether the vehicle editor is open, which is where KSA stops the world.</summary>
     public static bool InEditor => Program.IsEditorOpen;
 
-    public static string Refuses() => Program.IsEditorOpen ? "the vehicle editor is open, and KSA saves and loads nothing while it is" : "";
+    public static string Refuses() => Program.IsEditorOpen ? "the vehicle editor is open, and KSA can't save or load while it is" : "";
 
     /// <summary>
     /// This world saved as the handover save and zipped, with the universe time it was saved at, or
@@ -346,7 +346,7 @@ internal static class World
             GameSaves.MakeUncompressedSave(HandoverSave);
             if (!Directory.Exists(folder) || !Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories).Any())
             {
-                why = "KSA wrote no save of this world";
+                why = "KSA didn't write a save of this world";
                 return null;
             }
             return (Blob.ZipFolder(folder), universe);
@@ -568,7 +568,7 @@ internal static class World
         {
             if (SystemLibrary.PickerSystems().FirstOrDefault(s => s.Id == system) is not { } chosen)
             {
-                why = $"the server's world is in {system}, which this game does not have";
+                why = $"the server's world is in {system}, which your game doesn't have";
                 return false;
             }
             // What choosing it from the configuration's own list does: the craft and the place a
@@ -609,7 +609,7 @@ internal static class World
         {
             if (!Has(system))
             {
-                why = $"this game does not have {system}";
+                why = $"your game doesn't have {system}";
                 return false;
             }
             GameSettings.Current.System.LastSystemId = system;
@@ -620,6 +620,37 @@ internal static class World
         {
             why = e.GetBaseException().Message;
             return false;
+        }
+    }
+
+    /// <summary>
+    /// KSA's two rules a server decides for its world: whether kittens need food, water and air,
+    /// and whether they take a dose from radiation.
+    /// </summary>
+    public static (bool LifeSupport, bool Radiation) Rules
+    {
+        get => (KSA.Universe.Rules.LifeSupport, KSA.Universe.Rules.Radiation);
+        set => (KSA.Universe.Rules.LifeSupport, KSA.Universe.Rules.Radiation) = value;
+    }
+
+    /// <summary>
+    /// Whether the save KSA is loading is one this mod asked it for -- the server's world, or a
+    /// tool's -- rather than one the player picked: the first is how a game gets into the shared
+    /// world, and the second is refused while it is in one.
+    /// </summary>
+    public static bool LoadAsked { get; private set; }
+
+    /// <summary>Loads a save of this machine's by name, as this mod's own doing.</summary>
+    public static void LoadNamed(string save)
+    {
+        LoadAsked = true;
+        try
+        {
+            GameSaves.LoadSaveGame(save);
+        }
+        finally
+        {
+            LoadAsked = false;
         }
     }
 
@@ -634,7 +665,7 @@ internal static class World
             Blob.UnzipInto(zip, folder);
             CallItTheHandover(folder);
             GameSaves.Refresh();
-            GameSaves.LoadSaveGame(HandoverSave);
+            LoadNamed(HandoverSave);
             return true;
         }
         catch (Exception e)
@@ -753,7 +784,7 @@ internal static class World
             using MemoryStream stream = new(Blob.Gunzip(definition));
             if (Serializer.Deserialize(stream) is not VehicleData data)
             {
-                why = "it could not be read";
+                why = "it couldn't be read";
                 return null;
             }
             if (localId.Length > 0 && localId != data.Id)
@@ -764,12 +795,12 @@ internal static class World
             data.OnDataLoad(Mod.Empty);
             if (data.RootPartInstance?.FindMissingParts() is { } missing)
             {
-                why = $"it has parts this game does not: {missing}";
+                why = $"it uses parts your game doesn't have: {missing}";
                 return null;
             }
             if (data.ParentBody.Get() is not IParentBody parent)
             {
-                why = $"its body {data.ParentBody.Id} is not in this world";
+                why = $"its parent body {data.ParentBody.Id} isn't in this world";
                 return null;
             }
             // KSA's lookup refuses a second thing under one hash with a line in its own log and
@@ -786,7 +817,7 @@ internal static class World
                 : KittenEva.CreateKittenFromSaveData(system, data);
             if (system.All.Get(data.Id) is not { } registered || !ReferenceEquals(registered, built))
             {
-                why = $"KSA did not take {data.Id} into this world";
+                why = $"KSA refused to add {data.Id} to this world";
                 return null;
             }
             parent.Children.Add(built);

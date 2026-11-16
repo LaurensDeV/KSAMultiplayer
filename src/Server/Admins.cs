@@ -8,9 +8,13 @@ namespace KSAMultiplayer.Server;
 /// <summary>
 /// Who may run commands, kept beside the world so a restart does not take everybody's admin away.
 ///
-/// <para>A token is handed to a player once and only its hash is kept here. That is enough to take an
+/// <para>A token is handed to a player's game and only its hash is kept here. That is enough to take an
 /// admin away and not enough to become one, so the file is no worse to lose than the world beside
 /// it, and an operator reading it learns nothing they could log in with.</para>
+///
+/// <para>A token is offered before it is held. Until the game it was made for has shown it has it,
+/// whatever that name was an admin by goes on working beside it: the token crosses a wire that
+/// loses things, and one retired for a replacement that never arrived is an admin nobody holds.</para>
 ///
 /// <para>With no folder nothing is read or written and the list lives only as long as the server:
 /// what the tests drive, and what a server given no data directory gets.</para>
@@ -18,18 +22,23 @@ namespace KSAMultiplayer.Server;
 public sealed class Admins(string folder = "")
 {
     /// <param name="Name">Who they were when they last joined with this token, so that revoking one names whoever is seen playing.</param>
-    private sealed record Entry(string Name, string Hash, DateTime SinceUtc);
+    /// <param name="Offered">Whether nothing has shown this token yet: it was sent, and may or may not have arrived.</param>
+    private sealed record Entry(string Name, string Hash, DateTime SinceUtc, bool Offered = false);
 
     private readonly List<Entry> _admins = Read(folder);
 
     private string Path => System.IO.Path.Combine(folder, "admins.json");
 
-    public IReadOnlyList<string> Names => [.. _admins.Select(a => a.Name)];
+    /// <summary>Each admin once, though a name with a token on its way to it has two rows.</summary>
+    public IReadOnlyList<string> Names => [.. _admins.Select(a => a.Name).Distinct(StringComparer.OrdinalIgnoreCase)];
 
     /// <summary>
     /// Whether this token is an admin's, and the name it is now remembered under: a token outlives the
     /// name it was given to, and an operator revokes the player they can see rather than the one who
     /// was opped months ago.
+    ///
+    /// <para>A token shown for the first time is a token that arrived, which is when whatever else
+    /// its name was an admin by stops working, and not before.</para>
     /// </summary>
     public bool Check(string token, string name)
     {
@@ -37,24 +46,29 @@ public sealed class Admins(string folder = "")
         string hash = Hash(token);
         int i = _admins.FindIndex(a => Same(a.Hash, hash));
         if (i < 0) return false;
-        if (!string.Equals(_admins[i].Name, name, StringComparison.Ordinal))
-        {
-            _admins[i] = _admins[i] with { Name = name };
-            Write();
-        }
+        Entry held = _admins[i];
+        if (!held.Offered && string.Equals(held.Name, name, StringComparison.Ordinal)) return true;
+        Entry now = held with { Name = name, Offered = false };
+        _admins[i] = now;
+        // By the name it was offered under, not the one it is seen under now: the rows it replaces
+        // are that name's.
+        if (held.Offered) _admins.RemoveAll(a => !ReferenceEquals(a, now) && string.Equals(a.Name, held.Name, StringComparison.OrdinalIgnoreCase));
+        Write();
         return true;
     }
 
     /// <summary>
-    /// Makes this name an admin and returns the token to hand them, which is the only time it exists
-    /// anywhere but on their machine. Any token they had stops working, so opping somebody again is
-    /// how one that was lost is replaced.
+    /// Makes this name an admin and returns the token to hand them, which is written down nowhere
+    /// but on their machine. Whatever they were an admin by goes on working until this one is shown
+    /// in <see cref="Check"/>, so opping somebody again is how a token that was lost is replaced, and
+    /// a replacement lost on its way costs nothing. An earlier offer nobody took up is withdrawn:
+    /// a name has one token on its way to it at most.
     /// </summary>
-    public string Add(string name)
+    public string Offer(string name)
     {
         string token = Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(32));
-        _admins.RemoveAll(a => string.Equals(a.Name, name, StringComparison.OrdinalIgnoreCase));
-        _admins.Add(new Entry(name, Hash(token), DateTime.UtcNow));
+        _admins.RemoveAll(a => a.Offered && string.Equals(a.Name, name, StringComparison.OrdinalIgnoreCase));
+        _admins.Add(new Entry(name, Hash(token), DateTime.UtcNow, Offered: true));
         Write();
         return token;
     }

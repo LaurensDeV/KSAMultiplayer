@@ -199,8 +199,33 @@ public sealed class Client : IDisposable
         Send(new Wire.Extra(Id, key, channel, data));
     }
 
-    /// <summary>Names the operator has swept the world by: this game takes away every craft of its own that matches.</summary>
+    /// <summary>
+    /// Names the operator has swept the world by: this game takes away every craft of its own that
+    /// matches and that <see cref="Spared"/> does not hold back.
+    /// </summary>
     public Queue<string> Swept { get; } = new();
+
+    // Sweeps heard and not yet handed on, each with the state of the protected list it was made
+    // against: held until that state has come, or the craft it protects would go with the rest.
+    private readonly List<(string Like, uint Needs, double At)> _sweeps = [];
+    private HashSet<string> _protected = [];
+    private uint _protectedSerial;
+
+    // A sweep is not held for ever on a list that never comes: the craft it would spare are a few,
+    // and the debris it is for is the reason anybody asked.
+    private const double SweepWaitsSeconds = 5.0;
+
+    /// <summary>Whether a sweep has been heard that this game has not finished with: a save of the world now would still hold what is going.</summary>
+    public bool Sweeping => _sweeps.Count > 0 || Swept.Count > 0;
+
+    /// <summary>The craft this server will not clear unless asked for by name.</summary>
+    public IReadOnlySet<string> Protected => _protected;
+
+    /// <summary>Whether a sweep by this name leaves this craft standing.</summary>
+    public bool Spared(string key, string like) => ProtectedList.Spares(_protected, key, like);
+
+    /// <summary>Which of KSA's rules the server's world is played by, once it has said.</summary>
+    public Wire.WorldRules? Rules { get; private set; }
 
     /// <summary>Craft of this game the server has given another name, because a player already had that one.</summary>
     public Queue<(string Was, string Now)> Renamed { get; } = new();
@@ -220,10 +245,39 @@ public sealed class Client : IDisposable
     public bool Admin { get; private set; }
 
     /// <summary>
+    /// The worlds this server keeps under names, as it last said. Null until it has, which it does
+    /// only to an admin, and again from the moment this game is told it is not one.
+    /// </summary>
+    public IReadOnlyList<SavedWorld>? Saves { get; private set; }
+
+    // Which of the server's tellings of that list this is, so an older one arriving late is not kept over it.
+    private uint _savesSerial;
+
+    /// <summary>
     /// What to write down for this server: a token to keep and offer at every join after, or empty to
     /// throw away the one kept, which is how admin is taken back from a machine rather than a name.
+    /// The token offered at the join is here too once the server has taken it, so that whoever keeps
+    /// them can file it under wherever this server was found this time. <see cref="Kept"/> is the
+    /// answer to each one written.
     /// </summary>
     public Queue<string> Tokens { get; } = new();
+
+    // What the server last said this game is, and the token of its that is written down: the server
+    // says each thing until it hears it back, so the same word again is an answer that was lost.
+    private Wire.Op? _told;
+    private string _kept = "";
+
+    /// <summary>
+    /// Says a token from <see cref="Tokens"/> is written down, which is what the server waits for
+    /// before the one it replaces stops working. Not said on arrival: a token that could not be
+    /// written is gone when the game closes, and the one on disk has to be worth something then.
+    /// </summary>
+    public void Kept(string token)
+    {
+        if (!Joined || token.Length == 0 || _told is not { Admin: true } told || told.Token != token) return;
+        _kept = token;
+        Send(told);
+    }
     public Queue<string> Said { get; } = new();
 
     /// <summary>Set when the server asks for a save of this world; cleared by whoever answers it.</summary>
@@ -262,7 +316,10 @@ public sealed class Client : IDisposable
     public void Connect(IPEndPoint server, string name, string ksaBuild, string mods, string system, string password, string token = "")
     {
         (_server, Id, Out, ServerName, ServerHasWorld) = (server, 0, "", "", false);
-        Admin = false;
+        (Admin, Saves, _savesSerial) = (false, null, 0);
+        (_protected, _protectedSerial, Rules) = ([], 0, null);
+        _sweeps.Clear();
+        (_told, _kept) = (null, "");
         _hello = new Wire.Hello(Wire.Clip(name, Wire.NameChars), ksaBuild, mods, system, password, Wire.Clip(token, Wire.TokenChars));
         (_helloNext, _joinUntil, _heardAt) = (0.0, _clock() + JoinWithinSeconds, _clock());
         (_bestRtt, _lastRtt, ServerOffset, _serverClock, _serverRate) = (double.PositiveInfinity, double.NaN, 0.0, null, 0.0);
@@ -409,18 +466,19 @@ public sealed class Client : IDisposable
             if (!d.From.Equals(_server)) continue;
             if (Wire.Read(d.Data, out ushort version) is not { } m)
             {
-                if (version != 0 && version != Wire.Version && !Joined) Leave($"the server speaks version {version} and this mod {Wire.Version}: update one of them");
+                if (version != 0 && version != Wire.Version && !Joined) Leave($"the server uses protocol version {version} and your mod uses {Wire.Version}: one of them needs updating");
                 continue;
             }
             Handle(m, d.Arrived);
         }
+        Sweep(now);
         if (_server is null || Out.Length > 0) return;
 
         if (!Joined)
         {
             if (now > _joinUntil)
             {
-                Leave("the server never answered: check the address, and that the server is running and its UDP port open");
+                Leave("the server didn't answer: check the address, that the server is running, and that its UDP port is open");
                 return;
             }
             if (now >= _helloNext && _hello is not null)
@@ -448,7 +506,7 @@ public sealed class Client : IDisposable
             }
         }
         _link.Pump(now, Send);
-        if (now - _heardAt > SilentSeconds) Leave("the server has not been heard from for ten seconds");
+        if (now - _heardAt > SilentSeconds) Leave("lost connection: nothing from the server for ten seconds");
     }
 
     private void Leave(string why)
@@ -479,7 +537,7 @@ public sealed class Client : IDisposable
                 }
                 if (w.Id == 0)
                 {
-                    Leave($"refused: {w.Refused}");
+                    Leave($"couldn't join: {w.Refused}");
                     _server = null;
                     return;
                 }
@@ -553,6 +611,7 @@ public sealed class Client : IDisposable
                 }
                 else _serverRate = c.Speed;
                 _serverClock = (c.Universe, c.Sent, c.Speed);
+                Rules = c.Rules;
                 return;
             case Wire.Warp warp when Joined:
                 Warp = warp.Phase == Wire.WarpPhase.None ? null : warp;
@@ -590,26 +649,28 @@ public sealed class Client : IDisposable
                 Gone.Enqueue(g.Key);
                 return;
             case Wire.Swept sw when Joined:
-                foreach (string key in _owners.Keys.Where(k => Wire.Matches(k, sw.Like)).ToArray())
-                {
-                    _owners.Remove(key);
-                    _tracks.Remove(key);
-                }
-                foreach (string key in _ownersComing.Keys.Where(k => Wire.Matches(k, sw.Like)).ToArray())
-                {
-                    _ownersComing.Remove(key);
-                }
-                Swept.Enqueue(sw.Like);
+                _sweeps.Add((sw.Like, sw.Protected, arrived));
                 return;
             case Wire.Chat c when Joined:
                 Chat.Enqueue(new ChatLine(c.From == 0, c.From == 0 ? "server" : NameOf(c.From), c.Text));
                 return;
             case Wire.Op op when Joined:
                 Admin = op.Admin;
-                // Nothing to write down for an admin the server recognised at the join: that token is
-                // already here, and it is the only copy there is.
-                if (!op.Admin) Tokens.Enqueue("");
-                else if (op.Token.Length > 0) Tokens.Enqueue(op.Token);
+                bool again = op == _told;
+                _told = op;
+                if (!op.Admin) (Saves, _savesSerial) = (null, 0);
+                if (op.Admin && op.Token.Length > 0)
+                {
+                    // A new token is answered by Kept, once it is written down, and again here
+                    // when that answer was lost.
+                    if (!again) Tokens.Enqueue(op.Token);
+                    else if (_kept == op.Token) Send(op);
+                    return;
+                }
+                // Taken away, or taken at the join: nothing to wait for before saying so.
+                if (!again && !op.Admin) Tokens.Enqueue("");
+                else if (!again && _hello is { Token.Length: > 0 } offered) Tokens.Enqueue(offered.Token);
+                Send(op);
                 return;
             case Wire.Snapshot s when Joined:
                 SnapshotWanted = s.Why;
@@ -620,11 +681,52 @@ public sealed class Client : IDisposable
             case Wire.Chunk or Wire.Need or Wire.Got when Joined:
                 if (_link.Handle(message, arrived, Send) is { } bytes && Blob.Decode(bytes) is { } blob)
                 {
+                    // Kept here and not handed on with the worlds and the craft: it is a fact
+                    // about the server, and whatever reads it wants the latest and nothing else.
+                    if (blob.Kind == BlobKind.Protected)
+                    {
+                        if (ProtectedList.Decode(blob.Data, out uint state) is { } names && state >= _protectedSerial)
+                        {
+                            (_protected, _protectedSerial) = (new HashSet<string>(names, StringComparer.Ordinal), state);
+                        }
+                        return;
+                    }
+                    if (blob.Kind == BlobKind.Saves)
+                    {
+                        if (SaveList.Decode(blob.Data, out uint serial) is { } said && (Saves is null || serial > _savesSerial))
+                        {
+                            // Only names this game could ask for: the rows are shown in a window and
+                            // sent back as commands, and a server is not trusted to have checked them.
+                            (Saves, _savesSerial) = ([.. said.Where(s => SaveList.Name(s.Name, out _) == s.Name)], serial);
+                        }
+                        return;
+                    }
                     // A world on its way in is a world this game is not in yet, whatever it said of the last.
                     if (blob.Kind == BlobKind.World) _loadedSaid = null;
                     Blobs.Enqueue(blob);
                 }
                 return;
+        }
+    }
+
+    // The sweeps whose state of the protected list has come, taken out of what this game knows of
+    // who has what and handed on for the game to take out of its world.
+    private void Sweep(double now)
+    {
+        foreach ((string like, uint needs, double at) in _sweeps.ToArray())
+        {
+            if (needs > _protectedSerial && now - at < SweepWaitsSeconds) continue;
+            _sweeps.RemoveAll(s => s.Like == like && s.Needs == needs);
+            foreach (string key in _owners.Keys.Where(k => Wire.Matches(k, like) && !Spared(k, like)).ToArray())
+            {
+                _owners.Remove(key);
+                _tracks.Remove(key);
+            }
+            foreach (string key in _ownersComing.Keys.Where(k => Wire.Matches(k, like) && !Spared(k, like)).ToArray())
+            {
+                _ownersComing.Remove(key);
+            }
+            Swept.Enqueue(like);
         }
     }
 

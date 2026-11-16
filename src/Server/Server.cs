@@ -32,6 +32,14 @@ public sealed record ServerOptions
     /// <summary>Whether universe time runs with nobody playing; held by default, so a save handed out is never far behind.</summary>
     public bool KeepTime { get; init; }
 
+    /// <summary>
+    /// Whether kittens need food, water and air, and whether they take a dose from radiation: KSA's
+    /// two rules, which each game otherwise takes from its own settings. One answer for the room,
+    /// said with the clock.
+    /// </summary>
+    public bool LifeSupport { get; init; } = true;
+    public bool Radiation { get; init; } = true;
+
     /// <summary>How long everyone has to answer a warp before the ask runs out. Saying nothing is not agreeing.</summary>
     public double WarpAnswerSeconds { get; init; } = 30.0;
 
@@ -104,6 +112,14 @@ public sealed class GameServer : IDisposable
 
         /// <summary>Whether this player's commands are run: the token offered at the join was on the admin list.</summary>
         public bool Admin { get; set; }
+
+        /// <summary>
+        /// What this player's game is being told of being an admin, until it says the same back, and
+        /// when to say it next. A token on its way is held here and nowhere else: it has to be said
+        /// again when a datagram is lost, and it is gone once the game has it or the player has left.
+        /// </summary>
+        public Wire.Op? Telling { get; set; }
+        public double TellNext { get; set; }
 
         /// <summary>Whether it has loaded the world and is playing in it, and since when on the server's clock.</summary>
         public bool Loaded { get; set; }
@@ -287,10 +303,16 @@ public sealed class GameServer : IDisposable
     private readonly Dictionary<byte, bool> _warpVotes = [];
 
     /// <param name="admins">Who may run commands; by default the list beside the world, or none kept at all without one.</param>
-    public GameServer(ServerOptions options, Func<double> clock, WorldStore? store = null, IPAddress? bind = null, Admins? admins = null)
+    /// <param name="saves">The worlds kept under names; by default a folder of them beside the world, or kept only while the server runs without one.</param>
+    /// <param name="protect">The craft not to clear; by default the list beside the world, or kept only while the server runs without one.</param>
+    public GameServer(ServerOptions options, Func<double> clock, WorldStore? store = null, IPAddress? bind = null, Admins? admins = null, SaveShelf? saves = null,
+                      ProtectedCraft? protect = null)
     {
         (Options, _clock, _store) = (options, clock, store);
+        Protected = protect ?? new ProtectedCraft(store?.Folder ?? "");
+        _protectedSerial = Protected.Names.Count > 0 ? 1u : 0u;
         Admins = admins ?? new Admins(store?.Folder ?? "");
+        Saves = saves ?? new SaveShelf(store is null ? "" : Path.Combine(store.Folder, "saves"));
         UniverseClock.SetSpeed(options.Speed, clock());
         _udp = new Udp(options.Port, clock, "KSAMultiplayer server", bind);
         if (store?.Load() is { } saved)
@@ -323,6 +345,10 @@ public sealed class GameServer : IDisposable
         if (next.SnapshotEverySeconds != was.SnapshotEverySeconds) _snapshotNext = Math.Min(_snapshotNext, now + next.SnapshotEverySeconds);
         // A warp holds the clock for as long as it runs and gives it back at this speed when it ends.
         if (next.Speed != was.Speed && _warpPhase == Wire.WarpPhase.None) UniverseClock.SetSpeed(next.Speed, now);
+        // Said, because the games take it up within the second and a kitten that stops eating, or
+        // starts, is otherwise the first anybody hears of it.
+        if (next.LifeSupport != was.LifeSupport) Broadcast(new Wire.Chat(0, $"life support is now {(next.LifeSupport ? "on" : "off")} on this server"), _ => true);
+        if (next.Radiation != was.Radiation) Broadcast(new Wire.Chat(0, $"radiation is now {(next.Radiation ? "on" : "off")} on this server"), _ => true);
     }
     public UniverseClock UniverseClock { get; } = new();
     public int Port => _udp.Port;
@@ -332,6 +358,16 @@ public sealed class GameServer : IDisposable
     public Blob? World => _world;
     public int CraftCount => _crafts.Count;
     public Admins Admins { get; }
+
+    /// <summary>The worlds kept under names, which an admin saves to and loads from.</summary>
+    public SaveShelf Saves { get; }
+
+    /// <summary>The craft <c>clear</c> leaves standing unless asked for by name.</summary>
+    public ProtectedCraft Protected { get; }
+
+    /// <summary>KSA's rules as this server's settings have them, as the clock says them.</summary>
+    public Wire.WorldRules Rules =>
+        (Options.LifeSupport ? Wire.WorldRules.LifeSupport : 0) | (Options.Radiation ? Wire.WorldRules.Radiation : 0);
 
     /// <summary>
     /// The KSA build a player must run: the operator's if they named one, otherwise the build this
@@ -389,7 +425,7 @@ public sealed class GameServer : IDisposable
         // absurdly was written to disk as the server's own and outlived a restart, after which no
         // world in the room advanced at all.
         if (timeKnown && !ClockFollow.SaneUniverse(world.Universe)) timeKnown = false;
-        _world = world;
+        (_world, _worldKept) = (world, false);
         (_worldBuild, _worldMods, _worldSystem, _worldTimeKnown) = (ksaBuild, mods, system, timeKnown);
         if (timeKnown && !UniverseClock.Known) UniverseClock.Set(world.Universe, _clock());
         if (timeKnown) Prune(world.Universe);
@@ -413,6 +449,7 @@ public sealed class GameServer : IDisposable
         if (!anyone) HoldTimeAtTheWorld(now);
 
         AskAgainForTheWorld(now);
+        KeepLate(now);
 
         // Players waiting on a fresh save are sent the one there is once it comes, or after a while without.
         if (_world is not null)
@@ -430,12 +467,12 @@ public sealed class GameServer : IDisposable
 
         if (_warpPhase == Wire.WarpPhase.Asking && now - _warpAskedAt > Options.WarpAnswerSeconds)
         {
-            EndWarp(now, $"{Named(_warpWho)}'s warp: not everyone answered");
+            EndWarp(now, $"{Named(_warpWho)}'s warp was cancelled: not everyone answered");
         }
         // Either phase, not only a running one: an ask whose asker is gone is nobody's to answer.
         if (_warpPhase != Wire.WarpPhase.None && !_players.ContainsKey(_warpWho))
         {
-            EndWarp(now, "the warp ends: whoever started it has gone");
+            EndWarp(now, "the warp ended because the player who started it left");
         }
         Govern(now);
         FollowTheRoom(now);
@@ -472,10 +509,18 @@ public sealed class GameServer : IDisposable
         }
         if (now >= _clockNext && UniverseClock.Known)
         {
-            Broadcast(new Wire.Clock(UniverseClock.Now(now), now, (float)UniverseClock.Rate), _ => true);
+            Broadcast(new Wire.Clock(UniverseClock.Now(now), now, (float)UniverseClock.Rate, Rules), _ => true);
             _clockNext = now + ClockEverySeconds;
         }
-        foreach (Player p in _players.Values) p.Link.Pump(now, m => _udp.Send(m, p.At));
+        foreach (Player p in _players.Values)
+        {
+            if (p.Telling is { } telling && now >= p.TellNext)
+            {
+                _udp.Send(telling, p.At);
+                p.TellNext = now + TellAgainSeconds;
+            }
+            p.Link.Pump(now, m => _udp.Send(m, p.At));
+        }
     }
 
     private void Handle(byte[] data, IPEndPoint from, double arrived)
@@ -485,7 +530,7 @@ public sealed class GameServer : IDisposable
         {
             if (player is null && version != 0 && version != Wire.Version)
             {
-                _udp.Send(new Wire.Welcome(0, $"this server speaks version {Wire.Version} and your mod {version}: update one of them", Options.Name, false), from);
+                _udp.Send(new Wire.Welcome(0, $"this server uses protocol version {Wire.Version} and your mod uses {version}: one of them needs updating", Options.Name, false), from);
             }
             return;
         }
@@ -622,12 +667,19 @@ public sealed class GameServer : IDisposable
                 if (line.Length == 0) return;
                 if (!player.Admin)
                 {
-                    Tell(player, "you are not an admin here");
+                    Tell(player, "you're not an admin on this server");
                     Log($"{player.Name} asked for '{line}' and is no admin");
                     return;
                 }
                 Log($"{player.Name}, an admin, asks for '{line}'");
                 Asked.Enqueue((player, line));
+                return;
+            // Only what this game was told, said back: it has heard, and a token it was handed is
+            // written down. Anything else in an Op from a game is nothing the server ever said.
+            case Wire.Op back when back == player.Telling:
+                player.Telling = null;
+                // The token arrived, which is when the one before it stops working.
+                if (back.Admin && back.Token.Length > 0) Admins.Check(back.Token, player.Name);
                 return;
             case Wire.Bye:
                 Remove(player, "has left");
@@ -756,8 +808,11 @@ public sealed class GameServer : IDisposable
         // Said only when there is something to say: that they are an admin, or that the token they
         // offered is no good, which is how a game deopped while it was away forgets the one it kept.
         // Nothing at all to a player who offered none, who is no admin and knows it.
-        if (p.Admin || hello.Token.Length > 0) _udp.Send(new Wire.Op(p.Admin, ""), from);
-        if (p.Admin) Tell(p, "you are an admin here; /help in the chat for what you can ask");
+        if (p.Admin || hello.Token.Length > 0) TellAdmin(p, new Wire.Op(p.Admin, ""));
+        if (p.Admin) Tell(p, "you're an admin on this server: type /help in chat to see the commands");
+        if (p.Admin) SendSaves(p);
+        // To everybody, before there is anything to sweep: a game sweeps its own world.
+        if (_protectedSerial > 0) p.Link.Send(ProtectedBlob(), now);
         Broadcast(new Wire.Chat(0, $"{name} has joined"), q => q != p);
         _rosterNext = 0.0;
 
@@ -782,25 +837,25 @@ public sealed class GameServer : IDisposable
         string build = RequiredBuild;
         if (build.Length > 0 && hello.KsaBuild.Length > 0 && hello.KsaBuild != build)
         {
-            return $"this server is for KSA {build} and you run {hello.KsaBuild}: you need the same build";
+            return $"this server runs KSA {build} and you have {hello.KsaBuild}: you need the same build to join";
         }
         // A world of Sol entire is not a world of Earth and its Moon: the save would load into a game
         // that has no such bodies, or put every craft of the others nowhere.
         if (_worldSystem.Length > 0 && hello.System.Length > 0 && hello.System != _worldSystem)
         {
-            return $"this world is {_worldSystem} and you are playing {hello.System}: start a game in {_worldSystem} to join";
+            return $"this world is in {_worldSystem} and your game is in {hello.System}: start a game in {_worldSystem} to join";
         }
         string[] wanted = RequiredMods;
         (string[] missing, string[] extra, string[] wrong) = ModList.Against(string.Join(',', wanted), hello.Mods);
-        if (missing.Length > 0) return $"the server's world needs mods you do not have enabled: {string.Join(", ", missing)}";
+        if (missing.Length > 0) return $"the server's world needs mods you don't have enabled: {string.Join(", ", missing)}";
         // And none the others lack. A mod that adds parts makes craft nobody else can put together,
         // and the first they hear of it is a craft arriving that their game refuses to build, which
         // reads as the mod being broken rather than as somebody running something extra. Nothing is
         // asked of the player whose world this is about to become: they are the ones who set it.
-        if (extra.Length > 0) return $"you are running mods this world does not have ({string.Join(", ", extra)}): turn them off to join";
+        if (extra.Length > 0) return $"you have mods enabled that this world doesn't use ({string.Join(", ", extra)}): turn them off to join";
         // And each at the version the operator asked for, where they asked for one: two builds of
         // one mod are one name and two mods.
-        return wrong.Length > 0 ? $"this server wants {string.Join(", ", wrong)}: install that version to join" : null;
+        return wrong.Length > 0 ? $"this server needs {string.Join(", ", wrong)}: install that version to join" : null;
     }
 
     private void SendWorld(Player p)
@@ -867,6 +922,7 @@ public sealed class GameServer : IDisposable
                 p.WorldAsked = false;
                 SetWorld(blob, p.KsaBuild, p.Mods, p.System);
                 Log($"{p.Name} saved the world: {Blob.Size(blob.Data.Length)} at universe time {blob.Universe:F0} s");
+                KeepWaiting(fresh: true, from: p.Id);
                 if (p.Seeding) OnLoaded(p, blob.Universe);
                 return;
             case BlobKind.Vehicle when p.Loaded && blob.Key.Length > 0:
@@ -1026,6 +1082,13 @@ public sealed class GameServer : IDisposable
             foreach (double after in GoneAgainAfterSeconds) _goneAgain.Add((consumed, p.Id, now + after));
             OwnersChanged();
             Log($"{p.Name} docked {consumed} into {survivor}" + (was.Length > 0 ? $", taking {was}" : ""));
+            // One craft now, and protected if either was. The name that went stays on the list:
+            // it is the name KSA gives the half that comes away again when they undock.
+            if ((Protected.Has(consumed) || Protected.Has(survivor)) && Protected.Add(survivor))
+            {
+                Log($"{survivor} is protected from now, having docked with {consumed}, which was");
+                SayProtected();
+            }
         }
         Broadcast(new Wire.Dock(consumed, survivor, p.Id), q => q.Loaded && q != p);
     }
@@ -1137,7 +1200,7 @@ public sealed class GameServer : IDisposable
         double now = _clock();
         if (!yes)
         {
-            EndWarp(now, $"{Named(_warpWho)}'s warp: {p.Name} said no");
+            EndWarp(now, $"{Named(_warpWho)}'s warp was cancelled: {p.Name} said no");
             return;
         }
         _warpNext = 0.0;
@@ -1311,7 +1374,7 @@ public sealed class GameServer : IDisposable
     private void OnNoWorld(Player p, string why)
     {
         Log($"{p.Name} will not hand over a world: {why}");
-        Broadcast(new Wire.Chat(0, $"{p.Name}'s world cannot be handed on: {why}"), q => q.Loaded);
+        Broadcast(new Wire.Chat(0, $"{p.Name}'s game couldn't provide a save of the world: {why}"), q => q.Loaded);
         if (p.Seeding)
         {
             // Not the one whose world this becomes after all, and one of those waiting for a world
@@ -1591,7 +1654,7 @@ public sealed class GameServer : IDisposable
         // which reads as a player blocking their own warp.
         if (_warpPhase != Wire.WarpPhase.None && p.Id == _warpWho)
         {
-            EndWarp(_clock(), $"{p.Name} asked for the warp and has gone");
+            EndWarp(_clock(), $"the warp ended because {p.Name} left");
         }
         else if (_warpPhase == Wire.WarpPhase.Asking)
         {
@@ -1616,18 +1679,37 @@ public sealed class GameServer : IDisposable
     /// <summary>Says something to one player, which their game shows in the chat as the server speaking.</summary>
     public void Tell(Player p, string text) => _udp.Send(new Wire.Chat(0, Wire.Clip(text, Wire.ChatChars)), p.At);
 
+    // How often a game is told again what it has not said back. A round trip is a fraction of this
+    // on any line a game is played over, so one that is heard is almost never said twice.
+    private const double TellAgainSeconds = 0.5;
+
+    /// <summary>
+    /// Tells a game what it is on this server, and goes on telling it until it says the same back.
+    ///
+    /// <para>Said once, it was one datagram between an admin and being one. A token lost on its way
+    /// left the name with a hash nobody held the token of; a lost word at the join left an admin's
+    /// game believing it was nobody's; and a lost revocation left a dead token in a game's keeping.</para>
+    /// </summary>
+    private void TellAdmin(Player p, Wire.Op op)
+    {
+        (p.Telling, p.TellNext) = (op, _clock() + TellAgainSeconds);
+        _udp.Send(op, p.At);
+    }
+
     /// <summary>
     /// Makes a player who is here an admin and hands their game the token to keep, returning the name
     /// it went to. Null for a name nobody is playing under: the token has to reach a game, and it is
-    /// said once and never stored where it could be said again.
+    /// never written down where it could be said to anybody else. What they were an admin by before
+    /// works until their game says it has this one.
     /// </summary>
     public string? Op(string name)
     {
         if (Find(name) is not { } p) return null;
-        string token = Admins.Add(p.Name);
+        string token = Admins.Offer(p.Name);
         p.Admin = true;
-        _udp.Send(new Wire.Op(true, token), p.At);
-        Tell(p, "you are an admin here; type /help in the chat for what you can ask");
+        TellAdmin(p, new Wire.Op(true, token));
+        Tell(p, "you're an admin on this server: type /help in chat to see the commands");
+        SendSaves(p);
         Log($"{p.Name} is an admin from now");
         return p.Name;
     }
@@ -1648,8 +1730,8 @@ public sealed class GameServer : IDisposable
         {
             was |= p.Admin;
             p.Admin = false;
-            _udp.Send(new Wire.Op(false, ""), p.At);
-            Tell(p, "you are no longer an admin here");
+            TellAdmin(p, new Wire.Op(false, ""));
+            Tell(p, "you're no longer an admin on this server");
         }
         if (was) Log($"{name} is no longer an admin");
         return was;
@@ -1670,6 +1752,262 @@ public sealed class GameServer : IDisposable
 
     /// <summary>Asks for a fresh save of the world now, from the console.</summary>
     public void SnapshotNow() => AskSnapshot("the operator asked for a save");
+
+    // Saves asked for by name that are waiting on a fresh save of the world to be one of, and the
+    // player each is waiting on.
+    private readonly List<(string Name, byte By, string ByName, double At, byte From)> _keeping = [];
+
+    // Whether the world as held is already on the shelf, under a name or as the world before a
+    // load: replacing it then loses nothing, and keeping it again would push an older world out.
+    private bool _worldKept;
+
+    // How long a save asked for by name waits for a fresh one before it is made of the world as
+    // held. A game writes no save while its vehicle editor is open, and whoever asked is looking
+    // at a window that has not changed.
+    private const double KeepWithinSeconds = 20.0;
+
+    /// <summary>
+    /// Keeps the world under a name, for an admin to load again later, and says what came of asking.
+    ///
+    /// <para>A fresh save is asked for first, as for a player who joins: the world as held is up
+    /// to <see cref="ServerOptions.SnapshotEverySeconds"/> old, and a save named "before the
+    /// landing" should not be of five minutes before it. It is asked of the admin's own game where
+    /// they are in the world, and only that game's answer is taken for it: a save is of what
+    /// whoever asked is looking at, and what goes into it is not for another player's game to
+    /// choose. It is kept of the world as held when no answer comes.</para>
+    /// </summary>
+    /// <param name="by">Who asked, to be told what came of it; null for the console.</param>
+    public string Keep(string asked, Player? by = null)
+    {
+        if (SaveList.Name(asked, out string why) is not { } name) return why;
+        if (SaveShelf.Reserved(name)) return $"names starting with '{SaveShelf.AutoPrefix.TrimEnd()}' are reserved for automatic saves";
+        if (_world is null) return "there is no world to save yet";
+        // Counted with the ones still waiting to be written, or a burst of asks before the first
+        // answer comes all pass a limit none of them has reached yet.
+        string[] waiting = [.. _keeping.Select(k => k.Name).Where(k => !string.Equals(k, name, StringComparison.OrdinalIgnoreCase) && Saves.Find(k) is null)];
+        if (!Saves.RoomFor(name, waiting.Length)) return $"there are already {SaveList.Most} saves: delete one first";
+        if (Saves.Find(name) is null && Saves.Bytes + ((long)_world.Data.Length * (waiting.Length + 1)) > SaveShelf.MostBytes)
+        {
+            return $"the saves take up {Saves.Bytes / (1024 * 1024)} MB of the {SaveShelf.MostBytes / (1024 * 1024)} MB allowed: delete one first";
+        }
+        string who = by?.Name ?? "the operator";
+        _keeping.RemoveAll(k => string.Equals(k.Name, name, StringComparison.OrdinalIgnoreCase));
+        Player? from = by is { Loaded: true } ? by : _players.Values.Where(p => p.Loaded).OrderBy(p => p.LoadedAt).FirstOrDefault();
+        _keeping.Add((name, by?.Id ?? 0, who, _clock(), from?.Id ?? 0));
+        if (from is null) return KeepWaiting(fresh: false, answering: true) ?? $"couldn't save '{name}'";
+        _snapshotAskedAt = UniverseClock.Now(_clock());
+        AskWorldOf(from, $"{who} is saving the world as '{name}'");
+        return $"saving the world as '{name}' once a fresh save arrives from {(from == by ? "your game" : from.Name)}";
+    }
+
+    // The saves waiting to be kept, kept of the world as it is now held: all of them, or those that
+    // were waiting on this player's save. What the last of them came to, which is also said to
+    // whoever asked for each unless this is itself the answer to them.
+    private string? KeepWaiting(bool fresh, bool answering = false, byte from = 0)
+    {
+        if (_world is null) return null;
+        string? said = null;
+        foreach ((string name, byte by, string byName, double _, byte asked) in _keeping.ToArray())
+        {
+            if (from != 0 && asked != from) continue;
+            _keeping.RemoveAll(k => k.Name == name);
+            try
+            {
+                Saves.Keep(name, _world, _worldBuild, _worldMods, _worldSystem, _worldTimeKnown, byName);
+                _worldKept = true;
+                said = $"saved the world as '{name}': {Blob.Size(_world.Data.Length)}"
+                       + (_worldTimeKnown ? $" at universe time {_world.Universe:F0} s" : "")
+                       + (fresh ? "" : " (from the last autosave: no fresh one arrived)");
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                said = $"couldn't save '{name}': {e.Message}";
+            }
+            if (answering) continue;
+            Log($"{byName}: {said}");
+            if (_players.TryGetValue(by, out Player? asker) && asker.Name == byName) Tell(asker, said);
+        }
+        if (said is not null) SaySaves();
+        return said;
+    }
+
+    // A save asked for by name that no fresh save has come for is made of the world as held, unless
+    // one is on its way in.
+    private void KeepLate(double now)
+    {
+        if (_keeping.Count == 0 || now - _keeping[0].At < KeepWithinSeconds) return;
+        if (_players.Values.Any(p => p.WorldAsked && p.Link.Arriving is not null)) return;
+        KeepWaiting(fresh: false);
+    }
+
+    /// <summary>
+    /// Puts a kept world in place of the one being played and hands it to everybody where they
+    /// stand, and says what came of asking.
+    ///
+    /// <para>The world it replaces is kept first, under a name of its own
+    /// (<see cref="SaveShelf.KeepBeforeLoad"/>), so a load is the one thing here an admin can take
+    /// back. Not when that world is already on the shelf -- nobody has played since it was loaded
+    /// or saved -- or three loads in a row would push the world everybody was in out of the few
+    /// that are kept. It is the world as last saved rather than a fresh one: asking for one first
+    /// would put a wait, and a game that may not answer, between an admin and the load they asked
+    /// for.</para>
+    ///
+    /// <para>Refused while somebody here could not follow -- a game in another system, or one
+    /// whose mods are not the save's. Their game would be handed a world it cannot open, or be
+    /// turned away for its mods the next time it joined a world it had been playing in.</para>
+    /// </summary>
+    /// <param name="by">Who asked, named to everybody; null for the console.</param>
+    public string LoadSave(string asked, Player? by = null)
+    {
+        if (SaveList.Name(asked, out string why) is not { } name) return why;
+        if (_players.Values.Any(p => p.Seeding)) return "a player is still uploading the server's first world: try again once it has arrived";
+        (Blob World, bool TimeKnown, string KsaBuild, string[] Mods, string System)? found;
+        try
+        {
+            found = Saves.Take(name);
+        }
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            return $"couldn't read '{name}': {e.Message}";
+        }
+        if (found is not { } save) return $"there is no save called '{name}' (saves lists them)";
+        name = Saves.Find(name) ?? name;
+
+        string[] needs = [.. save.Mods.SelectMany(ModList.Ids)];
+        foreach (Player p in _players.Values)
+        {
+            if (save.System.Length > 0 && p.System.Length > 0 && p.System != save.System)
+            {
+                return $"can't load '{name}': it is a {save.System} world and {p.Name} is playing {p.System}";
+            }
+            // A save copied in by hand says nothing of mods, and is taken to want what the room has.
+            if (needs.Length == 0) continue;
+            string[] has = [.. p.Mods.SelectMany(ModList.Ids)];
+            string[] lacks = [.. needs.Except(has, StringComparer.OrdinalIgnoreCase)];
+            if (lacks.Length > 0) return $"can't load '{name}': it needs {string.Join(", ", lacks)}, which {p.Name} doesn't have";
+            // Where the operator pinned the mods, a join is held to those and not to the world's.
+            string[] spare = Options.Mods.Length > 0 ? [] : [.. has.Except(needs, StringComparer.OrdinalIgnoreCase)];
+            if (spare.Length > 0) return $"can't load '{name}': {p.Name} has mods enabled that it doesn't use ({string.Join(", ", spare)})";
+        }
+
+        string who = by?.Name ?? "the operator";
+        // A world loaded mid-warp would start out running at the warp's speed.
+        if (_warpPhase != Wire.WarpPhase.None) EndWarp(_clock(), $"the warp ended because {who} is loading a save");
+        // What was asked to be kept is kept of the world that is about to go.
+        KeepWaiting(fresh: false);
+        string keptAs = "";
+        if (_world is not null && !_worldKept)
+        {
+            try
+            {
+                keptAs = Saves.KeepBeforeLoad(_world, _worldBuild, _worldMods, _worldSystem, _worldTimeKnown, who);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                return $"didn't load '{name}': couldn't save the current world first ({e.Message})";
+            }
+        }
+        _crafts.Clear();
+        _gone.Clear();
+        // A save on its way in is of the world that is going, and would be put back over this one.
+        foreach (Player p in _players.Values) p.WorldAsked = false;
+        UniverseClock.Forget();
+        SetWorld(save.World, save.KsaBuild, save.Mods, save.System, save.TimeKnown);
+        _worldKept = true;
+        int back = ReloadAll($"{who} loaded the save '{name}'");
+        string previous = keptAs.Length > 0 ? $"; the previous world is saved as '{keptAs}'" : "";
+        Log($"the world is now the save '{name}', loaded by {who}"
+            + (save.TimeKnown ? $", at universe time {save.World.Universe:F0} s" : "") + previous);
+        SaySaves();
+        return $"loaded '{name}'" + (back > 0 ? $" for {back} player{(back == 1 ? "" : "s")}" : " (nobody is connected)") + previous;
+    }
+
+    /// <summary>
+    /// Throws a kept world away, and says what came of asking. Not, for an admin, one the server
+    /// kept before a load: those are what a load is taken back with, and an admin who could delete
+    /// them could throw the world away in two steps where <c>fresh</c> is refused them in one.
+    /// </summary>
+    public string DeleteSave(string asked, Player? by = null)
+    {
+        if (SaveList.Name(asked, out string why) is not { } name) return why;
+        name = Saves.Find(name) ?? name;
+        if (by is not null && Saves.IsAuto(name)) return "automatic saves can only be deleted from the server console";
+        try
+        {
+            if (!Saves.Delete(name)) return $"there is no save called '{name}' (saves lists them)";
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return $"couldn't delete '{name}': {e.Message}";
+        }
+        // It may have been the one copy of the world as held.
+        _worldKept = false;
+        Log($"{by?.Name ?? "the operator"} deleted the save '{name}'");
+        SaySaves();
+        return $"deleted '{name}'";
+    }
+
+    // Which state the list of protected craft is in, counted from the server starting: what a sweep
+    // says it was made against, so no game sweeps on a list older than the operator was looking at.
+    // Nothing while there has never been one, which is a list no game has to wait for.
+    private uint _protectedSerial;
+
+    /// <summary>
+    /// Keeps a craft out of every <c>clear</c> that does not name it in full, and says what came of
+    /// asking. By the name the shared world knows it under, which need not be a craft the server
+    /// has heard of: it hears only of those somebody has claimed.
+    /// </summary>
+    public string Protect(string asked, Player? by = null)
+    {
+        string name = Wire.Clip(asked, Wire.KeyChars);
+        if (name.Length == 0) return "usage: protect <craft name>";
+        if (name.Contains('*') || name.Contains('?')) return "protect takes one craft's exact name, without wildcards";
+        // As the world spells it, where it is a craft the server knows: a name is matched exactly.
+        name = _crafts.Keys.FirstOrDefault(k => string.Equals(k, name, StringComparison.OrdinalIgnoreCase)) ?? name;
+        if (Protected.Has(name)) return $"{name} is already protected";
+        if (!Protected.Add(name)) return $"{ProtectedList.Most} craft are protected already: unprotect one first";
+        Log($"{by?.Name ?? "the operator"} protected {name}");
+        SayProtected();
+        return $"{name} is now protected from clear and from being abandoned"
+               + (_crafts.ContainsKey(name) ? "" : " (the server hasn't seen a craft by that name yet: check the spelling)");
+    }
+
+    /// <summary>Puts a craft back within reach of <c>clear</c>, and says what came of asking.</summary>
+    public string Unprotect(string asked, Player? by = null)
+    {
+        string name = Wire.Clip(asked, Wire.KeyChars);
+        if (name.Length == 0) return "usage: unprotect <craft name>";
+        name = Protected.Names.FirstOrDefault(k => string.Equals(k, name, StringComparison.OrdinalIgnoreCase)) ?? name;
+        if (!Protected.Remove(name)) return $"{name} is not protected (protected lists what is)";
+        Log($"{by?.Name ?? "the operator"} unprotected {name}");
+        SayProtected();
+        return $"{name} is no longer protected";
+    }
+
+    /// <summary>Tells every game which craft are protected: whenever that changes, since each sweeps its own world.</summary>
+    public void SayProtected()
+    {
+        _protectedSerial++;
+        byte[] list = ProtectedBlob();
+        foreach (Player p in _players.Values) p.Link.Send(list, _clock());
+    }
+
+    private byte[] ProtectedBlob() => new Blob(BlobKind.Protected, "", 0, 0.0, ProtectedList.Encode(Protected.Names.Order(), _protectedSerial)).Encode();
+
+    /// <summary>Tells every admin here which worlds are kept: whenever that changes, so a window showing them never asks.</summary>
+    public void SaySaves()
+    {
+        Player[] admins = [.. _players.Values.Where(p => p.Admin)];
+        if (admins.Length == 0) return;
+        byte[] list = SavesBlob();
+        foreach (Player p in admins) p.Link.Send(list, _clock());
+    }
+
+    private void SendSaves(Player p) => p.Link.Send(SavesBlob(), _clock());
+
+    private uint _savesSaid;
+
+    private byte[] SavesBlob() => new Blob(BlobKind.Saves, "", 0, 0.0, SaveList.Encode(Saves.List(), ++_savesSaid)).Encode();
 
     /// <summary>
     /// Every player put back on the world the server holds, without anybody reconnecting: each game
@@ -1696,7 +2034,7 @@ public sealed class GameServer : IDisposable
         if (back.Length > 0)
         {
             Log($"the world goes out to {back.Length} player{(back.Length == 1 ? "" : "s")} again: {why}");
-            Broadcast(new Wire.Chat(0, $"the world is being handed out again: {why}"), _ => true);
+            Broadcast(new Wire.Chat(0, $"reloading the world for everyone: {why}"), _ => true);
             _rosterNext = 0.0;
         }
         return back.Length;
@@ -1727,6 +2065,13 @@ public sealed class GameServer : IDisposable
         _crafts.Clear();
         _gone.Clear();
         UniverseClock.Forget();
+        // The craft they named went with the world, and a name left on the list would protect
+        // whatever is next given it.
+        if (Protected.Names.Count > 0)
+        {
+            Protected.Clear();
+            SayProtected();
+        }
         SetWorld(new Blob(BlobKind.World, "", 0, 0.0, zip), Options.KsaBuild, [], Options.EmptyWorld, timeKnown: false);
         int back = ReloadAll(why);
         Log($"the world is new and empty, in {Options.EmptyWorld}: {why}");
@@ -1749,7 +2094,7 @@ public sealed class GameServer : IDisposable
         double universe = UniverseClock.Now(_clock());
         foreach ((string key, Craft _) in _crafts.ToArray())
         {
-            if (flown.Contains(key) || !Wire.Matches(key, like)) continue;
+            if (flown.Contains(key) || !Wire.Matches(key, like) || ProtectedList.Spares(Protected.Names, key, like)) continue;
             _crafts.Remove(key);
             _gone[key] = universe;
             swept.Add(key);
@@ -1758,11 +2103,11 @@ public sealed class GameServer : IDisposable
         // server has never heard of it and a list drawn up here would miss the whole of the debris.
         // Each game matches the name against its own world, and what the server knew of them is
         // dropped above so that nothing hands them back.
-        Broadcast(new Wire.Swept(like), p => p.Loaded);
+        Broadcast(new Wire.Swept(like, _protectedSerial), p => p.Loaded);
         OwnersChanged();
         Log($"the operator is sweeping the world by '{(like.Length > 0 ? like : "*")}'"
             + $"{(swept.Count > 0 ? $"; {swept.Count} of them were known here: {Named(swept)}" : "")}");
-        Broadcast(new Wire.Chat(0, "the world is being cleared of craft nobody is flying"), p => p.Loaded);
+        Broadcast(new Wire.Chat(0, "clearing out every craft that nobody is flying"), p => p.Loaded);
         // The world on disk still holds them, so the next player to join would be handed them all
         // back: this is the one moment it is worth saving afresh. The save comes from a game that
         // has already swept, so it is clean, and nobody has to be put back on it -- everybody is

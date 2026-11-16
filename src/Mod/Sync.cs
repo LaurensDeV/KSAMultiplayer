@@ -533,7 +533,7 @@ internal static class Sync
         // refuse this player their own.
         Puppets.Remove(v);
         Own(c, v, define: false, made: false);
-        if (World.GoTo(v)) Say($"{key} is nobody's now: it is yours");
+        if (World.GoTo(v)) Say($"{key} is free now, so it's yours");
     }
 
     public static bool TakeBeforeEva(Vehicle v)
@@ -560,7 +560,7 @@ internal static class Sync
         Disconnect();
         if (!TryAddress(address, out string host, out int port, out bool portGiven))
         {
-            Say("that is not an address: give host:port, or a host for port 50100");
+            Say("that doesn't look like an address: use host:port, or just a host for the default port 50100");
             return;
         }
         try
@@ -569,7 +569,7 @@ internal static class Sync
         }
         catch (SocketException e)
         {
-            Say($"could not open a socket: {e.Message}");
+            Say($"couldn't open a network connection: {e.Message}");
             return;
         }
         (_asking, _address, LastServer) = ((name, password), address, address);
@@ -645,7 +645,7 @@ internal static class Sync
         }
         _aheadFinding = Find(host, port, portGiven);
         _askedOf = address;
-        if (!_lookOnly) Say($"asking {host} which world it holds...");
+        if (!_lookOnly) Say($"asking {host} about its world...");
     }
 
     // Kept for the window to show either way; said out loud only for an ask the player made, and
@@ -707,19 +707,19 @@ internal static class Sync
         if (missing.Length > 0)
         {
             ServerTrouble = $"needs mods you have not got: {missing}";
-            Say($"{name} needs mods you have not got: {missing}. Turn them on in KSA's Mods and start again.");
+            Say($"{name} needs mods you don't have enabled: {missing}. Turn them on in KSA's Mods menu and restart the game.");
             return null;
         }
         if (extra.Length > 0)
         {
             ServerTrouble = $"doesn't run mods you have enabled: {extra}";
-            Say($"{name} doesn't run mods you have enabled: {extra}. Turn them off and start again.");
+            Say($"{name} doesn't use some mods you have enabled: {extra}. Turn them off and restart the game.");
             return null;
         }
         if (wrong.Length > 0)
         {
             ServerTrouble = $"needs {wrong}";
-            Say($"{name} needs {wrong}. Install that and start again.");
+            Say($"{name} needs {wrong}. Install that version and restart the game.");
             return null;
         }
         // Nothing said about the system: the window has a World row that says it already, in the name
@@ -1010,7 +1010,7 @@ internal static class Sync
             if (rode.Length == 0) continue;
             Log.Info($"{d.Consumed} docked into {d.Survivor} in {c.NameOf(d.By)}'s game, and this player was flying {rode}");
             (_aboard, _cameAs) = (d.Survivor, rode);
-            Say($"{d.Consumed} has docked with {d.Survivor} in {c.NameOf(d.By)}'s game: the craft is theirs to fly, and you are aboard");
+            Say($"{d.Consumed} docked with {d.Survivor}, which {c.NameOf(d.By)} is flying: you're aboard, and they have the controls");
         }
     }
 
@@ -1041,7 +1041,7 @@ internal static class Sync
         // Their own craft under its own name again: undocked, and built here from what its owner said.
         if (_cameAs != _aboard && here.TryGetValue(_cameAs, out Vehicle? back) && World.IsAlive(back) && !ToRemove.Contains(back))
         {
-            Say($"{_cameAs} has undocked: it is yours once {c.NameOf(c.OwnerOf(_cameAs))} has left it");
+            Say($"{_cameAs} has undocked: you can fly it once {c.NameOf(c.OwnerOf(_cameAs))} lets go of it");
             _aboard = _cameAs;
         }
         if (!here.TryGetValue(_aboard, out Vehicle? ride) || !World.IsAlive(ride) || ToRemove.Contains(ride)) return;
@@ -1092,7 +1092,7 @@ internal static class Sync
             {
                 string key = KeyOf(flown);
                 _toGoTo = ReferenceEquals(flown, stack) ? split : stack;
-                Say($"{key} was {c.NameOf(whose)}'s before it docked: left for them to take back");
+                Say($"{key} was {c.NameOf(whose)}'s before it docked, so it's left for them to take back");
                 over = true;
             }
             if (!over) continue;
@@ -1172,8 +1172,8 @@ internal static class Sync
         // exists. Tab fills in a name in any of them.
         if (parts[0] is "help" or "?")
         {
-            Told("spectate <name>   put your camera on what somebody is flying; this one is your game's");
-            Told("Tab               fill in a player's name from what you have typed of it");
+            Told("spectate <name>   watch what another player is flying (anyone can use this)");
+            Told("Tab               complete a player's name as you type it");
             return false;
         }
         if (!parts[0].Equals("spectate", StringComparison.OrdinalIgnoreCase)
@@ -1191,7 +1191,7 @@ internal static class Sync
         if (_client is not { Joined: true } c) return;
         if (name.Length == 0)
         {
-            Told("spectate <name>: whose craft to watch");
+            Told("usage: spectate <name>, with the name of the player to watch");
             return;
         }
         if (c.Players.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)) is not { Id: > 0 } who)
@@ -1208,7 +1208,7 @@ internal static class Sync
         // whose name was already taken here was built under another.
         if (World.Vehicles().FirstOrDefault(v => KeyOf(v) == who.Controlling) is not { } seen)
         {
-            Told($"{who.Name} is flying {who.Controlling}, which is not in this world yet");
+            Told($"{who.Name} is flying {who.Controlling}, which hasn't loaded in your game yet");
             return;
         }
         Told(World.Watch(seen)
@@ -1218,6 +1218,27 @@ internal static class Sync
 
     /// <summary>Whether this server runs what this game asks of it.</summary>
     public static bool Admin => _client is { Admin: true };
+
+    /// <summary>Whether the server has this craft down as one not to clear, which is also one not to abandon or delete.</summary>
+    public static bool IsProtected(Vehicle v) => _client is { Joined: true } c && c.Protected.Contains(KeyOf(v));
+
+    // KSA's rules made the server's, for as long as this game is in its world. Each frame, because
+    // KSA's own menu can change them and a load puts back whatever the save was written with.
+    private static void FollowRules(Client c)
+    {
+        if (Now != Stage.Playing || c.Rules is not { } rules) return;
+        (bool lifeSupport, bool radiation) = (rules.HasFlag(Wire.WorldRules.LifeSupport), rules.HasFlag(Wire.WorldRules.Radiation));
+        if (World.Rules == (lifeSupport, radiation)) return;
+        World.Rules = (lifeSupport, radiation);
+        Log.Info($"rules set to the server's: life support {(lifeSupport ? "on" : "off")}, radiation {(radiation ? "on" : "off")}");
+    }
+
+    /// <summary>The worlds the server keeps under names, as it last said: null to a game that is no admin there, or that it has not told.</summary>
+    public static IReadOnlyList<SavedWorld>? Saves => _client is { Admin: true } c ? c.Saves : null;
+
+    /// <summary>The last thing the server itself said to this game, and when on <see cref="Wall"/>: what a window that asked it something shows as the answer.</summary>
+    public static string ServerSaid { get; private set; } = "";
+    public static double ServerSaidAt { get; private set; } = double.NegativeInfinity;
 
     /// <summary>Who flies this craft, or empty when it is this game's own or nobody is known to.</summary>
     public static string OwnerOf(Vehicle v)
@@ -1286,20 +1307,30 @@ internal static class Sync
                 _finding = null;
                 if (finding.IsCompletedSuccessfully && finding.Result is { } at && _asking is { } ask)
                 {
-                    c.Connect(at, ask.Name, World.KsaBuild, World.Mods, World.System, ask.Password, Tokens.For(_address));
+                    c.Connect(at, ask.Name, World.KsaBuild, World.Mods, World.System, ask.Password, Tokens.Joining(_address, at));
                     Log.Info($"connecting to {at}");
                 }
                 else
                 {
-                    Say("that server could not be found");
+                    Say("couldn't find that server");
                     Disconnect();
                     return;
                 }
             }
             c.Update();
             while (c.Said.TryDequeue(out string? said)) Say(said);
-            while (c.Chat.TryDequeue(out Client.ChatLine line)) Chatted(line.FromServer, $"<{line.Who}> {line.Text}");
-            while (c.Tokens.TryDequeue(out string? token)) Tokens.Keep(_address, token);
+            while (c.Chat.TryDequeue(out Client.ChatLine line))
+            {
+                if (line.FromServer) (ServerSaid, ServerSaidAt) = (line.Text, Wall());
+                Chatted(line.FromServer, $"<{line.Who}> {line.Text}");
+            }
+            while (c.Tokens.TryDequeue(out string? token))
+            {
+                if (token.Length == 0) Tokens.Forget();
+                // Answered only once it is on disk: the server keeps the token before it good until then.
+                else if (Tokens.Keep(token)) c.Kept(token);
+            }
+            FollowRules(c);
             if (c.Out.Length > 0)
             {
                 Disconnect();
@@ -1311,7 +1342,7 @@ internal static class Sync
             {
                 case Stage.Joining:
                     Now = c.ServerHasWorld ? Stage.Waiting : Stage.Seeding;
-                    if (Now == Stage.Seeding) Say("the server has no world yet: yours becomes it");
+                    if (Now == Stage.Seeding) Say("the server has no world yet, so it will use yours");
                     break;
                 case Stage.Seeding when c.SnapshotWanted is not null && World.AtACraft:
                     // In the shared world only once this world has become it. A game whose world was
@@ -1329,7 +1360,7 @@ internal static class Sync
                 case Stage.Loading:
                     if (Wall() - _loadingSince > LoadWithinSeconds)
                     {
-                        Say("the world did not load");
+                        Say("the world didn't load");
                         Disconnect();
                         return;
                     }
@@ -1347,7 +1378,7 @@ internal static class Sync
         }
         catch (Exception e)
         {
-            Say($"multiplayer went wrong: {e.GetBaseException().Message}");
+            Say($"multiplayer hit an error: {e.GetBaseException().Message}");
             Log.Error("multiplayer failed", e);
         }
     }
@@ -1362,12 +1393,12 @@ internal static class Sync
         if (_worldToLoad is not { } world) return;
         if (World.Refuses() is { Length: > 0 } not)
         {
-            if (_notLoading != not) Say($"the world has come, but it cannot be loaded: {not}");
+            if (_notLoading != not) Say($"the world has arrived but can't be loaded yet: {not}");
             _notLoading = not;
             return;
         }
         (_notLoading, _worldToLoad) = ("", null);
-        Say($"the world has come, {Blob.Size(world.Data.Length)}: loading it");
+        Say($"received the world ({Blob.Size(world.Data.Length)}), loading it");
         (_loadingSince, _settle, _worldCame, Now) = (Wall(), 0, false, Stage.Loading);
         Puppets.Clear();
         ToPlace.Clear();
@@ -1379,7 +1410,7 @@ internal static class Sync
         World.ForgetEngines();
         if (!World.LoadWorld(world.Data, out string why))
         {
-            Say($"the world could not be loaded: {why}");
+            Say($"couldn't load the world: {why}");
             Disconnect();
         }
     }
@@ -1419,7 +1450,7 @@ internal static class Sync
     public static void WorldLoadedHere()
     {
         if (Now != Stage.Playing) return;
-        Say("a save was loaded in this game, which the others are not in: leaving the shared world");
+        Say("you loaded a save the other players aren't in, so you've left the shared world");
         Disconnect();
     }
 
@@ -1432,7 +1463,7 @@ internal static class Sync
         c.ForgetTracks();
         c.SayLoaded(World.Universe);
         Now = Stage.Playing;
-        Say("in the shared world");
+        Say("you're in the shared world");
     }
 
     // The server has asked this game for a save of the world: sent, refused, or null while the ask
@@ -1444,7 +1475,7 @@ internal static class Sync
         if (c.SnapshotWanted is not { } why) return null;
         if (World.Refuses() is { Length: > 0 } not)
         {
-            if (_notSaving != not) Say($"the server wants a save of this world: {not}");
+            if (_notSaving != not) Say($"the server asked for a save of this world, but {not}");
             _notSaving = not;
             return null;
         }
@@ -1464,14 +1495,14 @@ internal static class Sync
             string names = string.Join(", ", lost.Take(3)) + (lost.Count > 3 ? $" and {lost.Count - 3} more" : "");
             string why = $"{names} {(lost.Count == 1 ? "is" : "are")} inside the body {(lost.Count == 1 ? "it belongs" : "they belong")} to";
             c.SayNoWorld(why);
-            Say($"this world is not fit to hand over: {why}");
+            Say($"this world can't be shared with the others: {why}");
             Log.Warn($"did not hand this world over: {why}");
             return false;
         }
         if (World.SaveWorld(out string not) is not { } save)
         {
             c.SayNoWorld(not);
-            Say($"this world could not be saved for the others: {not}");
+            Say($"couldn't save this world for the others: {not}");
             Log.Warn($"did not hand this world over: {not}");
             return false;
         }
@@ -1486,7 +1517,7 @@ internal static class Sync
         // Not while a sweep is waiting: it is applied further down this frame, and a save answered
         // first would be of the world as it was and hand the server back everything it just cleared.
         // One frame later the world is swept and the save is of that.
-        if (c.Swept.Count == 0) Snapshot(c);
+        if (!c.Sweeping) Snapshot(c);
         TakeRenames(c);
 
         // By what the shared world calls each craft. Two of this world's craft can want one name for a
@@ -1532,7 +1563,7 @@ internal static class Sync
             {
                 _worldToLoad = blob;
                 Now = Stage.Waiting;
-                Say("the world has been handed out again: loading it");
+                Say("the server sent the world again, loading it");
                 return;
             }
             if (blob.Kind != BlobKind.Vehicle || blob.Key.Length == 0) continue;
@@ -1607,6 +1638,8 @@ internal static class Sync
             {
                 string key = KeyOf(v);
                 if (!Wire.Matches(key, like) || ReferenceEquals(v, flown)) continue;
+                // Nor what the operator has protected, unless this is its own name in full.
+                if (c.Spared(key, like)) continue;
                 // Nor anything anybody else is flying: a player's hull is not debris, and a sweep
                 // that took one out from under them would be worse than the debris.
                 if (c.Players.Any(p => p.Controlling == key)) continue;
@@ -1687,7 +1720,7 @@ internal static class Sync
             if (Owned.Remove(r.Was, out Mine? mine)) craft ??= mine.Craft;
             if (craft is null || !World.IsAlive(craft))
             {
-                Say($"another player already has a craft called '{r.Was}', but this game has no such craft now");
+                Say($"another player already has a craft called '{r.Was}', but yours no longer exists");
                 continue;
             }
             // Said again under the name everyone will know it by: the server dropped what came before,
@@ -1696,7 +1729,7 @@ internal static class Sync
             Owned[r.Now] = mine ?? new Mine(craft);
             c.Claim(r.Now, controlling: ReferenceEquals(craft, World.Controlled), made: true);
             Define(c, craft);
-            Say($"another player already has a craft called '{r.Was}': yours is '{r.Now}' to them");
+            Say($"another player already has a craft called '{r.Was}', so the others see yours as '{r.Now}'");
         }
     }
 
@@ -1713,7 +1746,7 @@ internal static class Sync
             if (_watching != key)
             {
                 _watching = key;
-                Say($"{c.NameOf(held)} is flying {key}: you are watching");
+                Say($"{c.NameOf(held)} is flying {key}, so you're watching");
             }
             // Watching means watching: control is given up here, since a game that joined already
             // holding this craft would otherwise keep steering it.
@@ -2586,7 +2619,7 @@ internal static class Sync
             }
             else
             {
-                Say($"{owner}'s {key} cannot be built here: {why}");
+                Say($"couldn't build {owner}'s {key} in your game: {why}");
                 Definitions.Remove(key);
                 Deferred.Remove(key);
                 Describes.Remove(key);

@@ -379,7 +379,7 @@ refuses a join whose KSA build differs from the one it was built for (`KsaBuild`
 `Directory.Build.props`, `Server.RequiredBuild`):
 
 ```
-this server is for KSA <build> and you run <yours>: you need the same build
+this server runs KSA <build> and you have <yours>: you need the same build to join
 ```
 
 So the moment RocketWerkz ship a build, every running server refuses everybody who updates —
@@ -400,7 +400,7 @@ has a server nobody can join.
 
 Also change **`Wire.Version`** if what a datagram means changed — and remember the mod and the
 server ship together: a server on the old protocol refuses the new mod with
-`the server speaks version N and this mod M`, which is correct and still looks like a bug to a
+`the server uses protocol version N and your mod uses M`, which is correct and still looks like a bug to a
 player.
 
 ## If it goes wrong

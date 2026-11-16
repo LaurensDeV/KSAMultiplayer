@@ -233,7 +233,7 @@ internal static class Panel
             ImGui.PushTextWrapPos(0f);
             float4 warn = new(1.0f, 0.82f, 0.4f, 1.0f);
             ImGui.TextColored(in warn, $"Every pad at {site} has a craft on it.");
-            ImGui.TextDisabled("Launch is held until one is clear. Move or recover something, or pick another site.");
+            ImGui.TextDisabled("You can't launch until one is free. Move or recover a craft, or pick another site.");
             ImGui.PopTextWrapPos();
         }
         ImGui.End();
@@ -280,15 +280,15 @@ internal static class Panel
         }
         if (slowest.Name is null || slowest.Can >= asked - 0.01) return;
         ImGui.TextDisabled(slowest.Id == c.Id
-            ? $"your machine can fly {slowest.Can:0.##}x"
-            : $"{slowest.Name}'s machine can fly {slowest.Can:0.##}x");
+            ? $"your PC can only keep up with {slowest.Can:0.##}x"
+            : $"{slowest.Name}'s PC can only keep up with {slowest.Can:0.##}x");
     }
 
     private static void Asking(Client c, Wire.Warp w)
     {
         float4 warn = new(1.0f, 0.82f, 0.4f, 1.0f);
         ImGui.TextColored(in warn, w.Who == c.Id
-            ? $"You want to {Fast(w.Speed)}. Waiting for everyone."
+            ? $"You asked to {Fast(w.Speed)}. Waiting for everyone to agree."
             : $"{c.NameOf(w.Who)} wants to {Fast(w.Speed)}.");
         Brake(c, w.Speed);
 
@@ -309,10 +309,10 @@ internal static class Panel
 
     private static void Warping(Client c, Wire.Warp w)
     {
-        ImGui.Text($"The world is at {w.Speed:0.##}x, {c.NameOf(w.Who)}'s.");
+        ImGui.Text($"The world is running at {w.Speed:0.##}x, started by {c.NameOf(w.Who)}.");
         if (w.Who != c.Id)
         {
-            ImGui.TextDisabled("whoever started it ends it");
+            ImGui.TextDisabled("only the player who started it can stop it");
             return;
         }
         if (ImGui.Button("Stop", null)) c.AskWarp(1.0);
@@ -606,7 +606,7 @@ internal static class Panel
                                     .Order()];
         if (fit.Length == 0)
         {
-            _choices = typed.Length > 0 ? $"nobody here starts with '{typed}'" : "";
+            _choices = typed.Length > 0 ? $"no player's name starts with '{typed}'" : "";
             return;
         }
         string common = fit[0];
@@ -1222,7 +1222,7 @@ internal static class Panel
     {
         if (f.KsaBuild.Length > 0 && World.KsaBuild.Length > 0 && f.KsaBuild != World.KsaBuild)
         {
-            return $"This world is KSA {f.KsaBuild} and you run {World.KsaBuild}: joining needs the same build.";
+            return $"This server runs KSA {f.KsaBuild} and you have {World.KsaBuild}. You need the same build to join.";
         }
         (string missing, string extra, string wrong) = Sync.ModsAgainst(f.Mods);
         // One or several, because "turn it off" about two mods reads as badly as "turn them off"
@@ -1263,7 +1263,7 @@ internal static class Panel
             if (!listed)
             {
                 Told("Server name"u8, there.ServerName.Length > 0 ? there.ServerName : "unnamed");
-                Told("World"u8, !there.HasWorld ? "none yet: yours becomes it"
+                Told("World"u8, !there.HasWorld ? "none yet (it will use yours)"
                               : there.System.Length > 0 ? Named(there.System) : "yes");
             }
             Mods(there.Mods);
@@ -1479,19 +1479,19 @@ internal static class Panel
             // and no window: a restart alone comes back here, so the system is chosen from here.
             if (World.AsksAtStart)
             {
-                ImGui.TextColored(in ConsoleStyle.Danger, $"This world is in {world}; you are in {here}. Restart KSA to join it.");
+                ImGui.TextColored(in ConsoleStyle.Danger, $"This world is in {world} and you're in {here}. Restart KSA to join it.");
             }
             else if (World.StartsNextIn == system)
             {
-                ImGui.TextColored(in ConsoleStyle.Positive, $"KSA starts in {world} next time. Restart it to join this world.");
+                ImGui.TextColored(in ConsoleStyle.Positive, $"KSA will start in {world} next time. Restart it to join this world.");
             }
             else if (!World.Has(system))
             {
-                ImGui.TextColored(in ConsoleStyle.Danger, $"This world is in {world}, which this game does not have.");
+                ImGui.TextColored(in ConsoleStyle.Danger, $"This world is in {world}, which your game doesn't have.");
             }
             else
             {
-                ImGui.TextColored(in ConsoleStyle.Danger, $"This world is in {world}; you are in {here}, and KSA starts in {here} again.");
+                ImGui.TextColored(in ConsoleStyle.Danger, $"This world is in {world}, but you're in {here} and KSA is set to start in {here} again.");
                 if (ConsoleWidgets.Button($"START IN {world.ToUpperInvariant()} NEXT TIME".AsSpan())) PressStartThere();
             }
         }
@@ -1539,6 +1539,14 @@ internal static class Panel
     /// footer button in. Placed against the window rather than after the last thing drawn, so it
     /// stays where the player left it while the rows above it grow a player list or a warning.
     /// </summary>
+    private static bool BottomLeft(ReadOnlySpan<char> label)
+    {
+        float2 pad = ImGui.GetStyle().WindowPadding;
+        ImGui.SetCursorPosX(pad.X);
+        ImGui.SetCursorPosY(ImGui.GetWindowHeight() - ConsoleWidgets.ButtonHeight - pad.Y);
+        return ConsoleWidgets.Button(label);
+    }
+
     private static bool BottomRight(ReadOnlySpan<char> label)
     {
         float2 pad = ImGui.GetStyle().WindowPadding;
@@ -1573,9 +1581,11 @@ internal static class Panel
             }
             if (Sync.RenamedCraft is { Count: > 0 } renamed)
             {
-                ImGui.TextDisabled($"known to the others as: {string.Join(", ", renamed)}");
+                ImGui.TextDisabled($"other players see your craft as: {string.Join(", ", renamed)}");
             }
         }
+        // Only where it does anything: to anybody else it would be a button that says no.
+        if (Sync.Admin && BottomLeft("SERVER SAVES".AsSpan())) ServerSaves.Toggle();
         if (BottomRight("DISCONNECT".AsSpan())) Sync.Disconnect();
     }
 

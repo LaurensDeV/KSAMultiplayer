@@ -12,9 +12,9 @@ public sealed class Rig : IDisposable
     public readonly List<Client> Clients = [];
     public GameServer Server { get; }
 
-    public Rig(ServerOptions? options = null, WorldStore? store = null, Admins? admins = null)
+    public Rig(ServerOptions? options = null, WorldStore? store = null, Admins? admins = null, SaveShelf? saves = null, ProtectedCraft? protect = null)
     {
-        Server = new GameServer((options ?? new ServerOptions()) with { Port = 0 }, Now, store, IPAddress.Loopback, admins);
+        Server = new GameServer((options ?? new ServerOptions()) with { Port = 0 }, Now, store, IPAddress.Loopback, admins, saves, protect);
     }
 
     // Time nobody waited for. The clocks here are the rig's, so a test about something that happens
@@ -890,8 +890,8 @@ public class ServerTests
     [Theory]
     [InlineData("wrong", "B1", "Core", "wrong password")]
     [InlineData("pw", "B2", "Core", "you need the same build")]
-    [InlineData("pw", "B1", "", "mods you do not have enabled: Core")]
-    [InlineData("pw", "B1", "Core,Shiny,Louder", "mods this world does not have (Louder, Shiny)")]
+    [InlineData("pw", "B1", "", "mods you don't have enabled: Core")]
+    [InlineData("pw", "B1", "Core,Shiny,Louder", "mods enabled that this world doesn't use (Louder, Shiny)")]
     public void APlayerWhoCannotLoadTheWorldIsToldWhy(string password, string build, string mods, string why)
     {
         using Rig rig = new(new ServerOptions { Password = "pw" });
@@ -921,7 +921,7 @@ public class ServerTests
 
         Client b = rig.Join("Bob", "B2");
         rig.Until(() => b.Out.Length > 0, what: "another build to be turned away from an empty server");
-        Assert.Contains("this server is for KSA B1 and you run B2", b.Out);
+        Assert.Contains("this server runs KSA B1 and you have B2", b.Out);
     }
 
     [Fact]
@@ -1816,6 +1816,25 @@ public class ServerTests
         Assert.True(double.IsFinite(b.Ping));
     }
 
+    // Two craft that dock are one craft, and it is not debris if either of them was not.
+    [Fact]
+    public void ACraftThatDocksWithAProtectedOneIsProtectedWithIt()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        Beside(rig, a, "Capsule", b, "Station");
+        Assert.Contains("now protected", rig.Server.Protect("Capsule"));
+
+        // Alice's protected capsule goes into Bob's station, which is the craft that is left.
+        a.SayDocked("Capsule", "Station");
+        rig.Until(() => b.Protected.Contains("Station"), what: "Bob's game to hear the station is protected");
+        Assert.True(rig.Server.Protected.Has("Station"));
+        // The name that went stays: it is what the half that comes away again is called.
+        Assert.True(rig.Server.Protected.Has("Capsule"));
+        Assert.True(b.Spared("Station", "*"));
+    }
+
     [Fact]
     public void TheOperatorsBroomTakesACraftOutOfEveryGameIncludingItsOwners()
     {
@@ -1854,7 +1873,7 @@ public class ServerTests
         b.Blobs.Clear();
         rig.For(1.5);
 
-        Assert.Equal(2, rig.Server.ReloadAll("the operator asked"));
+        Assert.Equal(2, rig.Server.ReloadAll("an admin asked for it"));
         rig.Until(() => a.Blobs.Any(x => x.Kind == BlobKind.World) && b.Blobs.Any(x => x.Kind == BlobKind.World),
                   seconds: 20, what: "both to be handed the world again");
         Assert.DoesNotContain(rig.Server.Players, p => p.Loaded);

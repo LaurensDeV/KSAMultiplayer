@@ -45,6 +45,10 @@ namespace KSAMultiplayer;
 /// <c>GroundClutterPlacementData.PopulateLaunchPadExclusionZones</c> after, which keeps grass and
 /// rocks off whole launch complexes rather than off four single pads. <see cref="Pads"/> says
 /// why.</item>
+/// <item><see cref="UncompressedSave.Load"/>, which the save window, the terminal and every tool
+/// load a save through, and <see cref="GameSaves.Toggle"/>, which opens that window: in a server a
+/// save of this machine's is not loaded, and the window asked for is the server's own saves, for
+/// an admin (<see cref="ServerSaves"/>).</item>
 /// </list>
 ///
 /// <para>Nothing in any of them may throw: they run inside KSA's own loop.</para>
@@ -249,10 +253,16 @@ internal static class Hooks
             Patch(AccessTools.Method(typeof(InputEvents.VehicleDestroyData), nameof(InputEvents.VehicleDestroyData.Apply)),
                   nameof(BeforeDelete),
                   "another player's craft can be deleted from the universe manifest in this world alone");
+            Patch(AccessTools.Method(typeof(Vehicle), nameof(Vehicle.Recover)), nameof(BeforeRecover),
+                  "recovering a protected craft sends its crew home and leaves the craft standing empty");
             Patch(AccessTools.Method(typeof(Program), nameof(Program.RefreshVehiclesInFrame)), nameof(BeforeRefreshVehicles),
                   "another player's craft is built while KSA is stepping the world, which fails its physics");
             Patch(AccessTools.Method(typeof(Universe), nameof(Universe.DeserializeSave)), nameof(BeforeDeserializeSave),
                   "a save loaded in this game would have every craft in it claimed and sent to everybody");
+            Patch(AccessTools.Method(typeof(UncompressedSave), nameof(UncompressedSave.Load)), nameof(BeforeLoadSave),
+                  "a player in a server can load a save of their own, and leaves the shared world by doing it");
+            Patch(AccessTools.Method(typeof(GameSaves), nameof(GameSaves.Toggle)), nameof(BeforeSavesWindow),
+                  "KSA's own save window opens for a frame in a server before the server's takes its place");
             PatchAfter(AccessTools.Method(typeof(Program), nameof(Program.OnGameLoaded)), nameof(AfterGameLoaded),
                   "a world from the server with no craft in it never finishes loading");
             PatchAfter(AccessTools.Method(typeof(VehicleEditor), "SetLocations"), nameof(AfterSetLocations),
@@ -686,6 +696,43 @@ internal static class Hooks
         }
     }
 
+    // False leaves the save unloaded. A save picked in a server is this machine's, into this game
+    // alone: the player would be out of the shared world with a single click and no word of why.
+    // Loading a world for everybody is the server's, asked of it by an admin; a player who wants
+    // their own save disconnects first, which is one button and says what it does.
+    private static bool BeforeLoadSave(GameSave __instance)
+    {
+        try
+        {
+            if (Sync.Now == Sync.Stage.Off || World.LoadAsked) return true;
+            Log.Info($"refused to load the save '{__instance.Id}': this game is in a server");
+            TimedAlert.CreateWarning(Sync.Admin
+                ? "You're connected to a server. Use SERVER SAVES to load one of its saves, or disconnect to load your own."
+                : "You're connected to a server, where only admins can load saves. Disconnect to load your own.");
+            return false;
+        }
+        catch (Exception e)
+        {
+            Complain("deciding whether a save may be loaded in a server", e);
+            return true;
+        }
+    }
+
+    // False leaves KSA's save window as it was: in a server the key, the menu entry and the pause
+    // menu's button all open the server's saves instead, for an admin.
+    private static bool BeforeSavesWindow()
+    {
+        try
+        {
+            return !ServerSaves.Asked();
+        }
+        catch (Exception e)
+        {
+            Complain("opening the server's saves in place of KSA's", e);
+            return true;
+        }
+    }
+
     private static void BeforeDeserializeSave()
     {
         try
@@ -912,17 +959,44 @@ internal static class Hooks
     /// already in the logs.</para>
     ///
     /// <para>A craft of this player's own is theirs to delete, and the sending round sees it has
-    /// gone and tells everybody.</para>
+    /// gone and tells everybody -- unless the operator has protected it, which is a craft kept from
+    /// <c>clear</c> and so from the one button that does to it what <c>clear</c> would.</para>
     /// </summary>
     private static bool BeforeDelete(ref InputEvents.VehicleDestroyData __instance)
     {
         try
         {
-            return __instance.Vehicle is not { } v || !Sync.IsPuppet(v);
+            if (__instance.Vehicle is not { } v) return true;
+            if (Sync.IsPuppet(v)) return false;
+            // Abandon, the manifest's Delete, its Recover and its Clear Debris all come through
+            // here, and a craft the operator protected is not any one player's to remove by them.
+            if (!Sync.IsProtected(v)) return true;
+            Log.Info($"refused to remove {v.Id}: it is protected on this server");
+            TimedAlert.CreateWarning($"{v.Id} is protected on this server and can't be abandoned, recovered or deleted.");
+            return false;
         }
         catch (Exception e)
         {
             Complain("sparing another player's craft", e);
+            return true;
+        }
+    }
+
+    // False leaves the craft and its crew as they are. Recover sends the crew home before it asks
+    // for the craft to go, so refused only where the going is (BeforeDelete) it would empty a
+    // protected craft and leave it standing.
+    private static bool BeforeRecover(Vehicle __instance)
+    {
+        try
+        {
+            if (!Sync.IsProtected(__instance)) return true;
+            Log.Info($"refused to recover {__instance.Id}: it is protected on this server");
+            TimedAlert.CreateWarning($"{__instance.Id} is protected on this server and can't be abandoned, recovered or deleted.");
+            return false;
+        }
+        catch (Exception e)
+        {
+            Complain("sparing a protected craft from being recovered", e);
             return true;
         }
     }
@@ -969,7 +1043,7 @@ internal static class Hooks
         {
             _refused = value;
             string whose = Sync.OwnerOf(value!) is { Length: > 0 } name ? $"{name}'s" : "another player's";
-            Sync.Say($"{value!.Id} is {whose}: watching it, not flying it");
+            Sync.Say($"{value!.Id} is {whose}, so you're watching it rather than flying it");
         }
         return false;
     }
@@ -989,7 +1063,7 @@ internal static class Hooks
             Complain("taking a craft before its crew is sent out", e);
             return true;
         }
-        Sync.Say($"{vehicle.Id} is {Sync.OwnerOf(vehicle)}'s: its crew is theirs to send out");
+        Sync.Say($"{vehicle.Id} is {Sync.OwnerOf(vehicle)}'s, so only they can send its crew out");
         return false;
     }
 
@@ -1085,8 +1159,12 @@ internal static class Hooks
     // Never called: puts the patched methods in this assembly's metadata, so a KSA change to one is a build error.
     private static void PinTheSignatures(Vehicle v, SimStep step, SimSpeed named, VehicleDestructionEvent e,
                                         PartFailureEvent failed, KittenEva kitten, EVADoor door, IVASeat seat,
-                                        Camera camera, VolumetricExhaustRenderer exhaust, VolumetricTrailRenderer trails)
+                                        Camera camera, VolumetricExhaustRenderer exhaust, VolumetricTrailRenderer trails,
+                                        UncompressedSave save)
     {
+        save.Load();
+        GameSaves.Toggle();
+        v.Recover();
         v.PrepareWorker(step);
         v.AddVolumetricExhaustInstances(camera, exhaust, 0.0);
         v.UpdatePlumeTrailEmitters(trails);

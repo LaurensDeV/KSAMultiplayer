@@ -108,6 +108,7 @@ public sealed class MultiplayerMod
             // player is, the main menu included: a server is joined before there is a craft, and a
             // player who has to find flight before they can find the mod does not find the mod.
             Panel.Draw(World.AtACraft);
+            ServerSaves.Frame();
             // Last, over everything the mod has drawn.
             if (World.AtACraft) Panel.DrawTags();
         }

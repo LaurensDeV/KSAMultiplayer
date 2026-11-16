@@ -74,7 +74,7 @@ Once you're in:
 - **Chat** from the window.
 
 Two craft with the same name are still two craft: the server gives the second one a name of its own,
-your game goes on calling it what you called it, and the player list says *known to the others as*
+your game goes on calling it what you called it, and the player list says *other players see your craft as*
 with the name everybody else sees. Two players with the same name are told apart the same way.
 
 ### The server list
@@ -255,6 +255,8 @@ like `quit`.
 | `--mods` | `KSAMP_MODS` | the world's | the mods players must have, comma separated, each held to a version after an `@` where one is given: `FastAndPurrious@0.1.13` for that release, `FastAndPurrious@0.1.13+8b152a3` for one build of it. The whole list, not a floor: a player running anything else is refused. Worth setting, because the world's own list follows whoever last handed a save over |
 | `--snapshot-every` | `KSAMP_SNAPSHOT_EVERY` | `300` | seconds between fresh saves |
 | `--keep-time` | `KSAMP_KEEP_TIME` | off | let time run with nobody connected |
+| `--life-support` | `KSAMP_LIFE_SUPPORT` | `true` | whether kittens need food, water and air, for every player |
+| `--radiation` | `KSAMP_RADIATION` | `true` | whether kittens take a dose from radiation, for every player |
 | `--warp-answer` | `KSAMP_WARP_ANSWER` | `30` | seconds everyone has to answer a warp |
 | `--lapse-within` | `KSAMP_LAPSE_WITHIN` | `10` | seconds a craft stays its owner's once another player is watching it and they are neither in it nor looking at it |
 | `--speed` | `KSAMP_SPEED` | `1` | how fast universe time runs |
@@ -264,8 +266,13 @@ like `quit`.
 | `--directories` | `KSAMP_DIRECTORIES` | the shared list | where to announce, separated by commas; the shared list in `directories.txt` otherwise, read hourly while advertising |
 
 Commands typed into the server's console: `help`, `players`, `say <text>`, `kick <name> [why]`, `op <name>`, `deop <name>`, `admins`,
-`clear [name]`, `reload` (or `reset`), `save`, `status`, `version`, `fresh`, `set [key value]`,
-`settings`, `quit`.
+`clear [name]`, `protect <craft>`, `unprotect <craft>`, `protected`, `reload` (or `reset`), `save [name]`,
+`saves`, `load <name>`, `delete <name>`, `status`, `version`, `fresh`, `set [key value]`, `settings`, `quit`.
+
+`life-support` and `radiation` are KSA's two rules, which a game on its own takes from its start
+screen. In a server they are the server's, for everybody: `set life-support false` turns life support
+off in every game within the second and says so in the chat, and a player who changes one in KSA's
+own menu has it put back.
 
 `fresh` throws the world away and puts an empty one in its place -- the one `empty-world` names:
 every craft gone, universe time started over, and everybody handed the new world where they stand.
@@ -287,6 +294,13 @@ what there is to sweep. The world on disk still holds them, so a fresh save is a
 that has already swept, so what lands on disk is clean. Nobody is moved: everybody is standing in a
 world they swept themselves, so clearing costs no loading screen and leaves the clock alone.
 
+`protect <craft>` is for what is not debris. A protected craft is left by every `clear` that does not
+name it exactly: `clear` and `clear Station*` leave `Station` standing, and `clear Station` takes it.
+Nor can a player remove it from their own game: Abandon, Recover and the universe manifest's Delete
+all say that it is protected. Two craft that dock are one craft, and protected if either was.
+`unprotect <craft>` takes it off the list and `protected` lists them. The list is `protected.json` in
+`--data`; `fresh` empties it, and a craft that crashes is gone whether it was protected or not.
+
 `reload`, or `reset`, is the other half and is asked for on its own: the world as it stands goes out
 to everybody again, and each game loads it and comes back in a few seconds. Nobody reconnects, and
 nobody loses what they are flying.
@@ -296,6 +310,34 @@ rather than something `clear` does on the way past. A game's own time comes down
 and by no other means -- a game more than three seconds ahead of the server stops dead until the
 server catches up -- and while they are all loading there is nobody in the world, so the server's
 clock returns to the world's own time at the same moment theirs do.
+
+### Saves
+
+`save <name>` keeps the world under a name, and `load <name>` puts it back in place of the world for
+everybody where they stand: every craft as it was, and universe time back to when it was kept. Nobody
+reconnects. `saves` lists what is kept and `delete <name>` throws one away.
+
+A save is of now, and of the game that asked: an admin's own game is asked for a fresh save first, or
+the player who has been in longest when the console asks. Nobody else's answer is taken for it. If
+none comes within twenty seconds -- KSA writes no save while the vehicle editor is open -- it is made
+of the world as the server last had it, and says so.
+
+The world a load replaces is kept first, as `before load <date and time>`, so loading that takes a
+load back. It is the world as last saved, which is up to `snapshot-every` seconds behind what the
+players were looking at. The newest five are held on to, nothing is kept when the world being
+replaced is already a save -- so loading one save after another does not push out the world
+everybody was playing in -- and only the console deletes them: an admin who could would be able to
+throw the world away in two steps, where `fresh` is refused them in one.
+
+A load is refused while somebody playing could not follow: a game in another system, or one whose
+mods are not the save's. It ends a warp that is running.
+
+They are zips in `saves/` under `--data`, each with a `.json` beside it, and they outlive a restart
+and a redeploy as the world does. A KSA save zipped and copied into that folder is one of them --
+its folder or what is in it, as `--world` takes -- named for the file. A hundred are kept at most,
+and a gigabyte of them. A name is letters, digits, spaces and ``-_.()'+,&!``, 48 characters at most.
+
+In a game they are an admin's: see below.
 
 ### Admins
 
@@ -311,16 +353,41 @@ Who is one starts at the console, since nobody is one on a server that has just 
 op Jeb
 ```
 
-That hands Jeb's game a random token, which it keeps in `Documents/KSAMultiplayer/tokens.json` beside
-the server's address and offers at every join after, so Jeb is an admin whenever he comes back with
-nothing to type and no password to lose. `deop Jeb` takes it back, whether or not he is playing, and
-his game throws the token away when it next hears from the server. `op` on somebody who is already an
-admin replaces their token, which is how one that was lost on a reinstalled machine is replaced.
+That hands Jeb's game a random token, which it keeps in `Documents/KSAMultiplayer/tokens.json` and
+offers at every join after, so Jeb is an admin whenever he comes back with nothing to type and no
+password to lose. `deop Jeb` takes it back, whether or not he is playing, and his game throws the
+token away when it next hears from the server.
+
+`op` on somebody who is already an admin replaces their token, which is how one that was lost on a
+reinstalled machine is replaced. The token they had goes on working until their game says the new one
+is written down, so a replacement lost on its way costs nothing. `deop` waits for nothing, and is what
+to type when a token has got out.
+
+The game files the token under the server's address as it was typed and under the IP address and port
+that led to, and looks under the second when there is nothing under the first. So Jeb is still an
+admin when the server takes a new name, and when he reaches it as `host` one day and `host:port` the
+next. Two things do lose it, and `op` again is the answer to both:
+
+- **A new name and a new machine at once.** Nothing the game kept points at the server any more.
+  Change one at a time, with each admin joining in between, and nobody is lost.
+- **A new game instance.** `tokens.json` is in KSA's documents folder, and each StarMap or Borea
+  instance has its own. Copying the file across carries every admin it holds.
 
 The list is `admins.json` in `--data`, beside the world, and holds only each token's **hash**: enough
-to take an admin away, not enough to become one. A player has to be connected to be opped -- the token
-is said once, to a game, and never stored anywhere it could be said again -- and the name it is
-remembered under follows whoever last joined with it, so `deop` names the player you can see.
+to take an admin away, not enough to become one. It is not touched by an update or a restart. A player
+has to be connected to be opped -- the token is said to their game until it answers, and is never
+written down where it could be said to anybody else -- and the name it is remembered under follows
+whoever last joined with it, so `deop` names the player you can see.
+
+In a server, the key and the menu entries that open KSA's **GAME SAVES** open **SERVER SAVES**
+instead, for an admin, and so does a button in the Multiplayer window. It is the same window with the
+server's saves in it: **New** keeps the world under a name, a double click loads one for everybody,
+and a right click offers Load, Delete and Overwrite, each asking first. Anybody else who presses the
+key is told that only admins can save or load the world.
+
+Nobody loads a save of their own while in a server, admin or not: it would put that one game in a
+world the others are not in. KSA says so where the save was picked, and **DISCONNECT** is the way to
+one's own saves.
 
 ### As a service
 
