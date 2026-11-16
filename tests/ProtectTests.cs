@@ -132,6 +132,91 @@ public class ProtectTests
         }
     }
 
+    // What is protected is that world's: a craft is known by its name, and the names are the ones
+    // that world's craft have.
+    [Fact]
+    public void ASaveBringsBackWhatWasProtectedWhenItWasKept()
+    {
+        using Rig rig = new();
+        Client a = SaveTests.Seed(rig);
+        rig.Server.Protect("Station");
+        rig.Until(() => a.Protected.Contains("Station"), what: "Alice's game to hear the station is protected");
+
+        rig.Server.Keep("With the station");
+        rig.Until(() => a.SnapshotWanted is not null, what: "Alice's game to be asked for a save");
+        a.SnapshotWanted = null;
+        a.Upload(new Blob(BlobKind.World, "", a.Id, 5200, Rig.FakeWorld(41)));
+        rig.Until(() => rig.Server.Saves.List().Count == 1, seconds: 20, what: "the save to be kept");
+
+        rig.Server.Unprotect("Station");
+        rig.Server.Protect("Mun Base");
+        rig.Until(() => a.Protected.SetEquals(["Mun Base"]), what: "Alice's game to hear the list change");
+
+        Assert.Contains("loaded 'With the station'", rig.Server.LoadSave("With the station"));
+        Assert.Equal(["Station"], rig.Server.Protected.Names);
+        rig.Until(() => a.Protected.SetEquals(["Station"]), seconds: 20, what: "Alice's game to be told the list that came back");
+
+        // And taking the load back puts the list back as it was with the world it replaced.
+        string before = rig.Server.Saves.List().Single(s => s.Auto).Name;
+        Assert.Contains("loaded", rig.Server.LoadSave(before));
+        Assert.Equal(["Mun Base"], rig.Server.Protected.Names);
+        rig.Until(() => a.Protected.SetEquals(["Mun Base"]), seconds: 20, what: "Alice's game to be told the list is back");
+    }
+
+    // Protecting a craft is a change to what a save would hold, so a load straight after one keeps
+    // the world again rather than taking it for a world that is already a save.
+    [Fact]
+    public void WhatWasProtectedSinceTheLastSaveIsNotLostToALoad()
+    {
+        using Rig rig = new();
+        rig.Server.SetWorld(new Blob(BlobKind.World, "", 0, 100.0, Rig.FakeWorld(10)), "B1", ["Core"], "SolLite");
+        rig.Server.Keep("One");
+        rig.Server.LoadSave("One");
+        Assert.DoesNotContain(rig.Server.Saves.List(), s => s.Auto);
+
+        rig.Server.Protect("Station");
+        rig.Server.LoadSave("One");
+        Assert.Empty(rig.Server.Protected.Names);
+        string before = rig.Server.Saves.List().Single(s => s.Auto).Name;
+        rig.Server.LoadSave(before);
+        Assert.Equal(["Station"], rig.Server.Protected.Names);
+    }
+
+    [Fact]
+    public void ASaveThatSaysNothingOfProtectedCraftLeavesTheListAlone()
+    {
+        string folder = Path.Combine(Path.GetTempPath(), "ksamp-saves-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(folder);
+            // Copied in by hand, and so with nothing beside it to say what was protected.
+            File.WriteAllBytes(Path.Combine(folder, "By hand.zip"), Blob.Zip([("universe.xml", "<Universe/>"u8.ToArray())]));
+            using Rig rig = new(saves: new SaveShelf(folder));
+            // Kept before the two were kept together: a word beside it, and nothing in that word of them.
+            rig.Server.Saves.Keep("Older", new Blob(BlobKind.World, "", 0, 10.0, Rig.FakeWorld(8)), "B1", ["Core"], "SolLite", true, "Alice");
+            rig.Server.Protect("Station");
+
+            Assert.Contains("loaded 'By hand'", rig.Server.LoadSave("By hand"));
+            Assert.Equal(["Station"], rig.Server.Protected.Names);
+            Assert.Contains("loaded 'Older'", rig.Server.LoadSave("Older"));
+            Assert.Equal(["Station"], rig.Server.Protected.Names);
+
+            // One kept with nothing protected does say so, and empties it.
+            rig.Server.Unprotect("Station");
+            rig.Server.Keep("Bare");
+            rig.Server.Protect("Station");
+            Assert.Contains("loaded 'Bare'", rig.Server.LoadSave("Bare"));
+            Assert.Empty(rig.Server.Protected.Names);
+            // Written down, so it is the same after a restart.
+            Assert.Empty(new SaveShelf(folder).Take("Bare")!.Value.Protected!);
+            Assert.Null(new SaveShelf(folder).Take("Older")!.Value.Protected);
+        }
+        finally
+        {
+            Directory.Delete(folder, true);
+        }
+    }
+
     [Fact]
     public void EveryGameIsToldTheServersRulesAndHearsThemChange()
     {

@@ -107,7 +107,8 @@ const string Usage = """
     universe time back to when it was kept. The world it replaces is kept first, as
     'before load <when>', so a load can be taken back by loading that; the newest five of those
     are held on to, and only the console deletes them. saves lists them and delete <name> throws
-    one away. A KSA save zipped and copied into that folder is one of them.
+    one away. A KSA save zipped and copied into that folder is one of them. A save holds which
+    craft were protected when it was made, and a load puts that list back with the world.
     """;
 
 Dictionary<string, string> opts = [];

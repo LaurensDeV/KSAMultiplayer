@@ -1813,7 +1813,7 @@ public sealed class GameServer : IDisposable
             _keeping.RemoveAll(k => k.Name == name);
             try
             {
-                Saves.Keep(name, _world, _worldBuild, _worldMods, _worldSystem, _worldTimeKnown, byName);
+                Saves.Keep(name, _world, _worldBuild, _worldMods, _worldSystem, _worldTimeKnown, byName, protect: Protected.Names);
                 _worldKept = true;
                 said = $"saved the world as '{name}': {Blob.Size(_world.Data.Length)}"
                        + (_worldTimeKnown ? $" at universe time {_world.Universe:F0} s" : "")
@@ -1861,7 +1861,7 @@ public sealed class GameServer : IDisposable
     {
         if (SaveList.Name(asked, out string why) is not { } name) return why;
         if (_players.Values.Any(p => p.Seeding)) return "a player is still uploading the server's first world: try again once it has arrived";
-        (Blob World, bool TimeKnown, string KsaBuild, string[] Mods, string System)? found;
+        (Blob World, bool TimeKnown, string KsaBuild, string[] Mods, string System, string[]? Protected)? found;
         try
         {
             found = Saves.Take(name);
@@ -1900,7 +1900,7 @@ public sealed class GameServer : IDisposable
         {
             try
             {
-                keptAs = Saves.KeepBeforeLoad(_world, _worldBuild, _worldMods, _worldSystem, _worldTimeKnown, who);
+                keptAs = Saves.KeepBeforeLoad(_world, _worldBuild, _worldMods, _worldSystem, _worldTimeKnown, who, Protected.Names);
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
@@ -1913,6 +1913,14 @@ public sealed class GameServer : IDisposable
         foreach (Player p in _players.Values) p.WorldAsked = false;
         UniverseClock.Forget();
         SetWorld(save.World, save.KsaBuild, save.Mods, save.System, save.TimeKnown);
+        // What was protected in that world comes back with it: a craft is known by its name, and
+        // the names are the ones that world's craft have. A save that says nothing of them --
+        // one copied in, or kept before the two were kept together -- leaves the list as it is.
+        if (save.Protected is not null && Protected.Replace(save.Protected))
+        {
+            Log($"protected as they were when '{name}' was kept: {(save.Protected.Length > 0 ? string.Join(", ", save.Protected) : "nothing")}");
+            SayProtected();
+        }
         _worldKept = true;
         int back = ReloadAll($"{who} loaded the save '{name}'");
         string previous = keptAs.Length > 0 ? $"; the previous world is saved as '{keptAs}'" : "";
@@ -1987,6 +1995,9 @@ public sealed class GameServer : IDisposable
     /// <summary>Tells every game which craft are protected: whenever that changes, since each sweeps its own world.</summary>
     public void SayProtected()
     {
+        // The list is part of what a save holds, so the world as held is no longer one that is
+        // already kept: the next load keeps it again, with the list as it now is.
+        _worldKept = false;
         _protectedSerial++;
         byte[] list = ProtectedBlob();
         foreach (Player p in _players.Values) p.Link.Send(list, _clock());

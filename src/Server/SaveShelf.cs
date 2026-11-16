@@ -41,17 +41,23 @@ public sealed class SaveShelf(string folder = "")
     /// Keeps the world a load is about to replace, under a name that says when, and lets go of all
     /// but the newest <see cref="MostAuto"/> of them. The name it was kept under.
     /// </summary>
-    public string KeepBeforeLoad(Blob world, string ksaBuild, string[] mods, string system, bool timeKnown, string by)
+    public string KeepBeforeLoad(Blob world, string ksaBuild, string[] mods, string system, bool timeKnown, string by, IEnumerable<string>? protect = null)
     {
         string name = $"{AutoPrefix}{DateTime.UtcNow:yyyy-MM-dd HH-mm-ss}";
         // Two in one second are two worlds, and the second is not to cost the first.
         for (int n = 2; Find(name) is not null; n++) name = $"{AutoPrefix}{DateTime.UtcNow:yyyy-MM-dd HH-mm-ss} ({n})";
-        Keep(name, world, ksaBuild, mods, system, timeKnown, by, auto: true);
+        Keep(name, world, ksaBuild, mods, system, timeKnown, by, auto: true, protect);
         foreach (SavedWorld old in List().Where(s => s.Auto).Skip(MostAuto)) Delete(old.Name);
         return name;
     }
 
-    private sealed record Meta(double Universe, bool TimeKnown, string KsaBuild, string[] Mods, DateTime SavedUtc, string System, string By, bool Auto);
+    /// <param name="Protected">
+    /// The craft that were not to be cleared when this was kept, which are that world's and come
+    /// back with it. Null where nothing says: a save from before they were kept together, or one
+    /// copied in by hand, which leaves the list as it finds it.
+    /// </param>
+    private sealed record Meta(double Universe, bool TimeKnown, string KsaBuild, string[] Mods, DateTime SavedUtc, string System, string By, bool Auto,
+                               string[]? Protected = null);
 
     private readonly Dictionary<string, (Meta Meta, byte[] Zip)> _held = new(StringComparer.OrdinalIgnoreCase);
 
@@ -104,9 +110,11 @@ public sealed class SaveShelf(string folder = "")
     /// Keeps a world under a name, over whatever was kept under it. The zip is written beside and
     /// moved over, so a server killed mid-write keeps the save before.
     /// </summary>
-    public void Keep(string name, Blob world, string ksaBuild, string[] mods, string system, bool timeKnown, string by, bool auto = false)
+    /// <param name="protect">The craft not to clear in this world, to come back with it; null to say nothing of them.</param>
+    public void Keep(string name, Blob world, string ksaBuild, string[] mods, string system, bool timeKnown, string by, bool auto = false,
+                     IEnumerable<string>? protect = null)
     {
-        Meta meta = new(world.Universe, timeKnown, ksaBuild, mods, DateTime.UtcNow, system, by, auto);
+        Meta meta = new(world.Universe, timeKnown, ksaBuild, mods, DateTime.UtcNow, system, by, auto, protect is null ? null : [.. protect.Order()]);
         // Under the name it already has, so that two saves cannot differ only by a capital on a
         // file system that tells them apart and collide on one that does not.
         name = Find(name) ?? name;
@@ -123,21 +131,22 @@ public sealed class SaveShelf(string folder = "")
 
     /// <summary>A save as a world to put in place, or null when there is none of that name.</summary>
     /// <exception cref="InvalidDataException">The file of that name is not a KSA save.</exception>
-    public (Blob World, bool TimeKnown, string KsaBuild, string[] Mods, string System)? Take(string name)
+    public (Blob World, bool TimeKnown, string KsaBuild, string[] Mods, string System, string[]? Protected)? Take(string name)
     {
         if (Find(name) is not { } found) return null;
         if (!OnDisk)
         {
             (Meta held, byte[] data) = _held[found];
-            return (new Blob(BlobKind.World, "", 0, held.Universe, data), held.TimeKnown, held.KsaBuild, held.Mods, held.System);
+            return (new Blob(BlobKind.World, "", 0, held.Universe, data), held.TimeKnown, held.KsaBuild, held.Mods, held.System, held.Protected);
         }
         if (Read(found) is { } m)
         {
-            return (new Blob(BlobKind.World, "", 0, m.Universe, File.ReadAllBytes(ZipPath(found))), m.TimeKnown, m.KsaBuild ?? "", m.Mods ?? [], m.System ?? "");
+            return (new Blob(BlobKind.World, "", 0, m.Universe, File.ReadAllBytes(ZipPath(found))), m.TimeKnown, m.KsaBuild ?? "", m.Mods ?? [], m.System ?? "",
+                    m.Protected);
         }
         // Copied in by hand: read as a world given to --world is, since it came the same way.
         byte[] zip = WorldStore.Import(ZipPath(found));
-        return (new Blob(BlobKind.World, "", 0, 0.0, zip), false, "", [], WorldStore.SystemOf(zip));
+        return (new Blob(BlobKind.World, "", 0, 0.0, zip), false, "", [], WorldStore.SystemOf(zip), null);
     }
 
     public bool Delete(string name)

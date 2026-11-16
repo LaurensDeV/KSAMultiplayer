@@ -299,7 +299,8 @@ name it exactly: `clear` and `clear Station*` leave `Station` standing, and `cle
 Nor can a player remove it from their own game: Abandon, Recover and the universe manifest's Delete
 all say that it is protected. Two craft that dock are one craft, and protected if either was.
 `unprotect <craft>` takes it off the list and `protected` lists them. The list is `protected.json` in
-`--data`; `fresh` empties it, and a craft that crashes is gone whether it was protected or not.
+`--data`; `fresh` empties it, a loaded save brings back its own, and a craft that crashes is gone
+whether it was protected or not.
 
 `reload`, or `reset`, is the other half and is asked for on its own: the world as it stands goes out
 to everybody again, and each game loads it and comes back in a few seconds. Nobody reconnects, and
@@ -331,6 +332,10 @@ throw the world away in two steps, where `fresh` is refused them in one.
 
 A load is refused while somebody playing could not follow: a game in another system, or one whose
 mods are not the save's. It ends a warp that is running.
+
+A save holds which craft were protected when it was made, and a load puts that list back with the
+world -- the world a load replaces included, so taking a load back takes the list back too. A save
+made by 0.21.0, or a zip copied in, says nothing of them and leaves the list as it is.
 
 They are zips in `saves/` under `--data`, each with a `.json` beside it, and they outlive a restart
 and a redeploy as the world does. A KSA save zipped and copied into that folder is one of them --

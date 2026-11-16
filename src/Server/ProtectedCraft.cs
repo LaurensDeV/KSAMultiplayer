@@ -38,6 +38,18 @@ public sealed class ProtectedCraft(string folder = "")
         return true;
     }
 
+    /// <summary>Makes the list these names and no others: a world coming back, and what was protected in it.</summary>
+    /// <returns>Whether anything changed.</returns>
+    public bool Replace(IEnumerable<string> names)
+    {
+        HashSet<string> next = new(names.Take(ProtectedList.Most), StringComparer.Ordinal);
+        if (_names.SetEquals(next)) return false;
+        _names.Clear();
+        _names.UnionWith(next);
+        Write();
+        return true;
+    }
+
     public void Clear()
     {
         if (_names.Count == 0) return;

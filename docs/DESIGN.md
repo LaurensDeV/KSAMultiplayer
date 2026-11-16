@@ -83,7 +83,12 @@ stranger sent it.
   open, or be turned away for its mods at the next join of a world it had been playing in. A warp
   that is running is ended first. A name is a file name on
   whichever system the server runs, so it is held to what is one on all of them
-  (`SaveList.Name`; no `#` either, two of which end a label in the game's windows), and a zip copied in by hand is listed under its file's name with its time left
+  (`SaveList.Name`; no `#` either, two of which end a label in the game's windows). A save holds
+  the list of protected craft as it was, and a load puts it back: the list is names, and the names
+  are the ones that world's craft have, so left where it stood it would protect whatever in the
+  loaded world happened to share one and nothing that was protected in it. A save with no such
+  word in it leaves the list alone. Changing the list makes the world as held one that is no
+  longer already kept, or a load straight after a `protect` would lose it. A zip copied in by hand is listed under its file's name with its time left
   to whoever loads it first, as an imported world's is.
 - **Which craft are not debris.** `protected.json` in `--data`, names alone (`ProtectedCraft`).
   `clear` leaves a craft on it unless the name swept by is that craft's own in full
@@ -94,7 +99,7 @@ stranger sent it.
   order a craft protected a moment before goes with the debris. A craft that docks with a protected
   one is protected (`OnDock`), and the name that went stays on the list, being the name KSA gives
   the half that comes away again. `fresh` empties it: a name left behind would protect whatever was
-  next called it. In a game, a protected craft is not removed by Abandon, Recover or the manifest's
+  next called it. A named save carries the list and a load restores it (above). In a game, a protected craft is not removed by Abandon, Recover or the manifest's
   Delete either (`BeforeDelete`, `BeforeRecover`). That half is the mod's alone: the server cannot
   tell a craft deleted from one that crashed, and one that crashed has to go from every world.
 - **KSA's rules.** Whether life support and radiation are on is the `life-support` and `radiation`
