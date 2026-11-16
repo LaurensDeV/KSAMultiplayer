@@ -950,6 +950,11 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
 
 ## What has not been tried
 
+- **Two rows for one server of another version.** A server that answers in another protocol
+  version now keeps where it answered from, so a directory's row for it and the player's own
+  collapse into one as they do for a server this game can join. Seen the other way in a game of
+  0.20.1 the hour every server moved to 27: `Cars` and `cars.ksamp.gg`, one server, two rows. The
+  fix has compiled and has not been run against a server of another version.
 - **Protected craft and the server's rules, in a game.** The list reaching every game, the sweep
   waiting for it, docking and the rules on the clock are driven over loopback by `ProtectTests`.
   Unseen: a sweep in a game leaving a protected craft standing, the alert on Abandon, Recover and

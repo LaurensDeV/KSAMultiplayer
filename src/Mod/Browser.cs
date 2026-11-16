@@ -172,9 +172,12 @@ internal static class Browser
         {
             // What it is, but in another version: nothing this game can join, so it is shown as the
             // version and not as a row of facts that every check below would pass.
+            // Where it answered from is kept all the same. That is what finds two rows to be one
+            // server, and without it a server of another version that is listed two ways -- by a
+            // directory and among the player's own -- stood as two rows for as long as it was one.
             if (_probes.Answered.TryGetValue(at, out ServerFacts? other) && other.Protocol != Wire.Version)
             {
-                foreach (Row r in rows) (r.Speaks, r.Trouble) = (other.Protocol, Versions(other.Protocol));
+                foreach (Row r in rows) (r.Speaks, r.At, r.Trouble) = (other.Protocol, at, Versions(other.Protocol));
             }
             else if (_probes.Answered.TryGetValue(at, out ServerFacts? facts))
             {
@@ -183,7 +186,7 @@ internal static class Browser
             }
             else if (_probes.Elsewhere.TryGetValue(at, out ushort version))
             {
-                foreach (Row r in rows) (r.Speaks, r.Trouble) = (version, Versions(version));
+                foreach (Row r in rows) (r.Speaks, r.At, r.Trouble) = (version, at, Versions(version));
             }
             else if (_probes.Silent.Contains(at))
             {
