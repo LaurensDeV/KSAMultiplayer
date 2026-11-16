@@ -1931,15 +1931,14 @@ public sealed class GameServer : IDisposable
     }
 
     /// <summary>
-    /// Throws a kept world away, and says what came of asking. Not, for an admin, one the server
-    /// kept before a load: those are what a load is taken back with, and an admin who could delete
-    /// them could throw the world away in two steps where <c>fresh</c> is refused them in one.
+    /// Throws a kept world away, and says what came of asking. Any of them, for an admin as for the
+    /// console, the ones kept before a load included: a server run without a console has nobody
+    /// else to tidy them, and an admin is already trusted with <c>load</c> and <c>clear</c>.
     /// </summary>
     public string DeleteSave(string asked, Player? by = null)
     {
         if (SaveList.Name(asked, out string why) is not { } name) return why;
         name = Saves.Find(name) ?? name;
-        if (by is not null && Saves.IsAuto(name)) return "automatic saves can only be deleted from the server console";
         try
         {
             if (!Saves.Delete(name)) return $"there is no save called '{name}' (saves lists them)";

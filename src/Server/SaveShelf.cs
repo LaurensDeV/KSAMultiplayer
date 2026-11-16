@@ -31,9 +31,6 @@ public sealed class SaveShelf(string folder = "")
     public static bool Reserved(string name) =>
         name.StartsWith(AutoPrefix, StringComparison.OrdinalIgnoreCase) || name.Equals(AutoPrefix.TrimEnd(), StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>Whether a save is one the server kept of its own accord, or is named as one.</summary>
-    public bool IsAuto(string name) => Reserved(name) || List().Any(s => s.Auto && string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
-
     /// <summary>What the named saves weigh together, the server's own aside.</summary>
     public long Bytes => List().Where(s => !s.Auto).Sum(s => (long)s.Bytes);
 

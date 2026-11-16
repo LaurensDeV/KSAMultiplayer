@@ -270,10 +270,10 @@ public class SaveTests
         Assert.Equal(1003.0, autos.Min(s => s.Universe));
     }
 
-    // fresh is the console's alone because it throws the world away; loading a save and then
-    // deleting what the load kept would be the same thing in two steps.
+    // An admin can delete what a load kept, as any save: a server run without a console has
+    // nobody else to tidy them. Writing over one stays refused, since the name is the server's.
     [Fact]
-    public void AnAdminCannotDeleteOrWriteOverWhatALoadKept()
+    public void AnAdminCanDeleteWhatALoadKeptButNotWriteOverIt()
     {
         using Rig rig = new();
         Client a = Seed(rig);
@@ -283,14 +283,17 @@ public class SaveTests
         rig.Server.LoadSave("Earlier", alice);
         string kept = rig.Server.Saves.List().Single(s => s.Auto).Name;
 
-        Assert.Contains("only be deleted from the server console", rig.Server.DeleteSave(kept, alice));
         Assert.Contains("reserved for automatic saves", rig.Server.Keep(kept, alice));
         Assert.Contains("reserved for automatic saves", rig.Server.Keep("Before Load of my own", alice));
         Assert.Contains(rig.Server.Saves.List(), s => s.Name == kept);
         // A save can still be called something that only begins the same way.
         Assert.DoesNotContain("reserved", rig.Server.Keep("before loading the base", alice));
 
-        Assert.Equal($"deleted '{kept}'", rig.Server.DeleteSave(kept));
+        Assert.Equal($"deleted '{kept}'", rig.Server.DeleteSave(kept, alice));
+        Assert.DoesNotContain(rig.Server.Saves.List(), s => s.Auto);
+        // With that copy gone, the next load keeps the world it replaces again.
+        rig.Server.LoadSave("Earlier", alice);
+        Assert.Single(rig.Server.Saves.List(), s => s.Auto);
     }
 
     // A burst of asks before the first answer has come all saw the same count, under the limit.

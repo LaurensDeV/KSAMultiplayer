@@ -73,10 +73,12 @@ stranger sent it.
   set from the save, everybody handed it where they stand -- after two things `fresh` does not do.
   The world it replaces is kept as `before load <when>`, so a load is the one command here that
   can be taken back -- the newest five, none when the world being replaced is already on the shelf
-  (`_worldKept`: nobody has played since it was loaded or saved), and deleted or written over only
-  from the console. One slot written over by every load lost the world everybody had been in to the
-  second load in a row, and one an admin could delete made `load` and `delete` together the `fresh`
-  that is refused them. And every outstanding ask for a save is withdrawn: one already on its way in is
+  (`_worldKept`: nobody has played since it was loaded or saved), and never written over, since
+  no save is taken under such a name. One slot written over by every load lost the world everybody
+  had been in to the second load in a row. An admin can delete them as any save: for a release
+  only the console could, on the reasoning that `load` and `delete` together are the `fresh` an
+  admin is refused, and on a server run without a console that left them nobody's to tidy. An
+  admin is trusted with `load` and `clear` already. And every outstanding ask for a save is withdrawn: one already on its way in is
   of the world that is going, and written down as the server's it would undo the load for everybody
   who joined after. It is refused while a player here is in another system, lacks a mod the save
   was made with, or runs one it was made without: their game would be handed a world it cannot

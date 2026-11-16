@@ -327,8 +327,8 @@ The world a load replaces is kept first, as `before load <date and time>`, so lo
 load back. It is the world as last saved, which is up to `snapshot-every` seconds behind what the
 players were looking at. The newest five are held on to, nothing is kept when the world being
 replaced is already a save -- so loading one save after another does not push out the world
-everybody was playing in -- and only the console deletes them: an admin who could would be able to
-throw the world away in two steps, where `fresh` is refused them in one.
+everybody was playing in. An admin can delete them like any other save, and the window says first
+that the load it came from can't be undone afterwards. Nothing can be saved under such a name.
 
 A load is refused while somebody playing could not follow: a game in another system, or one whose
 mods are not the save's. It ends a warp that is running.

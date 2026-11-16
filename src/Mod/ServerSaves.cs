@@ -176,17 +176,15 @@ internal static class ServerSaves
         if (ImGui.BeginPopup(menu))
         {
             if (ImGui.MenuItem("Load"u8)) LoadOnConfirm(s.Name);
-            // The server's own are the way back from a load, and only its console removes them.
-            if (!s.Auto)
+            ImGui.Separator();
+            if (ImGui.MenuItem("Delete"u8))
             {
-                ImGui.Separator();
-                if (ImGui.MenuItem("Delete"u8))
-                {
-                    ConfirmActionPopup.Create(() => Ask($"delete {s.Name}"), "DELETE SERVER SAVE",
-                                              $"Are you sure you want to delete the server save '{s.Name}'?");
-                }
-                if (ImGui.MenuItem("Overwrite"u8)) OverwriteOnConfirm(s.Name);
+                ConfirmActionPopup.Create(() => Ask($"delete {s.Name}"), "DELETE SERVER SAVE", s.Auto
+                    ? $"Are you sure you want to delete '{s.Name}'? It is the world as it was before a load, so that load can't be undone afterwards."
+                    : $"Are you sure you want to delete the server save '{s.Name}'?");
             }
+            // The server names the ones it keeps before a load, and takes no save under such a name.
+            if (!s.Auto && ImGui.MenuItem("Overwrite"u8)) OverwriteOnConfirm(s.Name);
             ImGui.EndPopup();
         }
         ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.TextMuted);
