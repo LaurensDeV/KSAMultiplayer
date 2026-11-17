@@ -258,7 +258,7 @@ like `quit`.
 | `--keep-time` | `KSAMP_KEEP_TIME` | off | let time run with nobody connected |
 | `--life-support` | `KSAMP_LIFE_SUPPORT` | `true` | whether kittens need food, water and air, for every player |
 | `--radiation` | `KSAMP_RADIATION` | `true` | whether kittens take a dose from radiation, for every player |
-| `--clear-pads` | `KSAMP_CLEAR_PADS` | `true` | clear away what's left on a launchpad that nobody has flown or been near for five minutes |
+| `--clear-pads` | `KSAMP_CLEAR_PADS` | `true` | clear away debris left on a launchpad for five minutes, and a craft only when its site is full |
 | `--warp-answer` | `KSAMP_WARP_ANSWER` | `30` | seconds everyone has to answer a warp |
 | `--lapse-within` | `KSAMP_LAPSE_WITHIN` | `10` | seconds a craft stays its owner's once another player is watching it and they are neither in it nor looking at it |
 | `--speed` | `KSAMP_SPEED` | `1` | how fast universe time runs |
@@ -277,10 +277,10 @@ off in every game within the second and says so in the chat, and a player who ch
 own menu has it put back.
 
 `clear-pads` keeps launch sites usable in a busy world, since a site with something on every pad
-refuses every launch from it. Something left on a launchpad that nobody has flown or been within
-2 km of for five minutes is cleared away. Debris always goes once it's been left that long. A craft
-that isn't debris goes only when every pad at its site is taken, one at a time, the one left longest
-first, and its crew are sent home rather than lost. A protected craft is never cleared, and anybody
+refuses every launch from it. Debris left on a launchpad for five minutes is cleared away, whoever is
+standing around. A craft that isn't debris goes only when every pad at its site is taken and nobody
+has flown it or been within 2 km of it for five minutes, one at a time, the one left longest first,
+and its crew are sent home rather than lost. A protected craft is never cleared, and anybody
 standing next to their rocket keeps it. The chat says what was cleared and why.
 
 `fresh` throws the world away and puts an empty one in its place -- the one `empty-world` names:

@@ -40,7 +40,7 @@ public sealed record ServerOptions
     public bool LifeSupport { get; init; } = true;
     public bool Radiation { get; init; } = true;
 
-    /// <summary>Whether every game clears craft left on a launchpad that nobody has flown or been near for five minutes.</summary>
+    /// <summary>Whether every game clears debris left on a launchpad for five minutes, and a craft nobody has flown or been near for as long when its site is full.</summary>
     public bool ClearPads { get; init; } = true;
 
     /// <summary>How long everyone has to answer a warp before the ask runs out. Saying nothing is not agreeing.</summary>

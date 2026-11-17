@@ -39,7 +39,7 @@ public static class Settings
         new("speed", Kind.Number, "1", "how fast universe time runs, 0 to 100", true),
         new("life-support", Kind.Flag, "true", "kittens need food, water and air, for every player; false turns KSA's life support off", true),
         new("radiation", Kind.Flag, "true", "kittens take a dose from radiation, for every player; false turns KSA's radiation off", true),
-        new("clear-pads", Kind.Flag, "true", "clear away a craft left on a launchpad once nobody has flown it or been near it for five minutes, unless it is protected", true),
+        new("clear-pads", Kind.Flag, "true", "clear away debris left on a launchpad for five minutes, and a craft nobody has flown or been near for as long when every pad at its site is taken; never a protected one", true),
         new("empty-world", Kind.Text, "", "start with an empty world of this system rather than waiting for a player to bring one, and the world 'fresh' puts in place of the one there is; empty to wait", true),
         new("advertise", Kind.Flag, "false", "list this server in the public directories so players can find it; its address becomes public", true),
         new("advertise-as", Kind.Text, "", "the hostname to be listed under; empty to be listed at the address a directory sees", true),

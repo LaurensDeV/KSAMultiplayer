@@ -116,8 +116,10 @@ stranger sent it.
   from it (`Pads.Room`), and a busy room filled them with spent stages. Each game looks every five
   seconds (`Sync.ClearThePads`) at what stands on a pad -- within its footprint by the test
   `Pads.Free` uses, and under 200 m up, since that test is by direction alone -- that is its own to
-  remove: its own craft or one nobody holds. Not one anybody flies, nor one within 2 km of a craft
-  somebody flies, nor a protected one. Five minutes unbroken of that, on `Wall`, and `IsDebris`
+  remove: its own craft or one nobody holds. Not one anybody flies, nor a protected one, nor --
+  debris aside -- one within 2 km of a craft somebody flies: that keeps a player's rocket while
+  they walk round it, and asked of debris it kept the pads full for as long as the player waiting
+  for one stood beside them. Five minutes unbroken of that, on `Wall`, and `IsDebris`
   goes, four a pass; a craft that is not debris goes only when `Pads.Free` finds no pad free at its
   site, the longest left first and one a site a pass, and never in a pass that cleared debris. Its
   crew go home (`World.SendCrewHome`) and the craft goes by the manifest's delete, not by
@@ -831,7 +833,9 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   five seconds apart, and neither world had any debris left. An earlier run cleared by
   `Vehicle.Recover`, whose sweep of the bubble took the rest at once ("Recovering 'NewRocket_2_1'
   destroyed 9 debris"), which is why it no longer does. A craft cleared because its site is full
-  has not been tried.
+  has not been tried. With Alpha flying the kitten Niric 176 m from the pad, ten pieces of
+  Bravo's debris were cleared all the same five minutes on, and the two rockets Alpha stood
+  beside were left untimed and standing.
 - **An admin's Delete and the manifest's padlocks.** Two games on one server, Alpha an admin and
   Bravo not. Bravo deleting Alpha's Niric was refused with "Niric belongs to Alpha. Only an admin
   can delete another player's craft." Alpha deleting Bravo's NewRocket_2 while Bravo flew it was

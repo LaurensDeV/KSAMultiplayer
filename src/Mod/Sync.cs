@@ -1299,7 +1299,7 @@ internal static class Sync
     public const double PadClearedAfterSeconds = 300.0;
 
     // Nobody near is nobody flying anything within this of the craft: a player who climbed out
-    // to walk round their rocket has not left it.
+    // to walk round their rocket has not left it. Not asked of debris.
     private const double PadMindedWithinM = 2_000.0;
 
     private const double PadsLookedAtEverySeconds = 5.0;
@@ -1360,7 +1360,9 @@ internal static class Sync
             byte holder = c.HeldBy(key);
             if (holder != 0 && holder != c.Id) continue;
             if (Pads.Under(v) is not { } pad) continue;
-            if (minded.Any(m => World.IsAlive(m) && World.Between(m, v) < PadMindedWithinM)) continue;
+            // Debris is nobody's work to walk round, and whoever stands near the pads is the player
+            // waiting for one: held for them, it was never cleared while anybody wanted it to be.
+            if (!v.IsDebris && minded.Any(m => World.IsAlive(m) && World.Between(m, v) < PadMindedWithinM)) continue;
 
             still.Add(key);
             double since = LeftOnPad.TryGetValue(key, out double was) ? was : LeftOnPad[key] = now;
@@ -1387,7 +1389,7 @@ internal static class Sync
     private static void ClearOffPad(string key, Vehicle v, string pad, double left, string why)
     {
         LeftOnPad.Remove(key);
-        Log.Info($"clearing {key} off {pad} ({why}): nobody has flown it or been near it for {left / 60.0:F0} minutes");
+        Log.Info($"clearing {key} off {pad} ({why}): it has been left there {left / 60.0:F0} minutes");
         Say(v.IsDebris
             ? $"Cleared debris {key} off the launchpad: it had been there for {PadClearedAfterSeconds / 60.0:F0} minutes."
             : $"Cleared {key} off the launchpad to free one up: every pad at {Pads.SiteOf(pad)} was taken, and nobody had used it for {PadClearedAfterSeconds / 60.0:F0} minutes.");

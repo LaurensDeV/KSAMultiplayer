@@ -448,9 +448,10 @@ public static class Wire
         Radiation = 2,
 
         /// <summary>
-        /// A craft left standing on a launchpad is cleared once nobody has flown it or been near it
-        /// for five minutes: a site whose every pad is taken refuses every launch from it, and a
-        /// room full of spent stages was a room in which nobody could launch at all.
+        /// Debris left on a launchpad for five minutes is cleared, and a craft nobody has flown or
+        /// been near for as long when its site is full: a site whose every pad is taken refuses
+        /// every launch from it, and a room full of spent stages was a room in which nobody could
+        /// launch at all.
         /// </summary>
         ClearPads = 4,
 
