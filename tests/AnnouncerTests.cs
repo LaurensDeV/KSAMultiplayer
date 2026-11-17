@@ -85,10 +85,13 @@ public class AnnouncerTests
         announcer.Tick();
         Assert.True(await Eventually(() => announcer.Where() is [One]));
 
-        // Announced to, so the directory is owed a withdrawal once it leaves the list.
+        // Announced to, so the directory is owed a withdrawal once it leaves the list. Waited for by
+        // the announcement's own line: "the directory list changed: now <One>" names it too, and can
+        // still be in the queue from the first pass, and taking that for the announcement lets the
+        // list change before the directory is recorded as spoken to -- so nothing is withdrawn.
         now += FirstAnnouncement;
         announcer.Tick();
-        Assert.True(await Eventually(() => Drain(announcer).Any(s => s.Contains(One))));
+        Assert.True(await Eventually(() => Drain(announcer).Any(s => s.Contains($"at {One}"))));
 
         list.Serve(Two);
         now += 3600.0;
