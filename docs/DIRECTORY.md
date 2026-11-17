@@ -196,7 +196,7 @@ docker run -d --name ksamp-directory -p 8080:8080 \
 `latest` is the newest release, and a directory is safe to keep on it: it lists servers of any
 protocol version from 26 on, so a release does not empty its list. A container keeps the build it
 was started with until you `docker pull` and start it again. To hold one release instead, name
-it: `ksamp-directory:v0.23.0`. That has to be 0.20.0 or later: before it a directory read a
+it: `ksamp-directory:v0.23.1`. That has to be 0.20.0 or later: before it a directory read a
 server through the handshake a join begins with, in the one protocol version it was built
 against, and listed nothing once servers had moved past it. The `main` tag is whatever was last
 pushed, between releases, and is not for running.
