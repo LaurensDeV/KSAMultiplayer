@@ -1857,7 +1857,7 @@ public class ServerTests
         Assert.True(rig.Server.Protected.Has("Station"));
         // The name that went stays: it is what the half that comes away again is called.
         Assert.True(rig.Server.Protected.Has("Capsule"));
-        Assert.True(b.Spared("Station", "*"));
+        Assert.True(b.Spared("Station"));
     }
 
     [Fact]

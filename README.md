@@ -258,6 +258,7 @@ like `quit`.
 | `--keep-time` | `KSAMP_KEEP_TIME` | off | let time run with nobody connected |
 | `--life-support` | `KSAMP_LIFE_SUPPORT` | `true` | whether kittens need food, water and air, for every player |
 | `--radiation` | `KSAMP_RADIATION` | `true` | whether kittens take a dose from radiation, for every player |
+| `--clear-pads` | `KSAMP_CLEAR_PADS` | `true` | clear away what's left on a launchpad that nobody has flown or been near for five minutes |
 | `--warp-answer` | `KSAMP_WARP_ANSWER` | `30` | seconds everyone has to answer a warp |
 | `--lapse-within` | `KSAMP_LAPSE_WITHIN` | `10` | seconds a craft stays its owner's once another player is watching it and they are neither in it nor looking at it |
 | `--speed` | `KSAMP_SPEED` | `1` | how fast universe time runs |
@@ -267,13 +268,20 @@ like `quit`.
 | `--directories` | `KSAMP_DIRECTORIES` | the shared list | where to announce, separated by commas; the shared list in `directories.txt` otherwise, read hourly while advertising |
 
 Commands typed into the server's console: `help`, `players`, `say <text>`, `kick <name> [why]`, `op <name>`, `deop <name>`, `admins`,
-`clear [name]`, `protect <craft>`, `unprotect <craft>`, `protected`, `reload` (or `reset`), `save [name]`,
+`clear [name]`, `remove <craft>`, `protect <craft>`, `unprotect <craft>`, `protected`, `reload` (or `reset`), `save [name]`,
 `saves`, `load <name>`, `delete <name>`, `status`, `version`, `fresh`, `set [key value]`, `settings`, `quit`.
 
 `life-support` and `radiation` are KSA's two rules, which a game on its own takes from its start
 screen. In a server they are the server's, for everybody: `set life-support false` turns life support
 off in every game within the second and says so in the chat, and a player who changes one in KSA's
 own menu has it put back.
+
+`clear-pads` keeps launch sites usable in a busy world, since a site with something on every pad
+refuses every launch from it. Something left on a launchpad that nobody has flown or been within
+2 km of for five minutes is cleared away. Debris always goes once it's been left that long. A craft
+that isn't debris goes only when every pad at its site is taken, one at a time, the one left longest
+first, and its crew are sent home rather than lost. A protected craft is never cleared, and anybody
+standing next to their rocket keeps it. The chat says what was cleared and why.
 
 `fresh` throws the world away and puts an empty one in its place -- the one `empty-world` names:
 every craft gone, universe time started over, and everybody handed the new world where they stand.
@@ -295,13 +303,16 @@ what there is to sweep. The world on disk still holds them, so a fresh save is a
 that has already swept, so what lands on disk is clean. Nobody is moved: everybody is standing in a
 world they swept themselves, so clearing costs no loading screen and leaves the clock alone.
 
-`protect <craft>` is for what is not debris. A protected craft is left by every `clear` that does not
-name it exactly: `clear` and `clear Station*` leave `Station` standing, and `clear Station` takes it.
-Nor can a player remove it from their own game: Abandon, Recover and the universe manifest's Delete
-all say that it is protected. Two craft that dock are one craft, and protected if either was.
+`remove <craft>` takes one craft out of every game by its exact name, whoever owns it, and says so
+in the chat; it refuses a craft somebody is flying and one that is protected.
+
+`protect <craft>` is for what is not debris. A protected craft is left by every `clear`, even one
+that names it in full: `clear`, `clear Station*` and `clear Station` all leave `Station` standing, and
+taking it out is `unprotect Station` first. Nor can a player remove it from their own game: Abandon,
+Recover and the universe manifest's Delete all say that it is protected. Two craft that dock are one craft, and protected if either was.
 `unprotect <craft>` takes it off the list and `protected` lists them. The list is `protected.json` in
 `--data`; `fresh` empties it, a loaded save brings back its own, and a craft that crashes is gone
-whether it was protected or not.
+whether it was protected or not, and taken off the list when it is.
 
 `reload`, or `reset`, is the other half and is asked for on its own: the world as it stands goes out
 to everybody again, and each game loads it and comes back in a few seconds. Nobody reconnects, and
@@ -349,6 +360,10 @@ In a game they are an admin's: see below.
 
 An admin types those same commands into the game's chat with a `/` in front -- `/clear Rocket_*`,
 `/reload`, `/players` -- and the answer comes back in their own chat.
+KSA's universe manifest works for an admin too. Its Delete on another player's craft is a `remove`,
+taken out of every game, owner's included; a player who is no admin is told only an admin can. Each
+craft's row has a padlock before its name: shut for a protected craft, which everybody sees, and open
+and faint for the rest, which only an admin sees. An admin's click on it is `protect` or `unprotect`.
 A line behind a `/` is said to nobody, so a player who types one where they are no admin has told the
 room nothing and is told so themselves. `quit`, `fresh`, `settings` and `set` are the console's
 alone, each saying so when an admin tries it.

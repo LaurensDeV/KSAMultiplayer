@@ -108,6 +108,28 @@ call() {
 # ways, so the Linux server -- the one this repository is actually for -- serves the games as it would
 # a real player. Without it the server is published for Windows instead, which tests the same code over
 # the same protocol but not the Linux build.
+# Alpha is an admin from the start and Bravo is not: what an admin can do from a menu is then one
+# bridge call to try, and what a player who is not one is told is the other game's half of it. The
+# server reads its list once, when it starts, and a game hands its token in when it joins, so both
+# halves are written before either does: the hash beside the world, the token in A's profile under
+# the address it joins by.
+plant_admin() {
+    local token
+    token="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+    python3 - "$token" "$DATA/admins.json" "$TEST_ROOT/A/KSAMultiplayer/tokens.json" "127.0.0.1:$PORT" "127.0.0.1:$LAG_PORT" <<'PY'
+import datetime, hashlib, json, os, sys
+token, admins, tokens, *addresses = sys.argv[1:]
+with open(admins, "w") as f:
+    json.dump([{"Name": "Alpha", "Hash": hashlib.sha256(token.encode()).hexdigest(),
+                "SinceUtc": datetime.datetime.now(datetime.timezone.utc).isoformat(), "Offered": False}], f)
+os.makedirs(os.path.dirname(tokens), exist_ok=True)
+held = json.load(open(tokens)) if os.path.exists(tokens) else {}
+held.update({a: token for a in addresses})
+with open(tokens, "w") as f:
+    json.dump(held, f)
+PY
+}
+
 start_server() {
     if [[ "$SERVER_ON" == "auto" ]]; then
         if [[ "$(wslinfo --networking-mode 2>/dev/null)" == "mirrored" ]]; then SERVER_ON="linux"; else SERVER_ON="windows"; fi
@@ -115,6 +137,7 @@ start_server() {
 
     rm -rf "$DATA" "$TRACE"
     mkdir -p "$DATA"
+    plant_admin
     echo "$SERVER_ON" > "$HERE/.two-games-server.on"
     if [[ "$SERVER_ON" == "linux" ]]; then
         "$HERE/tools/build.sh" >/dev/null

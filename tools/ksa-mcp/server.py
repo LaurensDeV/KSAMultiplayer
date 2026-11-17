@@ -241,6 +241,14 @@ TOOLS = {
                   "KSA lets go of the craft being flown, which is a game at no craft at all.",
                   {"craft": {"type": "string"}, "body": {"type": "string"}}, [],
                   lambda a: _dump(send("watch", **a))),
+    "ksa_delete": ("Delete a craft as the universe manifest's X does once its question is answered. "
+                   "Another player's is refused, with a warning to a player who is no admin; an admin's "
+                   "is asked of the server as a remove, out of every game.",
+                   {"craft": {"type": "string"}}, ["craft"],
+                   lambda a: _dump(send("delete", **a))),
+    "ksa_manifest": ("Open or shut KSA's universe manifest, for a capture of its padlocks.",
+                     {"open": {"type": "boolean"}}, [],
+                     lambda a: _dump(send("manifest", **a))),
     "ksa_warpkey": ("Press a warp key: by 1 faster, -1 slower, 0 for normal speed. While connected the "
                     "mod works the speed out from the warp the server is running, not this world's.",
                     {"by": _num("1, -1 or 0")}, [],

@@ -225,6 +225,8 @@ internal sealed class Bridge
             "mp" => Multiplayer(command),
             "goto" => GoTo(command),
             "watch" => Watch(command),
+            "delete" => Delete(command),
+            "manifest" => ShowManifest(command),
             "eva" => Eva(command),
             "stage" => Stage(command),
             "setorbit" => SetOrbit(command),
@@ -400,6 +402,10 @@ internal sealed class Bridge
                 ["parent"] = (v.Parent as Astronomical)?.Id,
                 ["situation"] = v.Situation.ToString(),
                 ["parts"] = v.Parts.Count,
+                ["debris"] = v.IsDebris,
+                // The pad it stands on, and how long it has stood there with nobody in it or near it.
+                ["pad"] = Pads.Under(v),
+                ["left_on_pad_s"] = Sync.LeftOnPadFor(key) is { } left ? Math.Round(left, 0) : null,
                 ["physics"] = v.HasPhysicsBubble,
                 ["flown"] = ReferenceEquals(v, flown),
                 ["watched"] = ReferenceEquals(v, World.Watched),
@@ -650,6 +656,24 @@ internal sealed class Bridge
         return World.Watch(v)
             ? Done(new() { ["craft"] = v.Id, ["owner"] = Sync.OwnerOf(v) })
             : Failed($"could not watch '{id}'");
+    }
+
+    // What the universe manifest's Delete does once its question is answered, and nothing else:
+    // whether the craft goes, is refused, or is asked of the server is all past this point.
+    private static Reply Delete(BridgeCommand command)
+    {
+        string id = command.String("craft");
+        if (id.Length == 0) return Failed("delete needs a craft");
+        if (World.Vehicles().FirstOrDefault(v => v.Id == id) is not { } v) return Failed($"no craft '{id}' in this world");
+        InputEvents.VehicleDestroyBuffer.Add(new InputEvents.VehicleDestroyData { Vehicle = v });
+        return Done(new() { ["craft"] = v.Id, ["owner"] = Sync.OwnerOf(v), ["protected"] = Sync.IsProtected(v), ["admin"] = Sync.Admin });
+    }
+
+    // KSA's universe manifest, open or shut, for a capture of its padlocks.
+    private static Reply ShowManifest(BridgeCommand command)
+    {
+        if (UniverseManifest.IsOpen != command.Flag("open", true)) UniverseManifest.Toggle();
+        return Done(new() { ["open"] = UniverseManifest.IsOpen });
     }
 
     // A kitten out of a craft's hatch: the shortest way to make a craft that the loaded world did not

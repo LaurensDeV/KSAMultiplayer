@@ -186,7 +186,9 @@ public static class Wire
     /// <para>28 adds <see cref="StateFlags.Editing"/>: a player in the vehicle editor keeps the
     /// shared clock now, and the craft they were flying is held where it was until they come out.
     /// A game of 27 would read that craft as one hanging in the air for no reason, and its own
-    /// player's editor would still stop its world and leave it behind the room.</para>
+    /// player's editor would still stop its world and leave it behind the room. 28 is also where a
+    /// <see cref="Swept"/> naming a protected craft in full stopped taking it: a game of 27 would
+    /// still take it from its own world, and the station the server kept would be missing there.</para>
     /// </summary>
     public const ushort Version = 28;
 
@@ -445,7 +447,14 @@ public static class Wire
         /// <summary>Kittens take a dose from radiation.</summary>
         Radiation = 2,
 
-        All = LifeSupport | Radiation,
+        /// <summary>
+        /// A craft left standing on a launchpad is cleared once nobody has flown it or been near it
+        /// for five minutes: a site whose every pad is taken refuses every launch from it, and a
+        /// room full of spent stages was a room in which nobody could launch at all.
+        /// </summary>
+        ClearPads = 4,
+
+        All = LifeSupport | Radiation | ClearPads,
     }
 
     public sealed record Chunk(uint Transfer, ushort Index, ushort Count, byte[] Data) : Message(Kind.Chunk);
@@ -597,6 +606,9 @@ public static class Wire
     /// </summary>
     public static bool Matches(string key, string like) =>
         like.Length == 0 || like == "*" || Glob(key.AsSpan(), like.AsSpan());
+
+    /// <summary>Whether what was swept by stands for many craft, rather than naming one.</summary>
+    public static bool IsPattern(string like) => like.Length == 0 || like.Contains('*') || like.Contains('?');
 
     /// <summary>
     /// The craft a name was shed from, nearest first: KSA names a piece that comes off a stack after

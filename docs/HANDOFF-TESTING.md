@@ -63,6 +63,11 @@ which is the real backlog. Keep it true in the same change that makes it untrue.
 ./tools/breakup.sh --count        # measure again without flying anything
 ```
 
+A (Alpha) joins as an admin and B (Bravo) does not: the rig writes A's token and the server's
+`admins.json` before either starts, so `mp {"chat":"/clear *"}` from A works and `delete` from B
+shows what a player who is no admin is told. `manifest {"open":true}` opens the universe manifest
+for a `capture`; its padlocks take a mouse to click.
+
 `breakup.sh` exits **0** when every claim held, **1** when one did not, and **2** when the rig never
 came up -- which is a different thing and used to be reported as a failure. Artifacts go to
 `.two-games-runs/<timestamp>/`: both games' `craft` and `status` dumps, their mod logs, the server
@@ -241,8 +246,8 @@ the owner's own went to 75".
 6. **The rest of the walk.** `tools/warp-trace.py` walks nine steps. Not walked: leaving a craft
    mid-warp, which is a different thing now that a game at no craft keeps the clock; joining or
    leaving mid-warp; a save loaded mid-warp; a machine made to look slow.
-7. **`breakup.sh` over the wire that loses and reorders**, and `admins.json` planted so a harness
-   can sweep between scenes with `mp {"chat":"/sweep *"}` instead of relaunching.
+7. **`breakup.sh` over the wire that loses and reorders**, sweeping between scenes with
+   `mp {"chat":"/sweep *"}` from A, which `two-games.sh` makes an admin, instead of relaunching.
 
 ## Open questions
 

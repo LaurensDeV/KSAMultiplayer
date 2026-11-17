@@ -237,6 +237,33 @@ internal static class Pads
         return null;
     }
 
+    /// <summary>
+    /// The pad a craft stands on, by the test <see cref="Free"/> takes a pad as taken by, or null.
+    /// Standing, too: that test is by direction alone, and a craft in orbit over a pad would pass it.
+    /// </summary>
+    public static string? Under(Vehicle v)
+    {
+        if (v.Parent is not Celestial celestial || celestial.BodyTemplate is not { } template) return null;
+        if (World.Descent(v).Radar > StandingWithinM || World.DirectionOf(v, celestial) is not { } d) return null;
+        foreach (LandmarkReference pad in template.Locations.OfType<LandmarkReference>())
+        {
+            if (!pad.IsLaunchPad || pad.GetStaticObject() is not { } concrete) continue;
+            if ((pad.ForwardCcf - d).Length() * celestial.MeanRadius < concrete.FootprintRadius) return pad.Key;
+        }
+        return null;
+    }
+
+    /// <summary>The site a pad belongs to: its own key for a site's own pad, the part before <see cref="Suffix"/> for one of this mod's.</summary>
+    public static string SiteOf(string padKey)
+    {
+        int cut = padKey.IndexOf(Suffix, StringComparison.Ordinal);
+        return cut < 0 ? padKey : padKey[..cut];
+    }
+
+    // Measured at the craft's centre, so a tall rocket standing on the concrete reads its own
+    // height: the tallest stack this has seen is under a hundred metres.
+    private const double StandingWithinM = 200.0;
+
     // The chosen body and site of whichever menu is asking, which each keeps to itself. Read rather
     // than guessed at: the list it offers is the one this mod filtered, so the name in it is a
     // site's and the pads of that site are what matter. By the menu's own type, because the vehicle

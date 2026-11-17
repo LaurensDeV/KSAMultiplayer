@@ -40,6 +40,9 @@ public sealed record ServerOptions
     public bool LifeSupport { get; init; } = true;
     public bool Radiation { get; init; } = true;
 
+    /// <summary>Whether every game clears craft left on a launchpad that nobody has flown or been near for five minutes.</summary>
+    public bool ClearPads { get; init; } = true;
+
     /// <summary>How long everyone has to answer a warp before the ask runs out. Saying nothing is not agreeing.</summary>
     public double WarpAnswerSeconds { get; init; } = 30.0;
 
@@ -349,6 +352,9 @@ public sealed class GameServer : IDisposable
         // starts, is otherwise the first anybody hears of it.
         if (next.LifeSupport != was.LifeSupport) Broadcast(new Wire.Chat(0, $"life support is now {(next.LifeSupport ? "on" : "off")} on this server"), _ => true);
         if (next.Radiation != was.Radiation) Broadcast(new Wire.Chat(0, $"radiation is now {(next.Radiation ? "on" : "off")} on this server"), _ => true);
+        if (next.ClearPads != was.ClearPads) Broadcast(new Wire.Chat(0, next.ClearPads
+            ? "craft left on a launchpad for five minutes are cleared away again on this server"
+            : "craft left on a launchpad are no longer cleared away on this server"), _ => true);
     }
     public UniverseClock UniverseClock { get; } = new();
     public int Port => _udp.Port;
@@ -367,7 +373,8 @@ public sealed class GameServer : IDisposable
 
     /// <summary>KSA's rules as this server's settings have them, as the clock says them.</summary>
     public Wire.WorldRules Rules =>
-        (Options.LifeSupport ? Wire.WorldRules.LifeSupport : 0) | (Options.Radiation ? Wire.WorldRules.Radiation : 0);
+        (Options.LifeSupport ? Wire.WorldRules.LifeSupport : 0) | (Options.Radiation ? Wire.WorldRules.Radiation : 0)
+        | (Options.ClearPads ? Wire.WorldRules.ClearPads : 0);
 
     /// <summary>
     /// The KSA build a player must run: the operator's if they named one, otherwise the build this
@@ -636,6 +643,16 @@ public sealed class GameServer : IDisposable
                 if (player.Controlling == gone.Key) Flying(player, "");
                 Broadcast(gone, p => p.Loaded && p != player);
                 foreach (double after in GoneAgainAfterSeconds) _goneAgain.Add((gone.Key, player.Id, _clock() + after));
+                // Destroyed, since nothing else of a protected craft's ends here: its owner's game
+                // refuses to delete or recover it, and one docked into another is a Dock, by which
+                // time it is nobody's and its name stays on purpose. Left on, a name nothing has
+                // stood under since would protect whatever KSA next called it.
+                if (Protected.Remove(gone.Key))
+                {
+                    Log($"{gone.Key} was destroyed, so it is no longer protected");
+                    SayProtected();
+                    Broadcast(new Wire.Chat(0, $"{gone.Key} was destroyed, so it's no longer protected"), p => p.Loaded);
+                }
                 return;
             // A mod's word about a craft, passed on as the craft's state is and on the same
             // footing: from the player who has it, and to everybody else. Not read here.
@@ -1960,7 +1977,7 @@ public sealed class GameServer : IDisposable
     private uint _protectedSerial;
 
     /// <summary>
-    /// Keeps a craft out of every <c>clear</c> that does not name it in full, and says what came of
+    /// Keeps a craft out of every <c>clear</c>, even one that names it in full, and says what came of
     /// asking. By the name the shared world knows it under, which need not be a craft the server
     /// has heard of: it hears only of those somebody has claimed.
     /// </summary>
@@ -1978,6 +1995,35 @@ public sealed class GameServer : IDisposable
         return $"{name} is now protected from clear and from being abandoned"
                + (_crafts.ContainsKey(name) ? "" : " (the server hasn't seen a craft by that name yet: check the spelling)");
     }
+
+    /// <summary>
+    /// Takes one craft out of every game, whoever owns it, and says what came of asking: an admin's
+    /// Delete in the universe manifest, on a craft that is another player's. Not one being flown,
+    /// which is a player's hull, nor one protected, which is unprotected first on purpose.
+    /// </summary>
+    public string RemoveCraft(string asked, Player? by = null)
+    {
+        string name = Wire.Clip(asked, Wire.KeyChars).Trim();
+        if (name.Length == 0) return "usage: remove <craft name>";
+        if (Wire.IsPattern(name)) return "remove takes one craft's exact name, without wildcards: clear takes patterns";
+        name = _crafts.Keys.FirstOrDefault(k => string.Equals(k, name, StringComparison.OrdinalIgnoreCase)) ?? name;
+        if (_players.Values.FirstOrDefault(p => p.Controlling == name) is { } pilot) return $"{pilot.Name} is flying {name}, so it can't be removed";
+        if (Protected.Has(name)) return $"{name} is protected: unprotect it first";
+        bool known = _crafts.Remove(name);
+        // As a sweep does: kept from being handed back by a game that has not heard yet.
+        if (known) _gone[name] = UniverseClock.Now(_clock());
+        // The name, as a sweep is: the server need not have heard of it for it to be in every world.
+        Broadcast(new Wire.Swept(name, _protectedSerial), p => p.Loaded);
+        if (known) OwnersChanged();
+        Log($"{by?.Name ?? "the operator"} removed {name}{(known ? "" : ", which nobody had claimed")}");
+        Broadcast(new Wire.Chat(0, $"{by?.Name ?? "the operator"} removed {name}"), p => p.Loaded);
+        // Soon rather than now: Clear Debris asks for one piece at a time, and a save each is a
+        // world sent up the wire each.
+        _snapshotNext = Math.Min(_snapshotNext, _clock() + RemoveSavesAfterSeconds);
+        return $"removing {name} from every game";
+    }
+
+    private const double RemoveSavesAfterSeconds = 3.0;
 
     /// <summary>Puts a craft back within reach of <c>clear</c>, and says what came of asking.</summary>
     public string Unprotect(string asked, Player? by = null)
@@ -2104,7 +2150,7 @@ public sealed class GameServer : IDisposable
         double universe = UniverseClock.Now(_clock());
         foreach ((string key, Craft _) in _crafts.ToArray())
         {
-            if (flown.Contains(key) || !Wire.Matches(key, like) || ProtectedList.Spares(Protected.Names, key, like)) continue;
+            if (flown.Contains(key) || !Wire.Matches(key, like) || ProtectedList.Spares(Protected.Names, key)) continue;
             _crafts.Remove(key);
             _gone[key] = universe;
             swept.Add(key);

@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Reflection.Emit;
 using Brutal.ImGuiApi;
 using Brutal.Numerics;
 using HarmonyLib;
@@ -255,6 +256,7 @@ internal static class Hooks
                   "another player's craft can be deleted from the universe manifest in this world alone");
             Patch(AccessTools.Method(typeof(Vehicle), nameof(Vehicle.Recover)), nameof(BeforeRecover),
                   "recovering a protected craft sends its crew home and leaves the craft standing empty");
+            PadlockTheManifest();
             Patch(AccessTools.Method(typeof(Program), nameof(Program.RefreshVehiclesInFrame)), nameof(BeforeRefreshVehicles),
                   "another player's craft is built while KSA is stepping the world, which fails its physics");
             Patch(AccessTools.Method(typeof(Universe), nameof(Universe.DeserializeSave)), nameof(BeforeDeserializeSave),
@@ -396,6 +398,47 @@ internal static class Hooks
         {
             Complain("keeping ground clutter off the extra launchpads", e);
         }
+    }
+
+    // A prefix on the manifest's row would come before the row is begun, and a postfix after every
+    // row under it: the padlock goes in as a call put just ahead of the row's name.
+    private static void PadlockTheManifest()
+    {
+        const string otherwise = "the universe manifest shows no padlocks, and protecting a craft is the chat's protect alone";
+        if (AccessTools.Inner(typeof(UniverseManifest), "Window") is not { } window
+            || AccessTools.Method(window, "Draw", [typeof(Astronomical)]) is not { } row)
+        {
+            Log.Warn($"KSA has moved the universe manifest's rows: {otherwise}");
+            return;
+        }
+        try
+        {
+            _harmony!.Patch(row, transpiler: new HarmonyMethod(typeof(Hooks).GetMethod(nameof(PadlockBeforeName), BindingFlags.NonPublic | BindingFlags.Static)!));
+        }
+        catch (Exception e)
+        {
+            Log.Error($"could not patch the universe manifest's rows: {otherwise}", e);
+        }
+    }
+
+    // The name is the only item on the row put down sharing its place, which is why the padlock
+    // goes ahead of it rather than of anything else: see ManifestLocks.
+    private static IEnumerable<CodeInstruction> PadlockBeforeName(IEnumerable<CodeInstruction> code)
+    {
+        MethodInfo overlap = AccessTools.Method(typeof(ImGui), nameof(ImGui.SetNextItemAllowOverlap));
+        MethodInfo padlock = AccessTools.Method(typeof(ManifestLocks), nameof(ManifestLocks.BeforeName));
+        bool put = false;
+        foreach (CodeInstruction i in code)
+        {
+            if (!put && i.Calls(overlap))
+            {
+                put = true;
+                yield return new CodeInstruction(OpCodes.Ldarg_1).MoveLabelsFrom(i).MoveBlocksFrom(i);
+                yield return new CodeInstruction(OpCodes.Call, padlock);
+            }
+            yield return i;
+        }
+        if (!put) Log.Warn("the universe manifest no longer draws its rows' names the way this mod looks for: it shows no padlocks");
     }
 
     private static void PatchAfter(MethodBase? target, string postfix, string otherwise)
@@ -967,12 +1010,20 @@ internal static class Hooks
         try
         {
             if (__instance.Vehicle is not { } v) return true;
-            if (Sync.IsPuppet(v)) return false;
+            // Refused here either way; an admin's is asked of the server, which takes it out of
+            // every game at once, the owner's too.
+            if (Sync.IsPuppet(v))
+            {
+                Sync.RefuseDelete(v);
+                return false;
+            }
             // Abandon, the manifest's Delete, its Recover and its Clear Debris all come through
             // here, and a craft the operator protected is not any one player's to remove by them.
             if (!Sync.IsProtected(v)) return true;
             Log.Info($"refused to remove {v.Id}: it is protected on this server");
-            TimedAlert.CreateWarning($"{v.Id} is protected on this server and can't be abandoned, recovered or deleted.");
+            TimedAlert.CreateWarning(Sync.Admin
+                ? $"{v.Id} is protected. Unlock it in the universe manifest to delete it."
+                : $"{v.Id} is protected by an admin, so it can't be abandoned, recovered or deleted.");
             return false;
         }
         catch (Exception e)
@@ -989,9 +1040,16 @@ internal static class Hooks
     {
         try
         {
+            // Another player's: recovering it here would send its crew home from this world
+            // alone, and the craft itself is refused where it goes.
+            if (Sync.IsPuppet(__instance))
+            {
+                Sync.RefuseDelete(__instance);
+                return false;
+            }
             if (!Sync.IsProtected(__instance)) return true;
             Log.Info($"refused to recover {__instance.Id}: it is protected on this server");
-            TimedAlert.CreateWarning($"{__instance.Id} is protected on this server and can't be abandoned, recovered or deleted.");
+            TimedAlert.CreateWarning($"{__instance.Id} is protected by an admin, so it can't be abandoned, recovered or deleted.");
             return false;
         }
         catch (Exception e)

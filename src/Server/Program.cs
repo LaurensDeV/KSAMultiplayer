@@ -368,7 +368,8 @@ if (!Console.IsInputRedirected || Environment.GetEnvironmentVariable("KSAMP_STDI
     ("deop <name>", "remove a player's admin rights, whether or not they're connected"),
     ("admins", "list the admins"),
     ("clear [name]", "remove every craft nobody is flying; clear Rocket_* removes only matching ones"),
-    ("protect <craft>", "keep a craft safe from clear (unless named exactly) and from being abandoned"),
+    ("remove <craft>", "remove one craft from every game, whoever owns it, unless it's being flown or protected"),
+    ("protect <craft>", "keep a craft safe from clear, remove and being abandoned, even when named in full"),
     ("unprotect <craft>", "take a craft off the protected list"),
     ("protected", "list the protected craft"),
     ("reload", "reload the world for everyone, which also resets universe time (alias: reset)"),
@@ -446,6 +447,9 @@ void Command(string line, GameServer.Player? who = null)
             // only the console answering the operator who typed it.
             Answer($"clearing craft matching '{(rest.Length > 0 ? rest : "*")}' from every game, except ones being flown"
                 + $"{(swept.Count > 0 ? $" ({swept.Count} known to the server)" : "")}");
+            break;
+        case "remove":
+            Answer(server.RemoveCraft(rest, who));
             break;
         case "protect":
             Answer(server.Protect(rest, who));

@@ -1279,6 +1279,163 @@ internal static class Sync
     /// <summary>Whether this server runs what this game asks of it.</summary>
     public static bool Admin => _client is { Admin: true };
 
+    // Deletes refused since the last frame, answered once for all of them: Clear Debris asks for
+    // every piece in the system in one go, and a warning a piece would bury the screen.
+    private static readonly List<(string Key, string Whose)> RefusedDeletes = [];
+
+    /// <summary>
+    /// Another player's craft that this player asked to delete or recover. Refused in this world
+    /// either way, since gone from here alone it comes back with the next rebuild; an admin's is
+    /// then asked of the server, which takes it out of every game, its owner's too.
+    /// </summary>
+    public static void RefuseDelete(Vehicle v)
+    {
+        string key = KeyOf(v);
+        if (RefusedDeletes.Any(r => r.Key == key)) return;
+        RefusedDeletes.Add((key, OwnerOf(v)));
+    }
+
+    /// <summary>How long a craft stands on a pad with nobody in it or near it before it is cleared away.</summary>
+    public const double PadClearedAfterSeconds = 300.0;
+
+    // Nobody near is nobody flying anything within this of the craft: a player who climbed out
+    // to walk round their rocket has not left it.
+    private const double PadMindedWithinM = 2_000.0;
+
+    private const double PadsLookedAtEverySeconds = 5.0;
+
+    // Fewer at once than a world losing craft looks like (MostGoneAtOnce): what was nobody's is
+    // said gone by every game that sees it go, and a pass that took a dozen would not be. Debris
+    // alone: a craft that is not goes one a site a pass.
+    private const int PadsClearedAtOnce = 4;
+
+    // When each craft was first seen on a pad with nobody in it or near it, on Wall: forgotten the
+    // moment either stops being so, so that five minutes are five minutes unbroken.
+    private static readonly Dictionary<string, double> LeftOnPad = [];
+    private static double _padsNext;
+
+    /// <summary>How long a craft has stood on a pad with nobody in it or near it, or null when it is not.</summary>
+    public static double? LeftOnPadFor(string key) => LeftOnPad.TryGetValue(key, out double since) ? Wall() - since : null;
+
+    /// <summary>
+    /// Clears away what has stood on a launchpad untouched for <see cref="PadClearedAfterSeconds"/>,
+    /// where the server says to. A site with a craft on every pad refuses every launch from it, and
+    /// a busy room filled them with spent stages and wreckage nobody was coming back for.
+    ///
+    /// <para>Debris goes once it has been left that long. A craft that is not debris is somebody's
+    /// work, so it goes only when its site has no pad free, and then one at a time, the one left
+    /// longest first, and not in a pass that cleared debris: that may have freed a pad already,
+    /// which the next pass sees.</para>
+    ///
+    /// <para>Each game clears what is its own to remove -- a craft of its own, or one nobody holds --
+    /// and the going is shared the way any other is: <c>Gone</c> from an owner, and from a game
+    /// that saw a craft of nobody's go. Another player's is theirs to clear, from their game,
+    /// which runs this too. Never a protected craft, nor one anybody is flying.</para>
+    /// </summary>
+    private static void ClearThePads(Client c, Dictionary<string, Vehicle> here, Vehicle? flown)
+    {
+        double now = Wall();
+        if (now < _padsNext) return;
+        _padsNext = now + PadsLookedAtEverySeconds;
+        if (c.Rules is not { } rules || !rules.HasFlag(Wire.WorldRules.ClearPads))
+        {
+            LeftOnPad.Clear();
+            return;
+        }
+
+        // Every craft somebody is in, in this world: this game's own, and the copies of the others'.
+        List<Vehicle> minded = [];
+        if (flown is not null) minded.Add(flown);
+        foreach (Wire.Player p in c.Players)
+        {
+            if (p.Controlling.Length > 0 && here.TryGetValue(p.Controlling, out Vehicle? theirs)) minded.Add(theirs);
+        }
+
+        List<(string Key, Vehicle V, string Pad, double Since)> due = [];
+        HashSet<string> still = [];
+        foreach ((string key, Vehicle v) in here)
+        {
+            if (ReferenceEquals(v, flown) || Puppets.ContainsKey(v) || ToRemove.Contains(v)) continue;
+            if (c.Players.Any(p => p.Controlling == key) || c.Protected.Contains(key)) continue;
+            byte holder = c.HeldBy(key);
+            if (holder != 0 && holder != c.Id) continue;
+            if (Pads.Under(v) is not { } pad) continue;
+            if (minded.Any(m => World.IsAlive(m) && World.Between(m, v) < PadMindedWithinM)) continue;
+
+            still.Add(key);
+            double since = LeftOnPad.TryGetValue(key, out double was) ? was : LeftOnPad[key] = now;
+            if (now - since >= PadClearedAfterSeconds) due.Add((key, v, pad, since));
+        }
+        foreach (string key in LeftOnPad.Keys.Where(k => !still.Contains(k)).ToArray()) LeftOnPad.Remove(key);
+
+        int cleared = 0;
+        foreach ((string key, Vehicle v, string pad, double since) in due.Where(d => d.V.IsDebris).OrderBy(d => d.Since))
+        {
+            if (cleared++ >= PadsClearedAtOnce) break;
+            ClearOffPad(key, v, pad, now - since, "debris");
+        }
+        if (cleared > 0) return;
+
+        foreach (var site in due.Where(d => !d.V.IsDebris).GroupBy(d => (Body: (Celestial)d.V.Parent, Site: Pads.SiteOf(d.Pad))))
+        {
+            if (Pads.Free(site.Key.Body, site.Key.Site) is not null) continue;
+            (string key, Vehicle v, string pad, double since) = site.OrderBy(d => d.Since).First();
+            ClearOffPad(key, v, pad, now - since, $"every pad at {site.Key.Site} was taken");
+        }
+    }
+
+    private static void ClearOffPad(string key, Vehicle v, string pad, double left, string why)
+    {
+        LeftOnPad.Remove(key);
+        Log.Info($"clearing {key} off {pad} ({why}): nobody has flown it or been near it for {left / 60.0:F0} minutes");
+        Say(v.IsDebris
+            ? $"Cleared debris {key} off the launchpad: it had been there for {PadClearedAfterSeconds / 60.0:F0} minutes."
+            : $"Cleared {key} off the launchpad to free one up: every pad at {Pads.SiteOf(pad)} was taken, and nobody had used it for {PadClearedAfterSeconds / 60.0:F0} minutes.");
+        // Its crew sent home, as Recover sends them, and the craft deleted -- not recovered, which
+        // also destroys every piece of debris in the craft's physics bubble straight through
+        // Universe.DestroyVehicle, past every refusal of this mod's: other players' and protected
+        // debris taken out of this world alone.
+        World.SendCrewHome(v);
+        InputEvents.VehicleDestroyBuffer.Add(new InputEvents.VehicleDestroyData { Vehicle = v });
+    }
+
+    private static void AnswerRefusedDeletes(Client c)
+    {
+        if (RefusedDeletes.Count == 0) return;
+        (string Key, string Whose)[] refused = [.. RefusedDeletes];
+        RefusedDeletes.Clear();
+        if (!c.Admin)
+        {
+            Log.Info($"refused to delete {string.Join(", ", refused.Select(r => r.Key))}: another player's, and this game is no admin");
+            TimedAlert.CreateWarning(refused.Length == 1
+                ? $"{refused[0].Key} belongs to {(refused[0].Whose.Length > 0 ? refused[0].Whose : "another player")}. Only an admin can delete another player's craft."
+                : $"{refused.Length} of these belong to other players. Only an admin can delete another player's craft.");
+            return;
+        }
+        List<(string Key, string Pilot)> flown = [];
+        foreach ((string key, string _) in refused)
+        {
+            // The server would refuse it too; said here, by name, and not once a craft in the chat.
+            // By name and not by the player, which is a struct: FirstOrDefault of none is a
+            // player still, called nothing and flying nothing.
+            if (c.Players.Where(p => p.Controlling == key).Select(p => p.Name).FirstOrDefault() is { } pilot)
+            {
+                flown.Add((key, pilot));
+                continue;
+            }
+            // remove takes a name and not a pattern, and a name with these in it would be read as one.
+            if (key.Contains('*') || key.Contains('?')) continue;
+            Log.Info($"asking the server to remove {key}, which is another player's");
+            c.Ask($"remove {key}");
+        }
+        if (flown.Count > 0)
+        {
+            TimedAlert.CreateWarning(flown.Count == 1
+                ? $"{flown[0].Pilot} is flying {flown[0].Key} right now, so it wasn't deleted."
+                : $"These are being flown right now, so they weren't deleted: {string.Join(", ", flown.Select(f => $"{f.Key} ({f.Pilot})"))}.");
+        }
+    }
+
     /// <summary>Whether the server has this craft down as one not to clear, which is also one not to abandon or delete.</summary>
     public static bool IsProtected(Vehicle v) => _client is { Joined: true } c && c.Protected.Contains(KeyOf(v));
 
@@ -1690,6 +1847,8 @@ internal static class Sync
                 here.Remove(key);
             }
         }
+        AnswerRefusedDeletes(c);
+        ClearThePads(c, here, flown);
         // Swept by the operator, which is not the same as gone. A gone is one game's word about a
         // craft of its own, and the game that owns it is right to keep its own; this is the world
         // being told what is no longer in it, so it goes whosever it is. The server sends a name
@@ -1702,8 +1861,8 @@ internal static class Sync
             {
                 string key = KeyOf(v);
                 if (!Wire.Matches(key, like) || ReferenceEquals(v, flown)) continue;
-                // Nor what the operator has protected, unless this is its own name in full.
-                if (c.Spared(key, like)) continue;
+                // Nor what the operator has protected, even by its own name in full.
+                if (c.Spared(key)) continue;
                 // Nor anything anybody else is flying: a player's hull is not debris, and a sweep
                 // that took one out from under them would be worse than the debris.
                 if (c.Players.Any(p => p.Controlling == key)) continue;
@@ -1726,7 +1885,10 @@ internal static class Sync
             // Whatever was swept, and even if this game held none of it: what the craft left behind
             // outlives them, and goes on being stepped and drawn with nothing left to have made it.
             _toClearSmoke = true;
-            Say(gone > 0
+            // One craft by name is an admin's remove or a clear that named it, and the server
+            // has already said who took what out of the world.
+            if (!Wire.IsPattern(like)) Log.Info($"{like} was taken out of the world: {(gone > 0 ? "it was here" : "this game didn't have it")}");
+            else Say(gone > 0
                 ? $"the world was cleared of {gone} craft nobody is flying"
                 : "the world was cleared, and this game had nothing matching to take away");
         }

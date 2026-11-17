@@ -11,17 +11,12 @@ namespace KSAMultiplayer.Tests;
 public class ProtectTests
 {
     [Fact]
-    public void AProtectedCraftIsSparedUnlessItIsNamedInFull()
+    public void AProtectedCraftIsSparedWhateverItIsSweptBy()
     {
         HashSet<string> names = ["Station", "Mun Base"];
-        Assert.True(ProtectedList.Spares(names, "Station", ""));
-        Assert.True(ProtectedList.Spares(names, "Station", "*"));
-        Assert.True(ProtectedList.Spares(names, "Station", "Stat*"));
-        Assert.True(ProtectedList.Spares(names, "Station", "Statio?"));
-        Assert.False(ProtectedList.Spares(names, "Station", "Station"));
-        Assert.False(ProtectedList.Spares(names, "Station", " station "));
-        Assert.True(ProtectedList.Spares(names, "Mun Base", "Station"));
-        Assert.False(ProtectedList.Spares(names, "Debris", "*"));
+        Assert.True(ProtectedList.Spares(names, "Station"));
+        Assert.True(ProtectedList.Spares(names, "Mun Base"));
+        Assert.False(ProtectedList.Spares(names, "Debris"));
     }
 
     [Fact]
@@ -53,15 +48,15 @@ public class ProtectTests
         // Each game sweeps its own world by the name, and holds this craft back from it.
         foreach (Client c in new[] { a, b })
         {
-            Assert.True(c.Spared("Station", c.Swept.Peek()));
-            Assert.False(c.Spared("Stage 1", c.Swept.Peek()));
+            Assert.True(c.Spared("Station"));
+            Assert.False(c.Spared("Stage 1"));
             Assert.Equal(a.Id, c.OwnerOf("Station"));
             Assert.Equal(0, c.OwnerOf("Stage 1"));
         }
     }
 
     [Fact]
-    public void AProtectedCraftGoesWhenItIsNamedInFullOrUnprotected()
+    public void AProtectedCraftGoesOnlyOnceItIsUnprotected()
     {
         using Rig rig = new();
         Client a = SaveTests.Seed(rig);
@@ -72,11 +67,63 @@ public class ProtectTests
         rig.Server.Protect("Hab");
 
         Assert.Empty(rig.Server.Sweep("*"));
-        Assert.Equal(["Station"], rig.Server.Sweep("station"));
+        Assert.Empty(rig.Server.Sweep("Station"));
 
         Assert.Contains("no longer protected", rig.Server.Unprotect("hab"));
         Assert.Contains("is not protected", rig.Server.Unprotect("Hab"));
         Assert.Equal(["Hab"], rig.Server.Sweep("*"));
+    }
+
+    // The manifest's Delete, from an admin, on a craft that is another player's: one craft by its
+    // name, out of every game, and never their hull or what the operator protected.
+    [Fact]
+    public void RemoveTakesOneCraftOfAnybodysOutOfEveryGame()
+    {
+        using Rig rig = new();
+        Client a = SaveTests.Seed(rig);
+        Client b = SaveTests.JoinAndLoad(rig, "Bob");
+        a.Claim("Rocket", controlling: true, made: true);
+        a.Claim("Station", controlling: false, made: true);
+        a.Claim("Stage 1", controlling: false, made: true);
+        rig.Until(() => b.OwnerOf("Rocket") == a.Id && b.OwnerOf("Station") == a.Id && b.OwnerOf("Stage 1") == a.Id
+                        && rig.Server.Players.Any(p => p.Controlling == "Rocket"), what: "the owners table");
+        rig.Server.Protect("Station");
+
+        Assert.Contains("flying Rocket", rig.Server.RemoveCraft("Rocket"));
+        Assert.Contains("unprotect it first", rig.Server.RemoveCraft("station"));
+        Assert.Contains("without wildcards", rig.Server.RemoveCraft("Stage*"));
+        Assert.Contains("removing Stage 1", rig.Server.RemoveCraft("stage 1"));
+
+        rig.Until(() => a.Swept.Count == 1 && b.Swept.Count == 1 && b.OwnerOf("Stage 1") == 0, what: "both games to be told");
+        foreach (Client c in new[] { a, b })
+        {
+            Assert.Equal("Stage 1", c.Swept.Peek());
+            Assert.False(Wire.IsPattern(c.Swept.Peek()));
+            Assert.Equal(a.Id, c.OwnerOf("Rocket"));
+            Assert.Equal(a.Id, c.OwnerOf("Station"));
+        }
+    }
+
+    // A protected craft that crashes is gone from every world all the same, and its name with it:
+    // left on the list, it would protect whatever was next called that.
+    [Fact]
+    public void AProtectedCraftThatIsDestroyedIsNoLongerProtected()
+    {
+        using Rig rig = new();
+        Client a = SaveTests.Seed(rig);
+        Client b = SaveTests.JoinAndLoad(rig, "Bob");
+        a.Claim("Station", controlling: false, made: true);
+        a.Claim("Hab", controlling: false, made: true);
+        rig.Until(() => a.Owns("Station") && a.Owns("Hab"), what: "the owners table");
+        rig.Server.Protect("Station");
+        rig.Server.Protect("Hab");
+        rig.Until(() => b.Protected.Contains("Station"), what: "Bob's game to hear the list");
+
+        a.SayGone("Station");
+        rig.Until(() => !b.Protected.Contains("Station"), what: "Bob's game to hear Station is off the list");
+        Assert.False(rig.Server.Protected.Has("Station"));
+        Assert.True(rig.Server.Protected.Has("Hab"));
+        Assert.Contains(b.Chat, said => said.FromServer && said.Text == "Station was destroyed, so it's no longer protected");
     }
 
     // The list goes by a transfer and the sweep by a datagram, so the sweep can come first: a game
@@ -223,23 +270,24 @@ public class ProtectTests
         using Rig rig = new(new ServerOptions { Radiation = false });
         Client a = SaveTests.Seed(rig);
         rig.Until(() => a.Rules is not null, what: "the clock to say the rules");
-        Assert.Equal(Wire.WorldRules.LifeSupport, a.Rules);
+        Assert.Equal(Wire.WorldRules.LifeSupport | Wire.WorldRules.ClearPads, a.Rules);
 
-        rig.Server.Reconfigure(rig.Server.Options with { LifeSupport = false, Radiation = true });
+        rig.Server.Reconfigure(rig.Server.Options with { LifeSupport = false, Radiation = true, ClearPads = false });
         rig.Until(() => a.Rules == Wire.WorldRules.Radiation, what: "the change to reach Alice's game");
         Assert.Contains(a.Chat, said => said.FromServer && said.Text == "life support is now off on this server");
         Assert.Contains(a.Chat, said => said.FromServer && said.Text == "radiation is now on on this server");
+        Assert.Contains(a.Chat, said => said.FromServer && said.Text == "craft left on a launchpad are no longer cleared away on this server");
     }
 
     [Fact]
-    public void BothRulesAreOnUnlessTheOperatorSaysOtherwise()
+    public void EveryRuleIsOnUnlessTheOperatorSaysOtherwise()
     {
         Dictionary<string, string> none = [];
         (ServerOptions byDefault, _, _) = Settings.Options(Settings.Resolve(none, _ => null, none));
-        Assert.True(byDefault.LifeSupport && byDefault.Radiation);
+        Assert.True(byDefault.LifeSupport && byDefault.Radiation && byDefault.ClearPads);
 
-        (ServerOptions off, _, _) = Settings.Options(Settings.Resolve(none, _ => null, Settings.Read("life-support = false\nradiation = false\n")));
-        Assert.False(off.LifeSupport || off.Radiation);
+        (ServerOptions off, _, _) = Settings.Options(Settings.Resolve(none, _ => null, Settings.Read("life-support = false\nradiation = false\nclear-pads = false\n")));
+        Assert.False(off.LifeSupport || off.Radiation || off.ClearPads);
 
         using Rig rig = new();
         Assert.Equal(Wire.WorldRules.All, rig.Server.Rules);

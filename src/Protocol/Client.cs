@@ -222,7 +222,7 @@ public sealed class Client : IDisposable
     public IReadOnlySet<string> Protected => _protected;
 
     /// <summary>Whether a sweep by this name leaves this craft standing.</summary>
-    public bool Spared(string key, string like) => ProtectedList.Spares(_protected, key, like);
+    public bool Spared(string key) => ProtectedList.Spares(_protected, key);
 
     /// <summary>Which of KSA's rules the server's world is played by, once it has said.</summary>
     public Wire.WorldRules? Rules { get; private set; }
@@ -717,12 +717,12 @@ public sealed class Client : IDisposable
         {
             if (needs > _protectedSerial && now - at < SweepWaitsSeconds) continue;
             _sweeps.RemoveAll(s => s.Like == like && s.Needs == needs);
-            foreach (string key in _owners.Keys.Where(k => Wire.Matches(k, like) && !Spared(k, like)).ToArray())
+            foreach (string key in _owners.Keys.Where(k => Wire.Matches(k, like) && !Spared(k)).ToArray())
             {
                 _owners.Remove(key);
                 _tracks.Remove(key);
             }
-            foreach (string key in _ownersComing.Keys.Where(k => Wire.Matches(k, like) && !Spared(k, like)).ToArray())
+            foreach (string key in _ownersComing.Keys.Where(k => Wire.Matches(k, like) && !Spared(k)).ToArray())
             {
                 _ownersComing.Remove(key);
             }

@@ -93,15 +93,16 @@ stranger sent it.
   longer already kept, or a load straight after a `protect` would lose it. A zip copied in by hand is listed under its file's name with its time left
   to whoever loads it first, as an imported world's is.
 - **Which craft are not debris.** `protected.json` in `--data`, names alone (`ProtectedCraft`).
-  `clear` leaves a craft on it unless the name swept by is that craft's own in full
-  (`ProtectedList.Spares`), and since every game sweeps its own world, every game is sent the list:
+  `clear` leaves a craft on it whatever the name swept by, its own in full included
+  (`ProtectedList.Spares`): taking one out is unprotecting it first, and since every game sweeps its own world, every game is sent the list:
   whole, as a `Blob` of a fourth kind, at the join and whenever it changes. A `Swept` carries which
   state of the list it was made against and a game holds the sweep until it has that state, five
   seconds at most -- the list goes by a transfer and the sweep by a datagram, and swept in the wrong
   order a craft protected a moment before goes with the debris. A craft that docks with a protected
   one is protected (`OnDock`), and the name that went stays on the list, being the name KSA gives
   the half that comes away again. `fresh` empties it: a name left behind would protect whatever was
-  next called it. A named save carries the list and a load restores it (above). In a game, a protected craft is not removed by Abandon, Recover or the manifest's
+  next called it -- which is also why a protected craft its owner says is `Gone` comes off the
+  list: deleting and recovering one are refused, so gone is destroyed. A named save carries the list and a load restores it (above). In a game, a protected craft is not removed by Abandon, Recover or the manifest's
   Delete either (`BeforeDelete`, `BeforeRecover`). That half is the mod's alone: the server cannot
   tell a craft deleted from one that crashed, and one that crashed has to go from every world.
 - **KSA's rules.** Whether life support and radiation are on is the `life-support` and `radiation`
@@ -109,7 +110,19 @@ stranger sent it.
   (`Wire.WorldRules`): five times a second to everybody, so a change is every game's within the
   second and a lost datagram costs nothing. A game sets `Universe.Rules` to match each frame it is
   in the world (`Sync.FollowRules`), which also undoes KSA's own menu and whatever a loaded save
-  was written with.
+  was written with. The third flag, `ClearPads` (`clear-pads`), is the mod's rule and not KSA's;
+  a game of an earlier protocol masks it off.
+- **Launchpads cleared of what was left on them.** Every pad at a site taken refuses every launch
+  from it (`Pads.Room`), and a busy room filled them with spent stages. Each game looks every five
+  seconds (`Sync.ClearThePads`) at what stands on a pad -- within its footprint by the test
+  `Pads.Free` uses, and under 200 m up, since that test is by direction alone -- that is its own to
+  remove: its own craft or one nobody holds. Not one anybody flies, nor one within 2 km of a craft
+  somebody flies, nor a protected one. Five minutes unbroken of that, on `Wall`, and `IsDebris`
+  goes, four a pass; a craft that is not debris goes only when `Pads.Free` finds no pad free at its
+  site, the longest left first and one a site a pass, and never in a pass that cleared debris. Its
+  crew go home (`World.SendCrewHome`) and the craft goes by the manifest's delete, not by
+  `Vehicle.Recover`: a recovery also destroys every piece of debris in the bubble through
+  `Universe.DestroyVehicle`, past every refusal here. The going is shared as any other is.
 - **Who is in the world.** A game says so once it has loaded, and only a game the world was handed to
   is believed: a player in the world claims craft, counts in every warp vote and, on a server whose
   world came off disk, sets the clock the whole room then follows, and none of that is anyone's to do
@@ -582,8 +595,22 @@ clean up after a breakup.
 
 A craft of a player's own is theirs to delete, and that *is* shared: the sending round sees the craft
 has gone and says `Gone`, the same as any other way of losing one. Deleting another player's craft
-was not shared and never could be -- the owner's game knows nothing of it -- which is why it is
-refused rather than relayed.
+is not shared and never could be -- the owner's game knows nothing of it -- so it is refused here
+either way (`Sync.RefuseDelete`), and what happens next is who asked. A player who is no admin is
+told whose it is and that only an admin can delete it; an admin's is sent to the server as the
+console's `remove <craft>`, which takes one craft out of every game by name, the owner's too, as a
+`Swept` naming it in full. The server refuses a craft being flown, which the game says first by the
+pilot's name, and a protected one. Refusals are gathered and answered once a frame, because Clear
+Debris asks for every piece in the system at once; the server saves the world three seconds after a
+`remove` rather than on each, for the same reason. Recover on another player's craft is refused the
+same way: it sends the crew home before it asks for the craft to go.
+
+The manifest's rows carry a padlock (`ManifestLocks`), put in by a transpiler on the row's drawing
+just ahead of `ImGui.SetNextItemAllowOverlap`, which comes right before the row's name: a craft's
+row has no children, so the room its tree arrow would have is empty. Drawn first, an invisible
+button there takes the click, since ImGui gives the mouse to the first item under it that does not
+share, and the name is put down after it, sharing. It is shut for a protected craft, for everybody,
+and open and faint for the rest for an admin alone; an admin's click is `protect` or `unprotect`.
 
 **The debug teleport cannot move somebody else's craft, and does not need its own refusal.**
 `Vehicle.DrawPhysicsDebugWindow` offers "Teleport To CCSFS LC-39A", a few other fixed places, and a
@@ -796,6 +823,25 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   go of the clock: the game sat at speed 0, the server heard not one warp ask, and on the way out
   the game was 1.76 s behind and ran at 1.1x until it caught up. The editor now keeps the shared
   speed instead, below.
+- **Debris cleared off a launchpad.** Bravo launched the 89-part Rocket onto pad MP3 and had six
+  of its parts fail, which shed ten pieces of debris onto the pad, and both games let go of every
+  craft. Five minutes later Bravo's game cleared the debris, and both worlds were left with the
+  73-part rocket -- not debris, and its site had seven pads free -- and every other craft on a pad
+  standing. Run again with clearing by delete, twelve pieces went four at a time in three passes
+  five seconds apart, and neither world had any debris left. An earlier run cleared by
+  `Vehicle.Recover`, whose sweep of the bubble took the rest at once ("Recovering 'NewRocket_2_1'
+  destroyed 9 debris"), which is why it no longer does. A craft cleared because its site is full
+  has not been tried.
+- **An admin's Delete and the manifest's padlocks.** Two games on one server, Alpha an admin and
+  Bravo not. Bravo deleting Alpha's Niric was refused with "Niric belongs to Alpha. Only an admin
+  can delete another player's craft." Alpha deleting Bravo's NewRocket_2 while Bravo flew it was
+  refused with "Bravo is flying NewRocket_2 right now, so it wasn't deleted."; once Bravo had let
+  go of it, the same Delete went to the server as `remove NewRocket_2`, both games took it out
+  within the frame, the chat said "Alpha removed NewRocket_2", and the world was saved three
+  seconds later. With Niric protected, Alpha's manifest showed a shut padlock on it and a faint
+  open one on NewRocket_1, and Bravo's the shut one alone; clicks on the padlocks by hand
+  protected and unprotected both craft. `clear NewRocket_1` with it protected and nobody in it
+  left it standing in both games.
 - **Watching a craft that stages.** The other game's copy of a craft is built again whenever its
   owner changes its shape, and KSA hands a camera whose craft is destroyed to the heaviest craft
   near it or else to the body it goes round (`Universe.HandOffCameras`): watching the 89-part

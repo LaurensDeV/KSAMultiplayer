@@ -6,9 +6,9 @@ namespace KSAMultiplayer;
 /// The craft a server will not clear, as it tells every game: sent whole whenever it changes, since
 /// each game sweeps its own world and has to know what to leave standing in it.
 ///
-/// <para>A craft on it is taken by <c>clear</c> only when it is asked for by its own name, in
-/// full: the broom is for a world filling up with spent stages, and a station is in the way of
-/// <c>clear *</c> exactly as often as somebody types it.</para>
+/// <para>A craft on it is never taken by <c>clear</c>, not even by its own name in full: the broom
+/// is for a world filling up with spent stages, and a name typed in full is as easily a typo away
+/// from a station as <c>clear *</c> is. Taking one out is unprotecting it first, on purpose.</para>
 /// </summary>
 public static class ProtectedList
 {
@@ -17,12 +17,8 @@ public static class ProtectedList
 
     private const byte Form = 1;
 
-    /// <summary>
-    /// Whether a sweep by this name leaves this craft alone: it is on the list, and the name is not
-    /// its own in full. A name with a wildcard in it is never a craft's own.
-    /// </summary>
-    public static bool Spares(IReadOnlySet<string> names, string key, string like) =>
-        names.Contains(key) && !string.Equals(key, like.Trim(), StringComparison.OrdinalIgnoreCase);
+    /// <summary>Whether a sweep leaves this craft alone, whatever it was swept by: it is on the list.</summary>
+    public static bool Spares(IReadOnlySet<string> names, string key) => names.Contains(key);
 
     /// <param name="serial">Which state of the list this is, counting up: a sweep says which it was made against.</param>
     public static byte[] Encode(IEnumerable<string> names, uint serial)

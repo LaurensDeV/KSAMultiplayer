@@ -251,6 +251,15 @@ internal static class World
 
     public static bool IsAlive(Vehicle? v) => v is { IsDisposed: false };
 
+    /// <summary>Every kitten aboard back to the roster, as <see cref="Vehicle.Recover"/> sends them, and nothing else that it does.</summary>
+    public static void SendCrewHome(Vehicle v)
+    {
+        foreach (IVASeat seat in v.Crew)
+        {
+            if (seat.AssignedKittenHash != KeyHash.Zero) KSA.Universe.KittenRoster.Find(seat.AssignedKittenHash)?.LeaveVehicle(v.HasLaunched);
+        }
+    }
+
     // What a craft's parts look like from outside, cheaply: a change means its definition is sent again.
     /// <summary>
     /// What a craft is, for deciding whether the others have to be told how it is built again: its
