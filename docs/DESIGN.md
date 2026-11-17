@@ -960,8 +960,8 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
 - **KSA `2026.11.16.5901`.** The server holds players to it and the mod compiles against it
   unchanged. Every patch target and private field the mod reaches has the signature it had on 5801,
   each patched method's body and callers are as they were, and the save format did not move, so
-  the protocol and the worlds the server carries are those of 5801. None of it has been run on
-  5901, and no StarMap release names 5901 yet.
+  the protocol and the worlds the server carries are those of 5801. StarMap 0.5.4 has been seen
+  starting on 5901; the mod itself has not been flown on it.
 - **Two rows for one server of another version.** A server that answers in another protocol
   version now keeps where it answered from, so a directory's row for it and the player's own
   collapse into one as they do for a server this game can join. Seen the other way in a game of

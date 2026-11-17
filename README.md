@@ -16,7 +16,7 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
 
 ## Playing
 
-1. Install [StarMap](https://github.com/StarMapLoader/StarMap) **0.5.3 or later**, then take
+1. Install [StarMap](https://github.com/StarMapLoader/StarMap) **0.5.4 or later**, then take
    `KSAMultiplayer-<version>.zip` from the [releases](https://github.com/LaurensDeV/KSAMultiplayer/releases), unzip it into KSA's `mods` folder and
    enable it, as with any StarMap mod. StarMap before 0.5 hands a mod no services at all, so an old
    StarMap with this mod installed stops the game starting rather than letting the mod quietly fail

@@ -21,8 +21,8 @@ public sealed class MultiplayerMod
 
     /// <summary>
     /// StarMap builds this with <c>ActivatorUtilities</c> and hands it the services it asks for, which
-    /// is why this mod wants StarMap 0.5.3 or later: nothing before 0.5 has any to hand, and 0.5.3 is
-    /// the first that runs on KSA 2026.11.10.5801.
+    /// is why this mod wants StarMap 0.5.4 or later: nothing before 0.5 has any to hand, and 0.5.4 is
+    /// the one seen running on KSA 2026.11.16.5901.
     /// </summary>
     public MultiplayerMod(IModMenuService menu, IEventBus bus)
     {
