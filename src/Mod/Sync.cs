@@ -1055,6 +1055,65 @@ internal static class Sync
 
     private static Vehicle? _rode;
 
+    /// <summary>What the camera was on while watching, by what the shared world calls it, and how it was looking at it.</summary>
+    private sealed record Watching(Vehicle Craft, string Key, World.View View)
+    {
+        /// <summary>When the craft went, and what KSA put the camera on instead; zero and null until then.</summary>
+        public double LostAt { get; init; }
+        public object? HandedTo { get; init; }
+    }
+
+    private static Watching? _watch;
+
+    // How long after a watched craft goes its copy may take to be built again: a rebuild can be
+    // held back a while (StandingWait), and one that never comes is a craft that is gone.
+    private const double RewatchWithinSeconds = 10.0;
+
+    /// <summary>
+    /// The camera kept on another player's craft while it is watched and built again here, as one
+    /// is every time its owner stages or docks. KSA hands a camera whose craft is destroyed to the
+    /// heaviest craft near it or else to the body it goes round (Universe.HandOffCameras), so the
+    /// copy going took the watcher's camera out to the whole Earth, and the copy built in its place
+    /// a moment later was left unwatched. Put back on that copy, with the view this player had,
+    /// unless they have looked at something else since.
+    /// </summary>
+    private static void KeepWatching(Dictionary<string, Vehicle> here, Vehicle? flown)
+    {
+        if (flown is not null)
+        {
+            _watch = null;
+            return;
+        }
+        if (_watch is { } w && !World.IsAlive(w.Craft))
+        {
+            object? now = World.Following;
+            if (w.LostAt == 0.0) _watch = w = w with { LostAt = Wall(), HandedTo = now };
+            else if (!ReferenceEquals(now, w.HandedTo))
+            {
+                // Handed on again by KSA, from a craft that has gone in its turn -- the stage it
+                // dropped, built again here as well -- and not looked away from by the player.
+                if (w.HandedTo is Vehicle gone && !World.IsAlive(gone)) _watch = w = w with { HandedTo = now };
+                else
+                {
+                    _watch = null;
+                    return;
+                }
+            }
+            if (Wall() - w.LostAt > RewatchWithinSeconds)
+            {
+                _watch = null;
+                return;
+            }
+            if (here.TryGetValue(w.Key, out Vehicle? again) && World.IsAlive(again) && !ToRemove.Contains(again) && World.Watch(again, w.View))
+            {
+                _watch = new Watching(again, w.Key, w.View);
+                Log.Info($"back on {w.Key}, built again here, after {Wall() - w.LostAt:F1} s");
+            }
+            return;
+        }
+        _watch = World.Watched is { } v && World.IsAlive(v) && World.ViewOf(v) is { } view ? new Watching(v, KeyOf(v), view) : null;
+    }
+
     /// <summary>
     /// KSA has undocked a craft of this player's into two. One that was another player's before it
     /// docked is left for them: this player flies the other half.
@@ -1688,6 +1747,7 @@ internal static class Sync
             if (World.IsAlive(other) && World.GoTo(other)) flown = World.Controlled;
         }
         RideAlong(c, here, flown);
+        KeepWatching(here, flown);
         TintTheEditing(c);
         SayNobodysGone(c, here);
         ClaimFlown(c, flown);

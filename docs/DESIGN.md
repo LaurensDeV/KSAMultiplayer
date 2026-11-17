@@ -796,6 +796,15 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   go of the clock: the game sat at speed 0, the server heard not one warp ask, and on the way out
   the game was 1.76 s behind and ran at 1.1x until it caught up. The editor now keeps the shared
   speed instead, below.
+- **Watching a craft that stages.** The other game's copy of a craft is built again whenever its
+  owner changes its shape, and KSA hands a camera whose craft is destroyed to the heaviest craft
+  near it or else to the body it goes round (`Universe.HandOffCameras`): watching the 89-part
+  Rocket stage in orbit put the watcher's camera on the whole Earth, following no craft at all.
+  The camera is now put back on the copy built in its place, by name, with the azimuth, elevation
+  and distance the watcher had -- a copy arrives with its owner's view of it, from its definition --
+  unless the player has looked at something else since, or nothing of that name comes back within
+  ten seconds. Seen: after the stage the watcher was following the 21-part Rocket in the frame it
+  was built, looking at it from where it had been.
 - **The vehicle editor with the world running, and a craft held for it.** A 2-part capsule lifted
   400 m and falling at 56.8 m/s had the editor opened on it: the game ran on at 1.00x with the
   editor up, its universe time kept with the server's, and the capsule stood 80.5 m above the pad

@@ -1917,6 +1917,44 @@ internal static class World
         }
     }
 
+    /// <summary>Whatever the camera follows, a craft or a body, or null for nothing.</summary>
+    public static object? Following => Program.GetMainCamera()?.Following;
+
+    /// <summary>How the camera looks at a craft it follows: KSA keeps it on the craft, not the camera.</summary>
+    public readonly record struct View(CameraReferenceFrame Frame, double Azimuth, double Elevation, double DistancePower);
+
+    public static View? ViewOf(Vehicle v)
+    {
+        try
+        {
+            OrbitView o = v.OrbitView;
+            return new View(o.ReferenceFrame, o.Azimuth, o.Elevation, o.DistancePower);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The camera put on a craft and looking at it as it looked at another. A craft built again here
+    /// arrives with the view its owner had of it, from its definition, and not the one this player
+    /// had: put back on it with that, the camera swings round and out to wherever its owner left it.
+    /// </summary>
+    public static bool Watch(Vehicle v, View view)
+    {
+        try
+        {
+            OrbitView o = v.OrbitView;
+            (o.ReferenceFrame, o.Azimuth, o.Elevation, o.DistancePower) = (view.Frame, view.Azimuth, view.Elevation, view.DistancePower);
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"could not keep the view of {v.Id}: {e.GetBaseException().Message}");
+        }
+        return Watch(v);
+    }
+
     /// <summary>
     /// The camera put on a craft without taking it over. KSA's camera takes control of whatever it
     /// follows unless told not to, and control of another player's craft is refused, so following
