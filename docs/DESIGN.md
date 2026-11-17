@@ -795,7 +795,15 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   whole room: opening the VAB asked everybody else to pause. Watched working when the editor let
   go of the clock: the game sat at speed 0, the server heard not one warp ask, and on the way out
   the game was 1.76 s behind and ran at 1.1x until it caught up. The editor now keeps the shared
-  speed instead, which has not been seen; see below.
+  speed instead, below.
+- **The vehicle editor with the world running, and a craft held for it.** A 2-part capsule lifted
+  400 m and falling at 56.8 m/s had the editor opened on it: the game ran on at 1.00x with the
+  editor up, its universe time kept with the server's, and the capsule stood 80.5 m above the pad
+  in both games for the fifty seconds it was open -- KSA put it on its rails as landed, which the
+  hold allows for. The other game drew it tinted purple and named it with `editing` on its tag.
+  Closing the editor let it go at 56.8 m/s, said by both games within a second, and it fell on
+  into the ground. Afterwards the two games' universe times were a tenth of a second apart, read
+  a second apart, and the server had heard no warp asked for.
 - **Two games making one name.** A kitten sent out of the same capsule in both: the second was named
   `Nasley 2` by the server, each game kept flying its own, and each built the other's and stood it
   where its owner put it. The second game holds the other player's under a name of its own
@@ -968,14 +976,13 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
 
 ## What has not been tried
 
-- **The vehicle editor with the world running.** Everything of it is untried in a game: that the
-  editor works with the world stepped behind it at the shared speed, where KSA itself only ever
-  runs it at 0; that a craft held for it stays where it was against the ground in both games, and
-  the tint and the label reach the other one; whether KSA puts a craft held still in the air on
-  its rails as landed, which the hold allows for and has not met; and that the craft goes on at
-  the speed it had once the editor closes, launched from or not. A craft in orbit is not held, and
-  goes round with nobody at the controls; an engine a flight computer is burning may be lit again
-  by it while the craft is held.
+- **The rest of the vehicle editor with the world running.** Seen only opened on the flown craft
+  and closed again: not opened as Build New Vehicle and launched from, which lets the held craft go
+  as the new one reaches the pad; not with an engine lit as it opened, which is cut and lit again
+  on the way out, or one a flight computer is burning, which may light it while it is held; not
+  for long enough to see whether the place it is held drifts against the ground; and the tag's
+  line was read off the bridge, since a capture hides the interface. A craft in orbit is not held,
+  and goes round with nobody at the controls.
 - **KSA `2026.11.16.5901`.** The server holds players to it and the mod compiles against it
   unchanged. Every patch target and private field the mod reaches has the signature it had on 5801,
   each patched method's body and callers are as they were, and the save format did not move, so
