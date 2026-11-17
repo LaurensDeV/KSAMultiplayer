@@ -1128,19 +1128,16 @@ internal static class Hooks
     {
         try
         {
-            // The editor is the one place this world is not this player's flight: KSA stops it
-            // there (Program.OnFrameEditor) and runs it again on the way out, nobody is flying
-            // anything meanwhile, and HoldTheClock brings the world back to the shared one when
-            // they come out.
-            //
-            // Everywhere else the world is held to the shared speed even while a menu is open.
+            // Held to the shared speed even while a menu is open, the vehicle editor included.
             // Escape, the settings and the save lists all stop the world (Program.UpdateMenuPause),
-            // and a craft that stops when its pilot opens a menu is a craft that stops for nobody
-            // else: the shared clock runs on, so this player comes back behind it, and for as long
-            // as they are in there every other game has their craft frozen at one universe time and
-            // then lets go of it. One world has one time, and a menu is not a reason to leave it.
-            // What this does not do is tell anybody about it -- see BeforeSpeed.
-            return Program.IsEditorOpen ? null : Sync.HeldSpeed;
+            // and the editor stops it every frame it is open (Program.PrepareFrame); a craft that
+            // stops when its pilot opens a menu is a craft that stops for nobody else: the shared
+            // clock runs on, so this player comes back behind it, and for as long as they are in
+            // there every other game has their craft frozen at one universe time and then lets go of
+            // it. One world has one time, and a menu is not a reason to leave it. The craft flown
+            // into the editor is held still instead (Sync.HoldForTheEditor). What this does not do
+            // is tell anybody about it -- see BeforeSpeed.
+            return Sync.HeldSpeed;
         }
         catch (Exception e)
         {

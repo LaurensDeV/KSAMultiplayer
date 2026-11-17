@@ -314,6 +314,8 @@ internal sealed class Bridge
         data["here"] = World.Focused;
         data["achieved"] = Math.Round(World.Achieved, 3);
         data["analytic"] = World.Analytic;
+        data["in_editor"] = World.InEditor;
+        data["editor_hold"] = Sync.EditorHeld;
         data["tag_draw"] = Panel.TagReport;
         // What the nametag pass would draw this frame, so a tag that never appears can be told
         // from one drawn somewhere nobody looks.
@@ -323,6 +325,7 @@ internal sealed class Bridge
             ["who"] = t.Who,
             ["range_m"] = Math.Round(t.Range, 1),
             ["flying"] = t.Flying,
+            ["editing"] = t.Editing,
             ["x"] = Math.Round(t.At.X, 1),
             ["y"] = Math.Round(t.At.Y, 1),
         }).ToList();

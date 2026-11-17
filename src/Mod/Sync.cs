@@ -519,7 +519,7 @@ internal static class Sync
     /// </summary>
     private static void TakeWhatIsWatched(Client c)
     {
-        if (World.Controlled is not null || World.Watched is not { } v || !World.IsAlive(v)) return;
+        if (Flown is not null || World.Watched is not { } v || !World.IsAlive(v)) return;
 
         string key = KeyOf(v);
         if (c.HeldBy(key) != 0 || Owned.ContainsKey(key) || MadeHere.Contains(v)) return;
@@ -787,6 +787,7 @@ internal static class Sync
         PlacedAt.Clear();
         Engines.Clear();
         World.ForgetEngines();
+        ForgetTheEditor();
         (_worldToLoad, _notLoading, _notSaving) = (null, "", "");
         (_claimed, _address, _watching, Behind, Now) = ("", "", "", null, Stage.Off);
         _worldCame = false;
@@ -1408,6 +1409,9 @@ internal static class Sync
         MadeHere.Clear();
         Engines.Clear();
         World.ForgetEngines();
+        // A world of its own coming: nothing in this one is left to hold or to let go of.
+        ForgetTheEditor();
+        _editorHold = null;
         if (!World.LoadWorld(world.Data, out string why))
         {
             Say($"couldn't load the world: {why}");
@@ -1529,7 +1533,8 @@ internal static class Sync
             string k = KeyOf(v);
             if (!here.TryAdd(k, v) && (Puppets.ContainsKey(v) || Renamed.ContainsKey(v))) here[k] = v;
         }
-        Vehicle? flown = World.Controlled;
+        HoldForTheEditor();
+        Vehicle? flown = Flown;
 
         // What the rebuild wait pushed back, now that it is over: put back at the head of the queue
         // so it is taken exactly as the word of its owner, and overwritten by a fresher word if one
@@ -1675,7 +1680,7 @@ internal static class Sync
         TakeOwnDockings(c);
         TakeDockings(c, here, flown);
         // What was flown may have been taken into another player's craft, or given up to them.
-        if (flown is not null && (ToRemove.Contains(flown) || !ReferenceEquals(flown, World.Controlled))) flown = null;
+        if (flown is not null && (ToRemove.Contains(flown) || !ReferenceEquals(flown, Flown))) flown = null;
         LeaveWhatWasTheirs(c, flown);
         if (_toGoTo is { } other)
         {
@@ -1683,6 +1688,7 @@ internal static class Sync
             if (World.IsAlive(other) && World.GoTo(other)) flown = World.Controlled;
         }
         RideAlong(c, here, flown);
+        TintTheEditing(c);
         SayNobodysGone(c, here);
         ClaimFlown(c, flown);
         Adopt(c, here, flown);
@@ -1727,7 +1733,7 @@ internal static class Sync
             // and this game may already have let go of it while the name was somebody else's.
             Renamed[craft] = r.Now;
             Owned[r.Now] = mine ?? new Mine(craft);
-            c.Claim(r.Now, controlling: ReferenceEquals(craft, World.Controlled), made: true);
+            c.Claim(r.Now, controlling: ReferenceEquals(craft, Flown), made: true);
             Define(c, craft);
             Say($"another player already has a craft called '{r.Was}', so the others see yours as '{r.Now}'");
         }
@@ -1889,7 +1895,7 @@ internal static class Sync
         Owned[key] = mine;
         WentAs.Remove(key);
         DockedAway.Remove(key);
-        c.Claim(key, controlling: ReferenceEquals(v, World.Controlled), made: made);
+        c.Claim(key, controlling: ReferenceEquals(v, Flown), made: made);
         // A shape of 0 is one no craft has, so the sending round tries again. Mine records the
         // craft's shape as it is made, so a definition that failed here would otherwise never be
         // asked for again: the craft would be claimed, its states sent, its name in everybody's
@@ -2102,6 +2108,8 @@ internal static class Sync
             if ((stands ?? World.StateOf(v, key, controlled)) is not { } state) continue;
             // Kept, where it is held only for being near, by being said to be.
             if (c.NearOf(key) && Near(v, flown)) state = state with { Flags = state.Flags | Wire.StateFlags.Near };
+            // Flown into the editor, which its pilot is in now: the others tint it and say so.
+            if (controlled && World.InEditor) state = state with { Flags = state.Flags | Wire.StateFlags.Editing };
             c.SendState(state);
             // And what other mods say of it, which is as new as its state and as soon out of date.
             foreach ((string channel, byte[] data) in Guests.Of(v)) c.SendExtra(key, channel, data);
@@ -2376,9 +2384,9 @@ internal static class Sync
     /// Where each other player's craft is on the screen and whose it is, for the panel to draw over
     /// the world. Only craft another player owns: this player knows which one is theirs.
     /// </summary>
-    public static List<(float2 At, string Who, string Craft, double Range, bool Flying)> Nametags()
+    public static List<(float2 At, string Who, string Craft, double Range, bool Flying, bool Editing)> Nametags()
     {
-        List<(float2, string, string, double, bool)> tags = [];
+        List<(float2, string, string, double, bool, bool)> tags = [];
         if (_client is not { Joined: true } c) return tags;
 
         // What each player is flying, by who they are rather than by what they are in: a player is
@@ -2403,7 +2411,8 @@ internal static class Sync
             double range = World.RangeFromCamera(v);
             if (!(range < (flown ? NametagWithinM : ClaimWithinM))) continue;
             if (World.ScreenOf(v) is not { } at) continue;
-            tags.Add((at, c.NameOf(owner), key, range, flown));
+            bool editing = c.TrackOf(key).Newest is { } said && (said.Flags & Wire.StateFlags.Editing) != 0;
+            tags.Add((at, c.NameOf(owner), key, range, flown, editing));
         }
         return tags;
     }
@@ -2418,9 +2427,20 @@ internal static class Sync
         World.ShowEngine(v, on, throttle);
     }
 
-    /// <summary>A puppet pulled to its owner's state, from the physics window.</summary>
+    /// <summary>A puppet pulled to its owner's state, or this player's craft held for the editor, from the physics window.</summary>
     public static void Physics(Vehicle v, double dt)
     {
+        if (_editorHold is { } hold && ReferenceEquals(hold.Craft, v))
+        {
+            if (!hold.Out)
+            {
+                World.Keep(v, hold.At);
+                return;
+            }
+            World.Release(v, hold.At);
+            _editorHold = null;
+            Log.Info($"let {KeyOf(v)} go at {World.SpeedOf(hold.At):F1} m/s, out of the vehicle editor");
+        }
         if (!Puppets.TryGetValue(v, out string? key) || _client is not { } c) return;
         Track track = c.TrackOf(key);
         if (track.At(World.Universe) is not { } s) return;
@@ -2436,6 +2456,97 @@ internal static class Sync
         if (Motion.On && pulled is { } found) Motion.Puppet(key, World.Universe, dt, found, s, track.HeardAt);
     }
 
+    // ------------------------------------------------------------------------- the vehicle editor
+
+    /// <summary>A craft held still while its pilot is in the vehicle editor, and how it is to be let go of.</summary>
+    private sealed class EditorHold(Vehicle craft, World.Hold at)
+    {
+        public Vehicle Craft { get; } = craft;
+        public World.Hold At { get; } = at;
+
+        /// <summary>Whether its pilot has come out, so the next physics step lets it go.</summary>
+        public bool Out { get; set; }
+    }
+
+    private static EditorHold? _editorHold;
+
+    // The craft flown last frame outside the editor, and the one flown into it. KSA lets go of the
+    // craft as the editor opens (Program.OnFrameEditor puts ControlledVehicle to null), so the one
+    // going in is only known from the frame before.
+    private static Vehicle? _flownLastFrame, _flownIntoEditor;
+
+    // Puppets drawn tinted, for their owner being in the editor.
+    private static readonly HashSet<Vehicle> Tinted = [];
+
+    /// <summary>
+    /// The craft this player flies: KSA's own, or while they are in the vehicle editor the one they
+    /// went in from, which is still theirs. Nobody else may take it meanwhile, and it goes on being
+    /// said to be flown, which is what keeps it its pilot's on the server.
+    /// </summary>
+    private static Vehicle? Flown =>
+        World.Controlled ?? (World.InEditor && _flownIntoEditor is { } v && World.IsAlive(v) ? v : null);
+
+    /// <summary>
+    /// The editor no longer stops the world, so the craft its pilot leaves in the air is held where
+    /// it was instead, still against the ground under it, and let go of at the speed it had once
+    /// they come out. Left to fly on, it fell with nobody at the controls; and let go of at rest,
+    /// the editor is a way out of any crash.
+    /// </summary>
+    private static void HoldForTheEditor()
+    {
+        if (!World.InEditor)
+        {
+            if (_editorHold is { Out: false } held) held.Out = true;
+            (_flownLastFrame, _flownIntoEditor) = (World.Controlled, null);
+            return;
+        }
+        if (_flownLastFrame is not { } v) return;
+        _flownLastFrame = null;
+        if (!World.IsAlive(v)) return;
+        _flownIntoEditor = v;
+        // Already letting one go, and in again before the step that would have: that one goes first.
+        if (_editorHold is not null) return;
+        if (World.HoldOf(v) is not { } at) return;
+        _editorHold = new EditorHold(v, at);
+        // Its engine out while it is held: the hold undoes the thrust, and the burn would empty the tanks.
+        World.SetEngine(v, false, 0f);
+        Log.Info($"holding {KeyOf(v)} where it is while the vehicle editor is open, moving at {World.SpeedOf(at):F1} m/s");
+    }
+
+    /// <summary>The craft held for the editor, for the bridge to say: null when there is none.</summary>
+    public static string? EditorHeld => _editorHold is { } h ? h.Out ? $"{KeyOf(h.Craft)}, letting go" : KeyOf(h.Craft) : null;
+
+    /// <summary>Whether a player's flown craft is said to be in the vehicle editor with them.</summary>
+    public static bool InTheEditor(Wire.Player p)
+    {
+        if (_client is not { } c) return false;
+        if (p.Id == c.Id) return World.InEditor;
+        return p.Controlling.Length > 0 && c.TrackOf(p.Controlling).Newest is { } s && (s.Flags & Wire.StateFlags.Editing) != 0;
+    }
+
+    /// <summary>Every other player's craft whose owner is in the editor tinted, and the rest not.</summary>
+    private static void TintTheEditing(Client c)
+    {
+        foreach ((Vehicle v, string key) in Puppets)
+        {
+            bool editing = World.IsAlive(v) && c.TrackOf(key).Newest is { } s && (s.Flags & Wire.StateFlags.Editing) != 0;
+            if (editing == Tinted.Contains(v)) continue;
+            World.Tint(v, editing);
+            if (editing) Tinted.Add(v);
+            else Tinted.Remove(v);
+        }
+        Tinted.RemoveWhere(v => !Puppets.ContainsKey(v));
+    }
+
+    /// <summary>Everything held for the editor given up: the hold let go of at the next step, and every tint taken off.</summary>
+    private static void ForgetTheEditor()
+    {
+        if (_editorHold is { } held) held.Out = true;
+        (_flownLastFrame, _flownIntoEditor) = (null, null);
+        foreach (Vehicle v in Tinted) if (World.IsAlive(v)) World.Tint(v, false);
+        Tinted.Clear();
+    }
+
     // The speed this world runs at while connected: the server's time kept, warped forward to catch up after a load.
     private static void HoldTheClock(Client c)
     {
@@ -2444,13 +2555,9 @@ internal static class Sync
         // craft, at its own universe time: let go of there, it kept real time while the room warped
         // and drifted from it while the room did not, and drew a craft in orbit kilometres from
         // where its owner had it.
-        if (Now is Stage.Loading or Stage.Joining || World.InEditor)
+        if (Now is Stage.Loading or Stage.Joining)
         {
-            // The editor is the one place KSA stops the world itself (Program.OnFrameEditor), so
-            // there is nothing to hold there and nothing to be late by. Let go of at real time and
-            // not at whatever this world was last run at, which after a join is the catch-up warp.
             // KSA's own load is left to run as it does.
-            if (HeldSpeed is not null && Now is not (Stage.Loading or Stage.Joining)) World.SetSpeed(1.0);
             HeldSpeed = null;
             // And nothing measured is nothing to report: a number left standing here is one the
             // server holds the whole room's speed down to.

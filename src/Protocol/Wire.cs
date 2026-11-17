@@ -182,8 +182,13 @@ public static class Wire
     /// No byte of it moved, and the number would move for it alone: a game from before says nothing
     /// back, so a server would hand it the same token twice a second for as long as it stayed, to
     /// be written to disk each time, and would never retire the token it replaced.</para>
+    ///
+    /// <para>28 adds <see cref="StateFlags.Editing"/>: a player in the vehicle editor keeps the
+    /// shared clock now, and the craft they were flying is held where it was until they come out.
+    /// A game of 27 would read that craft as one hanging in the air for no reason, and its own
+    /// player's editor would still stop its world and leave it behind the room.</para>
     /// </summary>
-    public const ushort Version = 27;
+    public const ushort Version = 28;
 
     /// <summary>
     /// The version of <see cref="Ask"/> and <see cref="Facts"/> alone, in the first byte of each.
@@ -475,6 +480,13 @@ public static class Wire
         /// hold, and what gives the craft up when it is no longer said.
         /// </summary>
         Near = 32,
+
+        /// <summary>
+        /// The craft its owner flew into the vehicle editor, which they are in now: held still
+        /// against the ground under it if it was in the air, and let go of at the speed it had once
+        /// they come out.
+        /// </summary>
+        Editing = 64,
     }
 
     /// <summary>

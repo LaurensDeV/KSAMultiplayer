@@ -131,7 +131,7 @@ public class WireTests
     {
         Wire.State s = new(1, "Rocket", 7, 1234.5, "Earth", new Vec3(6_371_000.123, -2.5, 1e7 + 0.001), new Vec3(1, 2, 3),
                            new Vec3(4.2e8, 1, 2), new Vec3(1000, 0, 7), new Quat(0, 0, 0.7071068, 0.7071068), new Vec3(0.1, 0.2, 0.3), 0.5f,
-                           Wire.StateFlags.Landed | Wire.StateFlags.Controlled);
+                           Wire.StateFlags.Landed | Wire.StateFlags.Controlled | Wire.StateFlags.Editing);
         Wire.State back = RoundTrip(s);
         Assert.Equal(s.Key, back.Key);
         Assert.Equal(s.Body, back.Body);

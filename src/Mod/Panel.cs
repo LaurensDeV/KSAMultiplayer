@@ -335,7 +335,7 @@ internal static class Panel
     /// </summary>
     public static void DrawTags()
     {
-        List<(float2 At, string Who, string Craft, double Range, bool Flying)> tags = Sync.Nametags();
+        List<(float2 At, string Who, string Craft, double Range, bool Flying, bool Editing)> tags = Sync.Nametags();
         if (tags.Count == 0)
         {
             TagReport = "nothing of another player's to name";
@@ -349,7 +349,7 @@ internal static class Panel
         ImFontPtr font = ImGui.GetFont();
         float px = ImGui.GetFontSize();
         int drawn = 0, marks = 0;
-        foreach ((float2 at, string who, string craft, double range, bool flying) in tags.OrderBy(t => t.Range))
+        foreach ((float2 at, string who, string craft, double range, bool flying, bool editing) in tags.OrderBy(t => t.Range))
         {
             // Hers, not her: a faint line and no box, so a craft somebody parked is never read as one
             // they are sitting in. Only the nearest few, or a field of wreckage is a wall of a name.
@@ -367,7 +367,9 @@ internal static class Panel
 
             string under = $"{craft} · {Far(range)}";
             float2 nameBox = ImGui.CalcTextSize(who), underBox = ImGui.CalcTextSize(under);
-            float wide = Math.Max(nameBox.X, underBox.X), high = nameBox.Y + underBox.Y;
+            // Why a craft is hanging in the air: its pilot is building something, and it is held for them.
+            float2 editBox = editing ? ImGui.CalcTextSize(InTheEditor) : float2.Zero;
+            float wide = Math.Max(Math.Max(nameBox.X, underBox.X), editBox.X), high = nameBox.Y + underBox.Y + editBox.Y;
             float2 corner = new(at.X - (wide / 2f), at.Y - high - 7f);
 
             draw.AddRectFilled(new float2(corner.X - 5f, corner.Y - 3f),
@@ -376,12 +378,15 @@ internal static class Panel
             draw.AddTriangleFilled(new float2(at.X - 5f, at.Y - 7f), new float2(at.X + 5f, at.Y - 7f), at, TagShade);
             draw.AddText(font, px, new float2(at.X - (nameBox.X / 2f), corner.Y), Tag, who);
             draw.AddText(font, px, new float2(at.X - (underBox.X / 2f), corner.Y + nameBox.Y), TagFaint, under);
+            if (editing) draw.AddText(font, px, new float2(at.X - (editBox.X / 2f), corner.Y + nameBox.Y + underBox.Y), TagEditing, InTheEditor);
             drawn++;
         }
         TagReport = $"{drawn} of {tags.Count} drawn, {tags.Count(t => t.Flying)} flown, at {px:F0}px";
     }
 
     private const int MostMarks = 6;
+
+    private const string InTheEditor = "IN THE VEHICLE EDITOR";
 
     private static readonly float4 TagName = new(1f, 1f, 1f, 0.97f);
 
@@ -445,6 +450,8 @@ internal static class Panel
     private static readonly ImColor8 Tag = new(255, 255, 255, 235);
     private static readonly ImColor8 TagFaint = new(190, 205, 225, 200);
     private static readonly ImColor8 TagShadow = new(0, 0, 0, 190);
+    // The purple of the tint on the craft it names, so the line and the craft read as one thing.
+    private static readonly ImColor8 TagEditing = new(205, 170, 255, 235);
 
     // Centred on the craft and written over its own shadow, so it can be read against the sky as well
     // as against the ground.
@@ -494,7 +501,9 @@ internal static class Panel
                     // Every game measures its own and tells the server, so this is each player's own line.
                     ImGui.TextDisabled(p.Rtt >= 0f ? $"{p.Rtt * 1000f:F0} ms" : "--");
                     ImGui.TableNextColumn();
-                    ImGui.TextDisabled(!p.Loaded ? "joining" : p.Controlling.Length > 0 ? p.Controlling : "--");
+                    ImGui.TextDisabled(!p.Loaded ? "joining"
+                                       : Sync.InTheEditor(p) ? (p.Controlling.Length > 0 ? $"{p.Controlling}, in the vehicle editor" : "in the vehicle editor")
+                                       : p.Controlling.Length > 0 ? p.Controlling : "--");
                 }
                 ImGui.EndTable();
             }

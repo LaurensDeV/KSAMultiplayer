@@ -1118,6 +1118,92 @@ internal static class World
     /// <param name="Rest">Whether it stood near enough, on rails, to be left alone.</param>
     public readonly record struct Pulled(Vec3 At, Vec3 Moving, double Off, bool Snap, bool Held, bool Rest);
 
+    /// <summary>Where a craft was held for the vehicle editor and how it was moving, against the ground under it.</summary>
+    /// <param name="Body">What it was going round, whose fixed frame the rest is in.</param>
+    /// <param name="Spin">Its angular velocity in its own frame, as <see cref="StateOf"/> says it.</param>
+    public readonly record struct Hold(string Body, double3 AtCcf, doubleQuat Body2Ccf, double3 VelocityCcf, double3 Spin, bool EngineOn, float Throttle);
+
+    /// <summary>
+    /// What to hold a craft by while its pilot is in the vehicle editor, or null where it needs no
+    /// holding: on the ground or the sea, on rails, or out where KSA steps nothing through physics,
+    /// which is an orbit, and an orbit is no danger to leave.
+    /// </summary>
+    public static Hold? HoldOf(Vehicle v)
+    {
+        try
+        {
+            if (!v.HasPhysicsBubble || v.Situation.IsOnRails() || v.Situation.HasAnyContact() || !v.PhysicsEnvironment.InPhysicsRadius) return null;
+            if (v.Parent is not Astronomical parent) return null;
+            PhysicsStates states = v.GetPhysicsStatesMutable();
+            PhysicsStates.GetStatesCcf(in states.Origin, in states.Kinematic, out double3 atCcf, out double3 velocityCcf, out doubleQuat body2Ccf);
+            double3 spin = states.Kinematic.AngularVelocityPhys.Transform(states.Kinematic.Body2Phys.Inverse());
+            (bool on, float throttle) = EngineInputs is { } inputs ? (inputs(v).EngineOn, inputs(v).EngineThrottle) : (false, v.GetManualThrottle());
+            return new Hold(parent.Id, atCcf, body2Ccf, velocityCcf, spin, on, throttle);
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"could not hold {v.Id} for the vehicle editor: {e.GetBaseException().Message}");
+            return null;
+        }
+    }
+
+    /// <summary>How fast a held craft was going, m/s, against the ground.</summary>
+    public static double SpeedOf(in Hold h) => Vec(h.VelocityCcf);
+
+    /// <summary>
+    /// A held craft put back where it was held and stopped there, from the physics window. Put back
+    /// in its body's fixed frame and stopped against the surface (KSA's own
+    /// <c>StopRelativeToSurface</c>), so it turns with the ground under it rather than the ground
+    /// turning away beneath it: held in the frame of the stars, a craft over a pad drifts off it at
+    /// the planet's rotation.
+    /// </summary>
+    public static void Keep(Vehicle v, in Hold h)
+    {
+        if (!v.HasPhysicsBubble || v.Situation.IsOnRails()) return;
+        if ((v.Parent as Astronomical)?.Id != h.Body) return;
+        PhysicsStates states = v.GetPhysicsStatesMutable();
+        PhysicsStates.GetStatesCcf(in states.Origin, in states.Kinematic, out double3 positionCcf, out _, out doubleQuat body2Ccf);
+        doubleQuat body2Phys = states.Kinematic.Body2Phys;
+        doubleQuat ccf2Body = body2Ccf.Inverse();
+        states.Kinematic.PositionPhys += (h.AtCcf - positionCcf).Transform(ccf2Body).Transform(body2Phys);
+        states.Kinematic.Body2Phys = body2Phys * (ccf2Body * h.Body2Ccf);
+        states.StopRelativeToSurface();
+    }
+
+    /// <summary>A held craft let go of, from the physics window: moving, turning and burning as it was when it was held.</summary>
+    public static void Release(Vehicle v, in Hold h)
+    {
+        SetEngine(v, h.EngineOn, h.Throttle);
+        if (!v.HasPhysicsBubble || (v.Parent as Astronomical)?.Id != h.Body) return;
+        // KSA puts a craft that has stood still in the air for a second on its rails, as landed.
+        if (v.Situation.IsOnRails()) v.TakeOffRails();
+        PhysicsStates states = v.GetPhysicsStatesMutable();
+        PhysicsStates.GetStatesCcf(in states.Origin, in states.Kinematic, out _, out double3 nowVelocity, out doubleQuat nowBody2Ccf);
+        states.Kinematic.VelocityPhys += (h.VelocityCcf - nowVelocity).Transform(nowBody2Ccf.Inverse()).Transform(states.Kinematic.Body2Phys);
+        states.Kinematic.AngularVelocityPhys = h.Spin.Transform(states.Kinematic.Body2Phys);
+    }
+
+    /// <summary>
+    /// A craft tinted, or not: KSA's own picking tint, the one drawn over every other. Its picking
+    /// clears only the parts it tinted itself, so a tint put on here stays until it is taken off.
+    /// </summary>
+    public static void Tint(Vehicle v, bool on)
+    {
+        try
+        {
+            HighlightTint tint = on ? HighlightTint.Purple : HighlightTint.None;
+            ReadOnlySpan<Part> all = v.Parts.Parts;
+            for (int i = 0; i < all.Length; i++)
+            {
+                if (all[i].HighlightedForPicking != tint) all[i].HighlightedForPicking = tint;
+            }
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"could not tint {v.Id}: {e.GetBaseException().Message}");
+        }
+    }
+
     /// <summary>
     /// Every exhaust plume, smoke trail and explosion cloud in this world taken away.
     ///

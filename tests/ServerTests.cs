@@ -339,6 +339,31 @@ public class ServerTests
         rig.For(0.3);
     }
 
+    // A player in the vehicle editor is still flying the craft they went in from: it stays theirs,
+    // and the others are told it is held for the editor, which is what tints it and labels it.
+    [Fact]
+    public void ACraftFlownIntoTheEditorStaysItsPilotsAndSaysSo()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        Beside(rig, a, "Rocket", b, "Rover");
+
+        for (int i = 0; i < 6; i++)
+        {
+            a.Claim("Rocket", controlling: true);
+            a.SendState(Standing("Rocket", Wire.StateFlags.Controlled | Wire.StateFlags.Editing) with { Universe = 5001 + i });
+            rig.For(0.1);
+        }
+        rig.Until(() => b.TrackOf("Rocket").Newest is { } s && (s.Flags & Wire.StateFlags.Editing) != 0,
+                  what: "Bob to hear the rocket is held for the editor");
+
+        b.Claim("Rocket", controlling: true);
+        rig.For(0.5);
+        Assert.Equal(a.Id, b.OwnerOf("Rocket"));
+        Assert.Equal("Rocket", b.Players.Single(p => p.Id == a.Id).Controlling);
+    }
+
     [Fact]
     public void ACraftHeldForBeingNearIsOneCraftAndAnybodysToFly()
     {
