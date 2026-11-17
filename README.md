@@ -415,7 +415,7 @@ docker run -dit --name ksamp -p 50100:50100/udp -v ksamp-data:/data ghcr.io/laur
 
 A server and its players have to speak the same protocol, and a release's notes say when it
 changes that, so the time to update is when your players do. To stay on one release whatever
-comes out after it, name it in place of `latest`: `ksamp-server:v0.21.3`. A release's notes also
+comes out after it, name it in place of `latest`: `ksamp-server:v0.22.0`. A release's notes also
 carry the line pinned to that build's digest, which is what to run on a machine you care about:
 a tag moves and a digest does not.
 [`deploy/Dockerfile`](deploy/Dockerfile) builds one yourself from the repository root, and
