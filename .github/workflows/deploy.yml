@@ -1,0 +1,191 @@
+# The live servers on the release players can install. A release that changes the protocol refuses
+# every game of the one before, and most players install through a mod manager reading the content
+# index, which can take hours to list a release: deployed on publishing, such a release left the
+# servers refusing everybody with nothing for them to update to. tools/deploy-pick.py chooses the
+# newest release speaking the protocol of the newest one the index lists, so a release that keeps
+# the protocol goes out at once and one that changes it waits for its listing.
+#
+# Run by the release once it is published, every half hour after that, and by hand:
+#
+#   gh workflow run Deploy                      # whatever the rule chooses
+#   gh workflow run Deploy -f release=v0.24.0   # this one, listed or not
+#
+# A run whose choice the server already runs changes nothing, the directory included: the Worlds
+# workflow can put a newer directory on between releases, and this would otherwise take it back
+# every half hour. Nor does one that is not by hand ever move the server backwards, or off a build
+# that is no release: either was put there by hand, on purpose.
+name: Deploy
+
+on:
+  schedule:
+    - cron: "7,37 * * * *"
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "A release tag to run, whether or not the content index lists it. Left empty, the rule chooses."
+        type: string
+        default: ""
+  workflow_call:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy:
+    name: The servers behind ksamp.gg
+    runs-on: ubuntu-latest
+    # One at a time with the Worlds workflow, which writes the same state.
+    concurrency:
+      group: infra-server
+      cancel-in-progress: false
+    steps:
+      # A job's `if` cannot read secrets, and a fork, or this repository before they were added,
+      # must not fail every half hour over them.
+      - id: secrets
+        env:
+          HAVE: ${{ secrets.DEPLOY_SSH_KEY != '' && secrets.TF_STATE_ACCESS_KEY != '' }}
+        run: |
+          echo "ok=$HAVE" >> "$GITHUB_OUTPUT"
+          [[ "$HAVE" == "true" ]] || echo "::notice::DEPLOY_SSH_KEY and the TF_STATE_* secrets are not set, so nothing is deployed."
+
+      - if: steps.secrets.outputs.ok == 'true'
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - id: pick
+        if: steps.secrets.outputs.ok == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ASKED: ${{ inputs.release }}
+        run: |
+          if [[ -n "$ASKED" ]]; then
+              if [[ ! "$ASKED" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || ! gh release view "$ASKED" --repo "$GITHUB_REPOSITORY" >/dev/null; then
+                  echo "::error::$ASKED is not a published release."
+                  exit 1
+              fi
+              tag="$ASKED"
+              echo "asked for by hand" > why.txt
+          else
+              tags=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 100 --json tagName --jq '.[].tagName')
+              # shellcheck disable=SC2086
+              tag=$(python3 -I tools/deploy-pick.py $tags 2> why.txt | tail -n 1)
+              cat why.txt
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [[ -z "$tag" ]]; then
+              { echo "### Nothing chosen"; echo; cat why.txt; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - if: steps.pick.outputs.tag != ''
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # By digest, as the release built them: the machine runs one build, not whatever a tag points at.
+      - id: images
+        if: steps.pick.outputs.tag != ''
+        env:
+          OWNER: ${{ github.repository_owner }}
+          TAG: ${{ steps.pick.outputs.tag }}
+        run: |
+          owner=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
+          digest() { docker buildx imagetools inspect "ghcr.io/$owner/$1:$TAG" --format '{{json .Manifest}}' | jq -r .digest; }
+          server=$(digest ksamp-server)
+          directory=$(digest ksamp-directory)
+          if [[ ! "$server" =~ ^sha256: || ! "$directory" =~ ^sha256: ]]; then
+              echo "::error::the images of $TAG are not both in the registry."
+              exit 1
+          fi
+          echo "server=ghcr.io/$owner/ksamp-server@$server" >> "$GITHUB_OUTPUT"
+          echo "directory=ghcr.io/$owner/ksamp-directory@$directory" >> "$GITHUB_OUTPUT"
+
+      - if: steps.pick.outputs.tag != ''
+        uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: "1.9.0"
+
+      - name: The key, and the state's credentials
+        if: steps.pick.outputs.tag != ''
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+          TF_STATE_ENDPOINT: ${{ secrets.TF_STATE_ENDPOINT }}
+          TF_STATE_ACCESS_KEY: ${{ secrets.TF_STATE_ACCESS_KEY }}
+          TF_STATE_SECRET_KEY: ${{ secrets.TF_STATE_SECRET_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
+          umask 077
+          cat > infra/server/backend.hcl <<BACKEND
+          bucket     = "$TF_STATE_BUCKET"
+          endpoints  = { s3 = "$TF_STATE_ENDPOINT" }
+          access_key = "$TF_STATE_ACCESS_KEY"
+          secret_key = "$TF_STATE_SECRET_KEY"
+          BACKEND
+
+      - name: Apply
+        if: steps.pick.outputs.tag != ''
+        working-directory: infra/server
+        env:
+          TAG: ${{ steps.pick.outputs.tag }}
+          SERVER: ${{ steps.images.outputs.server }}
+          DIRECTORY: ${{ steps.images.outputs.directory }}
+          ASKED: ${{ inputs.release }}
+          OWNER: ${{ github.repository_owner }}
+          GH_TOKEN: ${{ github.token }}
+          TF_VAR_ssh_private_key: ~/.ssh/deploy
+          TF_IN_AUTOMATION: "1"
+          # The other worlds on the machine, as infra/server's `worlds` takes them: a repository
+          # variable, since they are not secret and an apply that did not know of them would plan
+          # to take their containers away -- and fail on their volumes, which it may not.
+          WORLDS: ${{ vars.KSAMP_WORLDS }}
+        run: |
+          tofu init -input=false -backend-config=backend.hcl >/dev/null
+          running=$(tofu state show -no-color 'docker_image.server[0]' 2>/dev/null | sed -n 's/^ *name *= *"\(.*\)"$/\1/p' | head -1)
+          if [[ "$running" == "$SERVER" ]]; then
+              { echo "### Already running $TAG"; echo; cat ../../why.txt; } >> "$GITHUB_STEP_SUMMARY"
+              echo "ksamp.gg already runs $TAG"
+              exit 0
+          fi
+          # Forward only, unless asked for by hand. Which release the machine runs is found by its
+          # digest among the recent ones: a build from main put on by hand is none of them, and a
+          # release put on by hand ahead of the index is newer than the choice, and a half-hourly
+          # run must take neither away.
+          if [[ -z "$ASKED" && -n "$running" ]]; then
+              owner=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
+              runs=""
+              for t in $(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --limit 15 --json tagName --jq '.[].tagName'); do
+                  d=$(docker buildx imagetools inspect "ghcr.io/$owner/ksamp-server:$t" --format '{{json .Manifest}}' 2>/dev/null | jq -r .digest)
+                  if [[ "$running" == "ghcr.io/$owner/ksamp-server@$d" ]]; then runs="$t"; break; fi
+              done
+              if [[ -z "$runs" ]]; then
+                  { echo "### Left as it is"; echo; echo "ksamp.gg runs \`$running\`, which is no recent release: put on by hand, so $TAG is not put over it. \`gh workflow run Deploy -f release=$TAG\` does."; } >> "$GITHUB_STEP_SUMMARY"
+                  echo "ksamp.gg runs a build that is no recent release; leaving it"
+                  exit 0
+              fi
+              if [[ "$(printf '%s\n%s\n' "${runs#v}" "${TAG#v}" | sort -V | tail -n 1)" == "${runs#v}" ]]; then
+                  { echo "### Left on $runs"; echo; echo "ksamp.gg runs $runs, which is not older than $TAG, the choice:"; echo; cat ../../why.txt; } >> "$GITHUB_STEP_SUMMARY"
+                  echo "ksamp.gg runs $runs, not older than $TAG; leaving it"
+                  exit 0
+              fi
+          fi
+          if [[ -n "$WORLDS" ]]; then export TF_VAR_worlds="$WORLDS"; fi
+          export TF_VAR_server_image="$SERVER"
+          # The two go up together so that one apply moves the machine to the release. A directory
+          # lists a server of any version since protocol 26, so nothing breaks if they do not.
+          export TF_VAR_directory_image="$DIRECTORY"
+          tofu apply -input=false -auto-approve
+          {
+              echo "### Deployed $TAG"
+              echo
+              cat ../../why.txt
+              echo
+              echo "\`$(tofu output -raw address)\` now runs \`$SERVER\`, and the directory \`$DIRECTORY\`."
+              echo
+              echo "Players need a mod of this release: a game of another version is refused by name."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -33,7 +33,7 @@ on:
 permissions:
   contents: read
 
-# One at a time with a release's deploy, which writes the same state.
+# One at a time with the Deploy workflow, which writes the same state.
 concurrency:
   group: infra-server
   cancel-in-progress: false

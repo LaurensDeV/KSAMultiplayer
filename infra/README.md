@@ -176,7 +176,7 @@ Given `-f directory=ghcr.io/<owner>/ksamp-directory@sha256:...`, the digest the 
 workflow prints, it puts the directory on that build as well: the directory's page changes
 between releases, and nothing a player installs changes with it.
 
-A release's deploy passes the same variable, so a release leaves these worlds as they are: taken
+A deploy passes the same variable, so a release leaves these worlds as they are: taken
 out of it, a release would plan to remove their containers and stop at their volumes. The
 firewall rule and the DNS layer's records are still typed by hand, as above.
 
@@ -205,8 +205,21 @@ no token at all beyond SSH to the machine: the image is public.
 ## Releasing
 
 A `v*` tag goes through **Release**, which builds the image, the mod's zip and the server's
-executables, publishes them together, and then applies this layer with the digest it just built. So
-a release puts itself on the machine: nothing is copied by hand and no digest is pasted anywhere.
+executables and publishes them together. Putting a release on the machine is **Deploy**, which the
+release calls once it is published, which runs every half hour after that, and which can be run
+by hand. Nothing is copied by hand and no digest is pasted anywhere.
+
+Deploy runs the newest release that speaks the protocol of the newest release the content index
+lists (`tools/deploy-pick.py`), the index being what mod managers install from. A release that keeps
+`Wire.Version` refuses nobody, so it goes out as soon as it is published. One that changes it refuses
+every game of the one before, so it waits until players can install it: the index can take hours to
+list a release, and the first half-hourly run after it does deploys it. To put one on regardless:
+
+    gh workflow run Deploy -f release=v0.24.0
+
+A run whose choice the machine already runs changes nothing, the directory included. A run that is
+not by hand never moves the server backwards, nor off a build that is no recent release, since
+either was put there by hand on purpose.
 
 It needs five repository secrets, and without them the deploy is skipped with a notice rather than
 failing -- the release itself still happens, and `tofu apply` by hand still works:
@@ -227,7 +240,7 @@ the version and not a fault of the deploy.
 A push to `main` that touches the server still builds an image through **Server image**, but
 deploys nothing: what the machine runs is a release.
 
-To deploy by hand anyway -- an image from `main`, or a release whose deploy failed:
+To deploy by hand anyway -- an image from `main`, which the half-hourly runs then leave alone:
 
 1. Take both digests from the runs' summaries into `infra/server/.env`:
    `export TF_VAR_server_image=ghcr.io/<owner>/ksamp-server@sha256:...`
