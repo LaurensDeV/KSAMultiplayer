@@ -909,11 +909,14 @@ public sealed class GameServer : IDisposable
             UniverseClock.Set(universe, now);
             Log($"universe time starts at {universe:F0} s, from {p.Name}'s world");
         }
-        // What was made and what went after the world it loaded was saved.
+        // What was made and what went after the world it loaded was saved. Only another player's:
+        // a game builds a craft from its definition only for the player who has it, so one that
+        // was described by somebody since gone was taken down for a rebuild that never came, and
+        // the joiner's next save took it out of the world.
         double since = (_world?.Universe ?? universe) - SaveMarginSeconds;
         foreach ((string key, Craft c) in _crafts)
         {
-            if (c.Definition is not null && c.Universe >= since && c.Owner != p.Id) p.Link.Send(c.Definition, now);
+            if (c.Definition is not null && c.Universe >= since && c.Owner != 0 && c.Owner != p.Id) p.Link.Send(c.Definition, now);
         }
         foreach ((string key, double at) in _gone) if (at >= since) _udp.Send(new Wire.Gone(key), p.At);
         foreach (Wire.Owners page in OwnerPages()) _udp.Send(page, p.At);

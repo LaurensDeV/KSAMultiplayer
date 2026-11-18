@@ -298,6 +298,32 @@ public class ServerTests
     }
 
     [Fact]
+    public void ACraftDescribedBySomebodyWhoHasLeftIsNotHandedToThoseWhoJoinLater()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        // Bob stands beside two craft of the saved world and says how they are built, and leaves
+        // before anybody saves again; Alice is flying the other.
+        b.Claim("Gort", controlling: false, made: false, near: true);
+        rig.Until(() => rig.Server.OwnerOf("Gort") == b.Id, what: "Bob to hold the craft he is near");
+        b.Upload(new Blob(BlobKind.Vehicle, "Gort", b.Id, 5001, [1, 2, 3]));
+        a.Claim("Rocket", controlling: true, made: false);
+        a.Upload(new Blob(BlobKind.Vehicle, "Rocket", a.Id, 5001, [4, 5, 6]));
+        rig.Until(() => a.Blobs.Any(x => x.Key == "Gort") && b.Blobs.Any(x => x.Key == "Rocket"), what: "each to hear of the other's craft");
+        b.Dispose();
+        rig.Clients.Remove(b);
+        rig.Until(() => rig.Server.OwnerOf("Gort") == 0, what: "Bob's craft to be let go of");
+
+        // Carol's game would take Gort down to build it from that word, and nothing builds a craft
+        // that is nobody's: she keeps the one in the world instead.
+        Client c = JoinAndLoad(rig, "Carol");
+        rig.Until(() => c.Blobs.Any(x => x.Kind == BlobKind.Vehicle && x.Key == "Rocket"), what: "Carol to get Alice's rocket");
+        rig.For(0.3);
+        Assert.DoesNotContain(c.Blobs, x => x.Kind == BlobKind.Vehicle && x.Key == "Gort");
+    }
+
+    [Fact]
     public void ACraftThatIsGoneIsSaidToBeGoneToEveryoneAndToThoseWhoJoinLater()
     {
         using Rig rig = new();

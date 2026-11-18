@@ -165,7 +165,9 @@ stranger sent it.
   that name, and keeps flying it under its own.
 - **How each new craft is built**: the definition of every craft made since the world was saved, handed
   to every game in it and to each game that loads that world later; and which craft have gone since.
-  A new save drops what it already holds.
+  A new save drops what it already holds. A game that loads the world later is handed only the
+  definitions of craft another player has: one described by somebody who has since left is nobody's,
+  and its shape after the last save went with them.
 
 It passes every state on to every other game in the world, checks a state comes from the craft's
 owner, and passes chat on. It refuses a player with another KSA build than it was built for (`KsaBuild` in `Directory.Build.props`, written into the server when it is built and checked against the assemblies whenever the mod is; the operator's `ksa-build` says another), one playing a different celestial system (a world of Sol
@@ -218,7 +220,9 @@ shared one.
      (`Vehicle.CreateVehicleFromSaveGameData`, or `KittenEva.CreateKittenFromSaveData` for a kitten),
      one a frame, and then remembered by name: KSA does not list a craft the moment it is made, so a
      world asked whether it holds one says no for a frame or two and would otherwise be told to build
-     it again. A definition whose bytes are the ones already held is ignored rather than acted on, for
+     it again. A definition of a craft standing here that no other player has is held, not acted on,
+     until somebody has it: only another player's craft is built from one, so the craft would be
+     taken down and nothing put back. A definition whose bytes are the ones already held is ignored rather than acted on, for
      the same reason: tearing the craft down to build it back is how a world comes to hold two of it,
      and KSA throws when a physics step meets one craft twice. The name it is built under has to be
      one nothing in this world answers to, craft or body alike: KSA keeps everything in one lookup
@@ -1349,6 +1353,16 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   mouse. No part can be *placed* from the bridge, so part placement, symmetry and staging edits stay
   out of reach. The bridge's `save` used to answer `ok` while KSA wrote nothing, and asks
   `World.Refuses()` first now.
+- **A craft nobody has, kept by the next player to join.** On `ksamp.gg` a player stood beside three
+  protected craft, said how they were built, and left before any save; the next to join was handed
+  those definitions, logged `rebuilding NewRocket_3: nothing was known of it` and the two others,
+  built none of them, and saved a world without them. The server no longer hands such a definition
+  to a joiner, and the game no longer takes a craft down for one that no other player has. The
+  server half is driven over loopback; neither has been seen in a game.
+- **A docking after the last save, by a player who then leaves.** The consumed craft is said gone to
+  whoever joins next, but the survivor's new shape went with the player, so the joiner has the
+  survivor as it was saved and neither craft's parts together. Seen on `ksamp.gg` with `RCS Depot`
+  docked into another player's craft two minutes after a save. Not fixed.
 
 ## What it does not do
 

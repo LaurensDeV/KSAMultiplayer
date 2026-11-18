@@ -121,6 +121,9 @@ internal static class Sync
     private const double BuiltLookAgainSeconds = 0.5;
     private const double RebuildHurriedEverySeconds = 1.0;
 
+    // Whether PlaceOthers would build this craft again if the one standing here were taken down.
+    private static bool AnothersToBuild(Client c, string key) => c.OwnerOf(key) is var o && o != 0 && o != c.Id;
+
     private static double StandingWait(string key) => Hurried.Contains(key) ? RebuildHurriedEverySeconds : RebuildStandingEverySeconds;
 
     // Craft taken away to be built again in another shape, until they have been. The wait between
@@ -1760,12 +1763,15 @@ internal static class Sync
         foreach ((string key, byte[] data) in Deferred.ToArray())
         {
             if (Wall() - Rebuilt.GetValueOrDefault(key) < StandingWait(key)) continue;
-            Deferred.Remove(key);
             if (!here.TryGetValue(key, out Vehicle? waited) || Owned.ContainsKey(key) || MadeHere.Contains(waited))
             {
                 // No longer ours to rebuild: swept, taken over, or gone.
+                Deferred.Remove(key);
                 continue;
             }
+            // Still nobody's: kept for whoever takes it up.
+            if (!AnothersToBuild(c, key)) continue;
+            Deferred.Remove(key);
             Rebuilt[key] = Wall();
             Definitions[key] = data;
             DefinedAt[key] = DeferredAt.GetValueOrDefault(key);
@@ -1804,7 +1810,10 @@ internal static class Sync
             // filled a world with exploding copies. Kept rather than dropped, and taken up when the
             // wait is over, because the craft may never change shape again and the last word about
             // it is the one that matters.
-            if (standing && Wall() - Rebuilt.GetValueOrDefault(blob.Key) < StandingWait(blob.Key))
+            // Nor one that is nobody's, or not yet known to be anybody's: only another player's craft
+            // is ever built from its definition (PlaceOthers), so the one standing here would go and
+            // nothing would replace it. Held instead, and taken up once somebody has it.
+            if (standing && (!AnothersToBuild(c, blob.Key) || Wall() - Rebuilt.GetValueOrDefault(blob.Key) < StandingWait(blob.Key)))
             {
                 Deferred[blob.Key] = blob.Data;
                 DeferredAt[blob.Key] = blob.Universe;
