@@ -51,6 +51,13 @@ internal static class DiscordLogin
     /// <summary>What became of the last login, for the windows: empty when there is nothing to say.</summary>
     public static string Said { get; private set; } = "";
 
+    /// <summary>
+    /// The Discord name of a login just made, until the window has taken it for the nickname: a
+    /// player who logs in is offered the name they are known by on Discord, once, and may change it
+    /// after as any other.
+    /// </summary>
+    public static string NewName { get; set; } = "";
+
     /// <summary>Whether the browser is out at Discord and this game is waiting for it to come back.</summary>
     public static bool Waiting => _waiting is not null;
 
@@ -109,6 +116,7 @@ internal static class DiscordLogin
                 Identity.Keep(key, cert);
                 _key = null;
                 Said = "";
+                NewName = Identity.Who?.Name ?? "";
                 Log.Info($"logged in with Discord as {Identity.Who?.Name}");
             }
             else Said = "the login came back for another key: try again";

@@ -430,7 +430,8 @@ only to know who they are, and comes back to the game on port 50180 of their own
 browser that opens is not the one they use Discord in, **Copy link** puts the login's address on the
 clipboard. The login lasts 30 days, and **Log out** forgets it. It is kept in
 `%LOCALAPPDATA%\KSAMultiplayer\discord.json`, for the Windows account rather than for one StarMap or
-Borea instance, so every instance on the computer is logged in at once.
+Borea instance, so every instance on the computer is logged in at once. Logging in puts the Discord name in
+**Nickname**, which can be changed after as ever.
 
 From then on every server they join is told who they are, with nothing to press: a server with
 Discord admins makes one of them an admin on the spot, and hands that machine a token as `op` does.

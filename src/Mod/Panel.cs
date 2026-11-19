@@ -1437,6 +1437,12 @@ internal static class Panel
     /// <summary>Log in, or who this machine is and Log out, or the login under way: the same wherever it is drawn.</summary>
     private static void DiscordControls()
     {
+        if (DiscordLogin.NewName.Trim() is { Length: > 0 } discordName)
+        {
+            NameText.SetValue(Wire.Clip(discordName, Wire.NameChars));
+            DiscordLogin.NewName = "";
+            Save();
+        }
         // On the line of the field beside it rather than a few pixels above, which is where plain
         // text sits next to a framed control.
         ImGui.AlignTextToFramePadding();
