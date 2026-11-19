@@ -153,6 +153,25 @@ public class DiscordTests
         Assert.False(c.Admin);
     }
 
+    // A server in a container behind a router sees none of its own public addresses: the name it is
+    // listed under is its own, and so is every address that name leads to.
+    [Fact]
+    public void TheNameAServerIsListedUnderIsItsOwn()
+    {
+        FakeLogin login = new();
+        using Rig rig = new(new ServerOptions { AdvertiseAs = "rogue.example" }, discord: login);
+        rig.Server.OpDiscord(Alice);
+        Client c = Joined(rig, "Alice");
+        LogIn(rig, c, login.Proof(Alice, c.DiscordNonce, aud: "Rogue.Example:50100"));
+        Assert.Equal(Alice, c.Discord!.Id);
+        rig.Until(() => c.Admin, what: "Alice to be an admin");
+
+        // By what the name resolves to, as another name for the same machine would.
+        Client d = Joined(rig, "Bob");
+        LogIn(rig, d, login.Proof(Bob, d.DiscordNonce, aud: "203.0.113.9"));
+        Assert.Equal(Bob, d.Discord!.Id);
+    }
+
     // And with the right address, a proof made for one player's join is no good for another's.
     [Fact]
     public void AProofForAnotherJoinIsRefused()

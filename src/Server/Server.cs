@@ -545,6 +545,12 @@ public sealed class GameServer : IDisposable
         Task<LoginKey> key = LoginKey(), fresh = key;
         ILoginService login = Login!;
         string nonce = p.DiscordNonce;
+        // The name the operator says this server is reached by, which is this server's whatever
+        // the machine can see of itself: in a container behind a router, with the login service on
+        // the same machine, neither its own interfaces nor where the service saw it from is the
+        // address players reach it at. The operator's word for their own server, which no other
+        // server can say for it.
+        string named = Options.AdvertiseAs;
         Task.Run(async () =>
         {
             using CancellationTokenSource within = new(TimeSpan.FromSeconds(DiscordWithinSeconds));
@@ -561,9 +567,10 @@ public sealed class GameServer : IDisposable
                     : DateTimeOffset.UtcNow.ToUnixTimeSeconds() > said.Exp ? "your Discord login has run out: log in again"
                     : !said.Signed(nonce, asked.Aud, asked.Signature) ? "that Discord login wasn't proved for this join"
                     : null;
-                if (why is null)
+                if (why is null && !Names(named, asked.Aud))
                 {
                     HashSet<IPAddress> mine = Addresses.Mine((await fresh).Seen);
+                    if (named.Length > 0) mine.UnionWith((await login.Resolve(named, within.Token)).Select(Addresses.Plain));
                     IPAddress[] led = await login.Resolve(asked.Aud, within.Token);
                     if (!led.Any(ip => mine.Contains(Addresses.Plain(ip)))) why = $"that Discord login was proved for {asked.Aud}, which isn't this server";
                 }
@@ -575,6 +582,11 @@ public sealed class GameServer : IDisposable
             }
         });
     }
+
+    // Whether an address a player typed is the name this server is listed under: the host, whatever
+    // port was typed after it.
+    private static bool Names(string named, string aud) =>
+        named.Length > 0 && string.Equals(Addresses.Split(aud).Host, named.Trim(), StringComparison.OrdinalIgnoreCase);
 
     // From a thread of the pool; the next proof on the server's own thread starts from it.
     private Task<LoginKey> Fetched(ILoginService login, CancellationToken cancel)
