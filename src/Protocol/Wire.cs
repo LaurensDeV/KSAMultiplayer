@@ -230,6 +230,9 @@ public static class Wire
     public const int ChannelChars = 48, ExtraBytes = 128;
     public const int ChatChars = 200;
 
+    /// <summary>The most a <see cref="Note"/> says: a line of a game's own log, which is longer than anything typed.</summary>
+    public const int NoteChars = 600;
+
     /// <summary>The longest an admin's token is: 32 random bytes in base64url come to 43 characters.</summary>
     public const int TokenChars = 64;
 
@@ -321,6 +324,7 @@ public static class Wire
         Extra = 28,
         Ask = 29,
         Facts = 30,
+        Note = 31,
     }
 
     /// <summary>Where a warp has got to: nobody has asked, somebody has and is waiting, or it is running.</summary>
@@ -660,6 +664,15 @@ public static class Wire
     public sealed record Command(string Line) : Message(Kind.Command);
 
     /// <summary>
+    /// Something a game saw that only it could see, for the server's log: a touch of two docking
+    /// ports that docked nothing happens in one world and is told to nobody, so whoever runs a
+    /// server could learn of it only from a log a player thought to send. Sent once and not again
+    /// if lost; a server that does not know the kind drops it as it drops any datagram it cannot
+    /// read, so a game may say it to a server older than itself.
+    /// </summary>
+    public sealed record Note(string Text) : Message(Kind.Note);
+
+    /// <summary>
     /// What a player is on this server, said by the server until the game says the same back. A
     /// game answers a token only once it is written down, so a server that has heard one back
     /// knows the one it replaces can stop working.
@@ -857,6 +870,9 @@ public static class Wire
             case Command c2:
                 w.Text(c2.Line, ChatChars);
                 break;
+            case Note n2:
+                w.LongText(n2.Text, NoteChars);
+                break;
             case Op o:
                 w.U8(o.Admin ? (byte)1 : (byte)0);
                 w.Text(o.Token, TokenChars);
@@ -928,6 +944,7 @@ public static class Wire
                 Kind.Swept => new Swept(r.Text(KeyChars), r.U32()),
                 Kind.Chat => new Chat(r.U8(), r.Text(ChatChars)),
                 Kind.Command => new Command(r.Text(ChatChars)),
+                Kind.Note => new Note(r.LongText(NoteChars)),
                 Kind.Op => new Op(r.U8() != 0, r.Text(TokenChars)),
                 Kind.Snapshot => new Snapshot(r.Text(200)),
             Kind.NoWorld => new NoWorld(r.Text(200)),

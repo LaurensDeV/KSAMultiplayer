@@ -844,7 +844,7 @@ internal static class Sync
     public static bool MayDock(Vehicle one, Vehicle other)
     {
         if (_client is not { Joined: true } c || Now != Stage.Playing) return true;
-        if (ToRemove.Contains(one) || ToRemove.Contains(other)) return false;
+        if (ToRemove.Contains(one) || ToRemove.Contains(other)) return Refused(one, other, "one of them is on its way out of this world");
         // By the roster as well as by what is held here for them. A copy is not held for anybody
         // until the frame after it is built: two craft that had just undocked were built here port
         // to port, a tenth of a second after they parted, and this game docked them again before
@@ -854,14 +854,15 @@ internal static class Sync
             || (c.OwnerOf(KeyOf(v)) is var owner && owner != 0 && owner != c.Id && !Owned.ContainsKey(KeyOf(v)) && !MadeHere.Contains(v));
         bool theirs = Theirs(one), others = Theirs(other);
         if (!theirs && !others) return true;
-        if (theirs && others) return false;
+        if (theirs && others) return Refused(one, other, "both are other players', and one of their games docks them");
         Vehicle mine = theirs ? other : one;
         // And this player's in earnest. A craft held only for being near is held so that it is
         // in one place, and docking another player's craft with it is that player's game's to do:
         // a game that was only watching docked the pair, and was given the craft its player had
         // never flown.
         if (ReferenceEquals(mine, World.Controlled)) return true;
-        return (Owned.ContainsKey(KeyOf(mine)) || MadeHere.Contains(mine)) && !c.NearOf(KeyOf(mine));
+        if ((Owned.ContainsKey(KeyOf(mine)) || MadeHere.Contains(mine)) && !c.NearOf(KeyOf(mine))) return true;
+        return Refused(one, other, $"{KeyOf(theirs ? one : other)} is another player's and {KeyOf(mine)} is not this player's own, so that player's game docks them");
     }
 
     /// <summary>
@@ -884,6 +885,39 @@ internal static class Sync
         if (World.IsAlive(gone) || !World.IsAlive(into)) return;
         DockedInto[into] = 0;
         JustDocked.Enqueue((gone, into, KeyOf(gone), KeyOf(into)));
+    }
+
+    // One line a touch, more or less: two craft pressed together touch for as long as they are.
+    private const double PortContactEverySeconds = 2.0, RefusedEverySeconds = 5.0;
+    private static double _portContactNext, _refusedNext;
+
+    // A touch of two ports that docked nothing, written down for whoever is sent the log: nothing
+    // else in a game or on a server knows it happened. Not in the frame of a docking, where one
+    // of the two has just gone and the ports that are left are the wrong two to speak of.
+    private static void NotePortContact(Vehicle? flown)
+    {
+        if (flown is null || !JustDocked.IsEmpty || DockedHere.Count > 0 || Wall() < _portContactNext) return;
+        if (World.PortContact(flown) is not { } touch) return;
+        _portContactNext = Wall() + PortContactEverySeconds;
+        Noted($"ports touched and did not dock: {touch}");
+    }
+
+    // Into this game's log and the server's: whoever runs the server is who is asked why it happened.
+    private static void Noted(string what)
+    {
+        Log.Info(what);
+        _client?.Note(what);
+    }
+
+    // KSA asks again at every contact, which is every step two refused craft stay pressed together.
+    private static bool Refused(Vehicle one, Vehicle other, string why)
+    {
+        if (Wall() >= _refusedNext)
+        {
+            _refusedNext = Wall() + RefusedEverySeconds;
+            Noted($"refused to dock {KeyOf(one)} with {KeyOf(other)}: {why}");
+        }
+        return false;
     }
 
     // Taken up by the frame and not where KSA docks them, which is not a moment this game's own
@@ -1911,6 +1945,7 @@ internal static class Sync
         }
         TakeOwnDockings(c);
         TakeDockings(c, here, flown);
+        NotePortContact(flown);
         // What was flown may have been taken into another player's craft, or given up to them.
         if (flown is not null && (ToRemove.Contains(flown) || !ReferenceEquals(flown, Flown))) flown = null;
         LeaveWhatWasTheirs(c, flown);

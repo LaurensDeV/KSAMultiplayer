@@ -424,6 +424,23 @@ from every world, while its owner flew on with the parts they had. A craft docke
 flies is docked, and the craft that went into it is claimed so it can be said gone -- only its
 owner may say so, and it had none.
 
+**A touch of two ports that docks nothing is written down, here and on the server.** KSA docks on
+a contact only where the two ports are under half a metre apart, within ten degrees of facing each
+other and closing with the port's latching energy, and says nothing of a contact that fell short:
+the craft bounce, in one world, and nobody else is told. `World.PortContact` reads KSA's own flag
+for a hull that met another in the step just solved and, where a free port of each craft is
+within a metre and a half of the other, says which ports, how far along and across the line out
+of the port they were, the tilt and the roll between them, how fast they were closing, both
+masses, and which of KSA's conditions was not met -- or that all of them were, which is the case
+worth being sent. `Sync.MayDock` says why when it refuses a docking. Both go to the game's log and
+to the server's (`Wire.Note`, a line of text a game says for the operator's log): whoever runs a
+server is who is asked why a docking failed, and the only account of it was in a log on a player's
+machine that the next start of the game threw away. The server writes a note down under the
+player's name, clipped and with nothing in it that is not print, from a game that is in the
+world, and five at once and one every five seconds after: it is a line in the operator's log on a
+player's word. `Wire.Note` is a kind a server of the same version that has never heard of it
+drops unread, so `Wire.Version` did not move for it.
+
 A craft a game made is never taken on another player's word while its name is unanswered, because
 another player's craft can be standing under that name; once the server has said the craft is this
 player's, the name is the craft's, and whoever is given it next is followed like any other owner.

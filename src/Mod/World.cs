@@ -1369,6 +1369,85 @@ internal static class World
         }
     }
 
+    // KSA's own flag for a craft whose hull met another's in the step just solved. It is on the
+    // solver's side of the craft and has no public way in.
+    private static readonly System.Reflection.FieldInfo? SolverState = AccessTools.Field(typeof(Vehicle), "_threadWorkerUpdateState");
+
+    private static bool TouchedACraft(Vehicle v) => SolverState?.GetValue(v) is VehicleUpdateState { HadVehicleContactThisFrame: true };
+
+    // What DockingPort asks of two ports that touch, beside its own latching energy.
+    private const double LatchWithinM = 0.5, LatchWithinDeg = 10.0, PortsNearM = 1.5, PortCraftWithinM = 300.0;
+
+    /// <summary>
+    /// What stood between two ports and a docking, where a craft has touched another with a free
+    /// port of each close together and both craft are still there. Null where it touched nothing
+    /// or no two ports were near.
+    ///
+    /// <para>KSA docks two craft on a contact between their ports only where the ports are under
+    /// half a metre apart, within ten degrees of facing each other, and closing with at least the
+    /// port's latching energy, and says nothing of a contact that fell short. A player then sees
+    /// two craft bounce and has nothing to tell anybody but that it did not dock; and where every
+    /// one of those held and the craft bounced all the same, that is the report worth having.</para>
+    /// </summary>
+    public static string? PortContact(Vehicle craft)
+    {
+        try
+        {
+            if (!IsAlive(craft) || !TouchedACraft(craft)) return null;
+            (Vehicle Other, DockingPort Mine, DockingPort Theirs, int I, int J, double Apart)? nearest = null;
+            foreach (Vehicle other in Vehicles())
+            {
+                if (ReferenceEquals(other, craft) || !IsAlive(other) || !TouchedACraft(other) || Between(craft, other) > PortCraftWithinM) continue;
+                int i = 0;
+                foreach (DockingPort mine in craft.Parts.Modules.Get<DockingPort>())
+                {
+                    int j = 0;
+                    foreach (DockingPort theirs in other.Parts.Modules.Get<DockingPort>())
+                    {
+                        double apart = Vec(PortAt(craft, mine) - PortAt(other, theirs));
+                        if (!mine.Docked && !theirs.Docked && apart < (nearest?.Apart ?? PortsNearM)) nearest = (other, mine, theirs, i, j, apart);
+                        j++;
+                    }
+                    i++;
+                }
+            }
+            if (nearest is not { } n) return null;
+
+            double3 axis = Facing(n.Other, n.Theirs), facing = Facing(craft, n.Mine);
+            double3 between = PortAt(craft, n.Mine) - PortAt(n.Other, n.Theirs);
+            double along = double3.Dot(between, axis), across = Vec(between - (axis * along));
+            double tilt = Math.Acos(Math.Clamp(-double3.Dot(facing, axis), -1.0, 1.0)) * 180.0 / Math.PI;
+            // About the line between them, by where each port's own second axis lies across it.
+            double3 Across(Vehicle v, DockingPort port)
+            {
+                double3 y = new double3(0.0, 1.0, 0.0).Transform(port.Connector.Asmb2VehicleAsmb.Concatenate(v.Asmb2Cce));
+                return y - (axis * double3.Dot(y, axis));
+            }
+            double3 mineAcross = Across(craft, n.Mine), theirsAcross = Across(n.Other, n.Theirs);
+            double roll = Vec(mineAcross) < 1e-6 || Vec(theirsAcross) < 1e-6 ? double.NaN
+                : Math.Acos(Math.Clamp(double3.Dot(mineAcross, theirsAcross) / (Vec(mineAcross) * Vec(theirsAcross)), -1.0, 1.0)) * 180.0 / Math.PI;
+            // KSA measures the closing along the lighter craft's port, and against that port's latch.
+            bool lighter = craft.TotalMass <= n.Other.TotalMass;
+            double closing = double3.Dot(craft.GetVelocityCce() - n.Other.GetVelocityCce(), lighter ? facing : -axis);
+            double reduced = (double)craft.TotalMass * n.Other.TotalMass / ((double)craft.TotalMass + n.Other.TotalMass);
+            double energy = closing > 0.0 ? 0.5 * reduced * closing * closing : 0.0, latch = (lighter ? n.Mine : n.Theirs).LatchingKineticEnergy;
+
+            List<string> short_ = [];
+            if (n.Apart >= LatchWithinM) short_.Add($"the ports were {n.Apart:F2} m apart and KSA latches under {LatchWithinM} m");
+            if (tilt > LatchWithinDeg) short_.Add($"they were {tilt:F0} degrees off facing each other and KSA allows {LatchWithinDeg:F0}");
+            if (closing <= 0.0) short_.Add("they were no longer closing");
+            else if (energy < latch) short_.Add($"they met with {energy:F0} J and the port latches at {latch:F0} J");
+            string why = short_.Count > 0 ? string.Join(", ", short_) : "everything KSA asks of two ports held when this was read";
+            return $"{craft.Id} ({craft.TotalMass:F0} kg) port {n.I + 1} of {craft.Parts.Modules.Get<DockingPort>().Length} on {n.Mine.Parent.FullPart.DisplayName}, "
+                 + $"{n.Other.Id} ({n.Other.TotalMass:F0} kg) port {n.J + 1} of {n.Other.Parts.Modules.Get<DockingPort>().Length} on {n.Theirs.Parent.FullPart.DisplayName}: "
+                 + $"{along:F2} m along and {across:F2} m across, {tilt:F1} degrees of tilt, {roll:F0} of roll, closing at {closing:F2} m/s -- {why}";
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     private static DockingPort? FreePort(Vehicle v)
     {
         foreach (DockingPort port in v.Parts.Modules.Get<DockingPort>()) if (!port.Docked) return port;

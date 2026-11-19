@@ -128,6 +128,10 @@ public sealed class GameServer : IDisposable
         public bool Loaded { get; set; }
         public double LoadedAt { get; set; }
 
+        /// <summary>How many notes this game may still have written down, and when that was last counted.</summary>
+        public double Notes { get; set; } = NotesAtOnce;
+        public double NotesAt { get; set; } = now;
+
         /// <summary>How far behind the server's time this player's world was when it last said, s.</summary>
         public double Late { get; set; }
 
@@ -678,6 +682,17 @@ public sealed class GameServer : IDisposable
                 if (text.Length == 0) return;
                 Log($"<{player.Name}> {text}");
                 Broadcast(new Wire.Chat(player.Id, text), _ => true);
+                return;
+            // Written down as said, by a game that is in the world, and only so many: it is a line
+            // in the operator's log on a player's word, and a game that said one every frame
+            // would be the whole of it.
+            case Wire.Note note when player.Loaded:
+                string seen = Wire.Clip(note.Text, Wire.NoteChars);
+                player.Notes = Math.Min(NotesAtOnce, player.Notes + ((arrived - player.NotesAt) * NotesASecond));
+                player.NotesAt = arrived;
+                if (seen.Length == 0 || player.Notes < 1.0) return;
+                player.Notes -= 1.0;
+                Log($"{player.Name}'s game notes: {seen}");
                 return;
             case Wire.Command asked:
                 string line = Wire.Clip(asked.Line, Wire.ChatChars).Trim();
@@ -2241,6 +2256,9 @@ public sealed class GameServer : IDisposable
         }
         return unique;
     }
+
+    // How many notes a game may have written down in a burst, and how fast that fills again.
+    private const double NotesAtOnce = 5.0, NotesASecond = 0.2;
 
     private void Log(string what) => Said.Enqueue(what);
 

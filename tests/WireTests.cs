@@ -83,6 +83,7 @@ public class WireTests
         Assert.Equal(new Wire.Hello("Jeb", "2026.11.10.5801", "Core,KSAMultiplayer", "SolLite", "pw", "t0ken"),
                      RoundTrip(new Wire.Hello("Jeb", "2026.11.10.5801", "Core,KSAMultiplayer", "SolLite", "pw", "t0ken")));
         Assert.Equal(new Wire.Command("clear Rocket_*"), RoundTrip(new Wire.Command("clear Rocket_*")));
+        Assert.Equal(new Wire.Note(new string('n', Wire.NoteChars)), RoundTrip(new Wire.Note(new string('n', Wire.NoteChars))));
         Assert.Equal(new Wire.Op(true, "t0ken"), RoundTrip(new Wire.Op(true, "t0ken")));
         Assert.Equal(new Wire.Op(false, ""), RoundTrip(new Wire.Op(false, "")));
         Assert.Equal(new Wire.Welcome(3, "", "Moon base", true), RoundTrip(new Wire.Welcome(3, "", "Moon base", true)));

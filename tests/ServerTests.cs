@@ -485,6 +485,23 @@ public class ServerTests
     }
 
     [Fact]
+    public void WhatAGameNotesIsInTheServersLogAndOnlySoMuchOfIt()
+    {
+        // A touch of two ports that docked nothing is seen by one game and told to nobody, so it
+        // is in the operator's log only if that game says it. On a player's word, though: said
+        // every frame, one game's notes would be all the log held.
+        using Rig rig = new();
+        Client a = Seed(rig);
+        a.Note("ports touched and did not dock: Capsule onto Station\nand a second line");
+        rig.Until(() => rig.Server.Said.Any(s => s.Contains("Alice's game notes: ports touched")), what: "the note to be written down");
+        Assert.Contains(rig.Server.Said, s => s.EndsWith("Capsule onto Stationand a second line"));
+
+        for (int i = 0; i < 50; i++) a.Note($"again {i}");
+        rig.For(0.5);
+        Assert.InRange(rig.Server.Said.Count(s => s.Contains("game notes: again")), 1, 5);
+    }
+
+    [Fact]
     public void ADockingTakesNoCraftThatIsNotBesideTheOther()
     {
         // A game's word that two craft docked takes one from whoever had it. Taken on trust, a

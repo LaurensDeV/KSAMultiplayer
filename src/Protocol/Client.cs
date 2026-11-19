@@ -453,6 +453,13 @@ public sealed class Client : IDisposable
         if (Joined && t.Length > 0) Send(new Wire.Command(t));
     }
 
+    /// <summary>Tells the server something for its log that only this game saw. See <see cref="Wire.Note"/>.</summary>
+    public void Note(string text)
+    {
+        string t = Wire.Clip(text, Wire.NoteChars);
+        if (Joined && t.Length > 0) Send(new Wire.Note(t));
+    }
+
     /// <summary>Handles what has arrived and sends what is due. Once a frame.</summary>
     public void Update()
     {
