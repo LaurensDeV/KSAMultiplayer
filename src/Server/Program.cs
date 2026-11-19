@@ -313,7 +313,13 @@ Say($"ksamp-server {Version}, speaking protocol {Wire.Version}"
 Say($"settings: {configPath}");
 Say($"{options.Name}: listening on UDP {(bind?.ToString() ?? "*")}:{server.Port}, up to {options.MaxPlayers} players{(options.Password.Length > 0 ? ", with a password" : "")}");
 Say(server.HasWorld ? "a world is ready to hand out" : "no world yet: the first player to join gives the server theirs");
-if (server.DiscordOn) Say($"players log in with Discord through {options.DiscordLogin}, for {server.Admins.Names.Count(n => server.Admins.DiscordOf(n).Length > 0)} Discord admin(s)");
+if (server.DiscordOn)
+{
+    // Every Discord user given a role, by the settings and by admins.json alike, each once.
+    string[] admins = [.. options.DiscordAdmins.Concat(server.Admins.Names.Where(n => server.Admins.RoleOf(n) == Wire.Role.Admin).Select(server.Admins.DiscordOf)).Where(d => d.Length > 0).Distinct()];
+    string[] trusted = [.. options.DiscordTrusted.Concat(server.Admins.Names.Where(n => server.Admins.RoleOf(n) == Wire.Role.Trusted).Select(server.Admins.DiscordOf)).Where(d => d.Length > 0).Distinct().Except(admins)];
+    Say($"players log in with Discord through {options.DiscordLogin}: {admins.Length} Discord admin{(admins.Length == 1 ? "" : "s")} and {trusted.Length} trusted");
+}
 // Said at every start whichever way it is set, so an operator reading the log at least learns that
 // the setting is there. A list nobody opts into is an empty list.
 Say(announcer.Standing());
