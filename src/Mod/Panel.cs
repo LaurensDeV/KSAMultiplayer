@@ -1467,7 +1467,9 @@ internal static class Panel
             // A dot drawn rather than typed: a font without the glyph draws a box.
             float2 at = ImGui.GetCursorScreenPos();
             float line = ImGui.GetTextLineHeight(), r = MathF.Round(line * 0.2f);
-            ImGui.GetWindowDrawList().AddCircleFilled(new float2(at.X + r, at.Y + (line * 0.5f)), r, (ImColor8)Blurple);
+            // Down by the frame padding the text is set down by, to sit on its middle.
+            float middle = at.Y + ImGui.GetStyle().FramePadding.Y + (line * 0.5f);
+            ImGui.GetWindowDrawList().AddCircleFilled(new float2(at.X + r, middle), r, (ImColor8)Blurple);
             ImGui.SetCursorPosX(ImGui.GetCursorPosX() + (r * 2f) + 8f);
             ImGui.TextColored(in BlurpleText, me.Name);
             if (ImGui.IsItemHovered())
