@@ -143,6 +143,7 @@ internal static class Panel
         if (!TheConfigurationIsAsking()) Sync.AnsweredAhead();
         PadsWindow();
         WarpWindow();
+        ServerListWindow();
         if (atACraft)
         {
             Scoreboard();
@@ -473,7 +474,20 @@ internal static class Panel
         // bar moves the cursor down for its own line, and the dot sat high of centre by that much.
         ImGui.SetCursorPosX(from + gap);
         float2 at = ImGui.GetCursorScreenPos();
-        ImGui.TextColored(in ConsoleStyle.TextMuted, where);
+        // Clicked, it opens the Multiplayer window, or shuts it: the badge is where a player looks
+        // for the server they are in, so it is where they reach for it too.
+        bool hovered = ImGui.IsMouseHoveringRect(new float2(at.X - gap, at.Y), at + ImGui.CalcTextSize(where));
+        float4 shade = hovered ? ConsoleStyle.TextPrimary : ConsoleStyle.TextMuted;
+        ImGui.TextColored(in shade, where);
+        if (hovered)
+        {
+            ImGui.SetTooltip(Visible ? "Hide the Multiplayer window" : "Show the Multiplayer window");
+            if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+            {
+                Visible = !Visible;
+                Save();
+            }
+        }
         float2 top = ImGui.GetItemRectMin(), bottom = ImGui.GetItemRectMax();
         ImGui.GetWindowDrawList().AddCircleFilled(new float2(at.X - gap + radius, (top.Y + bottom.Y) * 0.5f), radius,
                                                   off ? OutOfIt : here ? InTheWorld : OnTheWay);
@@ -1507,6 +1521,71 @@ internal static class Panel
         if (DiscordLogin.Said.Length > 0) ImGui.TextColored(in ConsoleStyle.Danger, DiscordLogin.Said);
     }
 
+    private static bool _serversOpen;
+
+    /// <summary>
+    /// The start screen's list of servers, opened from a server: the same rows, and JOIN to move to
+    /// the one picked, which leaves this one for it as connecting from the start does.
+    /// </summary>
+    private static void ServerListWindow()
+    {
+        if (!_serversOpen) return;
+        if (Sync.Now == Sync.Stage.Off)
+        {
+            _serversOpen = false;
+            return;
+        }
+        Browser.Update();
+        if (!Browser.Started) Browser.Refresh();
+
+        ImGuiViewportPtr screen = ImGui.GetMainViewport();
+        float2 middle = new(screen.WorkPos.X + (screen.WorkSize.X * 0.5f), screen.WorkPos.Y + (screen.WorkSize.Y * 0.5f));
+        ImGui.SetNextWindowPos(in middle, ImGuiCond.FirstUseEver, new float2(0.5f, 0.5f));
+        ImGui.SetNextWindowSize(new float2(760f, 460f), ImGuiCond.FirstUseEver);
+        bool open = true;
+        if (ImGui.Begin("Servers###KSAMultiplayerServerList", ref open, ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoSavedSettings))
+        {
+            string typed = AddressText.ToString().Trim();
+            float floor = ConsoleWidgets.ButtonHeight + ImGui.GetStyle().ItemSpacing.Y;
+            bool password = Known(typed) is { Password: true };
+            if (password) floor += ImGui.GetFrameHeightWithSpacing();
+            Servers(typed, MathF.Max(150f, ImGui.GetContentRegionAvail().Y - floor));
+
+            if (password)
+            {
+                ImGui.AlignTextToFramePadding();
+                ImGui.Text("Password"u8);
+                ImGui.SameLine();
+                ImGui.PushItemWidth(-1f);
+                if (ImGui.InputText("###KSAMultiplayerListPassword", PasswordText, ImGuiInputTextFlags.Password) && ImGui.IsItemDeactivatedAfterEdit()) Save();
+                ImGui.PopItemWidth();
+            }
+
+            // Not the one this game is in: joining it again would load the world it already has.
+            bool here = string.Equals(typed, Sync.ServerAddress, StringComparison.OrdinalIgnoreCase);
+            bool ready = typed.Length > 0 && !here && NameText.ToString().Trim().Length > 0 && !WouldBeRefused;
+            ImGui.BeginDisabled(!ready);
+            if (BottomRight("JOIN".AsSpan()))
+            {
+                Save();
+                Remember(typed);
+                _serversOpen = false;
+                Sync.Connect(typed, NameText.ToString(), PasswordText.ToString());
+            }
+            ImGui.EndDisabled();
+            if (here || WouldBeRefused)
+            {
+                ImGui.SameLine();
+                ImGui.SetCursorPosX(ImGui.GetStyle().WindowPadding.X);
+                ImGui.SetCursorPosY(ImGui.GetWindowHeight() - ConsoleWidgets.ButtonHeight - ImGui.GetStyle().WindowPadding.Y
+                                    + ((ConsoleWidgets.ButtonHeight - ImGui.GetTextLineHeight()) * 0.5f));
+                ImGui.TextColored(in ConsoleStyle.TextMuted, here ? "You're in this server." : "This server would refuse you: see its row.");
+            }
+        }
+        ImGui.End();
+        if (!open) _serversOpen = false;
+    }
+
     /// <summary>
     /// The dot before a name on a player list for a player whose Discord login the server has
     /// checked, and the room for one before every other name while anybody has one, so the names
@@ -1787,8 +1866,14 @@ internal static class Panel
                 ImGui.TextDisabled($"other players see your craft as: {string.Join(", ", renamed)}");
             }
         }
+        // The list of servers, as at start, to move to another without leaving first.
+        if (BottomLeft("SERVERS".AsSpan())) _serversOpen = !_serversOpen;
         // Only where it does anything: to anybody else it would be a button that says no.
-        if (Sync.Admin && BottomLeft("SERVER SAVES".AsSpan())) ServerSaves.Toggle();
+        if (Sync.Admin)
+        {
+            ImGui.SameLine();
+            if (ConsoleWidgets.Button("SERVER SAVES".AsSpan())) ServerSaves.Toggle();
+        }
         if (BottomRight("DISCONNECT".AsSpan())) Sync.Disconnect();
     }
 

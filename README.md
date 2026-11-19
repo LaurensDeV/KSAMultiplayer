@@ -53,6 +53,9 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
 
 Once you're in:
 
+- **The server's name at the top right of the menu bar** opens and shuts the Multiplayer window: who
+  is here, your ping, and **SERVERS**, the list from the start screen, to move to another server
+  with **JOIN**. Hold **Tab** for who is flying what.
 - **Fly anything nobody else is flying.** Take control of a craft and it's yours while you are in it
   or looking at it, and for ten seconds after. A craft someone else is flying moves where their
   game says: ask for it and the camera goes there anyway, so you ride along and watch rather than
