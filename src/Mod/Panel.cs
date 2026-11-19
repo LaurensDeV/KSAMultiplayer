@@ -519,9 +519,10 @@ internal static class Panel
         if (!World.KeyDown(GlfwKey.Tab) && Sync.Wall() >= BoardUntil) return;
 
         ImGuiViewportPtr screen = ImGui.GetMainViewport();
-        // In the middle of the screen, where a list held up on a key is looked for, and centred by
-        // its own middle, since its height is however many are in the room.
-        float2 at = new(screen.WorkPos.X + (screen.WorkSize.X * 0.5f), screen.WorkPos.Y + (screen.WorkSize.Y * 0.5f));
+        // Across the middle of the screen, where a list held up on a key is looked for, and above the
+        // middle, where the flown craft is: centred by its own middle, a third of the way down, since
+        // its height is however many are in the room.
+        float2 at = new(screen.WorkPos.X + (screen.WorkSize.X * 0.5f), screen.WorkPos.Y + (screen.WorkSize.Y * 0.34f));
         ImGui.SetNextWindowPos(in at, ImGuiCond.Always, new float2(0.5f, 0.5f));
         ImGui.SetNextWindowBgAlpha(0.85f);
 
@@ -1163,8 +1164,13 @@ internal static class Panel
         {
             note += $"  {found.Where} is listed by {string.Join(", ", directories)}.";
         }
+        // Short of REFRESH, which it ran under: the attribution goes first, and what is left is
+        // shortened rather than drawn beneath the button.
+        float noteRoom = ImGui.GetContentRegionAvail().X - ConsoleWidgets.ButtonWidth("REFRESH".AsSpan()) - (ImGui.GetStyle().ItemSpacing.X * 2f);
+        int listedBy = note.IndexOf("  ", StringComparison.Ordinal);
+        if (ImGui.CalcTextSize(note).X > noteRoom && listedBy > 0) note = note[..listedBy];
         ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.TextMuted);
-        ImGui.Text(note);
+        ImGui.Text(Fit(note, noteRoom));
         ImGui.PopStyleColor();
 
         ImGui.SameLine();
@@ -1189,6 +1195,11 @@ internal static class Panel
         ImGui.TableNextRow();
         ImGui.TableNextColumn();
         string locked = r.Facts is { Password: true } ? "  (password)" : "";
+        // The marker at the right of this column, worked out first so the name can stop short of
+        // it: a long name ran under it, and both were unreadable.
+        string pill = Browser.Short(r) is { Length: > 0 } why ? why : r.Found.Contains(Browser.Yours) ? "recent" : "";
+        float pillWide = pill.Length == 0 ? 0f : ImGui.CalcTextSize(pill).X + ImGui.GetTextLineHeight() + 10f;
+        string title = Fit($"{r.Title}{locked}", ImGui.GetContentRegionAvail().X - pillWide);
         // The id is the row's own number and the label is the name, so a server that renames
         // itself mid-list is the same row, and two rows shown under one address for a moment are
         // two: ImGui stops everything to say so where two things in a window share an id.
@@ -1197,7 +1208,7 @@ internal static class Panel
         // row stopped three pixels short of the band its neighbour is shaded with, top and
         // bottom, and one row of two read as the shorter.
         ImGui.PushStyleVarY(ImGuiStyleVar.ItemSpacing, CellPadding.Y * 2f);
-        bool picked = ImGui.Selectable($"{r.Title}{locked}###KSAMultiplayerRow{r.Serial}", chosen, ImGuiSelectableFlags.SpanAllColumns);
+        bool picked = ImGui.Selectable($"{title}###KSAMultiplayerRow{r.Serial}", chosen, ImGuiSelectableFlags.SpanAllColumns);
         ImGui.PopStyleVar();
         // One marker, against the right of the server's own column: why this game cannot go there,
         // or that the player has been before. Short enough to read without stopping, with the whole
@@ -1205,8 +1216,8 @@ internal static class Panel
         // In the colour KSA gives to what is waiting on the player where it is why they cannot
         // join, and in its quietest where it is only that they have been before: two kinds of
         // word in one place, and a list is glanced down for the first kind.
-        if (Browser.Short(r) is { Length: > 0 } why) PillAtRight(why, in ConsoleStyle.Pending);
-        else if (r.Found.Contains(Browser.Yours)) PillAtRight("recent", in ConsoleStyle.TextMuted);
+        if (Browser.Short(r) is { Length: > 0 }) PillAtRight(pill, in ConsoleStyle.Pending);
+        else if (pill.Length > 0) PillAtRight(pill, in ConsoleStyle.TextMuted);
         if (picked)
         {
             AddressText.SetValue(r.Where);
@@ -1242,6 +1253,18 @@ internal static class Panel
     /// drawn. Brackets round a word made it part of the sentence beside it; this is a label on the
     /// row and reads as one.
     /// </summary>
+    /// <summary>The text, or as much of it as fits in this many pixels with "..." after it.</summary>
+    private static string Fit(string text, float room)
+    {
+        if (room <= 0f || ImGui.CalcTextSize(text).X <= room) return text;
+        for (int n = text.Length - 1; n > 0; n--)
+        {
+            string shorter = text[..n].TrimEnd() + "...";
+            if (ImGui.CalcTextSize(shorter).X <= room) return shorter;
+        }
+        return "...";
+    }
+
     private static void PillAtRight(string says, in float4 colour)
     {
         float2 text = ImGui.CalcTextSize(says);
