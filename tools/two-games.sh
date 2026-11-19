@@ -336,7 +336,12 @@ for name in A B; do
         call "$name" status '{}' 2>/dev/null | grep -q '"ksa"' && break
         sleep 5
     done
-    call "$name" load "{\"save\":\"$SAVE\"}"
+    # Not fatal: the bridge's load fails a world it has loaded when nothing in it is being flown,
+    # which a save whose camera follows debris is, and stopping here left the second game on
+    # KSA's start screen with nothing to say why and neither game joined.
+    if ! call "$name" load "{\"save\":\"$SAVE\"}"; then
+        echo "warning: $name loaded $SAVE but is at no craft it can fly; carrying on"
+    fi
 done
 
 join_both
