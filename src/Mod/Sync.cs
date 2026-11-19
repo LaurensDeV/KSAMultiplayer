@@ -469,6 +469,9 @@ internal static class Sync
     }
 
     /// <summary>What the panel shows under the server's name.</summary>
+    /// <summary>What <see cref="Status"/> says when there is nothing to say: in the world, and keeping its time.</summary>
+    public const string AllWell = "playing";
+
     public static string Status => Now switch
     {
         Stage.Off => "not connected",
@@ -476,7 +479,7 @@ internal static class Sync
         Stage.Seeding => "sending your world to the server...",
         Stage.Waiting => _client?.Arriving is { } share ? $"receiving the world: {share * 100:F0}%" : "waiting for the world...",
         Stage.Loading => "loading the world...",
-        Stage.Playing => Behind is { } b && Math.Abs(b) > ClockFollow.CatchUpAboveSeconds ? $"catching up: {b:F0} s behind" : "playing",
+        Stage.Playing => Behind is { } b && Math.Abs(b) > ClockFollow.CatchUpAboveSeconds ? $"catching up: {b:F0} s behind" : AllWell,
         _ => "",
     };
 

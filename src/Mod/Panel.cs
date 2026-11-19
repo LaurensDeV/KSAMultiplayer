@@ -42,12 +42,6 @@ internal static class Panel
     // lower half inside the navball at the sizes anybody actually plays at.
     private const float NavballClear = 324f;
 
-    // The same, for KSA's altimeter: it sits under the menu bar at the top centre, which is where the
-    // scoreboard goes too. Measured at 1600x1024 with hudScale 100, the menu bar ends 26 px down and
-    // the altimeter's box 58. The board sat at 60 -- flush under it, which read as clipping it -- so
-    // this is that bottom edge with air under it.
-    private const float AltimeterClear = 88f;
-
     // What the server says, told from what a player says at a glance: an answer to a command is not
     // conversation, and in a room of several players the one voice that is not a person should not
     // read like one.
@@ -183,6 +177,9 @@ internal static class Panel
         ImGui.SetNextWindowSize(in FirstSize, ImGuiCond.FirstUseEver);
         ImGui.SetNextWindowSizeConstraints(in SmallestSize, in LargestSize);
 
+        // See-through while in a server, where it sits over the flight it is about; solid while it
+        // is a form to fill in.
+        if (Sync.Now != Sync.Stage.Off) ImGui.SetNextWindowBgAlpha(0.72f);
         bool open = true;
         bool drew = ImGui.Begin("Multiplayer###KSAMultiplayer", ref open, Flags);
         if (drew != _drewWas)
@@ -508,10 +505,10 @@ internal static class Panel
         if (!World.KeyDown(GlfwKey.Tab) && Sync.Wall() >= BoardUntil) return;
 
         ImGuiViewportPtr screen = ImGui.GetMainViewport();
-        // Centred by its middle rather than by a width written down here, since the width is now
-        // whatever the longest name in the room makes it.
-        float2 at = new(screen.WorkPos.X + (screen.WorkSize.X * 0.5f), screen.WorkPos.Y + AltimeterClear);
-        ImGui.SetNextWindowPos(in at, ImGuiCond.Always, new float2(0.5f, 0f));
+        // In the middle of the screen, where a list held up on a key is looked for, and centred by
+        // its own middle, since its height is however many are in the room.
+        float2 at = new(screen.WorkPos.X + (screen.WorkSize.X * 0.5f), screen.WorkPos.Y + (screen.WorkSize.Y * 0.5f));
+        ImGui.SetNextWindowPos(in at, ImGuiCond.Always, new float2(0.5f, 0.5f));
         ImGui.SetNextWindowBgAlpha(0.85f);
 
         const ImGuiWindowFlags board = ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoTitleBar
@@ -523,11 +520,17 @@ internal static class Panel
             // A table, so a column is as wide as the widest thing in it and two of them can never
             // land on each other. The server's name heads the first, and the id behind the ### keeps
             // the column the same one while that name is being learned.
-            if (ImGui.BeginTable("###KSAMultiplayerBoardRows", 3, ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.PadOuterX))
+            //
+            // At least so wide, in letters of the window's own font, with the room shared out between
+            // the columns: three columns each as narrow as what is in them read as one run-on line.
+            float wide = ImGui.GetFontSize() * 36f;
+            ImGui.PushStyleVar(ImGuiStyleVar.CellPadding, new float2(10f, 5f));
+            if (ImGui.BeginTable("###KSAMultiplayerBoardRows", 3, ImGuiTableFlags.SizingStretchProp | ImGuiTableFlags.PadOuterX | ImGuiTableFlags.RowBg,
+                                 new float2(wide, 0f)))
             {
-                ImGui.TableSetupColumn($"{(c.ServerName.Length > 0 ? c.ServerName : "Multiplayer")}###who");
-                ImGui.TableSetupColumn("Ping###ping"u8);
-                ImGui.TableSetupColumn("Flying###flying"u8);
+                ImGui.TableSetupColumn($"{(c.ServerName.Length > 0 ? c.ServerName : "Multiplayer")}###who", ImGuiTableColumnFlags.None, 0.45f, 0);
+                ImGui.TableSetupColumn("Ping###ping"u8, ImGuiTableColumnFlags.None, 0.15f, 1);
+                ImGui.TableSetupColumn("Flying###flying"u8, ImGuiTableColumnFlags.None, 0.4f, 2);
                 ImGui.TableHeadersRow();
                 bool anyDiscord = c.Players.Any(q => q.Discord);
                 foreach (Wire.Player p in c.Players.OrderBy(p => p.Id))
@@ -546,6 +549,7 @@ internal static class Panel
                 }
                 ImGui.EndTable();
             }
+            ImGui.PopStyleVar();
         }
         ImGui.End();
     }
@@ -1747,28 +1751,35 @@ internal static class Panel
     private static void Joined()
     {
         Client? c = Sync.Client;
-        ImGui.Text(c is { ServerName.Length: > 0 } ? c.ServerName : "Server");
-        // On a line of its own and never wrapped. It changes between "playing" and "catching up:
-        // 12 s behind" as the clock is made up, and sharing a wrapped line with the server's name
-        // meant the longer one took two lines and the shorter one took one: everything below moved
-        // up and down as it changed, which reads as the window shaking.
+        // The server's name with the ping at the right of the same line: a header, and the one
+        // number about the connection a player glances at. Never wrapped, so the line is one line
+        // whatever the name, and nothing under it moves.
         ImGui.PopTextWrapPos();
-        ImGui.TextDisabled(Sync.Status);
+        ImGui.Text(c is { ServerName.Length: > 0 } ? c.ServerName : "Server");
+        if (c is { Joined: true })
+        {
+            // The round trip as it is now; Rtt is the best since joining, which the clock is set by
+            // and which reads as 0 ms on one machine.
+            string ping = double.IsFinite(c.Ping) ? $"{c.Ping * 1000:F0} ms" : "...";
+            ImGui.SameLine();
+            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + MathF.Max(0f, ImGui.GetContentRegionAvail().X - ImGui.CalcTextSize(ping).X));
+            ImGui.TextDisabled(ping);
+        }
+        // Only while it says more than that all is well: connecting, the world on its way, the
+        // clock being caught up.
+        if (Sync.Status != Sync.AllWell) ImGui.TextColored(in ConsoleStyle.Pending, Sync.Status);
         ImGui.PushTextWrapPos(0f);
         if (c is { Joined: true })
         {
-            // The round trip as it is now, the same one the player list shows; Rtt is the best since
-            // joining, which the clock is set by and which reads as 0 ms on one machine.
-            ImGui.TextDisabled(double.IsFinite(c.Ping) ? $"ping {c.Ping * 1000:F0} ms" : "ping ...");
             ImGui.Separator();
+            // Who is here and nothing else: what each is flying is the Tab list's.
             bool anyDiscord = c.Players.Any(q => q.Discord);
             foreach (Wire.Player p in c.Players)
             {
-                string flying = p.Controlling.Length > 0 ? $": {p.Controlling}" : "";
-                string state = p.Loaded ? "" : " (joining)";
                 DiscordMark(anyDiscord, p.Discord);
-                if (p.Id == c.Id) ImGui.Text($"{p.Name} (you){flying}");
-                else ImGui.Text($"{p.Name}{state}{flying}");
+                if (p.Id == c.Id) ImGui.Text($"{p.Name} (you)");
+                else if (!p.Loaded) ImGui.TextDisabled($"{p.Name} (joining)");
+                else ImGui.Text(p.Name);
             }
             DiscordRow(c);
             if (Sync.RenamedCraft is { Count: > 0 } renamed)
