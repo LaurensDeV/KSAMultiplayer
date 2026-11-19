@@ -225,8 +225,7 @@ public sealed record DiscordCert(string Id, string Name, string Key, long Exp)
 /// file of their own. Nothing of KSA is here, so a test can keep one in a folder of its own.
 ///
 /// <para>The private key is as good as the login for as long as the certificate runs, as a token
-/// is as good as being an admin, and lives in the same place for the same reason: a player's own
-/// documents folder is where this game's secrets already are.</para>
+/// is as good as being an admin; where the file is, is the game's to say.</para>
 /// </summary>
 public sealed class DiscordIdentity(string path, Action<string>? warn = null)
 {

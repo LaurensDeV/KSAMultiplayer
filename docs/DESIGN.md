@@ -150,7 +150,8 @@ stranger sent it.
   is traded, Discord's token revoked, and a `DiscordCert` binding that key to the Discord user for
   30 days is signed and caught on `127.0.0.1:50180` (`DiscordCallback`, a bare socket, since
   `HttpListener` on Windows wants a URL reservation). Key and certificate are kept in
-  `Documents/KSAMultiplayer/discord.json` (`DiscordIdentity`). At every join the game signs the
+  `%LOCALAPPDATA%\KSAMultiplayer\discord.json` (`DiscordIdentity`), the Windows account's and not
+  one game instance's, so every instance is logged in at once. At every join the game signs the
   nonce and the address the player typed and says the certificate and signature until answered
   (`DiscordProof`, `DiscordUser`). The server checks the certificate against `/v1/discord/key`,
   fetched once and again after an hour or a certificate that does not check, then its expiry, the

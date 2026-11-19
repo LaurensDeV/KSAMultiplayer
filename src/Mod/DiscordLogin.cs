@@ -7,12 +7,39 @@ namespace KSAMultiplayer;
 /// This machine's Discord login, made once from the Multiplayer windows and proved to every server
 /// joined after (<see cref="Discord"/>). Logging in opens the login service's page in the browser,
 /// with the public half of a key made for it; the certificate that comes back is kept with the key
-/// in the documents folder, and lasts 30 days.
+/// in the Windows account's application data, and lasts 30 days.
 /// </summary>
 internal static class DiscordLogin
 {
-    private static readonly DiscordIdentity Identity = new(
-        Path.Combine(KSA.Constants.DocumentsFolderPath, "KSAMultiplayer", "discord.json"), Log.Warn);
+    /// <summary>
+    /// Where the login is kept: the Windows account's own application data rather than KSA's
+    /// documents folder, which is one StarMap or Borea instance's, so every instance on the machine
+    /// is logged in at once. Local and not roaming, so the key stays on this machine.
+    /// </summary>
+    private static readonly string KeptAt =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "KSAMultiplayer", "discord.json");
+
+    private static readonly DiscordIdentity Identity = new(Moved(KeptAt), Log.Warn);
+
+    // A login kept in the instance's documents folder is taken along, once, so nobody logs in again for the move.
+    private static string Moved(string to)
+    {
+        string from = Path.Combine(KSA.Constants.DocumentsFolderPath, "KSAMultiplayer", "discord.json");
+        try
+        {
+            if (!File.Exists(to) && File.Exists(from))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+                File.Move(from, to);
+                Log.Info($"moved the Discord login to {to}, where every KSA instance finds it");
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Log.Warn($"could not move the Discord login to {to}: {e.Message}");
+        }
+        return to;
+    }
 
     private static DiscordCallback? _waiting;
     private static ECDsa? _key;
