@@ -317,6 +317,7 @@ internal sealed class Bridge
         data["achieved"] = Math.Round(World.Achieved, 3);
         data["analytic"] = World.Analytic;
         data["in_editor"] = World.InEditor;
+        data["window"] = Panel.Visible;
         data["editor_hold"] = Sync.EditorHeld;
         data["tag_draw"] = Panel.TagReport;
         // What the nametag pass would draw this frame, so a tag that never appears can be told
@@ -608,6 +609,13 @@ internal sealed class Bridge
             bool blank = want && command.Flag("blank", false) && World.EditBlank();
             KSA.Program.EditorFlag = want;
             return Done(new() { ["editor"] = want, ["blank"] = blank, ["open"] = KSA.Program.IsEditorOpen });
+        }
+
+        // The window shut as its close button shuts it, for a run that has to see it come back.
+        if (command.Has("window"))
+        {
+            Panel.Visible = command.Flag("window", true);
+            return Done(new() { ["window"] = Panel.Visible });
         }
 
         if (command.Has("board"))

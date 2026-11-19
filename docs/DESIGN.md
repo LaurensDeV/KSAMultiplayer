@@ -424,6 +424,14 @@ from every world, while its owner flew on with the parts they had. A craft docke
 flies is docked, and the craft that went into it is claimed so it can be said gone -- only its
 owner may say so, and it had none.
 
+**Leaving a server is said on the screen.** `Sync.Disconnect` is every way out of a session --
+the button, a connection gone quiet for ten seconds, a server that closed or refused, a world
+that did not load -- and from a game that was in one it calls `Panel.Disconnected`: a red
+*Disconnected* on ImGui's foreground list, over every window, for a second and a half and faded
+over one more, and the Multiplayer window opened again. A connection lost while that window was
+shut used to be a world that simply stopped answering. Leaving one server to join another is
+`Disconnect(quietly: true)` and says nothing.
+
 **A touch of two ports that docks nothing is written down, here and on the server.** KSA docks on
 a contact only where the two ports are under half a metre apart, within ten degrees of facing each
 other and closing with the port's latching energy, and says nothing of a contact that fell short:

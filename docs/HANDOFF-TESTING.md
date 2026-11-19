@@ -94,7 +94,8 @@ KSA_USER_DIR=<profile> python3 tools/ksa-mcp/server.py cli <command> '<json>'
 `design` `fail` `motion` `save` `load` `start` `step` `capture` `pause` `resume` `speed` `modspeed` `pickspeed` `warpkey` `log`.
 
 `mp` carries the rest as flags: `connect` `disconnect` `name` `password` `chat` `editor` `blank`
-`launch` `pads` `warp` `vote` `board`. With no flag it answers as `status` does.
+`launch` `pads` `warp` `vote` `board` `window`; `window` false shuts the Multiplayer window, and
+`status` says whether it is open. With no flag it answers as `status` does.
 
 Three worth knowing about because they are new and change what is reachable:
 

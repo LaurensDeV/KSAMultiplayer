@@ -560,7 +560,7 @@ internal static class Sync
     /// <summary>Connects to a server at "host:port" or "host"; this world is then the server's, or becomes it.</summary>
     public static void Connect(string address, string name, string password)
     {
-        Disconnect();
+        Disconnect(quietly: true);
         if (!TryAddress(address, out string host, out int port, out bool portGiven))
         {
             Say("that doesn't look like an address: use host:port, or just a host for the default port 50100");
@@ -757,9 +757,11 @@ internal static class Sync
         (_ahead, _aheadFinding) = (null, null);
     }
 
-    public static void Disconnect()
+    /// <param name="quietly">For leaving one server to join another, which is not something to tell anybody about.</param>
+    public static void Disconnect(bool quietly = false)
     {
         bool was = _client is not null;
+        if (was && !quietly && Now != Stage.Off) Panel.Disconnected();
         _client?.Dispose();
         _client = null;
         _finding = null;

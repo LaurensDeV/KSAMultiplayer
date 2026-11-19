@@ -135,6 +135,7 @@ internal static class Panel
     public static void Draw(bool atACraft)
     {
         if (!_loaded) Load();
+        DisconnectedFlash();
         if (_joinOnLoad)
         {
             _joinOnLoad = false;
@@ -333,6 +334,42 @@ internal static class Panel
     /// viewport's background list, which is written after the world and before every window, with
     /// the font given outright, since a list taken outside a window carries none.
     /// </summary>
+    // When this game last left a server it was in, on the mod's own clock.
+    private static double _disconnectedAt = double.NegativeInfinity;
+
+    // Held, then faded, s; and how many times the window's text size it is drawn at.
+    private const double DisconnectedHoldSeconds = 1.5, DisconnectedFadeSeconds = 1.0;
+    private const float DisconnectedScale = 4f;
+
+    /// <summary>
+    /// This game has left a server it was in, by any means: the window is put back where the player
+    /// can rejoin from, and the screen says so. A dropped connection said only in a window the
+    /// player had shut was a world that stopped answering for no reason anybody could see.
+    /// </summary>
+    public static void Disconnected()
+    {
+        Log.Info($"left the server: said so on screen{(Visible ? "" : ", and opened the Multiplayer window again")}");
+        _disconnectedAt = Sync.Wall();
+        Visible = true;
+    }
+
+    // Over everything, the game's own windows included, so it is seen wherever the player is looking.
+    private static void DisconnectedFlash()
+    {
+        double since = Sync.Wall() - _disconnectedAt;
+        if (since is < 0.0 or > DisconnectedHoldSeconds + DisconnectedFadeSeconds) return;
+        float alpha = since < DisconnectedHoldSeconds ? 1f : (float)(1.0 - ((since - DisconnectedHoldSeconds) / DisconnectedFadeSeconds));
+        const string text = "Disconnected";
+        float px = ImGui.GetFontSize() * DisconnectedScale;
+        float2 size = ImGui.CalcTextSize(text) * DisconnectedScale;
+        ImGuiViewportPtr view = ImGui.GetMainViewport();
+        float2 at = view.Pos + ((view.Size - size) * 0.5f);
+        ImDrawListPtr draw = ImGui.GetForegroundDrawList();
+        ImFontPtr font = ImGui.GetFont();
+        draw.AddText(font, px, at + new float2(3f, 3f), new ImColor8(0, 0, 0, (byte)(200 * alpha)), text);
+        draw.AddText(font, px, at, new ImColor8(235, 40, 40, (byte)(255 * alpha)), text);
+    }
+
     public static void DrawTags()
     {
         List<(float2 At, string Who, string Craft, double Range, bool Flying, bool Editing)> tags = Sync.Nametags();

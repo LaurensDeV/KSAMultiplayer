@@ -112,6 +112,10 @@ Nothing about the list is on the way in: typing an address and pressing **CONNEC
 not the list ever came up. The list is in this window only -- the **Multiplayer** panel inside a game
 takes an address and not a list, so changing servers from there is disconnect, type, connect.
 
+Leaving a server, whether by **DISCONNECT**, a lost connection or the server closing, puts a red
+**Disconnected** in the middle of the screen for a couple of seconds and opens the **Multiplayer**
+window if it was closed, so rejoining is one click away.
+
 What the list costs you: the mod fetches `directories.txt` from this repository and then each
 directory's list over HTTPS, and asks every server on it what it is. So the operators of the servers listed see a request from your address, as they would if
 you typed the address yourself -- a few dozen of them rather than one. Nothing about you goes with
