@@ -766,6 +766,7 @@ internal static class Sync
         _client = null;
         _finding = null;
         DiscordLogin.Forget();
+        _discordOnJoin = false;
         foreach (Vehicle v in Puppets.Keys) Log.Info($"let go of {v.Id}");
         Puppets.Clear();
         Built.Clear();
@@ -1352,6 +1353,23 @@ internal static class Sync
             : $"could not put the camera on {who.Controlling}");
     }
 
+    // A Discord login still to be started for a player who ticked it in the join form: once in the
+    // world, so the browser does not open over a world still loading, and once a join.
+    private static bool _discordOnJoin;
+
+    /// <summary>
+    /// Starts the Discord login the join form asked for, once this server has said it takes them.
+    /// Not for a player the server already knows as an admin by the token this machine keeps: the
+    /// login would tell it nothing new, and a browser opening at every join is a browser too many.
+    /// </summary>
+    private static void LogInOnJoin(Client c)
+    {
+        if (!_discordOnJoin || Now != Stage.Playing || c.DiscordNonce.Length == 0) return;
+        _discordOnJoin = false;
+        if (c.Admin || c.Discord is { Id.Length: > 0 } || DiscordLogin.Waiting || c.DiscordAsking) return;
+        DiscordLogin.Start(c, _address);
+    }
+
     /// <summary>Whether this server runs what this game asks of it.</summary>
     public static bool Admin => _client is { Admin: true };
 
@@ -1626,6 +1644,7 @@ internal static class Sync
                 else if (Tokens.Keep(token)) c.Kept(token);
             }
             DiscordLogin.Update(c);
+            LogInOnJoin(c);
             FollowRules(c);
             if (c.Out.Length > 0)
             {
@@ -1763,6 +1782,7 @@ internal static class Sync
         c.ForgetTracks();
         c.SayLoaded(World.Universe);
         Now = Stage.Playing;
+        _discordOnJoin = Panel.DiscordOnJoin;
         Say("you're in the shared world");
     }
 

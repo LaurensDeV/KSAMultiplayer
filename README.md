@@ -428,7 +428,11 @@ They press **Log in with Discord** in the Multiplayer window. Their browser goes
 service at `servers.ksamp.gg` to Discord, which asks only to know who they are, and comes back to
 the game on port 50180 of their own machine with a pass the service has signed. The game gives it
 to the server, which checks it with the service's public key and makes them an admin, handing that
-machine a token as `op` does, so they log in once per machine rather than at every join. `deop Jeb`
+machine a token as `op` does, so they log in once per machine rather than at every join.
+Ticking **Log in when I join** under the name in the join form starts that login by itself once
+they are in a server that has Discord admins, unless the server already knows them as an admin by
+their token. When the browser that opens is not the one they use Discord in, **Copy link** puts the
+login's address on the clipboard. `deop Jeb`
 or `deop discord:80351110224678912` takes it back, along with every token handed out for it, and
 `admins` shows the Discord user beside each name it applies to.
 

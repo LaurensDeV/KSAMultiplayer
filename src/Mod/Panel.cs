@@ -66,7 +66,14 @@ internal static class Panel
     private static string _choices = "";
 
     /// <param name="Recent">Where this player has connected before, most recent first. Shown in the server list and asked about like anything else, so a server they have played on says whether anybody is on it now.</param>
-    private sealed record Settings(string Name, string Address, string Password, bool Visible, string[]? Recent = null);
+    private sealed record Settings(string Name, string Address, string Password, bool Visible, string[]? Recent = null, bool Discord = false);
+
+    /// <summary>
+    /// Whether to log in with Discord on joining a server that takes Discord logins, ticked in the
+    /// join form beside the name: the same login as the button once joined, started for the player.
+    /// </summary>
+    internal static bool DiscordOnJoin => _discordOnJoin;
+    private static bool _discordOnJoin;
 
     /// <summary>How many addresses are remembered. Enough for the servers somebody actually plays on, few enough that the list is not mostly history.</summary>
     private const int MostRecent = 8;
@@ -1413,6 +1420,26 @@ internal static class Panel
             ? shown
             : system;
 
+    /// <summary>
+    /// The row under the name that asks whether to log in with Discord on joining. Asked here
+    /// because the name is where a player says who they are, and a Discord admin otherwise joins as
+    /// nobody in particular and has to find a button afterwards.
+    /// </summary>
+    private static bool DiscordField()
+    {
+        ImGui.Text("Discord"u8);
+        ImGui.NextColumn();
+        ImGui.PushStyleVarX(ImGuiStyleVar.ItemInnerSpacing, 10f);
+        bool changed = ImGui.Checkbox("Log in when I join###KSAMultiplayerJoinDiscord", ref _discordOnJoin);
+        ImGui.PopStyleVar();
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("On a server with Discord admins, your browser opens to log in with Discord once you're in, so an admin there is one on any machine.");
+        }
+        ImGui.NextColumn();
+        return changed;
+    }
+
     /// <summary>A row of KSA's two columns that says something rather than asking it.</summary>
     private static void Told(ImString label, string what)
     {
@@ -1485,6 +1512,7 @@ internal static class Panel
             bool readdressed = Field("Server"u8, "###KSAMultiplayerJoinServer", AddressText);
             edited |= readdressed;
             edited |= Field("Your name"u8, "###KSAMultiplayerJoinName", NameText);
+            edited |= DiscordField();
             // Said in words where the server has told us it wants none, which every welcome has
             // said since protocol 23. It was a greyed-out box, and an empty box a player cannot
             // type in looks very like an empty box they have not typed in yet. A field that is not
@@ -1720,6 +1748,7 @@ internal static class Panel
         AddressText.SetValue(s.Address);
         PasswordText.SetValue(s.Password);
         Visible = s.Visible;
+        _discordOnJoin = s.Discord;
         // A settings file written before there was a list of these has none, which is not a problem
         // to report: it means this player has been nowhere yet as far as anybody here knows.
         _recent = [.. (s.Recent ?? []).Where(a => a.Trim().Length > 0).Take(MostRecent)];
@@ -1733,7 +1762,7 @@ internal static class Panel
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
-            File.WriteAllText(SettingsPath, JsonSerializer.Serialize(new Settings(NameText.ToString().Trim(), AddressText.ToString().Trim(), PasswordText.ToString(), Visible, _recent)));
+            File.WriteAllText(SettingsPath, JsonSerializer.Serialize(new Settings(NameText.ToString().Trim(), AddressText.ToString().Trim(), PasswordText.ToString(), Visible, _recent, _discordOnJoin)));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
