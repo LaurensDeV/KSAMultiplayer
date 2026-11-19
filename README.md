@@ -8,7 +8,7 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
 
 > **Status: played, not finished.** Two games on one machine have flown in one world through it,
 > against KSA `2026.11.10.5801`, and the server and the protocol are tested headlessly besides
-> (370 tests, real UDP over loopback, a lossy line included). An 89-part rocket has been flown in a
+> (374 tests, real UDP over loopback, a lossy line included). An 89-part rocket has been flown in a
 > shared world and staged while the other game watched, which rebuilt the dropped stage as its own
 > craft. What two games across the internet do is not known.
 > This release is built for KSA `2026.11.16.5901`, and has not been flown on it yet.
@@ -276,6 +276,7 @@ like `quit`.
 | `--advertise` | `KSAMP_ADVERTISE` | off | list this server publicly so players can find it, which publishes its address |
 | `--advertise-as` | `KSAMP_ADVERTISE_AS` | the address seen | the hostname to be listed under |
 | `--directories` | `KSAMP_DIRECTORIES` | the shared list | where to announce, separated by commas; the shared list in `directories.txt` otherwise, read hourly while advertising |
+| `--discord-admins` | `KSAMP_DISCORD_ADMINS` | none | Discord user ids, comma separated, who are admins whenever they log in with Discord, whatever `admins.json` says; `deop` cannot take it away |
 | `--discord-login` | `KSAMP_DISCORD_LOGIN` | `https://servers.ksamp.gg/v1/discord` | the service that vouches for who a player is on Discord, [asked only once there is a Discord admin](#admins-by-discord); empty to take no Discord logins |
 
 Commands typed into the server's console: `help`, `players`, `say <text>`, `kick <name> [why]`, `op <name>`, `deop <name>`, `admins`,
@@ -425,7 +426,9 @@ machine, any game instance, after any reinstall -- all a server needs is their D
 op discord:80351110224678912
 ```
 
-or, once they are playing and have logged in, simply `op Jeb`.
+or, once they are playing and have logged in, simply `op Jeb`. For admins on every server you run,
+list them in the `discord-admins` setting instead: it is read at every start, so a world reset or
+a lost data folder takes nobody's admin with it.
 
 Players log in **once per computer**: **Log in with Discord** under the name in the Multiplayer
 window. Their browser goes through the login service at `servers.ksamp.gg` to Discord, which asks
@@ -481,7 +484,7 @@ docker run -dit --name ksamp -p 50100:50100/udp -v ksamp-data:/data ghcr.io/laur
 
 A server and its players have to speak the same protocol, and a release's notes say when it
 changes that, so the time to update is when your players do. To stay on one release whatever
-comes out after it, name it in place of `latest`: `ksamp-server:v0.25.0`. A release's notes also
+comes out after it, name it in place of `latest`: `ksamp-server:v0.26.0`. A release's notes also
 carry the line pinned to that build's digest, which is what to run on a machine you care about:
 a tag moves and a digest does not.
 [`deploy/Dockerfile`](deploy/Dockerfile) builds one yourself from the repository root, and
