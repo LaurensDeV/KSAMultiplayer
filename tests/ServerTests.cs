@@ -502,6 +502,66 @@ public class ServerTests
     }
 
     [Fact]
+    public void APlayerRenamesTheirOwnCraftInEveryGame()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        a.Claim("NewRocket_1", controlling: true, made: true);
+        a.Upload(new Blob(BlobKind.Vehicle, "NewRocket_1", a.Id, 5000, Rig.FakeWorld(2)));
+        rig.Until(() => b.OwnerOf("NewRocket_1") == a.Id, what: "Bob to hear of Alice's rocket");
+
+        a.AskName("NewRocket_1", "Moon Lander");
+        rig.Until(() => b.Named.Any(n => n == ("NewRocket_1", "Moon Lander", a.Id)) && a.Named.Count > 0, what: "both games to be told");
+        // Said again in case it was lost, and acted on once.
+        rig.For(1.5);
+        Assert.Single(b.Named);
+        Assert.Equal(a.Id, b.OwnerOf("Moon Lander"));
+        Assert.Equal(0, b.OwnerOf("NewRocket_1"));
+        rig.Until(() => rig.Server.Players.First(p => p.Id == a.Id).Controlling == "Moon Lander", what: "Alice to be flying it under its new name");
+
+        // A game that still speaks of it by its old name is told again rather than given a second craft.
+        b.Named.Clear();
+        a.Claim("NewRocket_1", controlling: true, made: true);
+        rig.Until(() => a.Named.Any(n => n.Was == "NewRocket_1"), what: "Alice to be told again");
+        rig.For(0.3);
+        Assert.Equal(0, b.OwnerOf("NewRocket_1"));
+
+        // And a game that joins with a world saved before it is told as it loads, how it is built included.
+        Client c = JoinAndLoad(rig, "Carol");
+        rig.Until(() => c.Named.Any(n => n == ("NewRocket_1", "Moon Lander", a.Id)), what: "Carol to be told");
+        Assert.Equal(a.Id, c.OwnerOf("Moon Lander"));
+    }
+
+    [Fact]
+    public void ACraftIsRenamedOnlyByItsOwnerAndOnlyByAnAdminWhenProtected()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        a.Claim("Station", controlling: false, made: true);
+        b.Claim("Tug", controlling: true, made: true);
+        rig.Until(() => b.OwnerOf("Station") == a.Id && a.OwnerOf("Tug") == b.Id, what: "both craft");
+
+        b.AskName("Station", "Bob's Station");
+        rig.Until(() => b.Chat.Any(l => l.Text.Contains("isn't yours")), what: "Bob to be told it is not his");
+        b.AskName("Tug", "Station");
+        rig.Until(() => b.Chat.Any(l => l.Text.Contains("already a craft called Station")), what: "Bob to be told the name is taken");
+
+        rig.Server.Protect("Station");
+        a.AskName("Station", "Home");
+        rig.Until(() => a.Chat.Any(l => l.Text.Contains("only an admin")), what: "Alice to be told it is protected");
+        Assert.Equal(a.Id, b.OwnerOf("Station"));
+
+        // An admin may, and the craft stays protected under its new name.
+        Assert.Null(rig.Server.RenameCraft("Station", "Home", by: null));
+        rig.Until(() => b.OwnerOf("Home") == a.Id, what: "the station to be called Home");
+        Assert.True(rig.Server.Protected.Has("Home"));
+        Assert.False(rig.Server.Protected.Has("Station"));
+        Assert.Contains(rig.Server.Said, s => s == "the operator renamed Station to Home");
+    }
+
+    [Fact]
     public void ADockingTakesNoCraftThatIsNotBesideTheOther()
     {
         // A game's word that two craft docked takes one from whoever had it. Taken on trust, a

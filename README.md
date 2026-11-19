@@ -73,6 +73,9 @@ Once you're in:
   that machine rather than leaving it behind. After joining, your game may run fast for a few
   seconds to catch up.
 - **Chat** from the window.
+- **Rename a craft.** Type `/rename New name` in the chat to rename the craft you're flying, if it's
+  yours. It's renamed in every game, crew and all. A protected craft can only be renamed by an admin,
+  who can rename any craft with `/rename Old name -> New name`.
 
 Two craft with the same name are still two craft: the server gives the second one a name of its own,
 your game goes on calling it what you called it, and the player list says *other players see your craft as*
@@ -272,7 +275,7 @@ like `quit`.
 | `--directories` | `KSAMP_DIRECTORIES` | the shared list | where to announce, separated by commas; the shared list in `directories.txt` otherwise, read hourly while advertising |
 
 Commands typed into the server's console: `help`, `players`, `say <text>`, `kick <name> [why]`, `op <name>`, `deop <name>`, `admins`,
-`clear [name]`, `remove <craft>`, `protect <craft>`, `unprotect <craft>`, `protected`, `reload` (or `reset`), `save [name]`,
+`clear [name]`, `remove <craft>`, `protect <craft>`, `unprotect <craft>`, `protected`, `rename <craft> -> <new name>`, `reload` (or `reset`), `save [name]`,
 `saves`, `load <name>`, `delete <name>`, `status`, `version`, `fresh`, `set [key value]`, `settings`, `quit`.
 
 `life-support` and `radiation` are KSA's two rules, which a game on its own takes from its start
@@ -309,6 +312,10 @@ world they swept themselves, so clearing costs no loading screen and leaves the 
 
 `remove <craft>` takes one craft out of every game by its exact name, whoever owns it, and says so
 in the chat; it refuses a craft somebody is flying and one that is protected.
+
+`rename <craft> -> <new name>` gives a craft another name in every game, whoever owns it, and keeps
+it protected if it was. A player renames their own craft from the chat with `/rename <new name>`; a
+protected craft only an admin can rename. It refuses a name another craft has.
 
 `protect <craft>` is for what is not debris. A protected craft is left by every `clear`, even one
 that names it in full: `clear`, `clear Station*` and `clear Station` all leave `Station` standing, and

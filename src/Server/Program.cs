@@ -372,6 +372,7 @@ if (!Console.IsInputRedirected || Environment.GetEnvironmentVariable("KSAMP_STDI
     ("protect <craft>", "keep a craft safe from clear, remove and being abandoned, even when named in full"),
     ("unprotect <craft>", "take a craft off the protected list"),
     ("protected", "list the protected craft"),
+    ("rename <craft> -> <new>", "give a craft another name in every game; players rename their own with /rename <new>"),
     ("reload", "reload the world for everyone, which also resets universe time (alias: reset)"),
     ("save [name]", "save the world now; with a name, keep it as a named save"),
     ("saves", "list the named saves"),
@@ -456,6 +457,9 @@ void Command(string line, GameServer.Player? who = null)
             break;
         case "unprotect":
             Answer(server.Unprotect(rest, who));
+            break;
+        case "rename":
+            Answer(server.Rename(rest, who));
             break;
         case "protected":
             if (server.Protected.Names.Count == 0) Answer("no craft are protected; protect <craft> adds one");

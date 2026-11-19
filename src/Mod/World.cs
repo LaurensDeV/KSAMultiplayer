@@ -260,6 +260,39 @@ internal static class World
         }
     }
 
+    /// <summary>
+    /// A craft given another name in this world, as KSA would give it: false where the name is
+    /// something else's here, a body's or another craft's.
+    ///
+    /// <para>KSA's own <c>CelestialSystem.Rename</c>, which nothing in the game calls, and the crew
+    /// with it as the launch menu moves them when its name field changes: a kitten is assigned to a
+    /// craft by name, and left on the old one is aboard nothing the roster can find.</para>
+    /// </summary>
+    public static bool Rename(Vehicle v, string name)
+    {
+        try
+        {
+            if (KSA.Universe.CurrentSystem is not { } system || system.All.TryGet(name, out Astronomical? _)) return false;
+            string was = v.Id;
+            if (!system.Rename(v, name)) return false;
+            foreach (IVASeat seat in v.Crew)
+            {
+                if (seat.AssignedKittenHash == KeyHash.Zero) continue;
+                if (KSA.Universe.KittenRoster.Find(seat.AssignedKittenHash) is { } kitten && kitten.AssignedVehicleId == was) kitten.AssignedVehicleId = name;
+            }
+            return true;
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"could not rename {v.Id} to {name}: {e.GetBaseException().Message}");
+            return false;
+        }
+    }
+
+    /// <summary>Whether a name is a planet's, a moon's or a star's in this world, which a craft can never take.</summary>
+    public static bool IsBody(string name) =>
+        KSA.Universe.CurrentSystem is { } system && system.All.TryGet(name, out Astronomical? found) && found is not Vehicle;
+
     // What a craft's parts look like from outside, cheaply: a change means its definition is sent again.
     /// <summary>
     /// What a craft is, for deciding whether the others have to be told how it is built again: its

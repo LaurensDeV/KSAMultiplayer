@@ -771,6 +771,7 @@ internal static class Sync
         Owned.Clear();
         Seen.Clear();
         Renamed.Clear();
+        ToName.Clear();
         MadeHere.Clear();
         ForgetDockings();
         Definitions.Clear();
@@ -1272,8 +1273,14 @@ internal static class Sync
         if (parts[0] is "help" or "?")
         {
             Told("spectate <name>   watch what another player is flying (anyone can use this)");
+            Told("rename <new name> rename the craft you're flying, if it's yours");
             Told("Tab               complete a player's name as you type it");
             return false;
+        }
+        if (parts[0].Equals("rename", StringComparison.OrdinalIgnoreCase))
+        {
+            RenameAsked(parts.Length > 1 ? parts[1] : "");
+            return true;
         }
         if (!parts[0].Equals("spectate", StringComparison.OrdinalIgnoreCase)
             && !parts[0].Equals("watch", StringComparison.OrdinalIgnoreCase))
@@ -1282,6 +1289,35 @@ internal static class Sync
         }
         Spectate(parts.Length > 1 ? parts[1] : "");
         return true;
+    }
+
+    /// <summary>
+    /// "/rename New name" for the craft this player flies, or "/rename Old name -> New name" for
+    /// any craft, which the server allows an admin. Asked of the server, which says no or renames
+    /// it in every game; refused here only for the name of a body, which the server cannot know.
+    /// </summary>
+    private static void RenameAsked(string asked)
+    {
+        if (_client is not { Joined: true } c) return;
+        int arrow = asked.IndexOf("->", StringComparison.Ordinal);
+        string was = arrow >= 0 ? asked[..arrow].Trim() : Flown is { } flown ? KeyOf(flown) : "";
+        string now = (arrow >= 0 ? asked[(arrow + 2)..] : asked).Trim();
+        if (now.Length == 0)
+        {
+            Told("usage: rename <new name> for the craft you're flying, or rename <craft> -> <new name>");
+            return;
+        }
+        if (was.Length == 0)
+        {
+            Told("fly the craft you want to rename, or use rename <craft> -> <new name>");
+            return;
+        }
+        if (World.IsBody(now))
+        {
+            Told($"{now} is the name of a body, so no craft can have it");
+            return;
+        }
+        c.AskName(was, now);
     }
 
     /// <summary>Puts the camera on what a player is flying, without taking it over.</summary>
@@ -1718,6 +1754,7 @@ internal static class Sync
     private static void StartPlaying(Client c)
     {
         Renamed.Clear();
+        ToName.Clear();
         ForgetDockings();
         Seen.Clear();
         foreach (Vehicle v in World.Vehicles()) Seen.Add(v);
@@ -1780,6 +1817,7 @@ internal static class Sync
         // One frame later the world is swept and the save is of that.
         if (!c.Sweeping) Snapshot(c);
         TakeRenames(c);
+        TakeNames(c);
 
         // By what the shared world calls each craft. Two of this world's craft can want one name for a
         // moment -- another player's kitten built here, and this player's own out of the same capsule
@@ -1981,6 +2019,76 @@ internal static class Sync
     // A craft of this game's that the server has renamed, because a player already had that name.
     // Everything held under the old name follows it, and the definition goes again so that every other
     // game builds the craft under the name they will all know it by.
+    // Renamed in KSA in the frame's quiet window, as everything that changes the world's list of
+    // vehicles is: the name is the key that list is looked up by.
+    private static readonly List<(Vehicle Craft, string Name)> ToName = [];
+
+    /// <summary>
+    /// Craft the server has given other names, whoever's they are: every record of each under its
+    /// old name moved to its new one, and the craft itself renamed in KSA in the quiet window. Until
+    /// then, and for good where KSA has something else by that name, this game knows it by the new
+    /// name through <see cref="Renamed"/>, as it knows a craft the server named on a clash.
+    /// </summary>
+    private static void TakeNames(Client c)
+    {
+        while (c.Named.TryDequeue(out (string Was, string Now, byte By) n))
+        {
+            Vehicle? craft = Owned.TryGetValue(n.Was, out Mine? mine) ? mine.Craft
+                : Puppets.FirstOrDefault(p => p.Value == n.Was).Key
+                  ?? (Built.TryGetValue(n.Was, out Vehicle? built) ? built : null)
+                  ?? World.Vehicles().FirstOrDefault(v => KeyOf(v) == n.Was);
+            static void Move<T>(Dictionary<string, T> d, string was, string now)
+            {
+                if (d.Remove(was, out T? value)) d[now] = value;
+            }
+            static void MoveIn(HashSet<string> s, string was, string now)
+            {
+                if (s.Remove(was)) s.Add(now);
+            }
+            Move(Owned, n.Was, n.Now);
+            Move(Definitions, n.Was, n.Now);
+            Move(Deferred, n.Was, n.Now);
+            Move(DefinedAt, n.Was, n.Now);
+            Move(DeferredAt, n.Was, n.Now);
+            Move(BuiltFrom, n.Was, n.Now);
+            Move(PieceWaiting, n.Was, n.Now);
+            Move(Describes, n.Was, n.Now);
+            Move(Rebuilt, n.Was, n.Now);
+            Move(PlacedAt, n.Was, n.Now);
+            Move(Built, n.Was, n.Now);
+            Move(ToBuild, n.Was, n.Now);
+            Move(ToPlace, n.Was, n.Now);
+            Move(ToOrbit, n.Was, n.Now);
+            Move(DockedAway, n.Was, n.Now);
+            Move(DockedHere, n.Was, n.Now);
+            Move(Consumed, n.Was, n.Now);
+            Move(Carried, n.Was, n.Now);
+            Move(LeftOnPad, n.Was, n.Now);
+            Move(WentAs, n.Was, n.Now);
+            Move(PuppetOf, n.Was, n.Now);
+            Move(ShedLately, n.Was, n.Now);
+            MoveIn(Rebuilding, n.Was, n.Now);
+            MoveIn(UnderWay, n.Was, n.Now);
+            if (PutBack.TryRemove(n.Was, out byte back)) PutBack[n.Now] = back;
+            foreach ((string left, var docking) in DockedHere.ToArray())
+            {
+                if (docking.Consumed == n.Was) DockedHere[left] = docking with { Consumed = n.Now };
+            }
+            if (_claimed == n.Was) _claimed = n.Now;
+            if (_watching == n.Was) _watching = n.Now;
+            if (craft is not null && World.IsAlive(craft))
+            {
+                if (Puppets.ContainsKey(craft)) Puppets[craft] = n.Now;
+                if (Nobodys.ContainsKey(craft)) Nobodys[craft] = n.Now;
+                Renamed[craft] = n.Now;
+                ToName.Add((craft, n.Now));
+            }
+            string who = n.By == 0 ? "the server" : n.By == c.Id ? "you" : c.NameOf(n.By);
+            Say($"{who} renamed {n.Was} to {n.Now}");
+            Log.Info($"{n.Was} is called {n.Now} from now, renamed by {(n.By == 0 ? "the server" : c.NameOf(n.By))}");
+        }
+    }
+
     private static void TakeRenames(Client c)
     {
         while (c.Renamed.TryDequeue(out (string Was, string Now) r))
@@ -2915,6 +3023,14 @@ internal static class Sync
             if (World.IsAlive(going)) World.Destroy(going);
         }
         ToRemove.Clear();
+        foreach ((Vehicle craft, string name) in ToName)
+        {
+            if (!World.IsAlive(craft) || KeyOf(craft) != name) continue;
+            // Known by the name it has here from now, or still through Renamed where KSA has
+            // something else under it.
+            if (craft.Id == name || World.Rename(craft, name)) Renamed.Remove(craft);
+        }
+        ToName.Clear();
         if (_toClearSmoke)
         {
             _toClearSmoke = false;

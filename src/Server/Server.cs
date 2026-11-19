@@ -489,6 +489,7 @@ public sealed class GameServer : IDisposable
         FollowTheRoom(now);
         Lapse(now);
         SayGoneAgain(now);
+        SayRenameAgain(now);
         // Said again for a while after one has ended, as it is while one runs. The end of a warp
         // was said once, and a game that missed it went on showing a warp at 8x for as long as
         // nobody started another, with its keys stepping from a speed the world was not at.
@@ -693,6 +694,9 @@ public sealed class GameServer : IDisposable
                 if (seen.Length == 0 || player.Notes < 1.0) return;
                 player.Notes -= 1.0;
                 Log($"{player.Name}'s game notes: {seen}");
+                return;
+            case Wire.Name name when player.Loaded:
+                if (RenameCraft(name.Was, name.Now, player) is { } refused) Tell(player, refused);
                 return;
             case Wire.Command asked:
                 string line = Wire.Clip(asked.Line, Wire.ChatChars).Trim();
@@ -934,6 +938,8 @@ public sealed class GameServer : IDisposable
             if (c.Definition is not null && c.Universe >= since && c.Owner != 0 && c.Owner != p.Id) p.Link.Send(c.Definition, now);
         }
         foreach ((string key, double at) in _gone) if (at >= since) _udp.Send(new Wire.Gone(key), p.At);
+        // Before the owners, which list each craft under the name it has now.
+        foreach ((string was, string to, byte by, double renamedAt, _, uint serial) in _renames) if (renamedAt >= since) _udp.Send(new Wire.Name(was, to, by, serial), p.At);
         foreach (Wire.Owners page in OwnerPages()) _udp.Send(page, p.At);
         Log($"{p.Name} is in the world");
         _rosterNext = 0.0;
@@ -968,7 +974,11 @@ public sealed class GameServer : IDisposable
                 // Nor of one another player has in any way: asking for it outright would take a
                 // craft held for being near, and a piece KSA had named after old wreckage somebody
                 // was standing beside became that wreckage, in every game.
-                if (OwnerOf(blob.Key) is var has && has != p.Id && (has != 0 || Grant(p, blob.Key) is null)) return;
+                if (OwnerOf(blob.Key) is var has && has != p.Id && (has != 0 || Grant(p, blob.Key) is null))
+                {
+                    SayRenamedAgain(p, blob.Key);
+                    return;
+                }
                 Craft craft = _crafts[blob.Key];
                 // Written before the one already here, by the same game: the last to arrive is
                 // not the last that was written. A piece of wreckage written down twice two
@@ -1017,6 +1027,9 @@ public sealed class GameServer : IDisposable
             // more after the docking it came back as a craft no world had, flown by a player who
             // was riding in another.
             if (!made && _dockings.Any(d => d.Consumed == key && d.By != p.Id)) return null;
+            // Nor a name a craft has just been given up for, made or not: a game that has not heard
+            // yet still has the craft under it, and asking for it would make it two craft.
+            if (_renames.Any(r => r.Was == key && _clock() - r.At < RenameToldForSeconds)) return null;
             // Made again under its name, which is a craft that has undocked: that docking is over.
             _dockings.RemoveAll(d => d.Consumed == key);
             _crafts[key] = craft = new Craft();
@@ -1128,6 +1141,98 @@ public sealed class GameServer : IDisposable
         Broadcast(new Wire.Dock(consumed, survivor, p.Id), q => q.Loaded && q != p);
     }
 
+    // Renames, for a game that loads a world saved before them and for one that speaks of a craft
+    // under the name it had: newest last, and as many as a world is likely to see between saves.
+    private readonly List<(string Was, string Now, byte By, double Universe, double At, uint Serial)> _renames = [];
+    private readonly List<(string Was, string Now, byte By, double At, uint Serial)> _renameAgain = [];
+    private uint _renameSerial;
+    private const double RenameToldForSeconds = 30.0;
+    private const int RenamesKept = 200;
+
+    /// <summary>
+    /// A rename typed at the console, or by an admin in a game: "Old name -> New name".
+    /// </summary>
+    public string Rename(string asked, Player? by = null)
+    {
+        int arrow = asked.IndexOf("->", StringComparison.Ordinal);
+        if (arrow < 0) return "usage: rename <craft> -> <new name>";
+        return RenameCraft(asked[..arrow], asked[(arrow + 2)..], by) ?? $"renamed to {Wire.Clip(asked[(arrow + 2)..], Wire.KeyChars)}";
+    }
+
+    /// <summary>
+    /// A craft given another name in every game, or why not: null where it was done.
+    ///
+    /// <para>A craft's name is what every game and this server know it by, so it is renamed here
+    /// first and everybody follows: who has it, how it is built, whether it is protected. A
+    /// player renames a craft that is theirs; an admin any craft, and only an admin one that is
+    /// protected, since protecting it is an admin's word that it stays as it is.</para>
+    /// </summary>
+    public string? RenameCraft(string askedWas, string askedNow, Player? by)
+    {
+        string was = Wire.Clip(askedWas, Wire.KeyChars), now = Wire.Clip(askedNow, Wire.KeyChars);
+        if (was.Length == 0 || now.Length == 0) return "usage: rename <craft> -> <new name>";
+        if (Wire.IsPattern(now) || now.Contains("->", StringComparison.Ordinal)) return $"'{now}' can't be a craft's name";
+        was = _crafts.Keys.FirstOrDefault(k => string.Equals(k, was, StringComparison.OrdinalIgnoreCase)) ?? was;
+        if (!_crafts.TryGetValue(was, out Craft? craft)) return $"the server doesn't know a craft called {was}: somebody has to have flown or watched it";
+        if (was == now) return $"{was} is already called that";
+        bool admin = by is null || by.Admin;
+        if (Protected.Has(was) && !admin) return $"{was} is protected, so only an admin can rename it";
+        if (!admin && (craft.Owner != by!.Id || craft.Near)) return $"{was} isn't yours to rename";
+        if (_crafts.ContainsKey(now)) return $"there's already a craft called {now}";
+        if (_dockings.Any(d => (d.Consumed == was || d.Survivor == was) && _clock() - d.At < DockingToldForSeconds)) return $"{was} has just docked: try again in a moment";
+
+        double clock = _clock();
+        _crafts.Remove(was);
+        _crafts[now] = craft;
+        // A name freed by a craft that went is a name this one may have, and a game that loads a
+        // world from before would otherwise be told this one has gone.
+        _gone.Remove(now);
+        if (craft.Definition is not null && Blob.Decode(craft.Definition) is { } definition) craft.Definition = (definition with { Key = now }).Encode();
+        foreach (Player q in _players.Values.Where(q => q.Controlling == was)) Flying(q, now);
+        if (Protected.Remove(was))
+        {
+            Protected.Add(now);
+            SayProtected();
+        }
+        uint serial = ++_renameSerial;
+        _renames.Add((was, now, by?.Id ?? 0, UniverseClock.Now(clock), clock, serial));
+        if (_renames.Count > RenamesKept) _renames.RemoveAt(0);
+        foreach (double after in GoneAgainAfterSeconds) _renameAgain.Add((was, now, by?.Id ?? 0, clock + after, serial));
+        OwnersChanged();
+        Broadcast(new Wire.Name(was, now, by?.Id ?? 0, serial), q => q.Loaded);
+        string who = by?.Name ?? "the operator";
+        Log($"{who} renamed {was} to {now}");
+        // Soon, so a game that joins loads the craft under the name it has now.
+        _snapshotNext = Math.Min(_snapshotNext, clock + RemoveSavesAfterSeconds);
+        return null;
+    }
+
+    // One datagram is one chance, and a game that never hears keeps the craft under its old name
+    // while every other game has it under the new one.
+    private void SayRenameAgain(double now)
+    {
+        for (int i = _renameAgain.Count - 1; i >= 0; i--)
+        {
+            (string was, string to, byte by, double at, uint serial) = _renameAgain[i];
+            if (now < at) continue;
+            _renameAgain.RemoveAt(i);
+            if (_crafts.ContainsKey(to)) Broadcast(new Wire.Name(was, to, by, serial), p => p.Loaded);
+        }
+    }
+
+    /// <summary>Tells a player again of a rename, where they are still speaking of the craft by the name it had.</summary>
+    private void SayRenamedAgain(Player p, string key)
+    {
+        if (_crafts.ContainsKey(key)) return;
+        for (int i = _renames.Count - 1; i >= 0; i--)
+        {
+            (string was, string now, byte by, _, double at, uint serial) = _renames[i];
+            if (was != key || _clock() - at > RenameToldForSeconds) continue;
+            if (_crafts.ContainsKey(now)) _udp.Send(new Wire.Name(was, now, by, serial), p.At);
+            return;
+        }
+    }
+
     // How far apart two craft may be said to be and still have docked: the length of the longest
     // of them and what a state half a second old leaves out, and nothing like across a sky.
     private const double DockWithinM = 500.0, DockSaidWithinSeconds = 10.0;
@@ -1149,6 +1254,7 @@ public sealed class GameServer : IDisposable
     /// <summary>Tells a player again of a docking that took a craft they are still speaking of as their own.</summary>
     private void SayDockedAgain(Player p, string key)
     {
+        SayRenamedAgain(p, key);
         foreach ((string consumed, string survivor, byte by, double at) in _dockings)
         {
             if (by == p.Id || (consumed != key && survivor != key) || _clock() - at > DockingToldForSeconds) continue;

@@ -65,6 +65,9 @@ public sealed class Client : IDisposable
     private Dictionary<string, byte> _ownersComing = [];
     // Which of them are held only for being within their holder's physics.
     private readonly HashSet<string> _near = [];
+
+    // Renames acted on, by the server's count of them: each is said more than once.
+    private readonly HashSet<uint> _namesTaken = [];
     private HashSet<string> _nearComing = [];
 
     // The page of the round being gathered, or -1 for no round: a round whose pages do not arrive in
@@ -230,6 +233,9 @@ public sealed class Client : IDisposable
     /// <summary>Craft of this game the server has given another name, because a player already had that one.</summary>
     public Queue<(string Was, string Now)> Renamed { get; } = new();
 
+    /// <summary>Craft given another name in every game, by whoever asked; see <see cref="Wire.Name"/>.</summary>
+    public Queue<(string Was, string Now, byte By)> Named { get; } = new();
+
     /// <summary>What the shared world's speed is doing: who asked, how fast, and whether it is being answered or running.</summary>
     public Wire.Warp? Warp { get; private set; }
 
@@ -329,6 +335,7 @@ public sealed class Client : IDisposable
         Warp = null;
         _owners.Clear();
         _near.Clear();
+        _namesTaken.Clear();
         (_ownersComing, _nearComing, _ownersWant) = ([], [], -1);
         _tracks.Clear();
         Players = [];
@@ -451,6 +458,13 @@ public sealed class Client : IDisposable
     {
         string t = Wire.Clip(line, Wire.ChatChars).Trim();
         if (Joined && t.Length > 0) Send(new Wire.Command(t));
+    }
+
+    /// <summary>Asks the server to give a craft another name in every game; it answers with a <see cref="Wire.Name"/> or says why not.</summary>
+    public void AskName(string was, string now)
+    {
+        string from = Wire.Clip(was, Wire.KeyChars), to = Wire.Clip(now, Wire.KeyChars);
+        if (Joined && from.Length > 0 && to.Length > 0) Send(new Wire.Name(from, to));
     }
 
     /// <summary>Tells the server something for its log that only this game saw. See <see cref="Wire.Note"/>.</summary>
@@ -627,6 +641,16 @@ public sealed class Client : IDisposable
                 // Everything held under the old name follows it, so nothing of this craft is lost.
                 if (_tracks.Remove(n.Was, out Track? moved)) _tracks[n.Now] = moved;
                 Renamed.Enqueue((n.Was, n.Now));
+                return;
+            case Wire.Name nm when Joined && nm.Was.Length > 0 && nm.Now.Length > 0 && nm.Was != nm.Now && _namesTaken.Add(nm.Serial):
+                // Taken from here as a docking is: the roster says the same a moment later, and
+                // the frame this is acted on in already has the craft under the name it has now.
+                if (_owners.Remove(nm.Was, out byte owner)) _owners[nm.Now] = owner;
+                if (_ownersComing.Remove(nm.Was, out byte coming)) _ownersComing[nm.Now] = coming;
+                if (_near.Remove(nm.Was)) _near.Add(nm.Now);
+                if (_nearComing.Remove(nm.Was)) _nearComing.Add(nm.Now);
+                if (_tracks.Remove(nm.Was, out Track? track)) _tracks[nm.Now] = track;
+                Named.Enqueue((nm.Was, nm.Now, nm.By));
                 return;
             case Wire.Extra x when Joined && x.Owner != Id && x.Key.Length > 0 && x.Channel.Length > 0:
                 if (Extras.Count >= MostExtrasWaiting) Extras.Dequeue();

@@ -432,6 +432,24 @@ over one more, and the Multiplayer window opened again. A connection lost while 
 shut used to be a world that simply stopped answering. Leaving one server to join another is
 `Disconnect(quietly: true)` and says nothing.
 
+**A craft is renamed by the server, and every game follows.** KSA lets a craft be named only
+before it launches, in the editor and the launch menu; `CelestialSystem.Rename` exists and nothing
+in the game calls it. A craft's name is what every game and the server know it by, so a rename is
+asked of the server (`Wire.Name` with nobody in it, from `/rename New name` for the craft flown or
+`/rename Old -> New`), which refuses a craft that is not the player's own -- held for being near is
+not their own -- a protected one unless an admin asks, and a name a craft already has. It then
+moves everything it keeps under the old name to the new, keeps a protected craft protected, and
+says `Wire.Name` with who asked to every game, twice again over the next second, to any game that
+speaks of the craft by its old name in the next thirty seconds, and to a game that loads a world
+saved before it; it refuses the old name to a claim for those thirty seconds, made or not, since a
+game that has not heard would otherwise make it a second craft. A game moves every record of its
+own from the old name to the new at once, knows the craft by the new name through `Renamed` from
+that frame, and renames it in KSA in the quiet window, the crew's assignment with it as the launch
+menu moves them, unless KSA has something else by that name. How it is built stays as its owner
+said it, under the old name inside: a game building it from that knows it by the new one as it
+does a craft renamed on a clash. A body's name is refused by the game, which knows the bodies; the
+server does not. Protocol 29.
+
 **A touch of two ports that docks nothing is written down, here and on the server.** KSA docks on
 a contact only where the two ports are under half a metre apart, within ten degrees of facing each
 other and closing with the port's latching energy, and says nothing of a contact that fell short:
@@ -1077,6 +1095,16 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   turn it had, which is what a player who lined up to the centimetre and bounced had done. A
   docking the mod refuses has not been seen noted, having not been made to happen, and one
   rocket flies one approach: 1.7 t of thruster propellant is gone after it.
+
+- **A craft renamed, and a server lost.** Two games on one server, Alpha flying `Water and Air
+  Delivery` and Bravo watching it. Bravo's `/rename Water and Air Delivery -> Hijacked` was
+  answered "isn't yours to rename". Alpha's `/rename Hauler One` renamed it in both worlds, KSA's
+  own name included, 49 parts and Alpha's still in each, said once in each chat and built again
+  in neither; twenty seconds on it was still `Hauler One` everywhere. The server was then killed
+  with Alpha's Multiplayer window shut: ten seconds later both games said they had lost the
+  connection, put *Disconnected* up and had the window open. Not tried in a game: an admin's
+  rename of somebody else's craft, a protected craft, a game joining after a rename, and the crew
+  roster following the name -- the server's half of the first three is in its tests.
 
 ## What has not been tried
 

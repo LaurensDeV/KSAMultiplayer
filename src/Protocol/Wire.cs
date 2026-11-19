@@ -190,7 +190,7 @@ public static class Wire
     /// <see cref="Swept"/> naming a protected craft in full stopped taking it: a game of 27 would
     /// still take it from its own world, and the station the server kept would be missing there.</para>
     /// </summary>
-    public const ushort Version = 28;
+    public const ushort Version = 29;
 
     /// <summary>
     /// The version of <see cref="Ask"/> and <see cref="Facts"/> alone, in the first byte of each.
@@ -325,6 +325,7 @@ public static class Wire
         Ask = 29,
         Facts = 30,
         Note = 31,
+        Name = 32,
     }
 
     /// <summary>Where a warp has got to: nobody has asked, somebody has and is waiting, or it is running.</summary>
@@ -673,6 +674,16 @@ public static class Wire
     public sealed record Note(string Text) : Message(Kind.Note);
 
     /// <summary>
+    /// A craft given another name: asked of the server by a game, with nobody in
+    /// <paramref name="By"/>, and said by the server to every game once it has done it, with who
+    /// asked. Every record of the craft follows the name, and every game renames its copy.
+    /// </summary>
+    /// <param name="By">Who renamed it, or 0 for the server's own console.</param>
+    /// <param name="Serial">Which rename this is, counted by the server: it says each one more than
+    /// once, and a game acts on each once.</param>
+    public sealed record Name(string Was, string Now, byte By = 0, uint Serial = 0) : Message(Kind.Name);
+
+    /// <summary>
     /// What a player is on this server, said by the server until the game says the same back. A
     /// game answers a token only once it is written down, so a server that has heard one back
     /// knows the one it replaces can stop working.
@@ -873,6 +884,12 @@ public static class Wire
             case Note n2:
                 w.LongText(n2.Text, NoteChars);
                 break;
+            case Name nm:
+                w.Text(nm.Was, KeyChars);
+                w.Text(nm.Now, KeyChars);
+                w.U8(nm.By);
+                w.U32(nm.Serial);
+                break;
             case Op o:
                 w.U8(o.Admin ? (byte)1 : (byte)0);
                 w.Text(o.Token, TokenChars);
@@ -945,6 +962,7 @@ public static class Wire
                 Kind.Chat => new Chat(r.U8(), r.Text(ChatChars)),
                 Kind.Command => new Command(r.Text(ChatChars)),
                 Kind.Note => new Note(r.LongText(NoteChars)),
+                Kind.Name => new Name(r.Text(KeyChars), r.Text(KeyChars), r.U8(), r.U32()),
                 Kind.Op => new Op(r.U8() != 0, r.Text(TokenChars)),
                 Kind.Snapshot => new Snapshot(r.Text(200)),
             Kind.NoWorld => new NoWorld(r.Text(200)),
