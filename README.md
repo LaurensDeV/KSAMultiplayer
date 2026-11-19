@@ -424,26 +424,25 @@ op discord:80351110224678912
 
 or, once they are playing and have logged in, simply `op Jeb`.
 
-They press **Log in with Discord** in the Multiplayer window. Their browser goes through the login
-service at `servers.ksamp.gg` to Discord, which asks only to know who they are, and comes back to
-the game on port 50180 of their own machine with a pass the service has signed. The game gives it
-to the server, which checks it with the service's public key and makes them an admin, handing that
-machine a token as `op` does, so they log in once per machine rather than at every join.
-Ticking **Log in when I join** under the name in the join form starts that login by itself once
-they are in a server that has Discord admins, unless the server already knows them as an admin by
-their token. When the browser that opens is not the one they use Discord in, **Copy link** puts the
-login's address on the clipboard. `deop Jeb`
-or `deop discord:80351110224678912` takes it back, along with every token handed out for it, and
-`admins` shows the Discord user beside each name it applies to.
+Players log in **once per computer**: **Log in with Discord** under the name in the Multiplayer
+window. Their browser goes through the login service at `servers.ksamp.gg` to Discord, which asks
+only to know who they are, and comes back to the game on port 50180 of their own machine. If the
+browser that opens is not the one they use Discord in, **Copy link** puts the login's address on the
+clipboard. The login lasts 30 days, and **Log out** forgets it.
 
-There is nothing to set up. A server with no Discord admin never asks the service anything and shows
-no login button; `--discord-login ""` turns it off altogether.
+From then on every server they join is told who they are, with nothing to press: a server with
+Discord admins makes one of them an admin on the spot, and hands that machine a token as `op` does.
+`deop Jeb` or `deop discord:80351110224678912` takes it back, along with every token handed out for
+it, and `admins` shows the Discord user beside each name it applies to.
 
-A pass names the address the player typed and a nonce this server gave them, and is good for five
-minutes. A server takes one only for its own nonce and for an address that leads to itself -- its own
-interfaces, or where the login service saw it from. So a server that has your admin log in on it
-cannot hand their pass on to yours: it names the other server's address and the other server's
-login.
+There is nothing to set up on a server. One with no Discord admin is told nothing and asks the
+service nothing; `--discord-login ""` turns Discord logins off altogether.
+
+The login is a key made by the game, which never leaves the computer, and a certificate from the
+service saying whose it is. At each join the game signs that join's nonce and the address the player
+typed with the key, and a server takes it only for its own nonce and an address that leads to itself
+-- its own interfaces, or where the login service saw it from. So a server that has your admin join
+it cannot hand what they sent on to yours.
 
 In a server, the key and the menu entries that open KSA's **GAME SAVES** open **SERVER SAVES**
 instead, for an admin, and so does a button in the Multiplayer window. It is the same window with the

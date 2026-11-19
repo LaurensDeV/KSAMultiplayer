@@ -286,25 +286,25 @@ public sealed class Client : IDisposable
     }
     public Queue<string> Said { get; } = new();
 
-    /// <summary>What a Discord login on this server has to name, or empty where it takes none.</summary>
+    /// <summary>What a game logged in with Discord signs at this join, or empty where this server takes no Discord logins.</summary>
     public string DiscordNonce { get; private set; } = "";
 
     /// <summary>Who this player is on Discord, as the server last said, or null until it has.</summary>
     public Wire.DiscordUser? Discord { get; private set; }
 
-    /// <summary>Whether a pass has gone to the server and nothing has come back for it yet.</summary>
+    /// <summary>Whether a proof has gone to the server and nothing has come back for it yet.</summary>
     public bool DiscordAsking => _discordAsk is not null;
 
     // Said again until answered.
-    private Wire.DiscordPass? _discordAsk;
+    private Wire.DiscordProof? _discordAsk;
     private double _discordNext, _discordUntil;
     private const double DiscordEverySeconds = 1.0, DiscordWithinSeconds = 20.0;
 
-    /// <summary>Hands the server what the login service signed, for it to say who that is in <see cref="Discord"/>.</summary>
-    public void LogInWithDiscord(string pass)
+    /// <summary>Hands the server this machine's Discord certificate and its signature for this join, for it to say who that is in <see cref="Discord"/>.</summary>
+    public void ProveDiscord(string cert, string aud, string signature)
     {
-        if (!Joined || pass.Length == 0) return;
-        _discordAsk = new Wire.DiscordPass(pass);
+        if (!Joined || cert.Length == 0) return;
+        _discordAsk = new Wire.DiscordProof(cert, global::KSAMultiplayer.Discord.Aud(aud), signature);
         (_discordNext, _discordUntil) = (0.0, _clock() + DiscordWithinSeconds);
     }
 

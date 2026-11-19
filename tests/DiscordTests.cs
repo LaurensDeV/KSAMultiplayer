@@ -33,8 +33,15 @@ public class DiscordTests
             return typed == "rogue.example" ? Task.FromResult<IPAddress[]>([IPAddress.Parse("203.0.113.9")]) : Addresses.Of(typed, cancel);
         }
 
-        public string Pass(string id, string nonce, string aud = "127.0.0.1", long? exp = null, ECDsa? by = null) =>
-            new DiscordPass(id, id == Alice ? "alice" : "bob", aud, nonce, exp ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 300).Sign(by ?? Key);
+        /// <summary>What a game logged in as this user proves at a join: a certificate for a key of its own, and that key's signature over the nonce and the address.</summary>
+        public (string Cert, string Aud, string Signature) Proof(string id, string nonce, string aud = "127.0.0.1", long? exp = null, ECDsa? by = null, ECDsa? machine = null)
+        {
+            ECDsa mine = machine ?? ECDsa.Create(ECCurve.NamedCurves.nistP256);
+            string spki = System.Buffers.Text.Base64Url.EncodeToString(mine.ExportSubjectPublicKeyInfo());
+            string cert = new DiscordCert(id, id == Alice ? "alice" : "bob", spki, exp ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds() + Discord.CertSeconds).Sign(by ?? Key);
+            string signature = System.Buffers.Text.Base64Url.EncodeToString(mine.SignData(Discord.Proof(nonce, aud), HashAlgorithmName.SHA256));
+            return (cert, aud, signature);
+        }
     }
 
     private static Rig Rigged(out FakeLogin login, params string[] discordAdmins)
@@ -52,9 +59,9 @@ public class DiscordTests
         return c;
     }
 
-    private static void LogIn(Rig rig, Client c, string pass)
+    private static void LogIn(Rig rig, Client c, (string Cert, string Aud, string Signature) proof)
     {
-        c.LogInWithDiscord(pass);
+        c.ProveDiscord(proof.Cert, proof.Aud, proof.Signature);
         rig.Until(() => !c.DiscordAsking, what: "the server to answer the Discord login");
     }
 
@@ -72,7 +79,7 @@ public class DiscordTests
         using Rig rig = Rigged(out FakeLogin login);
         Client c = Joined(rig, "Alice");
         Assert.Equal("", c.DiscordNonce);
-        LogIn(rig, c, login.Pass(Alice, "anything"));
+        LogIn(rig, c, login.Proof(Alice, "anything"));
         Assert.Contains("doesn't take Discord logins", c.Discord!.Refused);
         Assert.False(rig.Server.DiscordOn);
     }
@@ -86,7 +93,7 @@ public class DiscordTests
         rig.For(0.3);
         Assert.False(c.Admin);
 
-        LogIn(rig, c, login.Pass(Alice, c.DiscordNonce));
+        LogIn(rig, c, login.Proof(Alice, c.DiscordNonce));
         Assert.Equal(Alice, c.Discord!.Id);
         Assert.Equal("alice", c.Discord.Name);
         rig.Until(() => c.Admin && c.Tokens.Count > 0, what: "Alice to be made an admin and handed a token");
@@ -103,7 +110,7 @@ public class DiscordTests
         Assert.Equal("", c.DiscordNonce);
         rig.Server.OpDiscord(Alice);
         rig.Until(() => c.DiscordNonce.Length > 0, what: "Alice to be given a nonce");
-        LogIn(rig, c, login.Pass(Alice, c.DiscordNonce));
+        LogIn(rig, c, login.Proof(Alice, c.DiscordNonce));
         rig.Until(() => c.Admin, what: "Alice to be an admin");
     }
 
@@ -112,68 +119,68 @@ public class DiscordTests
     {
         using Rig rig = Rigged(out FakeLogin login, Alice);
         Client c = Joined(rig, "Bob");
-        LogIn(rig, c, login.Pass(Bob, c.DiscordNonce));
+        LogIn(rig, c, login.Proof(Bob, c.DiscordNonce));
         Assert.Equal(Bob, c.Discord!.Id);
         Assert.Equal(Bob, Assert.Single(rig.Server.Players).DiscordId);
         rig.For(0.3);
         Assert.False(c.Admin);
     }
 
-    // The relay a pass has to survive: a server that had Alice log in on it hands her pass on. It
+    // The relay a proof has to survive: a server Alice joined hands on what she proved to it. It
     // names that server's address, which does not lead here.
     [Fact]
-    public void APassForAnotherServersAddressIsRefused()
+    public void AProofForAnotherServersAddressIsRefused()
     {
         using Rig rig = Rigged(out FakeLogin login, Alice);
         Client c = Joined(rig, "Mallory");
-        LogIn(rig, c, login.Pass(Alice, c.DiscordNonce, aud: "rogue.example"));
+        LogIn(rig, c, login.Proof(Alice, c.DiscordNonce, aud: "rogue.example"));
         Assert.Equal("", c.Discord!.Id);
         Assert.Contains("isn't this server", c.Discord.Refused);
         rig.For(0.3);
         Assert.False(c.Admin);
     }
 
-    // And with the right address, a pass made for one player's login is no good for another's.
+    // And with the right address, a proof made for one player's join is no good for another's.
     [Fact]
-    public void APassForAnotherLoginIsRefused()
+    public void AProofForAnotherJoinIsRefused()
     {
         using Rig rig = Rigged(out FakeLogin login, Alice);
         Client alice = Joined(rig, "Alice");
         Client mallory = Joined(rig, "Mallory");
-        LogIn(rig, mallory, login.Pass(Alice, alice.DiscordNonce));
-        Assert.Contains("another login", mallory.Discord!.Refused);
+        LogIn(rig, mallory, login.Proof(Alice, alice.DiscordNonce));
+        Assert.Contains("wasn't proved for this join", mallory.Discord!.Refused);
     }
 
     [Fact]
-    public void APassNotSignedByTheServiceIsRefused()
+    public void ACertificateNotSignedByTheServiceIsRefused()
     {
         using Rig rig = Rigged(out FakeLogin login, Alice);
         Client c = Joined(rig, "Alice");
         using ECDsa forged = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        LogIn(rig, c, login.Pass(Alice, c.DiscordNonce, by: forged));
-        Assert.Contains("isn't signed", c.Discord!.Refused);
-        LogIn(rig, c, "not.a-pass");
+        LogIn(rig, c, login.Proof(Alice, c.DiscordNonce, by: forged));
+        Assert.Contains("isn't signed by the login service", c.Discord!.Refused);
+        LogIn(rig, c, ("not.a-cert", "127.0.0.1", "x"));
         Assert.False(c.Admin);
     }
 
     [Fact]
-    public void APassThatHasRunOutIsRefused()
+    public void ALoginThatHasRunOutIsRefusedByTheServer()
     {
         using Rig rig = Rigged(out FakeLogin login, Alice);
         Client c = Joined(rig, "Alice");
-        LogIn(rig, c, login.Pass(Alice, c.DiscordNonce, exp: DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 1));
+        LogIn(rig, c, login.Proof(Alice, c.DiscordNonce, exp: DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 1));
         Assert.Contains("run out", c.Discord!.Refused);
     }
 
-    // A pass said again because its answer was lost is answered from what the server kept.
+    // A proof said again because its answer was lost is answered from what the server kept.
     [Fact]
-    public void APassSaidAgainIsAnsweredAgainAndCheckedOnce()
+    public void AProofSaidAgainIsAnsweredAgainAndCheckedOnce()
     {
         using Rig rig = Rigged(out FakeLogin login, Alice);
         Client c = Joined(rig, "Alice");
-        string pass = login.Pass(Alice, c.DiscordNonce);
-        LogIn(rig, c, pass);
-        LogIn(rig, c, pass);
+        var proof = login.Proof(Alice, c.DiscordNonce);
+        LogIn(rig, c, proof);
+        LogIn(rig, c, proof);
         Assert.Equal(Alice, c.Discord!.Id);
         Assert.Equal(1, login.Resolved);
     }
@@ -185,7 +192,7 @@ public class DiscordTests
     {
         using Rig rig = Rigged(out FakeLogin login, Bob);
         Client first = Joined(rig, "Alice");
-        LogIn(rig, first, login.Pass(Alice, first.DiscordNonce));
+        LogIn(rig, first, login.Proof(Alice, first.DiscordNonce));
         Assert.Equal("Alice", rig.Server.Op("Alice"));
         rig.Until(() => first.Admin, what: "Alice to be an admin");
         Leave(rig, first);
@@ -193,7 +200,7 @@ public class DiscordTests
         Client elsewhere = Joined(rig, "AliceOnHerLaptop");
         rig.For(0.3);
         Assert.False(elsewhere.Admin);
-        LogIn(rig, elsewhere, login.Pass(Alice, elsewhere.DiscordNonce));
+        LogIn(rig, elsewhere, login.Proof(Alice, elsewhere.DiscordNonce));
         rig.Until(() => elsewhere.Admin, what: "Alice to be an admin on her laptop");
         Assert.Equal(Alice, rig.Server.Admins.DiscordOf("AliceOnHerLaptop"));
     }
@@ -203,7 +210,7 @@ public class DiscordTests
     {
         using Rig rig = Rigged(out FakeLogin login, Alice);
         Client c = Joined(rig, "Alice");
-        LogIn(rig, c, login.Pass(Alice, c.DiscordNonce));
+        LogIn(rig, c, login.Proof(Alice, c.DiscordNonce));
         rig.Until(() => c.Admin && c.Tokens.Count > 0, what: "Alice to be an admin");
         string token = c.Tokens.Dequeue();
         c.Kept(token);
@@ -227,7 +234,7 @@ public class DiscordTests
     {
         using Rig rig = Rigged(out FakeLogin login, Alice);
         Client c = Joined(rig, "Alice");
-        LogIn(rig, c, login.Pass(Alice, c.DiscordNonce));
+        LogIn(rig, c, login.Proof(Alice, c.DiscordNonce));
         rig.Until(() => c.Admin, what: "Alice to be an admin");
         Assert.True(rig.Server.Deop("Alice"));
         Assert.Null(rig.Server.Admins.NameOfDiscord(Alice));
@@ -251,30 +258,86 @@ public class DiscordTests
         }
     }
 
+    // A certificate is public: every server a player joins is handed it. Without the key it names,
+    // which never leaves their machine, it proves nothing.
+    [Fact]
+    public void ACertificateWithoutItsKeyIsRefused()
+    {
+        using Rig rig = Rigged(out FakeLogin login, Alice);
+        Client c = Joined(rig, "Mallory");
+        using ECDsa alices = ECDsa.Create(ECCurve.NamedCurves.nistP256), mallorys = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        (string cert, string aud, _) = login.Proof(Alice, "elsewhere", machine: alices);
+        string signed = System.Buffers.Text.Base64Url.EncodeToString(mallorys.SignData(Discord.Proof(c.DiscordNonce, aud), HashAlgorithmName.SHA256));
+        LogIn(rig, c, (cert, aud, signed));
+        Assert.Contains("wasn't proved for this join", c.Discord!.Refused);
+    }
+
     // ------------------------------------------------------------------ the service and the game's side
 
+    // The whole of a machine's login, from the key it makes to what it hands a server at a join.
     [Fact]
-    public void TheServiceSignsAPassForTheLoginItWasAskedAndTheGameReadsItBack()
+    public void AMachineLogsInOnceAndProvesItAtEveryJoin()
     {
-        using ECDsa key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        Login service = new("1573012247616164064", "secret", "https://servers.ksamp.gg/v1/discord/callback", key);
-        Assert.True(service.On);
+        string folder = Path.Combine(Path.GetTempPath(), "ksamp-discord-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            using ECDsa signing = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+            Login service = new("1573012247616164064", "secret", "https://servers.ksamp.gg/v1/discord/callback", signing);
+            Assert.True(service.On);
 
-        string state = Discord.State(" KSA.Example.com:50101 ", "n0nce", "mine");
-        Discord.LoginState asked = Discord.ReadState(state)!;
-        Assert.Equal("ksa.example.com:50101", asked.A);
+            DiscordIdentity machine = new(Path.Combine(folder, "discord.json"));
+            Assert.Equal("", machine.Cert);
+            (ECDsa key, string spki) = machine.NewKey();
+            string state = Discord.State(spki, "mine");
+            Discord.LoginState asked = Discord.ReadState(state)!;
 
-        string pass = service.Pass(asked, Alice, "alice", DateTimeOffset.UtcNow);
-        string back = Login.BackToGame(state, pass, null);
-        Assert.StartsWith("http://127.0.0.1:50180/ksamp?", back);
-        (string? got, string? error) = Discord.ReadCallback(back[back.IndexOf("/ksamp", StringComparison.Ordinal)..], state);
-        Assert.Null(error);
-        Assert.Equal(pass, got);
+            string back = Login.BackToGame(state, service.Cert(asked, Alice, "alice", DateTimeOffset.UtcNow), null);
+            Assert.StartsWith("http://127.0.0.1:50180/ksamp?", back);
+            (string? cert, string? error) = Discord.ReadCallback(back[back.IndexOf("/ksamp", StringComparison.Ordinal)..], state);
+            Assert.Null(error);
+            Assert.True(machine.Keep(key, cert!));
 
-        using ECDsa checker = ECDsa.Create();
-        checker.ImportSubjectPublicKeyInfo(Convert.FromBase64String(service.PublicKey), out _);
-        DiscordPass said = DiscordPass.Verify(got!, checker)!;
-        Assert.Equal((Alice, "ksa.example.com:50101", "n0nce"), (said.Id, said.Aud, said.N));
+            // Read back by another game started on the same machine.
+            DiscordIdentity again = new(Path.Combine(folder, "discord.json"));
+            Assert.Equal("alice", again.Who!.Name);
+            using ECDsa checker = ECDsa.Create();
+            checker.ImportSubjectPublicKeyInfo(Convert.FromBase64String(service.PublicKey), out _);
+            foreach (string nonce in new[] { "first-join", "second-join" })
+            {
+                (string c, string signature) = again.Prove(nonce, " KSA.Example.com ")!.Value;
+                DiscordCert said = DiscordCert.Verify(c, checker)!;
+                Assert.Equal(Alice, said.Id);
+                Assert.True(said.Signed(nonce, "ksa.example.com", signature));
+                Assert.False(said.Signed("another-join", "ksa.example.com", signature));
+                Assert.False(said.Signed(nonce, "rogue.example", signature));
+            }
+
+            again.Forget();
+            Assert.Null(new DiscordIdentity(Path.Combine(folder, "discord.json")).Prove("n", "a"));
+        }
+        finally
+        {
+            if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ALoginThatHasRunOutIsNoLogin()
+    {
+        string folder = Path.Combine(Path.GetTempPath(), "ksamp-discord-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            using ECDsa signing = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+            DiscordIdentity machine = new(Path.Combine(folder, "discord.json"));
+            (ECDsa key, string spki) = machine.NewKey();
+            machine.Keep(key, new DiscordCert(Alice, "alice", spki, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 1).Sign(signing));
+            Assert.Equal("", machine.Cert);
+            Assert.Null(machine.Prove("n", "a"));
+        }
+        finally
+        {
+            if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
+        }
     }
 
     [Fact]
@@ -292,24 +355,27 @@ public class DiscordTests
     [Fact]
     public void AnAnswerIsReadOnlyWithTheStateThisLoginSent()
     {
-        Assert.Equal(("p.s", null), Discord.ReadCallback("/ksamp?pass=p.s&state=s1", "s1"));
-        Assert.Null(Discord.ReadCallback("/ksamp?pass=p.s&state=other", "s1").Pass);
-        Assert.Null(Discord.ReadCallback("/ksamp?pass=p.s", "s1").Pass);
+        Assert.Equal(("c.s", null), Discord.ReadCallback("/ksamp?cert=c.s&state=s1", "s1"));
+        Assert.Null(Discord.ReadCallback("/ksamp?cert=c.s&state=other", "s1").Cert);
+        Assert.Null(Discord.ReadCallback("/ksamp?cert=c.s", "s1").Cert);
         Assert.Contains("cancelled", Discord.ReadCallback("/ksamp?error=access_denied&state=s1", "s1").Error);
         Assert.Null(Discord.ReadState("not base64 json"));
+        // A state whose key is no key is no login's.
+        Assert.Null(Discord.ReadState(Discord.State("bm90IGEga2V5", "mine")));
     }
 
     [Fact]
     public void TheCallbackWaitsOutAnAnswerForAnotherLoginAndTakesItsOwn()
     {
-        using DiscordCallback callback = new("127.0.0.1", "n0nce", port: 0);
-        Assert.Contains("400", Get(callback.Port, "/ksamp?pass=theirs&state=wrong"));
+        using ECDsa key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using DiscordCallback callback = new(System.Buffers.Text.Base64Url.EncodeToString(key.ExportSubjectPublicKeyInfo()), port: 0);
+        Assert.Contains("400", Get(callback.Port, "/ksamp?cert=theirs&state=wrong"));
         Assert.Contains("404", Get(callback.Port, "/favicon.ico"));
         Assert.False(callback.Finished);
 
-        Assert.Contains("200", Get(callback.Port, $"/ksamp?pass=ours&state={Uri.EscapeDataString(callback.State)}"));
+        Assert.Contains("200", Get(callback.Port, $"/ksamp?cert=ours&state={Uri.EscapeDataString(callback.State)}"));
         SpinWait.SpinUntil(() => callback.Finished, TimeSpan.FromSeconds(5));
-        Assert.Equal("ours", callback.Pass);
+        Assert.Equal("ours", callback.Cert);
     }
 
     [Theory]
@@ -324,11 +390,11 @@ public class DiscordTests
     public void TheDiscordDatagramsReadBackAsTheyWereWritten()
     {
         using ECDsa key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        string pass = new DiscordPass(Alice, "alice", "ksa.example.com", "n0nce", 1).Sign(key);
+        string cert = new DiscordCert(Alice, "alice", "a2V5", 1).Sign(key);
         byte[] buffer = new byte[Wire.BufferBytes];
         foreach (Wire.Message m in new Wire.Message[]
                  {
-                     new Wire.DiscordPass(pass),
+                     new Wire.DiscordProof(cert, "ksa.example.com", "c2lnbmF0dXJl"),
                      new Wire.DiscordUser(Alice, "alice", ""),
                      new Wire.Welcome(3, "", "Moon base", true, System: "Sol", Discord: "n0nce"),
                  })

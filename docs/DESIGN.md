@@ -141,22 +141,26 @@ stranger sent it.
   is an admin's. A file from before the field reads as every token having arrived.
 - **Who is an admin on Discord.** A row of `admins.json` with a `Discord` user id and no hash, made
   by `op discord:<id>` or by `op` on a player who has logged in. The first such row is what turns
-  logins on: until then the server asks the login service nothing and gives no nonce. With one, each
-  player is given a nonce in the welcome that admits them, and anybody already in is welcomed again
-  with theirs. A game logs in through the login service in the directory (`Login`), the only holder
-  of the Discord application's secret: its browser goes to `/v1/discord/login` with a state of the
-  address the player typed, the nonce and a random part of the game's own, on to Discord with
-  `identify` alone, and back through `/v1/discord/callback`, where the code is traded, the token
-  revoked, and a `DiscordPass` signed (ECDSA P-256) to be caught on `127.0.0.1:50180`
-  (`DiscordCallback`, a bare socket, since `HttpListener` on Windows wants a URL reservation). The
-  game says the pass to the server until answered (`DiscordPass`, `DiscordUser`). The server checks
-  it against `/v1/discord/key`, fetched once and again after an hour or a pass that does not check,
-  then the nonce, the expiry and that the address resolves to one of its own interfaces or to where
-  the service saw it from. Without that last check a server that had one of another's admins log
-  in on it could relay the pass, and a nonce alone cannot stop it: the relaying server can fetch the
-  other's nonce for itself. A Discord admin who logs in is handed a token as `op` does; taking the
-  Discord row away takes every token of the name it was under with it. The page the game opens is
-  always `Discord.Service`, never one a server names.
+  logins on: until then the server asks the login service nothing and gives no nonce. With one,
+  each player is given a nonce in the welcome that admits them, and anybody already in is welcomed
+  again with theirs. A game logs in once per machine through the login service in the directory
+  (`Login`), the only holder of the Discord application's secret: it makes a P-256 key, sends the
+  public half through the browser to `/v1/discord/login` in the state with a random part of its
+  own, on to Discord with `identify` alone, and back through `/v1/discord/callback`, where the code
+  is traded, Discord's token revoked, and a `DiscordCert` binding that key to the Discord user for
+  30 days is signed and caught on `127.0.0.1:50180` (`DiscordCallback`, a bare socket, since
+  `HttpListener` on Windows wants a URL reservation). Key and certificate are kept in
+  `Documents/KSAMultiplayer/discord.json` (`DiscordIdentity`). At every join the game signs the
+  nonce and the address the player typed and says the certificate and signature until answered
+  (`DiscordProof`, `DiscordUser`). The server checks the certificate against `/v1/discord/key`,
+  fetched once and again after an hour or a certificate that does not check, then its expiry, the
+  signature over its own nonce, and that the address resolves to one of its own interfaces or to
+  where the service saw it from. The certificate is public; the key is what proves it, and a
+  signature is good for one join of one server, so a server a player joined cannot relay what they
+  sent: it would need its own nonce signed, and the address it names leads to the other. A Discord
+  admin who proves it is handed a token as `op` does; taking the Discord row away takes every token
+  of the name it was under with it. The page the game opens is always `Discord.Service`, never one
+  a server names.
 - **Every player's ping.** A game measures its own round trip to the server and says it with each
   `Ping`; the server passes them all on in the roster, so each game can show what everyone's line is
   like. Held Tab shows that list in game.
@@ -1126,9 +1130,8 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
 
 ## What has not been tried
 
-- **Logging in with Discord.** Driven over loopback with the login service's key made in the test;
-  the directory has not traded a real code with Discord, no game has opened the page or caught the
-  pass, and no server has fetched a real key or checked a real address. A server behind NAT that
+- **Logging in with Discord.** Driven over loopback with the login service's key made in the test,
+  and not yet run in a game against the directory at `servers.ksamp.gg`. A server behind NAT that
   players reach over IPv6 while it fetched the key over IPv4 alone would refuse their passes.
 
 - **The rest of the vehicle editor with the world running.** Seen only opened on the flown craft

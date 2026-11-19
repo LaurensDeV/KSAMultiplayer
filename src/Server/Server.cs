@@ -91,7 +91,7 @@ public sealed record ServerOptions
     public string Directories { get; init; } = "";
 
     /// <summary>
-    /// The login service whose passes say who a player is on Discord; empty to take none. Asked
+    /// The login service whose certificates say who a player is on Discord; empty to take none. Asked
     /// only while some Discord user is an admin here: a server with nobody to recognise has no
     /// reason to call anybody.
     /// </summary>
@@ -198,11 +198,11 @@ public sealed class GameServer : IDisposable
         public string DiscordId { get; set; } = "";
         public string DiscordName { get; set; } = "";
 
-        /// <summary>What a Discord login for this player has to name: made at the join, so a pass for anybody else's is no good here.</summary>
+        /// <summary>What this player's game signs to prove its Discord login here: made at the join, so a signature made for any other is no good.</summary>
         public string DiscordNonce { get; set; } = "";
 
-        /// <summary>The last pass this player's game handed over, and the answer to it once there is one: a game says a pass until it is answered.</summary>
-        public string DiscordPass { get; set; } = "";
+        /// <summary>The last proof this player's game handed over, and the answer to it once there is one: a game says a proof until it is answered.</summary>
+        public string DiscordProof { get; set; } = "";
         public Wire.DiscordUser? DiscordAnswer { get; set; }
         public double DiscordAt { get; set; } = double.NegativeInfinity;
 
@@ -331,7 +331,7 @@ public sealed class GameServer : IDisposable
     /// <param name="admins">Who may run commands; by default the list beside the world, or none kept at all without one.</param>
     /// <param name="saves">The worlds kept under names; by default a folder of them beside the world, or kept only while the server runs without one.</param>
     /// <param name="protect">The craft not to clear; by default the list beside the world, or kept only while the server runs without one.</param>
-    /// <param name="discord">Where passes are checked against; by default the options' login service.</param>
+    /// <param name="discord">What certificates are checked against; by default the options' login service.</param>
     public GameServer(ServerOptions options, Func<double> clock, WorldStore? store = null, IPAddress? bind = null, Admins? admins = null, SaveShelf? saves = null,
                       ProtectedCraft? protect = null, ILoginService? discord = null)
     {
@@ -438,15 +438,15 @@ public sealed class GameServer : IDisposable
 
     private readonly ILoginService? _discordGiven;
     private LoginService? _discordService;
-    private readonly System.Collections.Concurrent.ConcurrentQueue<(Player Who, string Pass, DiscordPass? Said, string Why)> _discordDone = new();
+    private readonly System.Collections.Concurrent.ConcurrentQueue<(Player Who, string Proof, DiscordCert? Said, string Why)> _discordDone = new();
 
-    // The key and where this server is seen from, fetched once and again after an hour or a pass
-    // that does not check against it: the service may have been given a new key.
+    // The key and where this server is seen from, fetched once and again after an hour or a
+    // certificate that does not check against it: the service may have been given a new key.
     private Task<LoginKey>? _loginKey;
     private double _loginKeyAt = double.NegativeInfinity;
     private const double LoginKeyHoldSeconds = 3600.0;
 
-    // A pass a second from one game would be a server resolving names as fast as one player can
+    // A proof a second from one game would be a server resolving names as fast as one player can
     // make it; a few seconds apart is more than a player clicking ever needs.
     private const double DiscordAgainSeconds = 3.0, DiscordWithinSeconds = 15.0;
 
@@ -474,17 +474,18 @@ public sealed class GameServer : IDisposable
         return _loginKey;
     }
 
-    private void OnDiscordPass(Player p, string pass, double now)
+    private void OnDiscordProof(Player p, Wire.DiscordProof asked, double now)
     {
-        if (pass.Length == 0) return;
+        if (asked.Cert.Length == 0) return;
+        string proof = $"{asked.Cert}|{asked.Aud}|{asked.Signature}";
         // Said again because the answer was lost, or is still being worked out.
-        if (pass == p.DiscordPass)
+        if (proof == p.DiscordProof)
         {
             if (p.DiscordAnswer is { } answer) _udp.Send(answer, p.At);
             return;
         }
         string? refused = !DiscordOn || p.DiscordNonce.Length == 0 ? "this server doesn't take Discord logins"
-            : p.DiscordPass.Length > 0 && p.DiscordAnswer is null ? "a Discord login is already being checked: wait for it"
+            : p.DiscordProof.Length > 0 && p.DiscordAnswer is null ? "a Discord login is already being checked: wait for it"
             : now - p.DiscordAt < DiscordAgainSeconds ? "wait a few seconds before logging in with Discord again"
             : null;
         if (refused is not null)
@@ -492,7 +493,7 @@ public sealed class GameServer : IDisposable
             _udp.Send(new Wire.DiscordUser("", "", refused), p.At);
             return;
         }
-        (p.DiscordPass, p.DiscordAnswer, p.DiscordAt) = (pass, null, now);
+        (p.DiscordProof, p.DiscordAnswer, p.DiscordAt) = (proof, null, now);
         Task<LoginKey> key = LoginKey(), fresh = key;
         ILoginService login = Login!;
         string nonce = p.DiscordNonce;
@@ -501,33 +502,33 @@ public sealed class GameServer : IDisposable
             using CancellationTokenSource within = new(TimeSpan.FromSeconds(DiscordWithinSeconds));
             try
             {
-                DiscordPass? said = DiscordPass.Verify(pass, (await key.WaitAsync(within.Token)).Key);
+                DiscordCert? said = DiscordCert.Verify(asked.Cert, (await key.WaitAsync(within.Token)).Key);
                 // Not signed by the key held: the service may have a new one.
                 if (said is null)
                 {
                     fresh = Fetched(login, within.Token);
-                    said = DiscordPass.Verify(pass, (await fresh).Key);
+                    said = DiscordCert.Verify(asked.Cert, (await fresh).Key);
                 }
-                string? why = said is null ? "that pass isn't signed by the login service"
-                    : said.N != nonce ? "that pass is for another login: log in again from this server"
-                    : DateTimeOffset.UtcNow.ToUnixTimeSeconds() > said.Exp ? "that pass has run out: log in again"
+                string? why = said is null ? "that Discord login isn't signed by the login service"
+                    : DateTimeOffset.UtcNow.ToUnixTimeSeconds() > said.Exp ? "your Discord login has run out: log in again"
+                    : !said.Signed(nonce, asked.Aud, asked.Signature) ? "that Discord login wasn't proved for this join"
                     : null;
                 if (why is null)
                 {
                     HashSet<IPAddress> mine = Addresses.Mine((await fresh).Seen);
-                    IPAddress[] led = await login.Resolve(said!.Aud, within.Token);
-                    if (!led.Any(ip => mine.Contains(Addresses.Plain(ip)))) why = $"that pass is for {said.Aud}, which isn't this server";
+                    IPAddress[] led = await login.Resolve(asked.Aud, within.Token);
+                    if (!led.Any(ip => mine.Contains(Addresses.Plain(ip)))) why = $"that Discord login was proved for {asked.Aud}, which isn't this server";
                 }
-                _discordDone.Enqueue((p, pass, why is null ? said : null, why ?? ""));
+                _discordDone.Enqueue((p, proof, why is null ? said : null, why ?? ""));
             }
             catch (Exception e) when (e is HttpRequestException or TaskCanceledException or OperationCanceledException or TimeoutException or CryptographicException)
             {
-                _discordDone.Enqueue((p, pass, null, $"couldn't reach the Discord login service: {e.Message}"));
+                _discordDone.Enqueue((p, proof, null, $"couldn't reach the Discord login service: {e.Message}"));
             }
         });
     }
 
-    // From a thread of the pool; the next pass on the server's own thread starts from it.
+    // From a thread of the pool; the next proof on the server's own thread starts from it.
     private Task<LoginKey> Fetched(ILoginService login, CancellationToken cancel)
     {
         Task<LoginKey> fetched = login.Key(cancel);
@@ -538,10 +539,10 @@ public sealed class GameServer : IDisposable
     // On the server's own thread, as everything else about a player is.
     private void DiscordAnswers()
     {
-        while (_discordDone.TryDequeue(out (Player Who, string Pass, DiscordPass? Said, string Why) done))
+        while (_discordDone.TryDequeue(out (Player Who, string Proof, DiscordCert? Said, string Why) done))
         {
             Player p = done.Who;
-            if (!_players.TryGetValue(p.Id, out Player? still) || still != p || p.DiscordPass != done.Pass) continue;
+            if (!_players.TryGetValue(p.Id, out Player? still) || still != p || p.DiscordProof != done.Proof) continue;
             if (done.Said is not { } said)
             {
                 p.DiscordAnswer = new Wire.DiscordUser("", "", Wire.Clip(done.Why, 200));
@@ -875,8 +876,8 @@ public sealed class GameServer : IDisposable
             case Wire.Name name when player.Loaded:
                 if (RenameCraft(name.Was, name.Now, player) is { } refused) Tell(player, refused);
                 return;
-            case Wire.DiscordPass discordPass:
-                OnDiscordPass(player, Wire.Clip(discordPass.Pass, Discord.PassChars), arrived);
+            case Wire.DiscordProof discordProof:
+                OnDiscordProof(player, discordProof, arrived);
                 return;
             case Wire.Command asked:
                 string line = Wire.Clip(asked.Line, Wire.ChatChars).Trim();

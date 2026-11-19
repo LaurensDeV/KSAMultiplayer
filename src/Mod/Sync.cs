@@ -765,8 +765,7 @@ internal static class Sync
         _client?.Dispose();
         _client = null;
         _finding = null;
-        DiscordLogin.Forget();
-        _discordOnJoin = false;
+        DiscordLogin.Left();
         foreach (Vehicle v in Puppets.Keys) Log.Info($"let go of {v.Id}");
         Puppets.Clear();
         Built.Clear();
@@ -1353,23 +1352,6 @@ internal static class Sync
             : $"could not put the camera on {who.Controlling}");
     }
 
-    // A Discord login still to be started for a player who ticked it in the join form: once in the
-    // world, so the browser does not open over a world still loading, and once a join.
-    private static bool _discordOnJoin;
-
-    /// <summary>
-    /// Starts the Discord login the join form asked for, once this server has said it takes them.
-    /// Not for a player the server already knows as an admin by the token this machine keeps: the
-    /// login would tell it nothing new, and a browser opening at every join is a browser too many.
-    /// </summary>
-    private static void LogInOnJoin(Client c)
-    {
-        if (!_discordOnJoin || Now != Stage.Playing || c.DiscordNonce.Length == 0) return;
-        _discordOnJoin = false;
-        if (c.Admin || c.Discord is { Id.Length: > 0 } || DiscordLogin.Waiting || c.DiscordAsking) return;
-        DiscordLogin.Start(c, _address);
-    }
-
     /// <summary>Whether this server runs what this game asks of it.</summary>
     public static bool Admin => _client is { Admin: true };
 
@@ -1612,6 +1594,7 @@ internal static class Sync
         // world or out of one, and which craft somebody else is driving.
         Guests.InSession(Now == Stage.Playing);
         Guests.Remotes(Now == Stage.Playing ? Puppets.Keys : []);
+        DiscordLogin.Update();
         if (_client is not { } c) return;
         try
         {
@@ -1643,8 +1626,7 @@ internal static class Sync
                 // Answered only once it is on disk: the server keeps the token before it good until then.
                 else if (Tokens.Keep(token)) c.Kept(token);
             }
-            DiscordLogin.Update(c);
-            LogInOnJoin(c);
+            DiscordLogin.Prove(c, _address);
             FollowRules(c);
             if (c.Out.Length > 0)
             {
@@ -1782,7 +1764,6 @@ internal static class Sync
         c.ForgetTracks();
         c.SayLoaded(World.Universe);
         Now = Stage.Playing;
-        _discordOnJoin = Panel.DiscordOnJoin;
         Say("you're in the shared world");
     }
 

@@ -8,10 +8,10 @@ namespace KSAMultiplayer.Directories;
 
 /// <summary>
 /// Logging in with Discord, for every server at once: the one place that holds the Discord
-/// application's secret. A game's browser comes here, goes to Discord, and comes back here with a
-/// code, which is traded for who the player is; that goes back to the game as a
-/// <see cref="DiscordPass"/> signed with this service's key, which any server checks with
-/// <c>/v1/discord/key</c> and nothing else.
+/// application's secret. A game's browser comes here carrying the public half of the game's key,
+/// goes to Discord, and comes back here with a code, which is traded for who the player is; that
+/// goes back to the game as a <see cref="DiscordCert"/> for its key, signed with this service's
+/// key, which any server checks with <c>/v1/discord/key</c> and nothing else.
 ///
 /// <para>Nothing is kept: not the code, not Discord's token, which is given back the moment it has
 /// said who it belongs to, and not who logged in.</para>
@@ -49,7 +49,7 @@ public sealed class Login
 
     public bool On => Discord.IsSnowflake(_clientId) && _secret.Length > 0 && _redirect.Length > 0 && _key is not null;
 
-    /// <summary>The key passes are checked with, as SubjectPublicKeyInfo in base64.</summary>
+    /// <summary>The key certificates are checked with, as SubjectPublicKeyInfo in base64.</summary>
     public string PublicKey => Convert.ToBase64String(_key!.ExportSubjectPublicKeyInfo());
 
     /// <summary>Discord's page asking the player to let this service know who they are: <c>identify</c> alone.</summary>
@@ -58,15 +58,15 @@ public sealed class Login
         + $"&client_id={_clientId}&scope=identify&prompt=none"
         + $"&redirect_uri={Uri.EscapeDataString(_redirect)}&state={Uri.EscapeDataString(state)}";
 
-    /// <summary>Back to the game on its own machine, with a pass or why there is none, and its state.</summary>
-    public static string BackToGame(string state, string? pass, string? error) =>
+    /// <summary>Back to the game on its own machine, with a certificate or why there is none, and its state.</summary>
+    public static string BackToGame(string state, string? cert, string? error) =>
         $"http://127.0.0.1:{Discord.CallbackPort}/ksamp?"
-        + (pass is not null ? $"pass={Uri.EscapeDataString(pass)}" : $"error={Uri.EscapeDataString(error ?? "unknown")}")
+        + (cert is not null ? $"cert={Uri.EscapeDataString(cert)}" : $"error={Uri.EscapeDataString(error ?? "unknown")}")
         + $"&state={Uri.EscapeDataString(state)}";
 
-    /// <summary>The pass for a player who has said who they are, for the login the state asked.</summary>
-    public string Pass(Discord.LoginState state, string id, string name, DateTimeOffset now) =>
-        new DiscordPass(id, name, state.A, state.N, now.ToUnixTimeSeconds() + Discord.PassSeconds).Sign(_key!);
+    /// <summary>The certificate for the key the state carried, now its player has said who they are.</summary>
+    public string Cert(Discord.LoginState state, string id, string name, DateTimeOffset now) =>
+        new DiscordCert(id, name, state.K, now.ToUnixTimeSeconds() + Discord.CertSeconds).Sign(_key!);
 
     /// <summary>Who a code belongs to: traded for a token, the token for the user, and the token given back.</summary>
     public async Task<(string Id, string Name)> Identify(string code, CancellationToken cancel)
@@ -138,7 +138,7 @@ public sealed class Login
         {
             if (!On) return Results.NotFound();
             http.Response.Headers.CacheControl = "no-store";
-            // Where the asker was seen from: a server takes a pass only for an address that leads to
+            // Where the asker was seen from: a server takes a proof only for an address that leads to
             // itself, and behind a router or in a container it cannot see its own.
             return Results.Ok(new { key = PublicKey, you = address(http)?.ToString() });
         }).RequireRateLimiting("reading");
@@ -159,8 +159,8 @@ public sealed class Login
             try
             {
                 (string id, string name) = await Identify(code, cancel);
-                app.Logger.LogInformation("a Discord login for {Server}", asked.A);
-                return Results.Redirect(BackToGame(state, Pass(asked, id, name, DateTimeOffset.UtcNow), null));
+                app.Logger.LogInformation("a Discord login");
+                return Results.Redirect(BackToGame(state, Cert(asked, id, name, DateTimeOffset.UtcNow), null));
             }
             catch (Exception e) when (e is InvalidOperationException or HttpRequestException or TaskCanceledException)
             {

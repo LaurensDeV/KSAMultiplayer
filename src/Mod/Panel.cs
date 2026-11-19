@@ -66,14 +66,7 @@ internal static class Panel
     private static string _choices = "";
 
     /// <param name="Recent">Where this player has connected before, most recent first. Shown in the server list and asked about like anything else, so a server they have played on says whether anybody is on it now.</param>
-    private sealed record Settings(string Name, string Address, string Password, bool Visible, string[]? Recent = null, bool Discord = false);
-
-    /// <summary>
-    /// Whether to log in with Discord on joining a server that takes Discord logins, ticked in the
-    /// join form beside the name: the same login as the button once joined, started for the player.
-    /// </summary>
-    internal static bool DiscordOnJoin => _discordOnJoin;
-    private static bool _discordOnJoin;
+    private sealed record Settings(string Name, string Address, string Password, bool Visible, string[]? Recent = null);
 
     /// <summary>How many addresses are remembered. Enough for the servers somebody actually plays on, few enough that the list is not mostly history.</summary>
     private const int MostRecent = 8;
@@ -857,9 +850,9 @@ internal static class Panel
         bool edited = false;
         float half = (ImGui.GetContentRegionAvail().X - ImGui.GetStyle().ItemSpacing.X) * 0.5f;
 
-        // Who is playing, and what this game is. Beik's reading: a player's own protocol version is
-        // a fact about them and had been nowhere, while the list beside it is full of facts about
-        // strangers. It belongs on this side of the window.
+        // Who is playing: the name and the Discord login, facts about this player beside a list of
+        // facts about strangers. The protocol is not among them, since every row of the list says
+        // where it does not match.
         ImGui.PushStyleColor(ImGuiCol.ChildBg, in PanelBackground);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, in PanelPadding);
         ImGui.BeginChild("###KSAMultiplayerYou", new float2(half, PanelTall), ImGuiChildFlags.Borders,
@@ -869,7 +862,6 @@ internal static class Panel
         ImGui.SetColumnWidth(0, half * 0.42f);
         edited |= Field("Nickname"u8, "###KSAMultiplayerName", NameText);
         edited |= DiscordField();
-        Told("MP protocol"u8, $"Version {Wire.Version}");
         ImGui.Columns(1);
         // On this block's floor, as CONNECT is on the other's. What KSA shows before it starts is
         // something about this game and not about any server, so it belongs on this side.
@@ -1422,23 +1414,56 @@ internal static class Panel
             : system;
 
     /// <summary>
-    /// The row under the name that asks whether to log in with Discord on joining. Asked here
-    /// because the name is where a player says who they are, and a Discord admin otherwise joins as
-    /// nobody in particular and has to find a button afterwards.
+    /// The row under the name that logs this machine in with Discord, or says who it is logged in
+    /// as. Here because the name is where a player says who they are; once logged in, every server
+    /// joined after is told, with nothing more to press.
     /// </summary>
     private static bool DiscordField()
     {
+        DiscordLogin.Update();
         ImGui.Text("Discord"u8);
         ImGui.NextColumn();
-        ImGui.PushStyleVarX(ImGuiStyleVar.ItemInnerSpacing, 10f);
-        bool changed = ImGui.Checkbox("Log in when I join###KSAMultiplayerJoinDiscord", ref _discordOnJoin);
-        ImGui.PopStyleVar();
+        DiscordControls();
+        ImGui.NextColumn();
+        return false;
+    }
+
+    private static bool _linkCopied;
+
+    /// <summary>Log in, or who this machine is and Log out, or the login under way: the same wherever it is drawn.</summary>
+    private static void DiscordControls()
+    {
+        if (DiscordLogin.Waiting)
+        {
+            ImGui.TextDisabled(_linkCopied ? "Link copied: paste it into your browser." : "Log in in your browser...");
+            // The browser the system opens is not always the one the player is logged in to Discord in.
+            if (ImGui.Button("Copy link", null))
+            {
+                ImGui.SetClipboardText(DiscordLogin.Url);
+                _linkCopied = true;
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Cancel", null)) DiscordLogin.Stop();
+            return;
+        }
+        if (DiscordLogin.Who is { } me)
+        {
+            ImGui.Text(me.Name);
+            ImGui.SameLine();
+            if (ImGui.Button("Log out", null)) DiscordLogin.LogOut();
+            if (ImGui.IsItemHovered()) ImGui.SetTooltip("This computer stays logged in until " + DateTimeOffset.FromUnixTimeSeconds(me.Exp).LocalDateTime.ToString("d MMMM") + ".");
+            return;
+        }
+        if (ImGui.Button("Log in with Discord", null))
+        {
+            _linkCopied = false;
+            DiscordLogin.Start();
+        }
         if (ImGui.IsItemHovered())
         {
-            ImGui.SetTooltip("On a server with Discord admins, your browser opens to log in with Discord once you're in, so an admin there is one on any machine.");
+            ImGui.SetTooltip("Once per computer. On a server with Discord admins, an admin is one on any computer they log in on.");
         }
-        ImGui.NextColumn();
-        return changed;
+        if (DiscordLogin.Said.Length > 0) ImGui.TextDisabled(DiscordLogin.Said);
     }
 
     /// <summary>A row of KSA's two columns that says something rather than asking it.</summary>
@@ -1666,42 +1691,26 @@ internal static class Panel
     }
 
     /// <summary>
-    /// Who this player is on Discord, or the button to say so, on a server that takes Discord
-    /// logins. Nothing on one that does not: a button there would only ever say no.
+    /// Who the server says this player is on Discord, on a server that takes Discord logins, and
+    /// this machine's login where it has none: logging in here is proved to this server at once.
+    /// Nothing on a server that takes none, where a button would only ever say no.
     /// </summary>
-    private static bool _linkCopied;
-
     private static void DiscordRow(Client c)
     {
         if (c.DiscordNonce.Length == 0) return;
         ImGui.Separator();
-        if (c.Discord is { Id.Length: > 0 } me)
+        if (c.Discord is { Id.Length: > 0 } seen)
         {
-            ImGui.TextDisabled($"Discord: {me.Name}");
+            ImGui.TextDisabled($"Discord: {seen.Name}");
             return;
         }
-        if (DiscordLogin.Waiting)
+        if (c.DiscordAsking)
         {
-            ImGui.TextDisabled(_linkCopied
-                ? "Link copied: paste it into the browser you use Discord in."
-                : "Log in in your browser, then come back here.");
-            // The browser the system opens is not always the one the player is logged in to Discord in.
-            if (ImGui.Button("Copy link", null))
-            {
-                ImGui.SetClipboardText(DiscordLogin.Url);
-                _linkCopied = true;
-            }
-            ImGui.SameLine();
-            if (ImGui.Button("Cancel", null)) DiscordLogin.Stop();
+            ImGui.TextDisabled("Discord: checking with the server...");
+            return;
         }
-        else if (c.DiscordAsking) ImGui.TextDisabled("Checking with the server...");
-        else if (ImGui.Button("Log in with Discord", null))
-        {
-            _linkCopied = false;
-            DiscordLogin.Start(c, Sync.ServerAddress);
-        }
-        string why = DiscordLogin.Said.Length > 0 ? DiscordLogin.Said : c.Discord?.Refused ?? "";
-        if (why.Length > 0 && !c.DiscordAsking) ImGui.TextDisabled(why);
+        DiscordControls();
+        if (c.Discord is { Refused.Length: > 0 } refused) ImGui.TextDisabled(refused.Refused);
     }
 
     /// <summary>
@@ -1749,7 +1758,6 @@ internal static class Panel
         AddressText.SetValue(s.Address);
         PasswordText.SetValue(s.Password);
         Visible = s.Visible;
-        _discordOnJoin = s.Discord;
         // A settings file written before there was a list of these has none, which is not a problem
         // to report: it means this player has been nowhere yet as far as anybody here knows.
         _recent = [.. (s.Recent ?? []).Where(a => a.Trim().Length > 0).Take(MostRecent)];
@@ -1763,7 +1771,7 @@ internal static class Panel
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
-            File.WriteAllText(SettingsPath, JsonSerializer.Serialize(new Settings(NameText.ToString().Trim(), AddressText.ToString().Trim(), PasswordText.ToString(), Visible, _recent, _discordOnJoin)));
+            File.WriteAllText(SettingsPath, JsonSerializer.Serialize(new Settings(NameText.ToString().Trim(), AddressText.ToString().Trim(), PasswordText.ToString(), Visible, _recent)));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
