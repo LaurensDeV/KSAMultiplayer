@@ -1640,6 +1640,8 @@ internal static class Panel
     /// Who this player is on Discord, or the button to say so, on a server that takes Discord
     /// logins. Nothing on one that does not: a button there would only ever say no.
     /// </summary>
+    private static bool _linkCopied;
+
     private static void DiscordRow(Client c)
     {
         if (c.DiscordNonce.Length == 0) return;
@@ -1649,11 +1651,28 @@ internal static class Panel
             ImGui.TextDisabled($"Discord: {me.Name}");
             return;
         }
-        if (DiscordLogin.Waiting) ImGui.TextDisabled("Log in in your browser, then come back here.");
+        if (DiscordLogin.Waiting)
+        {
+            ImGui.TextDisabled(_linkCopied
+                ? "Link copied: paste it into the browser you use Discord in."
+                : "Log in in your browser, then come back here.");
+            // The browser the system opens is not always the one the player is logged in to Discord in.
+            if (ImGui.Button("Copy link", null))
+            {
+                ImGui.SetClipboardText(DiscordLogin.Url);
+                _linkCopied = true;
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Cancel", null)) DiscordLogin.Stop();
+        }
         else if (c.DiscordAsking) ImGui.TextDisabled("Checking with the server...");
-        else if (ImGui.Button("Log in with Discord", null)) DiscordLogin.Start(c, Sync.ServerAddress);
+        else if (ImGui.Button("Log in with Discord", null))
+        {
+            _linkCopied = false;
+            DiscordLogin.Start(c, Sync.ServerAddress);
+        }
         string why = DiscordLogin.Said.Length > 0 ? DiscordLogin.Said : c.Discord?.Refused ?? "";
-        if (why.Length > 0 && !DiscordLogin.Waiting && !c.DiscordAsking) ImGui.TextDisabled(why);
+        if (why.Length > 0 && !c.DiscordAsking) ImGui.TextDisabled(why);
     }
 
     /// <summary>

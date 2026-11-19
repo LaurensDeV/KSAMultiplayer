@@ -17,6 +17,13 @@ internal static class DiscordLogin
     /// <summary>Whether the browser is out at Discord and this game is waiting for it to come back.</summary>
     public static bool Waiting => _waiting is not null;
 
+    /// <summary>
+    /// The page the login was opened on, for the player to copy into another browser: the one the
+    /// system opens may not be the one they are logged in to Discord in. Good for as long as this
+    /// login waits, since what comes back is checked against it.
+    /// </summary>
+    public static string Url { get; private set; } = "";
+
     /// <param name="typed">The server's address as the player gave it, which the pass names.</param>
     public static void Start(Client c, string typed)
     {
@@ -32,19 +39,20 @@ internal static class DiscordLogin
             Log.Warn(Said);
             return;
         }
+        Url = Discord.LoginUrl(Discord.Service, _waiting.State);
         try
         {
             // Always the one service, never one a server names: a page a server could choose is a
             // page made to look like Discord's.
             using global::System.Diagnostics.Process? opened = global::System.Diagnostics.Process.Start(
-                new global::System.Diagnostics.ProcessStartInfo(Discord.LoginUrl(Discord.Service, _waiting.State)) { UseShellExecute = true });
+                new global::System.Diagnostics.ProcessStartInfo(Url) { UseShellExecute = true });
             Said = "";
             Log.Info("opened the Discord login in the browser");
         }
+        // Still waiting: the link can be copied into a browser by hand.
         catch (Exception e)
         {
-            Stop();
-            Said = $"couldn't open the browser: {e.Message}";
+            Said = $"couldn't open the browser: {e.Message}; copy the link instead";
             Log.Warn(Said);
         }
     }
@@ -66,7 +74,7 @@ internal static class DiscordLogin
     public static void Stop()
     {
         _waiting?.Dispose();
-        _waiting = null;
+        (_waiting, Url) = (null, "");
     }
 
     /// <summary>Forgets what the last login said, for a server joined afresh.</summary>
