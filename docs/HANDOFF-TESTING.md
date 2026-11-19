@@ -127,6 +127,9 @@ Four more for flying, which no test could do before:
   flight computer line them up, tries each translation key to learn what it does, and flies.
   With nothing it answers how far along and across the line it is, how fast, and what the flight
   computer is doing. `put {"port":true}` starts a craft in front of the other's port.
+  `{"roll":60}` turns the craft about the line into the port until the two ports are that many
+  degrees apart before it goes down the line, and `roll_deg` answers what it is: KSA's port docks
+  at 60 and bounces at 0, 30 and 120. Start a long craft 60 m out, or its nose begins past the port.
 - **`attitude`** with nothing answers what the flight computer is tracking, by which of thrusters
   and gimbals, and how far off it is.
 - **`watch {"body":"Earth"}`** -- the camera on a planet, which is a game at no craft.

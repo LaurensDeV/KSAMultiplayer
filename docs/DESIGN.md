@@ -1054,6 +1054,22 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   rather than mods to drop. Each time the fix was the same: put a number next to the thing it counts,
   and let the label say only what the row is about.
 
+- **A touch that docked nothing, in the server's log, and what stopped it.** One game alone on a
+  server, the 94 t `Water and Air Delivery` flown onto the 12 t `RCS Depot` at 0.32 m/s, under
+  0.1 m off the line and 0.4 degrees out of true, with the roll between the two ports set by
+  `approach {"roll":N}`. At 0 degrees and at 120 the ports stopped 0.67 m apart and stayed there,
+  and at 30 they stopped 0.64 m apart and bounced off:
+  the game's log said so every two seconds and the server's every five, under the player's name,
+  with the ports, both masses and "the ports were 0.68 m apart and KSA latches under 0.5 m". At 60
+  degrees they went straight in and docked at first contact, as they had in three earlier runs
+  whose roll nobody wrote down, at 0.29 m/s and 0.53 m/s and up to 0.27 m off the line. So it is
+  KSA's own port, in a game with or without this mod: its guides meet where the two ports are
+  turned alike and pass each other where one is turned a sixth of a turn, and KSA's rule for a
+  docking asks nothing about the turn. A flight computer left at roll ANY arrives at whatever
+  turn it had, which is what a player who lined up to the centimetre and bounced had done. A
+  docking the mod refuses has not been seen noted, having not been made to happen, and one
+  rocket flies one approach: 1.7 t of thruster propellant is gone after it.
+
 ## What has not been tried
 
 - **The rest of the vehicle editor with the world running.** Seen only opened on the flown craft

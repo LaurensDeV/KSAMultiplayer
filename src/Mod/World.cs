@@ -1346,9 +1346,21 @@ internal static class World
     // to line up with a port left it in Manual with nothing to track.
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<Vehicle, FlightComputerAttitudeTrackTarget?> ToPoint = new();
 
+    // A turn asked of a craft, made where its attitude may be written: as its physics step is prepared.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Vehicle, doubleQuat> ToRoll = new();
+
     /// <summary>Called as a craft's physics step is prepared, for every craft.</summary>
     public static void PointAsAsked(Vehicle v)
     {
+        if (!ToRoll.IsEmpty && ToRoll.TryRemove(v, out doubleQuat turn))
+        {
+            // In the craft's own physics frame, which stands to the frame the turn was worked out
+            // in as the craft's two attitudes stand to each other.
+            PhysicsStates states = v.GetPhysicsStatesMutable();
+            doubleQuat body2Cce = v.Body2Cce;
+            states.Kinematic.Body2Phys = body2Cce.Concatenate(turn).Concatenate(body2Cce.Inverse()).Concatenate(states.Kinematic.Body2Phys);
+            states.Kinematic.AngularVelocityPhys = double3.Zero;
+        }
         if (ToPoint.IsEmpty || !ToPoint.TryRemove(v, out FlightComputerAttitudeTrackTarget? asked)) return;
         if (asked is { } track) v.SetEnum(track);
         else v.SetEnum(FlightComputerAttitudeMode.Manual);
@@ -1484,6 +1496,39 @@ internal static class World
 
     private static double3 Facing(Vehicle v, DockingPort port) =>
         new double3(1.0, 0.0, 0.0).Transform(port.Connector.Asmb2VehicleAsmb.Concatenate(v.Asmb2Cce));
+
+    /// <summary>
+    /// How far a craft's free port is turned about the line between it and another's, degrees
+    /// either way from the two ports' own second axes lying together. KSA asks nothing of it
+    /// before it docks two craft, and the ports' own shapes may.
+    /// </summary>
+    public static double? PortRoll(Vehicle craft, Vehicle target)
+    {
+        try
+        {
+            if (FreePort(craft) is not { } mine || FreePort(target) is not { } theirs) return null;
+            double3 axis = Facing(target, theirs);
+            double3 Lying(Vehicle v, DockingPort port)
+            {
+                double3 y = new double3(0.0, 1.0, 0.0).Transform(port.Connector.Asmb2VehicleAsmb.Concatenate(v.Asmb2Cce));
+                return y - (axis * double3.Dot(y, axis));
+            }
+            double3 a = Lying(craft, mine), b = Lying(target, theirs);
+            if (Vec(a) < 1e-6 || Vec(b) < 1e-6) return null;
+            return Math.Atan2(double3.Dot(double3.Cross(b, a), axis), double3.Dot(a, b)) * 180.0 / Math.PI;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>A craft turned about the line out of another's free port, so many degrees, and left still: what sets the roll two ports meet at.</summary>
+    public static void RollAboutPort(Vehicle craft, Vehicle target, double degrees)
+    {
+        if (FreePort(target) is not { } theirs) return;
+        ToRoll[craft] = doubleQuat.CreateFromAxisAngle(Facing(target, theirs), degrees * Math.PI / 180.0);
+    }
 
     /// <summary>
     /// A craft set up to dock with another as a player sets it up: their port targeted, this

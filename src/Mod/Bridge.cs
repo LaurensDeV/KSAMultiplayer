@@ -880,6 +880,7 @@ internal sealed class Bridge
             Hold = Math.Clamp(command.Number("hold", 4.0), 1.0, 100.0),
             ForSeconds = Math.Clamp(command.Number("seconds", 300.0), 10.0, 3600.0),
             Fly = command.Flag("fly", true),
+            Roll = command.Has("roll") ? command.Number("roll", 0.0) : null,
         };
         return Done(Approaching());
     }
@@ -901,12 +902,18 @@ internal sealed class Bridge
         public double3[] Pushes = new double3[3];
         public string? Ended;
         public double Along, Across, Closing, Angle;
+        /// <summary>The roll the two ports are to meet at, degrees, or null to leave it wherever the flight computer has it.</summary>
+        public double? Roll;
+        public double RollNext, RollWas = double.NaN, RollSign = 1.0;
     }
 
     private static Approach_? _approach;
 
     // How long each key is held to learn what it does, and the least push that counts as one, m/s.
     private const double TryKeySeconds = 0.4, LeastPush = 0.003;
+
+    // How near the roll asked for counts as there, how far out a craft is still turned, and how often.
+    private const double RollNearEnoughDeg = 2.0, RollRoomM = 2.5, RollEverySeconds = 1.5;
 
     // What a key is not held for: less than this short of the speed wanted, m/s.
     private const double NearEnoughSpeed = 0.02;
@@ -919,6 +926,7 @@ internal sealed class Bridge
             ["approaching"] = a.TargetId, ["craft"] = a.Craft.Id, ["phase"] = a.Phase, ["ended"] = a.Ended,
             ["along_m"] = Math.Round(a.Along, 2), ["across_m"] = Math.Round(a.Across, 2),
             ["closing_m_s"] = Math.Round(a.Closing, 3), ["angle_deg"] = Math.Round(a.Angle, 1),
+            ["roll_deg"] = World.IsAlive(a.Craft) && World.IsAlive(a.Target) && World.PortRoll(a.Craft, a.Target) is { } roll ? Math.Round(roll, 1) : null,
             ["pushes_m_s2"] = a.Pushes.Select(p => (object?)Math.Round(World.Vec(p), 4)).ToList(),
             ["for_s"] = Math.Round(Sync.Wall() - a.Began, 1),
             ["pointing"] = World.IsAlive(a.Craft) ? World.Pointing(a.Craft) : null,
@@ -987,7 +995,22 @@ internal sealed class Bridge
         }
         // Onto the line out of their port first, held off it; then down the line, slowing, and
         // never slower than the last of it is to be taken at.
-        bool lined = a.Across < Math.Max(0.15, 0.05 * a.Along);
+        // The roll first, while there is room to turn in: turned by hand and not by the flight
+        // computer, which holds a roll against its own frames and none against a port. Which way
+        // a turn takes it is found as the keys' pushes are, by making one and looking.
+        bool turned = true;
+        if (a.Roll is { } wanted_ && World.PortRoll(a.Craft, a.Target) is { } rolled)
+        {
+            double off = Math.IEEERemainder(wanted_ - rolled, 360.0);
+            turned = Math.Abs(off) < RollNearEnoughDeg;
+            if (!turned && a.Along > RollRoomM && a.Angle < 2.0 && now >= a.RollNext)
+            {
+                if (Math.Abs(off) > Math.Abs(a.RollWas) + 1.0) a.RollSign = -a.RollSign;
+                (a.RollWas, a.RollNext) = (off, now + RollEverySeconds);
+                World.RollAboutPort(a.Craft, a.Target, off * a.RollSign);
+            }
+        }
+        bool lined = turned && a.Across < Math.Max(0.15, 0.05 * a.Along);
         double closing = lined ? -Math.Clamp(0.1 * a.Along, a.Final, 1.0) : -Math.Clamp(0.1 * (a.Along - a.Hold), -0.5, 1.0);
         double3 wanted = at.Axis * closing;
         // Wherever it is. Not corrected within a metre inside the hold, a craft that drifted there
