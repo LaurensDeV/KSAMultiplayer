@@ -1448,9 +1448,13 @@ internal static class Panel
         ImGui.AlignTextToFramePadding();
         if (DiscordLogin.Waiting)
         {
-            ImGui.TextColored(in ConsoleStyle.Pending, _linkCopied ? "Link copied: paste it in your browser" : "Waiting for your browser...");
+            ImGui.TextColored(in ConsoleStyle.Pending, "Waiting...");
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("Log in with Discord in your browser, then come back here. If it opened in the wrong browser, copy the link into the right one.");
+            }
             // The browser the system opens is not always the one the player is logged in to Discord in.
-            switch (LinksAtRight("Copy link", "Cancel"))
+            switch (LinksAtRight(_linkCopied ? "Copied" : "Copy link", "Cancel"))
             {
                 case 0:
                     ImGui.SetClipboardText(DiscordLogin.Url);
@@ -1505,8 +1509,13 @@ internal static class Panel
     {
         float pad = ImGui.GetStyle().FramePadding.X, gap = ImGui.GetStyle().ItemSpacing.X;
         float wide = labels.Sum(l => ImGui.CalcTextSize(l).X + (pad * 2f)) + (gap * (labels.Length - 1));
+        // On the line just drawn where they fit beside it, and on a line of their own where they
+        // would not: a column is only so wide, and a link cut in half is no link.
+        float x = ImGui.GetCursorPosX();
         ImGui.SameLine();
-        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + MathF.Max(0f, ImGui.GetContentRegionAvail().X - wide));
+        if (ImGui.GetContentRegionAvail().X < wide) ImGui.NewLine();
+        else x = ImGui.GetCursorPosX();
+        ImGui.SetCursorPosX(MathF.Max(x, x + ImGui.GetContentRegionAvail().X - wide));
         ImGui.PushStyleColor(ImGuiCol.Button, in ConsoleStyle.Transparent);
         ImGui.PushStyleColor(ImGuiCol.ButtonHovered, in ConsoleStyle.Inset);
         ImGui.PushStyleColor(ImGuiCol.ButtonActive, in ConsoleStyle.Frame);
@@ -1516,7 +1525,7 @@ internal static class Panel
         for (int k = 0; k < labels.Length; k++)
         {
             if (k > 0) ImGui.SameLine();
-            if (ImGui.Button($"{labels[k]}###KSAMultiplayerDiscordLink{labels[k]}", null)) pressed = k;
+            if (ImGui.Button($"{labels[k]}###KSAMultiplayerDiscordLink{k}", null)) pressed = k;
         }
         ImGui.PopStyleColor(5);
         return pressed;
