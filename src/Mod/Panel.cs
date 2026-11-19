@@ -868,6 +868,7 @@ internal static class Panel
         ImGui.Columns(2, "###KSAMultiplayerYouRows".AsSpan(), false);
         ImGui.SetColumnWidth(0, half * 0.42f);
         edited |= Field("Nickname"u8, "###KSAMultiplayerName", NameText);
+        edited |= DiscordField();
         Told("MP protocol"u8, $"Version {Wire.Version}");
         ImGui.Columns(1);
         // On this block's floor, as CONNECT is on the other's. What KSA shows before it starts is
