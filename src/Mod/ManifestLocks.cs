@@ -29,7 +29,8 @@ internal static class ManifestLocks
         {
             if (body is not Vehicle v) return;
             bool locked = Sync.IsProtected(v);
-            bool admin = Sync.Admin;
+            // Protecting is a trusted player's as much as an admin's.
+            bool admin = Sync.Trusted;
             if (!locked && !admin) return;
 
             float font = ImGui.GetFontSize();
@@ -57,7 +58,7 @@ internal static class ManifestLocks
             else
             {
                 hovered = ImGui.IsMouseHoveringRect(min, max);
-                if (hovered) Tip("This craft is protected by an admin, so it can't be deleted, recovered or cleared.");
+                if (hovered) Tip("This craft is protected, so it can't be deleted, recovered or cleared.");
             }
 
             Draw(min, max, font, locked, locked ? Shut : hovered ? OpenHovered : Open);

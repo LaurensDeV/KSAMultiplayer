@@ -55,9 +55,9 @@ internal static class ServerSaves
         {
             if (Sync.Saves is not { } saves)
             {
-                ImGui.TextDisabled(Sync.Admin
+                ImGui.TextDisabled(Sync.Trusted
                     ? "No save list from this server yet. A server older than this version of the mod doesn't support saves."
-                    : "Only admins can save or load the world on this server.");
+                    : "Only trusted players and admins can save or load the world on this server.");
                 return;
             }
             const ImGuiTableFlags flags = ImGuiTableFlags.BordersV | ImGuiTableFlags.Resizable | ImGuiTableFlags.Sortable | ImGuiTableFlags.RowBg
@@ -114,8 +114,8 @@ internal static class ServerSaves
     public static bool Asked()
     {
         if (Sync.Now == Sync.Stage.Off) return false;
-        if (Sync.Admin) Toggle();
-        else TimedAlert.CreateWarning("Only admins can save or load the world on this server.");
+        if (Sync.Trusted) Toggle();
+        else TimedAlert.CreateWarning("Only trusted players and admins can save or load the world on this server.");
         return true;
     }
 
@@ -131,7 +131,7 @@ internal static class ServerSaves
             GameSaves.Close();
             Asked();
         }
-        if (IsOpen && !Sync.Admin) _window!.SetShown(false);
+        if (IsOpen && !Sync.Trusted) _window!.SetShown(false);
     }
 
     private static SavedWorld[] Sorted(IReadOnlyList<SavedWorld> saves)
@@ -176,15 +176,20 @@ internal static class ServerSaves
         if (ImGui.BeginPopup(menu))
         {
             if (ImGui.MenuItem("Load"u8)) LoadOnConfirm(s.Name);
-            ImGui.Separator();
-            if (ImGui.MenuItem("Delete"u8))
+            // Losing a save is an admin's: a trusted player keeps and loads, and is never offered
+            // what the server would refuse them.
+            if (Sync.Admin)
             {
-                ConfirmActionPopup.Create(() => Ask($"delete {s.Name}"), "DELETE SERVER SAVE", s.Auto
-                    ? $"Are you sure you want to delete '{s.Name}'? It is the world as it was before a load, so that load can't be undone afterwards."
-                    : $"Are you sure you want to delete the server save '{s.Name}'?");
+                ImGui.Separator();
+                if (ImGui.MenuItem("Delete"u8))
+                {
+                    ConfirmActionPopup.Create(() => Ask($"delete {s.Name}"), "DELETE SERVER SAVE", s.Auto
+                        ? $"Delete '{s.Name}'? It is the world as it was before a load. The server keeps it for 30 days, and its console can restore it."
+                        : $"Delete the server save '{s.Name}'? The server keeps it for 30 days, and its console can restore it.");
+                }
+                // The server names the ones it keeps before a load, and takes no save under such a name.
+                if (!s.Auto && ImGui.MenuItem("Overwrite"u8)) OverwriteOnConfirm(s.Name);
             }
-            // The server names the ones it keeps before a load, and takes no save under such a name.
-            if (!s.Auto && ImGui.MenuItem("Overwrite"u8)) OverwriteOnConfirm(s.Name);
             ImGui.EndPopup();
         }
         ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.TextMuted);
@@ -216,7 +221,11 @@ internal static class ServerSaves
             TimedAlert.CreateWarning($"Can't save: {why}.");
             return;
         }
-        if (Sync.Saves?.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase)) is { } there) OverwriteOnConfirm(there.Name);
+        if (Sync.Saves?.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase)) is { } there)
+        {
+            if (Sync.Admin) OverwriteOnConfirm(there.Name);
+            else TimedAlert.CreateWarning($"There's already a save called '{there.Name}'. Pick another name: only an admin can save over one.");
+        }
         else Ask($"save {name}");
     }
 

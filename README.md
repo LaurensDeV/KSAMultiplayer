@@ -8,7 +8,7 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
 
 > **Status: played, not finished.** Two games on one machine have flown in one world through it,
 > against KSA `2026.11.10.5801`, and the server and the protocol are tested headlessly besides
-> (374 tests, real UDP over loopback, a lossy line included). An 89-part rocket has been flown in a
+> (385 tests, real UDP over loopback, a lossy line included). An 89-part rocket has been flown in a
 > shared world and staged while the other game watched, which rebuilt the dropped stage as its own
 > craft. What two games across the internet do is not known.
 > This release is built for KSA `2026.11.16.5901`, and has not been flown on it yet.
@@ -277,11 +277,12 @@ like `quit`.
 | `--advertise-as` | `KSAMP_ADVERTISE_AS` | the address seen | the hostname to be listed under |
 | `--directories` | `KSAMP_DIRECTORIES` | the shared list | where to announce, separated by commas; the shared list in `directories.txt` otherwise, read hourly while advertising |
 | `--discord-admins` | `KSAMP_DISCORD_ADMINS` | none | Discord user ids, comma separated, who are admins whenever they log in with Discord, whatever `admins.json` says; `deop` cannot take it away |
+| `--discord-trusted` | `KSAMP_DISCORD_TRUSTED` | none | Discord user ids, comma separated, who are [trusted](#trusted-players) whenever they log in with Discord |
 | `--discord-login` | `KSAMP_DISCORD_LOGIN` | `https://servers.ksamp.gg/v1/discord` | the service that vouches for who a player is on Discord, [asked only once there is a Discord admin](#admins-by-discord); empty to take no Discord logins |
 
-Commands typed into the server's console: `help`, `players`, `say <text>`, `kick <name> [why]`, `op <name>`, `deop <name>`, `admins`,
+Commands typed into the server's console: `help`, `players`, `say <text>`, `kick <name> [why]`, `op <name>`, `trust <name>`, `deop <name>`, `admins`,
 `clear [name]`, `remove <craft>`, `protect <craft>`, `unprotect <craft>`, `protected`, `rename <craft> -> <new name>`, `reload` (or `reset`), `save [name]`,
-`saves`, `load <name>`, `delete <name>`, `status`, `version`, `fresh`, `set [key value]`, `settings`, `quit`.
+`saves`, `load <name>`, `delete <name>`, `deleted`, `restore <name>`, `status`, `version`, `fresh`, `set [key value]`, `settings`, `quit`.
 
 `life-support` and `radiation` are KSA's two rules, which a game on its own takes from its start
 screen. In a server they are the server's, for everybody: `set life-support false` turns life support
@@ -415,6 +416,46 @@ to take an admin away, not enough to become one. It is not touched by an update 
 has to be connected to be opped -- the token is said to their game until it answers, and is never
 written down where it could be said to anybody else -- and the name it is remembered under follows
 whoever last joined with it, so `deop` names the player you can see.
+
+#### Trusted players
+
+Between a player and an admin is **trusted**: somebody who keeps the world tidy and running when no
+admin is about, and can lose nothing that cannot be put back.
+
+| | Anybody | Trusted | Admin |
+| --- | --- | --- | --- |
+| `players`, `admins`, `protected`, `saves`, `status`, `version`, `help` | yes | yes | yes |
+| `clear`, `remove`, `protect`, `unprotect`, `rename` any craft | | yes | yes |
+| `save` under a new name, `load` | | yes | yes |
+| `kick`, `say` | | yes | yes |
+| `save` over a save, `delete`, `deleted`, `restore`, `reload` | | | yes |
+| `op`, `trust`, `deop` | | | yes |
+
+```bash
+trust Jeb                           # Jeb is playing
+```
+
+```bash
+trust discord:80351110224678912     # or by Discord account, as op does
+```
+
+`op` on somebody trusted makes them an admin, `trust` on an admin makes them trusted, and `deop`
+takes either away. In a game, `/help` lists only what that player may run, and the **SERVER SAVES**
+window shows a trusted player Load and New and no Delete or Overwrite.
+
+#### Nothing is lost for 30 days
+
+A save that is deleted, saved over, or let go as the oldest of the five worlds kept before a load
+goes to `saves/.deleted` in `--data` for 30 days. `deleted` lists them, and `restore <name>` puts
+one back under the name it had (or that name with "restored" after it, where it is taken).
+
+#### Who did what
+
+Every command that changes the world, a save or a role -- `clear`, `remove`, `protect`, `rename`,
+`save`, `load`, `delete`, `restore`, `reload`, `kick`, `op`, `trust`, `deop`, and the console's own
+`fresh`, `set` and `quit` -- is written to `audit.log` in `--data`: when, who (with their role and
+Discord user), what they typed and what came of it. So is a role given by a Discord login. It is a
+file beside the world and not the console's log, so it outlives a restart and a redeploy.
 
 #### Admins by Discord
 

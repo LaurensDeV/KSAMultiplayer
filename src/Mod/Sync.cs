@@ -1355,8 +1355,11 @@ internal static class Sync
             : $"could not put the camera on {who.Controlling}");
     }
 
-    /// <summary>Whether this server runs what this game asks of it.</summary>
+    /// <summary>Whether this server runs everything this game asks of it.</summary>
     public static bool Admin => _client is { Admin: true };
+
+    /// <summary>Whether this server runs what keeps a world tidy: clear, remove, protect, rename, save and load. An admin is trusted too.</summary>
+    public static bool Trusted => _client is { Trusted: true };
 
     // Deletes refused since the last frame, answered once for all of them: Clear Debris asks for
     // every piece in the system in one go, and a warning a piece would bury the screen.
@@ -1485,12 +1488,12 @@ internal static class Sync
         if (RefusedDeletes.Count == 0) return;
         (string Key, string Whose)[] refused = [.. RefusedDeletes];
         RefusedDeletes.Clear();
-        if (!c.Admin)
+        if (!c.Trusted)
         {
-            Log.Info($"refused to delete {string.Join(", ", refused.Select(r => r.Key))}: another player's, and this game is no admin");
+            Log.Info($"refused to delete {string.Join(", ", refused.Select(r => r.Key))}: another player's, and this game is neither admin nor trusted");
             TimedAlert.CreateWarning(refused.Length == 1
-                ? $"{refused[0].Key} belongs to {(refused[0].Whose.Length > 0 ? refused[0].Whose : "another player")}. Only an admin can delete another player's craft."
-                : $"{refused.Length} of these belong to other players. Only an admin can delete another player's craft.");
+                ? $"{refused[0].Key} belongs to {(refused[0].Whose.Length > 0 ? refused[0].Whose : "another player")}. Only a trusted player or an admin can delete another player's craft."
+                : $"{refused.Length} of these belong to other players. Only a trusted player or an admin can delete another player's craft.");
             return;
         }
         List<(string Key, string Pilot)> flown = [];

@@ -1892,7 +1892,7 @@ internal static class Panel
         // The list of servers, as at start, to move to another without leaving first.
         if (BottomLeft("SERVERS".AsSpan())) _serversOpen = !_serversOpen;
         // Only where it does anything: to anybody else it would be a button that says no.
-        if (Sync.Admin)
+        if (Sync.Trusted)
         {
             ImGui.SameLine();
             if (ConsoleWidgets.Button("SERVER SAVES".AsSpan())) ServerSaves.Toggle();

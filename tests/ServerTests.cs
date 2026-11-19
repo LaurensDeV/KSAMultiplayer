@@ -551,7 +551,7 @@ public class ServerTests
 
         rig.Server.Protect("Station");
         a.AskName("Station", "Home");
-        rig.Until(() => a.Chat.Any(l => l.Text.Contains("only an admin")), what: "Alice to be told it is protected");
+        rig.Until(() => a.Chat.Any(l => l.Text.Contains("only a trusted player or an admin")), what: "Alice to be told it is protected");
         Assert.Equal(a.Id, b.OwnerOf("Station"));
 
         // An admin may, and the craft stays protected under its new name.

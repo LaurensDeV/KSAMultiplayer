@@ -11,6 +11,11 @@ namespace KSAMultiplayer.Server;
 /// other: it has no word beside it, so its time comes from whoever loads it first, as an imported
 /// world's does.</para>
 ///
+/// <para>Nothing kept here is ever simply gone. A save deleted, saved over, or let go as one of too
+/// many kept before a load goes to <c>.deleted</c> beside the rest, under its name and when it went,
+/// for <see cref="BinDays"/> days: a world is a few megabytes and a disk is not, and a save lost by
+/// a slip or by somebody who should not have is a world nobody can have back.</para>
+///
 /// <para>With no folder nothing is read or written and the saves live only as long as the server:
 /// what the tests drive, and what a server given no data directory gets.</para>
 /// </summary>
@@ -27,6 +32,14 @@ public sealed class SaveShelf(string folder = "")
 
     /// <summary>The most the named saves may weigh together. A world can be tens of megabytes, and a hundred of them is a disk.</summary>
     public const long MostBytes = 1L << 30;
+
+    /// <summary>How long a save that went is kept in the bin.</summary>
+    public const int BinDays = 30;
+
+    /// <summary>What a binned save's name ends with: when it went, so two of one name are two.</summary>
+    private const string WentStamp = " (deleted ";
+
+    private string Bin => Path.Combine(Folder, ".deleted");
 
     public static bool Reserved(string name) =>
         name.StartsWith(AutoPrefix, StringComparison.OrdinalIgnoreCase) || name.Equals(AutoPrefix.TrimEnd(), StringComparison.OrdinalIgnoreCase);
@@ -114,13 +127,16 @@ public sealed class SaveShelf(string folder = "")
         Meta meta = new(world.Universe, timeKnown, ksaBuild, mods, DateTime.UtcNow, system, by, auto, protect is null ? null : [.. protect.Order()]);
         // Under the name it already has, so that two saves cannot differ only by a capital on a
         // file system that tells them apart and collide on one that does not.
-        name = Find(name) ?? name;
+        string? had = Find(name);
+        name = had ?? name;
         if (!OnDisk)
         {
             _held[name] = (meta, world.Data);
             return;
         }
         Directory.CreateDirectory(Folder);
+        // The world it replaces is binned first, as a delete's is.
+        if (had is not null) ToBin(had);
         File.WriteAllBytes(ZipPath(name) + ".new", world.Data);
         File.Move(ZipPath(name) + ".new", ZipPath(name), overwrite: true);
         File.WriteAllText(MetaPath(name), JsonSerializer.Serialize(meta, Indented));
@@ -146,13 +162,70 @@ public sealed class SaveShelf(string folder = "")
         return (new Blob(BlobKind.World, "", 0, 0.0, zip), false, "", [], WorldStore.SystemOf(zip), null);
     }
 
+    /// <summary>Takes a save off the shelf and into the bin, where it stays for <see cref="BinDays"/> days.</summary>
     public bool Delete(string name)
     {
         if (Find(name) is not { } found) return false;
         if (!OnDisk) return _held.Remove(found);
-        File.Delete(ZipPath(found));
-        File.Delete(MetaPath(found));
+        ToBin(found);
         return true;
+    }
+
+    private void ToBin(string name)
+    {
+        Directory.CreateDirectory(Bin);
+        string went = $"{name}{WentStamp}{DateTime.UtcNow:yyyy-MM-dd HH-mm-ss})";
+        for (int n = 2; File.Exists(Path.Combine(Bin, went + ".zip")); n++) went = $"{name}{WentStamp}{DateTime.UtcNow:yyyy-MM-dd HH-mm-ss} {n})";
+        File.Move(ZipPath(name), Path.Combine(Bin, went + ".zip"));
+        if (File.Exists(MetaPath(name))) File.Move(MetaPath(name), Path.Combine(Bin, went + ".json"));
+        // When it went, which is what the bin is emptied by: a move keeps the time it was saved.
+        File.SetLastWriteTimeUtc(Path.Combine(Bin, went + ".zip"), DateTime.UtcNow);
+        EmptyBin();
+    }
+
+    /// <summary>What is in the bin, newest first: each save's name there and when it went.</summary>
+    public IReadOnlyList<(string Name, DateTime WentUtc, long Bytes)> Binned()
+    {
+        if (!OnDisk || !Directory.Exists(Bin)) return [];
+        EmptyBin();
+        return [.. new DirectoryInfo(Bin).EnumerateFiles("*.zip")
+                                          .Select(f => (Path.GetFileNameWithoutExtension(f.Name), f.LastWriteTimeUtc, f.Length))
+                                          .OrderByDescending(b => b.LastWriteTimeUtc)];
+    }
+
+    /// <summary>
+    /// Puts a binned save back on the shelf, under the name it had or, where that is taken now, the
+    /// name with "restored" after it. The name it is back under, or null for none in the bin.
+    /// </summary>
+    public string? Restore(string binned)
+    {
+        if (!OnDisk || !Directory.Exists(Bin)) return null;
+        string? found = Directory.EnumerateFiles(Bin, "*.zip").Select(Path.GetFileNameWithoutExtension)
+                                 .FirstOrDefault(n => string.Equals(n, binned, StringComparison.OrdinalIgnoreCase));
+        if (found is null) return null;
+        int stamp = found.LastIndexOf(WentStamp, StringComparison.Ordinal);
+        string name = stamp > 0 ? found[..stamp] : found;
+        for (int n = 1; Find(name) is not null; n++) name = $"{(stamp > 0 ? found[..stamp] : found)} (restored{(n > 1 ? $" {n}" : "")})";
+        Directory.CreateDirectory(Folder);
+        File.Move(Path.Combine(Bin, found + ".zip"), ZipPath(name));
+        if (File.Exists(Path.Combine(Bin, found + ".json"))) File.Move(Path.Combine(Bin, found + ".json"), MetaPath(name));
+        return name;
+    }
+
+    // Older than BinDays goes for good. Done whenever the bin is touched, which is often enough: a
+    // server nobody deletes anything on keeps a bin that is not growing.
+    private void EmptyBin()
+    {
+        try
+        {
+            DateTime before = DateTime.UtcNow.AddDays(-BinDays);
+            foreach (FileInfo zip in new DirectoryInfo(Bin).EnumerateFiles("*.zip").Where(f => f.LastWriteTimeUtc < before).ToArray())
+            {
+                zip.Delete();
+                File.Delete(Path.ChangeExtension(zip.FullName, ".json"));
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
     }
 
     private Meta? Read(string name)

@@ -223,3 +223,11 @@ variable "discord_admins" {
   type        = string
   default     = ""
 }
+
+# Trusted on every world here: they keep it tidy -- clear, remove, protect, rename, save, load,
+# kick -- and lose nothing that cannot be put back.
+variable "discord_trusted" {
+  description = "Discord user ids, separated by commas, who are trusted on every server here."
+  type        = string
+  default     = ""
+}

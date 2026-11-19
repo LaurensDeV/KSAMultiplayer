@@ -705,7 +705,29 @@ public static class Wire
     /// throws away whatever token it had for that server, so revoking one needs nothing else said.</param>
     /// <param name="Token">A token to keep and offer at the next join, empty when there is nothing new
     /// to keep: an admin who was recognised at the join already has one.</param>
-    public sealed record Op(bool Admin, string Token) : Message(Kind.Op);
+    /// <param name="Role">Which commands this player may run, read from the end of the datagram: a game
+    /// of 0.26.0 neither sends nor reads it, and takes <paramref name="Admin"/> as all it says.</param>
+    public sealed record Op(bool Admin, string Token, Role Role = Role.Admin) : Message(Kind.Op)
+    {
+        /// <summary>
+        /// Whether a game saying this back is saying back what it was told. Not by the role, which a
+        /// game of 0.26.0 drops: compared whole, its answer would never match, and the server would
+        /// say the same thing to it twice a second for as long as it stayed.
+        /// </summary>
+        public bool SaysBack(Op? told) => told is not null && told.Admin == Admin && told.Token == Token;
+    }
+
+    /// <summary>What a player may do on a server: each can do everything the one before it can.</summary>
+    public enum Role : byte
+    {
+        Player = 0,
+
+        /// <summary>Keeps the world tidy and running: clears debris, protects, renames, saves and loads, kicks.</summary>
+        Trusted = 1,
+
+        /// <summary>Everything, including who else may, and what cannot be put back.</summary>
+        Admin = 2,
+    }
 
     /// <summary>
     /// Who this game's player is on Discord: the certificate the login service signed for this
@@ -919,6 +941,7 @@ public static class Wire
             case Op o:
                 w.U8(o.Admin ? (byte)1 : (byte)0);
                 w.Text(o.Token, TokenChars);
+                w.U8((byte)o.Role);
                 break;
             case DiscordProof dp:
                 w.LongText(dp.Cert, KSAMultiplayer.Discord.CertChars);
@@ -999,7 +1022,7 @@ public static class Wire
                 Kind.Command => new Command(r.Text(ChatChars)),
                 Kind.Note => new Note(r.LongText(NoteChars)),
                 Kind.Name => new Name(r.Text(KeyChars), r.Text(KeyChars), r.U8(), r.U32()),
-                Kind.Op => new Op(r.U8() != 0, r.Text(TokenChars)),
+                Kind.Op => ReadOp(ref r),
                 Kind.DiscordProof => new DiscordProof(r.LongText(KSAMultiplayer.Discord.CertChars), r.Text(255), r.Text(KSAMultiplayer.Discord.SignatureChars)),
                 Kind.DiscordUser => new DiscordUser(r.Text(KSAMultiplayer.Discord.IdChars), r.Text(NameChars * 2), r.Text(200)),
                 Kind.Snapshot => new Snapshot(r.Text(200)),
@@ -1027,6 +1050,15 @@ public static class Wire
         byte[] waiting = new byte[Math.Min((int)r.U8(), 64)];
         for (int i = 0; i < waiting.Length; i++) waiting[i] = r.U8();
         return new Warp(who, speed, phase, waiting);
+    }
+
+    private static Op ReadOp(ref Reader r)
+    {
+        bool admin = r.U8() != 0;
+        string token = r.Text(TokenChars);
+        // Absent from a game of 0.26.0, which knew only admins.
+        Role role = r.More ? (Role)Math.Min(r.U8(), (byte)Role.Admin) : admin ? Role.Admin : Role.Player;
+        return new Op(admin, token, role);
     }
 
     private static Roster ReadRoster(ref Reader r)

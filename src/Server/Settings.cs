@@ -45,6 +45,7 @@ public static class Settings
         new("advertise-as", Kind.Text, "", "the hostname to be listed under; empty to be listed at the address a directory sees", true),
         new("directories", Kind.Text, "", "where to announce, separated by commas; empty to read the shared list, which only an advertising server does", true),
         new("discord-admins", Kind.Text, "", "Discord user ids, separated by commas, who are admins here whenever they log in with Discord, whatever admins.json says", true),
+        new("discord-trusted", Kind.Text, "", "Discord user ids, separated by commas, who are trusted here whenever they log in with Discord: they may clear, remove, protect, rename, save, load and kick, but not delete saves, save over them, reload or give roles", true),
         new("discord-login", Kind.Text, Discord.Service, "the service whose certificates say who a player is on Discord, asked only once 'op discord:<id>' has made a Discord user an admin; empty to take no Discord logins", true),
     ];
 
@@ -120,14 +121,14 @@ public static class Settings
                 : throw new FormatException($"id from {from} is '{id}', which is not 1 to {Wire.IdChars} letters, digits, dots, dashes and underscores beginning and ending with a letter or digit");
         }
 
-        string[] DiscordAdmins()
+        string[] DiscordIds(string key)
         {
-            (string v, string from) = s["discord-admins"];
+            (string v, string from) = s[key];
             string[] ids = [.. v.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct()];
             // Held to ids here, where the operator reads the answer: a name or a typo in the list is
             // an admin who would never be recognised, silently.
             return ids.FirstOrDefault(id => !Discord.IsSnowflake(id)) is { } bad
-                ? throw new FormatException($"discord-admins from {from} has '{bad}', which is not a Discord user id: that is a number, from Copy User ID with Developer Mode on")
+                ? throw new FormatException($"{key} from {from} has '{bad}', which is not a Discord user id: that is a number, from Copy User ID with Developer Mode on")
                 : ids;
         }
 
@@ -155,7 +156,8 @@ public static class Settings
             AdvertiseAs = Text("advertise-as").Trim(),
             Directories = Text("directories").Trim(),
             DiscordLogin = Text("discord-login").Trim().TrimEnd('/'),
-            DiscordAdmins = DiscordAdmins(),
+            DiscordAdmins = DiscordIds("discord-admins"),
+            DiscordTrusted = DiscordIds("discord-trusted"),
         };
         IPAddress? bind = Text("bind").Trim() is { Length: > 0 } b
             ? IPAddress.TryParse(b, out IPAddress? at) ? at : throw new FormatException($"bind is '{b}', which is not an address")

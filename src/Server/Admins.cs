@@ -20,6 +20,10 @@ namespace KSAMultiplayer.Server;
 /// machine they log in from, for as long as the row is there. Logging in still hands their game a
 /// token, so the login is once per machine rather than once per join.</para>
 ///
+/// <para>Each row has a <see cref="Wire.Role"/>: an admin's, or a trusted player's, who may run the
+/// commands that keep a world tidy and nothing that cannot be put back. A row written before
+/// there were roles is an admin's, which is what every row was.</para>
+///
 /// <para>With no folder nothing is read or written and the list lives only as long as the server:
 /// what the tests drive, and what a server given no data directory gets.</para>
 /// </summary>
@@ -28,7 +32,8 @@ public sealed class Admins(string folder = "")
     /// <param name="Name">Who they were when they last joined with this token, so that revoking one names whoever is seen playing.</param>
     /// <param name="Offered">Whether nothing has shown this token yet: it was sent, and may or may not have arrived.</param>
     /// <param name="Discord">The Discord user this row makes an admin, on a row with no hash; empty on a token's.</param>
-    private sealed record Entry(string Name, string Hash, DateTime SinceUtc, bool Offered = false, string Discord = "");
+    /// <param name="Role">What this row makes them.</param>
+    private sealed record Entry(string Name, string Hash, DateTime SinceUtc, bool Offered = false, string Discord = "", Wire.Role Role = Wire.Role.Admin);
 
     private readonly List<Entry> _admins = Read(folder);
 
@@ -36,6 +41,10 @@ public sealed class Admins(string folder = "")
 
     /// <summary>Each admin once, though a name with a token on its way to it has two rows.</summary>
     public IReadOnlyList<string> Names => [.. _admins.Select(a => a.Name).Distinct(StringComparer.OrdinalIgnoreCase)];
+
+    /// <summary>What this name is here, by the best of its rows.</summary>
+    public Wire.Role RoleOf(string name) =>
+        _admins.Where(a => string.Equals(a.Name, name, StringComparison.OrdinalIgnoreCase)).Select(a => a.Role).DefaultIfEmpty(Wire.Role.Player).Max();
 
     /// <summary>
     /// Whether this token is an admin's, and the name it is now remembered under: a token outlives the
@@ -45,14 +54,14 @@ public sealed class Admins(string folder = "")
     /// <para>A token shown for the first time is a token that arrived, which is when whatever else
     /// its name was an admin by stops working, and not before.</para>
     /// </summary>
-    public bool Check(string token, string name)
+    public Wire.Role Check(string token, string name)
     {
-        if (token.Length == 0) return false;
+        if (token.Length == 0) return Wire.Role.Player;
         string hash = Hash(token);
         int i = _admins.FindIndex(a => Same(a.Hash, hash));
-        if (i < 0) return false;
+        if (i < 0) return Wire.Role.Player;
         Entry held = _admins[i];
-        if (!held.Offered && string.Equals(held.Name, name, StringComparison.Ordinal)) return true;
+        if (!held.Offered && string.Equals(held.Name, name, StringComparison.Ordinal)) return held.Role;
         Entry now = held with { Name = name, Offered = false };
         _admins[i] = now;
         // By the name it was offered under, not the one it is seen under now: the rows it replaces
@@ -64,7 +73,7 @@ public sealed class Admins(string folder = "")
                                    && string.Equals(a.Name, held.Name, StringComparison.OrdinalIgnoreCase));
         }
         Write();
-        return true;
+        return now.Role;
     }
 
     /// <summary>
@@ -74,11 +83,17 @@ public sealed class Admins(string folder = "")
     /// a replacement lost on its way costs nothing. An earlier offer nobody took up is withdrawn:
     /// a name has one token on its way to it at most.
     /// </summary>
-    public string Offer(string name)
+    /// <para>Every row of the name takes the role, tokens kept from before included: a name is one
+    /// thing here, and trusting an admin is how one is made less than that.</para>
+    public string Offer(string name, Wire.Role role = Wire.Role.Admin)
     {
         string token = Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(32));
         _admins.RemoveAll(a => a.Offered && string.Equals(a.Name, name, StringComparison.OrdinalIgnoreCase));
-        _admins.Add(new Entry(name, Hash(token), DateTime.UtcNow, Offered: true));
+        for (int i = 0; i < _admins.Count; i++)
+        {
+            if (string.Equals(_admins[i].Name, name, StringComparison.OrdinalIgnoreCase)) _admins[i] = _admins[i] with { Role = role };
+        }
+        _admins.Add(new Entry(name, Hash(token), DateTime.UtcNow, Offered: true, Role: role));
         Write();
         return token;
     }
@@ -95,17 +110,17 @@ public sealed class Admins(string folder = "")
     /// Makes a Discord user an admin, under the name they are known by here: a player's when they are
     /// playing, or their id until they first log in. Says whether they were not one already.
     /// </summary>
-    public bool AddDiscord(string id, string name)
+    public bool AddDiscord(string id, string name, Wire.Role role = Wire.Role.Admin)
     {
         int i = _admins.FindIndex(a => a.Discord == id);
         if (i >= 0)
         {
-            if (string.Equals(_admins[i].Name, name, StringComparison.Ordinal)) return false;
-            _admins[i] = _admins[i] with { Name = name };
+            if (string.Equals(_admins[i].Name, name, StringComparison.Ordinal) && _admins[i].Role == role) return false;
+            _admins[i] = _admins[i] with { Name = name, Role = role };
             Write();
             return false;
         }
-        _admins.Add(new Entry(name, "", DateTime.UtcNow, Discord: id));
+        _admins.Add(new Entry(name, "", DateTime.UtcNow, Discord: id, Role: role));
         Write();
         return true;
     }
@@ -114,17 +129,17 @@ public sealed class Admins(string folder = "")
     /// Whether this Discord user is an admin, renaming their row to the name they are seen playing
     /// under now: as with a token, an operator takes admin away from the player they can see.
     /// </summary>
-    public bool CheckDiscord(string id, string name)
+    public Wire.Role CheckDiscord(string id, string name)
     {
-        if (id.Length == 0) return false;
+        if (id.Length == 0) return Wire.Role.Player;
         int i = _admins.FindIndex(a => a.Discord == id);
-        if (i < 0) return false;
+        if (i < 0) return Wire.Role.Player;
         if (!string.Equals(_admins[i].Name, name, StringComparison.Ordinal))
         {
             _admins[i] = _admins[i] with { Name = name };
             Write();
         }
-        return true;
+        return _admins[i].Role;
     }
 
     /// <summary>
@@ -164,7 +179,7 @@ public sealed class Admins(string folder = "")
         if (folder.Length == 0 || !File.Exists(path)) return [];
         try
         {
-            return JsonSerializer.Deserialize<List<Entry>>(File.ReadAllText(path)) ?? [];
+            return JsonSerializer.Deserialize<List<Entry>>(File.ReadAllText(path), Indented) ?? [];
         }
         catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
         {
@@ -191,5 +206,6 @@ public sealed class Admins(string folder = "")
         }
     }
 
-    private static readonly JsonSerializerOptions Indented = new() { WriteIndented = true };
+    // The role by name, so the file says "Trusted" where an operator reads it.
+    private static readonly JsonSerializerOptions Indented = new() { WriteIndented = true, Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } };
 }

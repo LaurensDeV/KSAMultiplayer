@@ -62,6 +62,11 @@ stranger sent it.
   arriving unasked is left where it came from, since the world is written to disk with its sender's
   build and mods and everybody else is then held to those, so a single client could otherwise lock
   every other player out of the server and out of each restart of it.
+- **Nothing kept is simply gone.** A named save deleted, saved over, or let go as the oldest of
+  five kept before a load is moved to `saves/.deleted` under its name and when it went, and taken
+  for good after 30 days, judged by when it went (`SaveShelf.Binned`, `Restore`). And `audit.log`
+  beside the world has a line for every command that changes the world, a save or a role, and for
+  a role given by a Discord login: a file, because `docker logs` is lost with the container.
 - **Worlds under names.** `saves/` in `--data`, a zip and a `.json` each (`SaveShelf`): what an admin
   keeps to come back to and loads over the world for everybody. Keeping one asks the admin's own
   game for a fresh save and files it when it comes, or files the world as held after twenty seconds
@@ -130,7 +135,12 @@ stranger sent it.
   world came off disk, sets the clock the whole room then follows, and none of that is anyone's to do
   from outside the world. A universe time that is not a number is not a time either.
 - **Who may run commands.** `admins.json` in `--data`: a name and the SHA-256 of a token, one row
-  per token. The token itself exists in two places and neither is that file -- the server's memory
+  per token, and each row's role, `Admin` or `Trusted` (a row from before roles is an admin's).
+  `Permissions` is the one table of what each command needs, and a command missing from it is an
+  admin's. Trusted is everything that keeps a world tidy and nothing that cannot be put back:
+  saving over a save, deleting one, reloading the world with its time, and giving roles are an
+  admin's. An `Op` ends with the role, which a game of 0.26.0 neither sends nor reads; an `Op`
+  said back is matched without it (`SaysBack`), or a game of 0.26.0 would never answer one. The token itself exists in two places and neither is that file -- the server's memory
   for as long as it takes the game to answer for it, and the machine it was said to. So the list is
   enough to take an admin away and not enough to become one, and a server whose data directory leaks
   has leaked no admin. A name has to be connected to be opped, since a token that reaches nobody is

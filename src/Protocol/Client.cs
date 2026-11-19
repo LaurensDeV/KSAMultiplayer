@@ -248,7 +248,13 @@ public sealed class Client : IDisposable
     public Queue<ChatLine> Chat { get; } = new();
 
     /// <summary>Whether this server runs what this game asks of it.</summary>
-    public bool Admin { get; private set; }
+    public bool Admin => Role == Wire.Role.Admin;
+
+    /// <summary>Which of this server's commands this game's player may run.</summary>
+    public Wire.Role Role { get; private set; }
+
+    /// <summary>Whether the player may keep the world tidy: an admin, or trusted.</summary>
+    public bool Trusted => Role >= Wire.Role.Trusted;
 
     /// <summary>
     /// The worlds this server keeps under names, as it last said. Null until it has, which it does
@@ -344,7 +350,7 @@ public sealed class Client : IDisposable
     public void Connect(IPEndPoint server, string name, string ksaBuild, string mods, string system, string password, string token = "")
     {
         (_server, Id, Out, ServerName, ServerHasWorld) = (server, 0, "", "", false);
-        (Admin, Saves, _savesSerial) = (false, null, 0);
+        (Role, Saves, _savesSerial) = (Wire.Role.Player, null, 0);
         (_protected, _protectedSerial, Rules) = ([], 0, null);
         _sweeps.Clear();
         (_told, _kept) = (null, "");
@@ -730,7 +736,7 @@ public sealed class Client : IDisposable
                 (Discord, _discordAsk) = (du, null);
                 return;
             case Wire.Op op when Joined:
-                Admin = op.Admin;
+                Role = op.Admin ? op.Role : Wire.Role.Player;
                 bool again = op == _told;
                 _told = op;
                 if (!op.Admin) (Saves, _savesSerial) = (null, 0);

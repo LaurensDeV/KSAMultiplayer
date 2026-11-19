@@ -374,9 +374,11 @@ if (!Console.IsInputRedirected || Environment.GetEnvironmentVariable("KSAMP_STDI
     ("kick <name> [why]", "disconnect a player (they can rejoin)"),
     ("op <name>", "make a connected player an admin; they stay one when they rejoin, and on any machine if they logged in with Discord"),
     ("op discord:<id>", "make a Discord user an admin whenever they log in with Discord, whether or not they're connected"),
-    ("deop <name>", "remove a player's admin rights, whether or not they're connected"),
-    ("deop discord:<id>", "remove a Discord user's admin rights"),
-    ("admins", "list the admins"),
+    ("trust <name>", "make a connected player trusted: clear, remove, protect, rename, save, load and kick, but not delete, reload or roles"),
+    ("trust discord:<id>", "make a Discord user trusted whenever they log in with Discord"),
+    ("deop <name>", "take away a player's role, admin or trusted, whether or not they're connected"),
+    ("deop discord:<id>", "take away a Discord user's role"),
+    ("admins", "list the admins and trusted players"),
     ("clear [name]", "remove every craft nobody is flying; clear Rocket_* removes only matching ones"),
     ("remove <craft>", "remove one craft from every game, whoever owns it, unless it's being flown or protected"),
     ("protect <craft>", "keep a craft safe from clear, remove and being abandoned, even when named in full"),
@@ -387,7 +389,9 @@ if (!Console.IsInputRedirected || Environment.GetEnvironmentVariable("KSAMP_STDI
     ("save [name]", "save the world now; with a name, keep it as a named save"),
     ("saves", "list the named saves"),
     ("load <name>", "load a named save for everyone; the current world is saved first"),
-    ("delete <name>", "delete a named save"),
+    ("delete <name>", "delete a named save; it is kept in the bin for 30 days"),
+    ("deleted", "list the saves deleted or saved over in the last 30 days"),
+    ("restore <name>", "put a deleted save back, by its name in deleted"),
     ("status", "player count, craft count, universe time and network totals"),
     ("version", "server version, protocol version and required KSA build"),
 ];
@@ -396,12 +400,20 @@ if (!Console.IsInputRedirected || Environment.GetEnvironmentVariable("KSAMP_STDI
 // the same things, and hears the answer in their own chat rather than in a log they cannot see.
 void Command(string line, GameServer.Player? who = null)
 {
+    // The first thing said back, which is what the audit log keeps of how it went.
+    string? answered = null;
     void Answer(string text)
     {
+        answered ??= text;
         if (who is null) Say(text);
         else server.Tell(who, text);
     }
+    Run(line, who, Answer);
+    if (Permissions.Audits(line)) server.Audit.Write(who is null ? "console" : AuditLog.Who(who), line, answered ?? "");
+}
 
+void Run(string line, GameServer.Player? who, Action<string> Answer)
+{
     string[] parts = line.Split(' ', 2, StringSplitOptions.TrimEntries);
     string rest = parts.Length > 1 ? parts[1] : "";
     switch (parts[0].ToLowerInvariant())
@@ -414,7 +426,7 @@ void Command(string line, GameServer.Player? who = null)
                 // like any other, and being able to run a command is not being told everybody's
                 // address; whoever is at the console has them in the log already.
                 Answer($"  {p.Id,3} {p.Name,-24} {(p.Loaded ? "playing" : p.WaitingForWorld ? "waiting for the world" : "loading")}"
-                    + $"{(p.Admin ? ", admin" : "")}"
+                    + $"{(p.Role > Wire.Role.Player ? $", {Permissions.Said(p.Role)}" : "")}"
                     + $"{(p.DiscordId.Length > 0 ? $", Discord {p.DiscordName} ({p.DiscordId})" : "")}"
                     + $"{(p.Controlling.Length > 0 ? $", flying {p.Controlling}" : "")}"
                     + $"{(who is null ? $", from {p.At}" : "")}, KSA {p.KsaBuild}");
@@ -428,46 +440,51 @@ void Command(string line, GameServer.Player? who = null)
             string[] k = rest.Split(' ', 2, StringSplitOptions.TrimEntries);
             if (k[0].Length == 0 || !server.Kick(k[0], k.Length > 1 ? k[1] : "")) Answer($"nobody called '{k[0]}'");
             break;
-        case "op" when rest.StartsWith("discord:", StringComparison.OrdinalIgnoreCase):
+        case "op" or "trust" when rest.StartsWith("discord:", StringComparison.OrdinalIgnoreCase):
             string opId = rest["discord:".Length..].Trim();
-            if (!Discord.IsSnowflake(opId)) Answer("usage: op discord:<user id>, the number Discord's Copy User ID gives");
-            else Answer($"Discord user {opId} ({server.OpDiscord(opId)}) is now an admin, whichever machine they log in with Discord from"
+            bool trusting = parts[0].Equals("trust", StringComparison.OrdinalIgnoreCase);
+            string made = trusting ? "trusted" : "an admin";
+            if (!Discord.IsSnowflake(opId)) Answer($"usage: {parts[0].ToLowerInvariant()} discord:<user id>, the number Discord's Copy User ID gives");
+            else Answer($"Discord user {opId} ({(trusting ? server.TrustDiscord(opId) : server.OpDiscord(opId))}) is now {made}, whichever machine they log in with Discord from"
                 + (server.DiscordOn ? "" : "; discord-login is empty, so nobody can log in with Discord until it is set"));
             break;
-        case "op":
-            if (rest.Length == 0) Answer("usage: op <name> (the player must be connected), or op discord:<user id>");
-            else if (server.Op(rest) is not { } opped) Answer($"nobody called '{rest}' is connected: a player has to be online to be made an admin, or op discord:<user id>");
-            else Answer($"{opped} is now an admin, and will stay one when they rejoin"
+        case "op" or "trust":
+            bool trust = parts[0].Equals("trust", StringComparison.OrdinalIgnoreCase);
+            string role = trust ? "trusted" : "an admin";
+            if (rest.Length == 0) Answer($"usage: {parts[0].ToLowerInvariant()} <name> (the player must be connected), or {parts[0].ToLowerInvariant()} discord:<user id>");
+            else if ((trust ? server.Trust(rest) : server.Op(rest)) is not { } opped) Answer($"nobody called '{rest}' is connected: a player has to be online to be made {role}, or {parts[0].ToLowerInvariant()} discord:<user id>");
+            else Answer($"{opped} is now {role}, and will stay so when they rejoin"
                 + (server.Admins.DiscordOf(opped) is { Length: > 0 } did ? $", from any machine they log in with Discord on (Discord user {did})" : "; their old token works until their game has saved the new one"));
             break;
-        case "deop" when rest.StartsWith("discord:", StringComparison.OrdinalIgnoreCase) && server.SetAsDiscordAdmin(rest["discord:".Length..].Trim()):
-            Answer($"Discord user {rest["discord:".Length..].Trim()} is an admin by the discord-admins setting: take them out of it to deop them");
+        case "deop" when rest.StartsWith("discord:", StringComparison.OrdinalIgnoreCase) && server.RoleBySetting(rest["discord:".Length..].Trim()) > Wire.Role.Player:
+            string setId = rest["discord:".Length..].Trim();
+            Answer($"Discord user {setId} is {Permissions.Said(server.RoleBySetting(setId))} by the "
+                + $"{(server.RoleBySetting(setId) == Wire.Role.Admin ? "discord-admins" : "discord-trusted")} setting: take them out of it to deop them");
             break;
         case "deop" when rest.StartsWith("discord:", StringComparison.OrdinalIgnoreCase):
             string deopId = rest["discord:".Length..].Trim();
             Answer(server.DeopDiscord(deopId) is { } was
-                ? $"Discord user {deopId} ({was}) is no longer an admin"
-                : $"Discord user {deopId} was not an admin");
+                ? $"Discord user {deopId} ({was}) is no longer an admin or trusted"
+                : $"Discord user {deopId} was neither an admin nor trusted");
             break;
         case "deop":
             if (rest.Length == 0) Answer("usage: deop <name> (they don't need to be connected), or deop discord:<user id>");
             // Not the sentence the server logs for itself, or the console says it twice.
             else Answer(server.Deop(rest)
-                ? $"{rest} is no longer an admin"
-                : $"{rest} was not an admin");
+                ? $"{rest} is no longer an admin or trusted"
+                : $"{rest} was neither an admin nor trusted");
             break;
         case "admins":
-            if (server.Options.DiscordAdmins.Length > 0)
+            string Ids(string[] ids) => string.Join(", ", ids.Select(id => server.Players.FirstOrDefault(p => p.DiscordId == id) is { } here ? $"{id} ({here.Name})" : id));
+            string Named(Wire.Role r) => string.Join(", ", server.Admins.Names.Where(n => server.Admins.RoleOf(n) == r)
+                                                                .Select(n => server.Admins.DiscordOf(n) is { Length: > 0 } d ? $"{n} (Discord {d})" : n));
+            if (server.Options.DiscordAdmins.Length > 0) Answer($"admins by the discord-admins setting: {Ids(server.Options.DiscordAdmins)}");
+            if (server.Options.DiscordTrusted.Length > 0) Answer($"trusted by the discord-trusted setting: {Ids(server.Options.DiscordTrusted)}");
+            if (Named(Wire.Role.Admin) is { Length: > 0 } admins) Answer($"admins: {admins}");
+            if (Named(Wire.Role.Trusted) is { Length: > 0 } trusted) Answer($"trusted: {trusted}");
+            if (server.Admins.Names.Count == 0 && server.Options.DiscordAdmins.Length == 0 && server.Options.DiscordTrusted.Length == 0)
             {
-                Answer($"by the discord-admins setting: {string.Join(", ", server.Options.DiscordAdmins.Select(id => server.Players.FirstOrDefault(p => p.DiscordId == id) is { } here ? $"{id} ({here.Name})" : id))}");
-            }
-            if (server.Admins.Names.Count > 0)
-            {
-                Answer($"admins: {string.Join(", ", server.Admins.Names.Select(n => server.Admins.DiscordOf(n) is { Length: > 0 } d ? $"{n} (Discord {d})" : n))}");
-            }
-            else if (server.Options.DiscordAdmins.Length == 0)
-            {
-                Answer("there are no admins yet: op <name> makes a connected player one, op discord:<user id> a Discord user");
+                Answer("there are no admins yet: op <name> makes a connected player one, op discord:<user id> a Discord user, and trust does the same for trusted");
             }
             break;
         case "reload" or "reset":
@@ -522,6 +539,20 @@ void Command(string line, GameServer.Player? who = null)
         case "delete":
             Answer(rest.Length == 0 ? "usage: delete <name> (saves lists the names)" : server.DeleteSave(rest, who));
             break;
+        case "deleted":
+            IReadOnlyList<(string Name, DateTime WentUtc, long Bytes)> binned = server.Saves.Binned();
+            if (binned.Count == 0) Answer($"nothing has been deleted or saved over in the last {SaveShelf.BinDays} days");
+            foreach ((string name, DateTime went, long bytes) in binned)
+            {
+                Answer($"  {name}, {Blob.Size((int)Math.Min(bytes, int.MaxValue))}, kept until {went.AddDays(SaveShelf.BinDays):yyyy-MM-dd}");
+            }
+            if (binned.Count > 0) Answer("restore <name> puts one back, under the name it had");
+            break;
+        case "restore":
+            Answer(rest.Length == 0 ? "usage: restore <name> (deleted lists them)"
+                : server.Saves.Restore(rest) is { } back ? $"'{back}' is back among the saves" : $"nothing called '{rest}' in the bin: deleted lists what is");
+            if (rest.Length > 0) server.SaySaves();
+            break;
         case "save" or "snapshot":
             server.SnapshotNow();
             Answer(server.Players.Any(p => p.Loaded) ? "asked the longest-connected player for a fresh save" : "nobody is in the world to save it");
@@ -545,7 +576,8 @@ void Command(string line, GameServer.Player? who = null)
         case "help" or "?":
             // Said as it has to be typed: bare at the console, behind a / by an admin in a game.
             string slash = who is null ? "" : "/";
-            foreach ((string what, string does) in Commands)
+            // In a game, only what this player may run: a list of commands they would be refused is a list of refusals.
+            foreach ((string what, string does) in Commands.Where(c => who is null || Permissions.Need(c.What) <= who.Role))
             {
                 Answer($"  {slash}{what.PadRight(18)} {does}");
             }

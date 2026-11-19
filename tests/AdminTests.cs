@@ -75,7 +75,7 @@ public class AdminTests
         b.Ask("clear Rocket_*");
         rig.For(0.5);
         Assert.Empty(rig.Server.Asked);
-        Assert.Contains(b.Chat, said => said.Text.Contains("not an admin"));
+        Assert.Contains(b.Chat, said => said.Text.Contains("only trusted players and admins"));
     }
 
     [Fact]
@@ -102,7 +102,8 @@ public class AdminTests
         Assert.Equal("", a.Tokens.Dequeue());
         Assert.Empty(rig.Server.Admins.Names);
 
-        a.Ask("status");
+        // Not status, which anybody may ask for: a line that needs what she was.
+        a.Ask("clear Rocket_*");
         rig.For(0.5);
         Assert.Empty(rig.Server.Asked);
 
@@ -142,8 +143,8 @@ public class AdminTests
 
             Admins read = new(folder);
             Assert.Equal("Alice", Assert.Single(read.Names));
-            Assert.True(read.Check(token, "Alice"));
-            Assert.False(read.Check(token[..^1] + "x", "Alice"));
+            Assert.Equal(Wire.Role.Admin, read.Check(token, "Alice"));
+            Assert.Equal(Wire.Role.Player, read.Check(token[..^1] + "x", "Alice"));
             // Only the hash is kept, so the file is enough to take an admin away and not to become one.
             Assert.DoesNotContain(token, File.ReadAllText(Path.Combine(folder, "admins.json")));
         }
@@ -200,15 +201,15 @@ public class AdminTests
         Assert.Equal("Alice", rig.Server.Op("Alice"));
         rig.For(0.3);
         Assert.Empty(a.Tokens);
-        Assert.True(rig.Server.Admins.Check(first, "Alice"));
+        Assert.Equal(Wire.Role.Admin, rig.Server.Admins.Check(first, "Alice"));
         Assert.Equal("Alice", Assert.Single(rig.Server.Admins.Names));
         rig.Server.Socket.Loss = 0.0;
 
         rig.Until(() => a.Tokens.Count > 0, what: "the token to be said again");
         string second = a.Tokens.Dequeue();
         Keep(rig, a, second);
-        Assert.False(rig.Server.Admins.Check(first, "Alice"));
-        Assert.True(rig.Server.Admins.Check(second, "Alice"));
+        Assert.Equal(Wire.Role.Player, rig.Server.Admins.Check(first, "Alice"));
+        Assert.Equal(Wire.Role.Admin, rig.Server.Admins.Check(second, "Alice"));
     }
 
     // Arriving is not being kept: a game that could not write the token down has the old one on
@@ -225,11 +226,11 @@ public class AdminTests
         rig.For(1.2);
         string second = Assert.Single(a.Tokens);
         Assert.False(Heard(rig));
-        Assert.True(rig.Server.Admins.Check(first, "Alice"));
+        Assert.Equal(Wire.Role.Admin, rig.Server.Admins.Check(first, "Alice"));
 
         Keep(rig, a, a.Tokens.Dequeue());
-        Assert.False(rig.Server.Admins.Check(first, "Alice"));
-        Assert.True(rig.Server.Admins.Check(second, "Alice"));
+        Assert.Equal(Wire.Role.Player, rig.Server.Admins.Check(first, "Alice"));
+        Assert.Equal(Wire.Role.Admin, rig.Server.Admins.Check(second, "Alice"));
     }
 
     [Fact]
@@ -244,13 +245,13 @@ public class AdminTests
         a.Kept(a.Tokens.Dequeue());
         rig.For(0.3);
         Assert.False(Heard(rig));
-        Assert.True(rig.Server.Admins.Check(first, "Alice"));
+        Assert.Equal(Wire.Role.Admin, rig.Server.Admins.Check(first, "Alice"));
         a.Socket.Loss = 0.0;
 
         // Nothing more is asked of whoever runs the game: it was told once that the token is kept.
         rig.Until(() => Heard(rig), what: "the server to hear the token is kept");
         Assert.Empty(a.Tokens);
-        Assert.False(rig.Server.Admins.Check(first, "Alice"));
+        Assert.Equal(Wire.Role.Player, rig.Server.Admins.Check(first, "Alice"));
     }
 
     [Fact]
@@ -268,8 +269,8 @@ public class AdminTests
             a.Tokens.Clear();
             a.Kept(next);
             rig.Until(() => Heard(rig), seconds: 20, what: "the server to hear the token is kept over a lossy line");
-            Assert.False(rig.Server.Admins.Check(first, "Alice"));
-            Assert.True(rig.Server.Admins.Check(next, "Alice"));
+            Assert.Equal(Wire.Role.Player, rig.Server.Admins.Check(first, "Alice"));
+            Assert.Equal(Wire.Role.Admin, rig.Server.Admins.Check(next, "Alice"));
             first = next;
         }
         Assert.Equal("Alice", Assert.Single(rig.Server.Admins.Names));
@@ -307,7 +308,7 @@ public class AdminTests
         Client again = rig.Join("Alice", token: second);
         rig.Until(() => again.Admin, what: "Alice to be an admin by the token she was handed");
         // Shown at a join is shown: the one before it has stopped working.
-        Assert.False(rig.Server.Admins.Check(first, "Alice"));
+        Assert.Equal(Wire.Role.Player, rig.Server.Admins.Check(first, "Alice"));
         Assert.Equal("Alice", Assert.Single(rig.Server.Admins.Names));
     }
 
@@ -324,8 +325,8 @@ public class AdminTests
 
         Assert.True(rig.Server.Deop("Alice"));
         Assert.Empty(rig.Server.Admins.Names);
-        Assert.False(rig.Server.Admins.Check(first, "Alice"));
-        Assert.False(rig.Server.Admins.Check(second, "Alice"));
+        Assert.Equal(Wire.Role.Player, rig.Server.Admins.Check(first, "Alice"));
+        Assert.Equal(Wire.Role.Player, rig.Server.Admins.Check(second, "Alice"));
         // Too late to answer for it, and nothing it says now makes it an admin.
         a.Kept(second);
         rig.Until(() => !a.Admin && Heard(rig), what: "Alice to hear she is no admin");
@@ -364,12 +365,12 @@ public class AdminTests
 
             Admins read = new(folder);
             Assert.Equal("Alice", Assert.Single(read.Names));
-            Assert.True(read.Check("token-a", "Alice"));
+            Assert.Equal(Wire.Role.Admin, read.Check("token-a", "Alice"));
             // Opped again by the server that read it, and nothing is lost until the new one is shown.
             string next = read.Offer("Alice");
-            Assert.True(new Admins(folder).Check("token-a", "Alice"));
-            Assert.True(read.Check(next, "Alice"));
-            Assert.False(new Admins(folder).Check("token-a", "Alice"));
+            Assert.Equal(Wire.Role.Admin, new Admins(folder).Check("token-a", "Alice"));
+            Assert.Equal(Wire.Role.Admin, read.Check(next, "Alice"));
+            Assert.Equal(Wire.Role.Player, new Admins(folder).Check("token-a", "Alice"));
         }
         finally
         {

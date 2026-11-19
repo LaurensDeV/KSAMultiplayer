@@ -264,8 +264,8 @@ public class DiscordTests
         Client c = Joined(rig, "Alice");
         LogIn(rig, c, login.Proof(Alice, c.DiscordNonce));
         rig.Until(() => c.Admin, what: "Alice to be an admin by the setting");
-        Assert.True(rig.Server.SetAsDiscordAdmin(Alice));
-        Assert.False(rig.Server.SetAsDiscordAdmin(Bob));
+        Assert.Equal(Wire.Role.Admin, rig.Server.RoleBySetting(Alice));
+        Assert.Equal(Wire.Role.Player, rig.Server.RoleBySetting(Bob));
     }
 
     // Added to the setting while they are playing, they are an admin then and there.
@@ -298,9 +298,9 @@ public class DiscordTests
         try
         {
             new Admins(folder).AddDiscord(Alice, "Alice");
-            Assert.True(new Admins(folder).CheckDiscord(Alice, "Alicia"));
+            Assert.Equal(Wire.Role.Admin, new Admins(folder).CheckDiscord(Alice, "Alicia"));
             Assert.Equal(Alice, new Admins(folder).DiscordOf("Alicia"));
-            Assert.False(new Admins(folder).CheckDiscord(Bob, "Bob"));
+            Assert.Equal(Wire.Role.Player, new Admins(folder).CheckDiscord(Bob, "Bob"));
         }
         finally
         {

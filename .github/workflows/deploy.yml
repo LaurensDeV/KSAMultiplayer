@@ -147,6 +147,7 @@ jobs:
           # Discord logins through the directory: empty leaves them off.
           TF_VAR_discord_client_id: ${{ vars.KSAMP_DISCORD_CLIENT_ID }}
           TF_VAR_discord_admins: ${{ vars.KSAMP_DISCORD_ADMINS }}
+          TF_VAR_discord_trusted: ${{ vars.KSAMP_DISCORD_TRUSTED }}
           TF_VAR_discord_client_secret: ${{ secrets.KSAMP_DISCORD_CLIENT_SECRET }}
           TF_VAR_discord_signing_key: ${{ secrets.KSAMP_DISCORD_SIGNING_KEY }}
         run: |

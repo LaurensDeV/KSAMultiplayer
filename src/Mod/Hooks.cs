@@ -749,9 +749,9 @@ internal static class Hooks
         {
             if (Sync.Now == Sync.Stage.Off || World.LoadAsked) return true;
             Log.Info($"refused to load the save '{__instance.Id}': this game is in a server");
-            TimedAlert.CreateWarning(Sync.Admin
+            TimedAlert.CreateWarning(Sync.Trusted
                 ? "You're connected to a server. Use SERVER SAVES to load one of its saves, or disconnect to load your own."
-                : "You're connected to a server, where only admins can load saves. Disconnect to load your own.");
+                : "You're connected to a server, where only trusted players and admins can load saves. Disconnect to load your own.");
             return false;
         }
         catch (Exception e)
@@ -1021,9 +1021,9 @@ internal static class Hooks
             // here, and a craft the operator protected is not any one player's to remove by them.
             if (!Sync.IsProtected(v)) return true;
             Log.Info($"refused to remove {v.Id}: it is protected on this server");
-            TimedAlert.CreateWarning(Sync.Admin
+            TimedAlert.CreateWarning(Sync.Trusted
                 ? $"{v.Id} is protected. Unlock it in the universe manifest to delete it."
-                : $"{v.Id} is protected by an admin, so it can't be abandoned, recovered or deleted.");
+                : $"{v.Id} is protected, so it can't be abandoned, recovered or deleted.");
             return false;
         }
         catch (Exception e)

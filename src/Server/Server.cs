@@ -103,6 +103,9 @@ public sealed record ServerOptions
     /// Not taken away by deop, which says where they come from.
     /// </summary>
     public string[] DiscordAdmins { get; init; } = [];
+
+    /// <summary>Discord users who are trusted here whatever admins.json says, as <see cref="DiscordAdmins"/> are admins.</summary>
+    public string[] DiscordTrusted { get; init; } = [];
 }
 
 /// <summary>
@@ -127,8 +130,10 @@ public sealed class GameServer : IDisposable
         public string System { get; init; } = "";
         public Link Link { get; } = new();
 
-        /// <summary>Whether this player's commands are run: the token offered at the join was on the admin list.</summary>
-        public bool Admin { get; set; }
+        /// <summary>Which commands this player's are run for: what the token offered at the join, or their Discord login, made them.</summary>
+        public Wire.Role Role { get; set; }
+
+        public bool Admin => Role == Wire.Role.Admin;
 
         /// <summary>
         /// What this player's game is being told of being an admin, until it says the same back, and
@@ -346,6 +351,7 @@ public sealed class GameServer : IDisposable
         Protected = protect ?? new ProtectedCraft(store?.Folder ?? "");
         _protectedSerial = Protected.Names.Count > 0 ? 1u : 0u;
         Admins = admins ?? new Admins(store?.Folder ?? "");
+        Audit = new AuditLog(store?.Folder ?? "");
         Saves = saves ?? new SaveShelf(store is null ? "" : Path.Combine(store.Folder, "saves"));
         UniverseClock.SetSpeed(options.Speed, clock());
         _udp = new Udp(options.Port, clock, "KSAMultiplayer server", bind);
@@ -388,9 +394,9 @@ public sealed class GameServer : IDisposable
             : "craft left on a launchpad are no longer cleared away on this server"), _ => true);
         // A Discord admin added to the setting is one now, if they are here and logged in.
         WelcomeForDiscord();
-        foreach (Player p in _players.Values.Where(p => p.DiscordId.Length > 0 && !p.Admin && next.DiscordAdmins.Contains(p.DiscordId)).ToArray())
+        foreach (Player p in _players.Values.Where(p => p.DiscordId.Length > 0 && RoleIn(next, p.DiscordId) > p.Role).ToArray())
         {
-            MakeAdmin(p);
+            MakeRole(p, RoleIn(next, p.DiscordId));
         }
     }
     public UniverseClock UniverseClock { get; } = new();
@@ -401,6 +407,9 @@ public sealed class GameServer : IDisposable
     public Blob? World => _world;
     public int CraftCount => _crafts.Count;
     public Admins Admins { get; }
+
+    /// <summary>Who did what that changes the world, a save or a role: kept beside the world.</summary>
+    public AuditLog Audit { get; }
 
     /// <summary>The worlds kept under names, which an admin saves to and loads from.</summary>
     public SaveShelf Saves { get; }
@@ -464,13 +473,21 @@ public sealed class GameServer : IDisposable
     private const double DiscordAgainSeconds = 3.0, DiscordWithinSeconds = 15.0;
 
     /// <summary>Whether this server takes Discord logins: it has a login service, and some Discord user to recognise.</summary>
-    public bool DiscordOn => Login is not null && (Admins.HasDiscord || Options.DiscordAdmins.Length > 0);
+    public bool DiscordOn => Login is not null && (Admins.HasDiscord || Options.DiscordAdmins.Length > 0 || Options.DiscordTrusted.Length > 0);
 
-    /// <summary>Whether this Discord user is an admin here, by the setting or by admins.json.</summary>
-    private bool DiscordAdmin(string id, string name) => Options.DiscordAdmins.Contains(id) | Admins.CheckDiscord(id, name);
+    /// <summary>What this Discord user is here: the better of what the settings and admins.json say.</summary>
+    private Wire.Role DiscordRole(string id, string name)
+    {
+        Wire.Role listed = Admins.CheckDiscord(id, name);
+        Wire.Role set = RoleBySetting(id);
+        return listed > set ? listed : set;
+    }
 
-    /// <summary>Whether this Discord user is an admin by the discord-admins setting, which deop cannot change.</summary>
-    public bool SetAsDiscordAdmin(string id) => Options.DiscordAdmins.Contains(id);
+    /// <summary>What the discord-admins and discord-trusted settings make this Discord user, which deop cannot change.</summary>
+    public Wire.Role RoleBySetting(string id) => RoleIn(Options, id);
+
+    private static Wire.Role RoleIn(ServerOptions o, string id) =>
+        o.DiscordAdmins.Contains(id) ? Wire.Role.Admin : o.DiscordTrusted.Contains(id) ? Wire.Role.Trusted : Wire.Role.Player;
 
     // Whoever is here was welcomed with nothing to log in with when logins were off: they are welcomed
     // again, which a joined game reads for the nonce alone.
@@ -586,9 +603,13 @@ public sealed class GameServer : IDisposable
             _rosterNext = 0.0;
             p.DiscordAnswer = new Wire.DiscordUser(said.Id, p.DiscordName, "");
             _udp.Send(p.DiscordAnswer, p.At);
-            bool admin = DiscordAdmin(said.Id, p.Name);
-            Log($"{p.Name} logged in with Discord as {p.DiscordName} ({said.Id}){(admin ? ", an admin" : "")}");
-            if (admin && !p.Admin) MakeAdmin(p);
+            Wire.Role role = DiscordRole(said.Id, p.Name);
+            Log($"{p.Name} logged in with Discord as {p.DiscordName} ({said.Id}){(role > Wire.Role.Player ? $", {Permissions.Said(role)}" : "")}");
+            if (role > p.Role)
+            {
+                MakeRole(p, role);
+                Audit.Write(AuditLog.Who(p), $"logged in with Discord as {p.DiscordName}", $"{Permissions.Said(role)} by {(RoleBySetting(said.Id) == role ? "the setting" : "admins.json")}");
+            }
         }
     }
 
@@ -596,14 +617,19 @@ public sealed class GameServer : IDisposable
     /// Makes a Discord user an admin whether or not they are playing, returning the name they are
     /// known by. Any player logged in as them now is one at once.
     /// </summary>
-    public string OpDiscord(string id)
+    public string OpDiscord(string id) => GrantDiscord(id, Wire.Role.Admin);
+
+    /// <summary>As <see cref="OpDiscord"/>, to make a Discord user trusted.</summary>
+    public string TrustDiscord(string id) => GrantDiscord(id, Wire.Role.Trusted);
+
+    private string GrantDiscord(string id, Wire.Role role)
     {
         Player[] here = [.. _players.Values.Where(p => p.DiscordId == id)];
         string name = here.FirstOrDefault()?.Name ?? Admins.NameOfDiscord(id) ?? id;
-        Admins.AddDiscord(id, name);
+        Admins.AddDiscord(id, name, role);
         WelcomeForDiscord();
-        foreach (Player p in here.Where(p => !p.Admin)) MakeAdmin(p);
-        if (here.Length == 0) Log($"Discord user {id} is an admin from now, once they log in");
+        foreach (Player p in here.Where(p => p.Role != role)) MakeRole(p, role);
+        if (here.Length == 0) Log($"Discord user {id} is {Permissions.Said(role)} from now, once they log in");
         return name;
     }
 
@@ -909,18 +935,19 @@ public sealed class GameServer : IDisposable
             case Wire.Command asked:
                 string line = Wire.Clip(asked.Line, Wire.ChatChars).Trim();
                 if (line.Length == 0) return;
-                if (!player.Admin)
+                Wire.Role needs = Permissions.Need(line);
+                if (player.Role < needs)
                 {
-                    Tell(player, "you're not an admin on this server");
-                    Log($"{player.Name} asked for '{line}' and is no admin");
+                    Tell(player, needs == Wire.Role.Admin ? "only an admin can do that on this server" : "only trusted players and admins can do that on this server");
+                    Log($"{player.Name} asked for '{line}' and is {Permissions.Said(player.Role)}");
                     return;
                 }
-                Log($"{player.Name}, an admin, asks for '{line}'");
+                Log($"{player.Name}, {Permissions.Said(player.Role)}, asks for '{line}'");
                 Asked.Enqueue((player, line));
                 return;
             // Only what this game was told, said back: it has heard, and a token it was handed is
             // written down. Anything else in an Op from a game is nothing the server ever said.
-            case Wire.Op back when back == player.Telling:
+            case Wire.Op back when back.SaysBack(player.Telling):
                 player.Telling = null;
                 // The token arrived, which is when the one before it stops working.
                 if (back.Admin && back.Token.Length > 0) Admins.Check(back.Token, player.Name);
@@ -1042,20 +1069,23 @@ public sealed class GameServer : IDisposable
             KsaBuild = hello.KsaBuild,
             Mods = hello.Mods.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
             System = hello.System,
-            Admin = Admins.Check(Wire.Clip(hello.Token, Wire.TokenChars), name),
+            Role = Admins.Check(Wire.Clip(hello.Token, Wire.TokenChars), name),
         };
         _players[id] = p;
 
         bool seeding = _world is null && _players.Values.All(q => !q.Seeding);
         if (DiscordOn) p.DiscordNonce = Discord.Nonce();
         _udp.Send(new Wire.Welcome(id, "", Options.Name, !seeding, System: _worldSystem, Discord: p.DiscordNonce), from);
-        Log($"{name} has joined from {from}{(p.Admin ? " as an admin" : "")}{(seeding ? ", and their world becomes the server's" : "")}");
+        Log($"{name} has joined from {from}{(p.Role > Wire.Role.Player ? $" as {Permissions.Said(p.Role)}" : "")}{(seeding ? ", and their world becomes the server's" : "")}");
         // Said only when there is something to say: that they are an admin, or that the token they
         // offered is no good, which is how a game deopped while it was away forgets the one it kept.
         // Nothing at all to a player who offered none, who is no admin and knows it.
-        if (p.Admin || hello.Token.Length > 0) TellAdmin(p, new Wire.Op(p.Admin, ""));
-        if (p.Admin) Tell(p, "you're an admin on this server: type /help in chat to see the commands");
-        if (p.Admin) SendSaves(p);
+        if (p.Role > Wire.Role.Player || hello.Token.Length > 0) TellAdmin(p, new Wire.Op(p.Role > Wire.Role.Player, "", p.Role));
+        if (p.Role > Wire.Role.Player)
+        {
+            Tell(p, $"you're {Permissions.Said(p.Role)} on this server: type /help in chat to see the commands");
+            SendSaves(p);
+        }
         // To everybody, before there is anything to sweep: a game sweeps its own world.
         if (_protectedSerial > 0) p.Link.Send(ProtectedBlob(), now);
         Broadcast(new Wire.Chat(0, $"{name} has joined"), q => q != p);
@@ -1384,8 +1414,8 @@ public sealed class GameServer : IDisposable
         was = _crafts.Keys.FirstOrDefault(k => string.Equals(k, was, StringComparison.OrdinalIgnoreCase)) ?? was;
         if (!_crafts.TryGetValue(was, out Craft? craft)) return $"the server doesn't know a craft called {was}: somebody has to have flown or watched it";
         if (was == now) return $"{was} is already called that";
-        bool admin = by is null || by.Admin;
-        if (Protected.Has(was) && !admin) return $"{was} is protected, so only an admin can rename it";
+        bool admin = by is null || by.Role >= Wire.Role.Trusted;
+        if (Protected.Has(was) && !admin) return $"{was} is protected, so only a trusted player or an admin can rename it";
         if (!admin && (craft.Owner != by!.Id || craft.Near)) return $"{was} isn't yours to rename";
         if (_crafts.ContainsKey(now)) return $"there's already a craft called {now}";
         if (_dockings.Any(d => (d.Consumed == was || d.Survivor == was) && _clock() - d.At < DockingToldForSeconds)) return $"{was} has just docked: try again in a moment";
@@ -2052,23 +2082,28 @@ public sealed class GameServer : IDisposable
     /// never written down where it could be said to anybody else. What they were an admin by before
     /// works until their game says it has this one.
     /// </summary>
-    public string? Op(string name)
+    public string? Op(string name) => Grant(name, Wire.Role.Admin);
+
+    /// <summary>As <see cref="Op"/>, to make a player trusted rather than an admin; an admin trusted is made one.</summary>
+    public string? Trust(string name) => Grant(name, Wire.Role.Trusted);
+
+    private string? Grant(string name, Wire.Role role)
     {
         if (Find(name) is not { } p) return null;
-        // Logged in with Discord, they are an admin as that user too, from whichever machine.
-        if (p.DiscordId.Length > 0) Admins.AddDiscord(p.DiscordId, p.Name);
-        MakeAdmin(p);
+        // Logged in with Discord, they are this as that user too, from whichever machine.
+        if (p.DiscordId.Length > 0) Admins.AddDiscord(p.DiscordId, p.Name, role);
+        MakeRole(p, role);
         return p.Name;
     }
 
-    private void MakeAdmin(Player p)
+    private void MakeRole(Player p, Wire.Role role)
     {
-        string token = Admins.Offer(p.Name);
-        p.Admin = true;
-        TellAdmin(p, new Wire.Op(true, token));
-        Tell(p, "you're an admin on this server: type /help in chat to see the commands");
+        string token = Admins.Offer(p.Name, role);
+        p.Role = role;
+        TellAdmin(p, new Wire.Op(true, token, role));
+        Tell(p, $"you're {Permissions.Said(role)} on this server: type /help in chat to see the commands");
         SendSaves(p);
-        Log($"{p.Name} is an admin from now");
+        Log($"{p.Name} is {Permissions.Said(role)} from now");
     }
 
     /// <summary>
@@ -2085,12 +2120,12 @@ public sealed class GameServer : IDisposable
                      .Where(q => string.Equals(q.Name, name, StringComparison.OrdinalIgnoreCase))
                      .ToArray())
         {
-            was |= p.Admin;
-            p.Admin = false;
-            TellAdmin(p, new Wire.Op(false, ""));
-            Tell(p, "you're no longer an admin on this server");
+            was |= p.Role > Wire.Role.Player;
+            Tell(p, $"you're no longer {Permissions.Said(p.Role)} on this server");
+            p.Role = Wire.Role.Player;
+            TellAdmin(p, new Wire.Op(false, "", Wire.Role.Player));
         }
-        if (was) Log($"{name} is no longer an admin");
+        if (was) Log($"{name} is no longer an admin or trusted");
         return was;
     }
 
@@ -2139,6 +2174,8 @@ public sealed class GameServer : IDisposable
         if (SaveList.Name(asked, out string why) is not { } name) return why;
         if (SaveShelf.Reserved(name)) return $"names starting with '{SaveShelf.AutoPrefix.TrimEnd()}' are reserved for automatic saves";
         if (_world is null) return "there is no world to save yet";
+        // A trusted player keeps worlds and never loses one: saving over a save is losing it.
+        if (by is { Admin: false } && Saves.Find(name) is { } taken) return $"there's already a save called '{taken}': pick another name, or ask an admin to save over it";
         // Counted with the ones still waiting to be written, or a burst of asks before the first
         // answer comes all pass a limit none of them has reached yet.
         string[] waiting = [.. _keeping.Select(k => k.Name).Where(k => !string.Equals(k, name, StringComparison.OrdinalIgnoreCase) && Saves.Find(k) is null)];
@@ -2393,7 +2430,7 @@ public sealed class GameServer : IDisposable
     /// <summary>Tells every admin here which worlds are kept: whenever that changes, so a window showing them never asks.</summary>
     public void SaySaves()
     {
-        Player[] admins = [.. _players.Values.Where(p => p.Admin)];
+        Player[] admins = [.. _players.Values.Where(p => p.Role >= Wire.Role.Trusted)];
         if (admins.Length == 0) return;
         byte[] list = SavesBlob();
         foreach (Player p in admins) p.Link.Send(list, _clock());
