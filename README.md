@@ -8,7 +8,7 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
 
 > **Status: played, not finished.** Two games on one machine have flown in one world through it,
 > against KSA `2026.11.10.5801`, and the server and the protocol are tested headlessly besides
-> (390 tests, real UDP over loopback, a lossy line included). An 89-part rocket has been flown in a
+> (391 tests, real UDP over loopback, a lossy line included). An 89-part rocket has been flown in a
 > shared world and staged while the other game watched, which rebuilt the dropped stage as its own
 > craft. What two games across the internet do is not known.
 > This release is built for KSA `2026.11.16.5901`, and has not been flown on it yet.
@@ -298,8 +298,8 @@ standing next to their rocket keeps it. The chat says what was cleared and why.
 
 `fresh` throws the world away and puts an empty one in its place -- the one `empty-world` names:
 every craft gone, universe time started over, and everybody handed the new world where they stand.
-Like `quit`, `settings` and `set`, it is the console's alone and an admin cannot type it in chat.
-There is no undoing it.
+The world it throws away is kept first, as a `before fresh` save in SERVER SAVES, so `load` brings
+it back. An admin can type it in chat as `/fresh`; a trusted player cannot.
 It shuts down cleanly on Ctrl+C and on SIGTERM.
 
 `version` says what the server is, the protocol it speaks and the KSA build it holds players to --
@@ -382,8 +382,8 @@ taken out of every game, owner's included; a player who is no admin is told only
 craft's row has a padlock before its name: shut for a protected craft, which everybody sees, and open
 and faint for the rest, which only an admin sees. An admin's click on it is `protect` or `unprotect`.
 A line behind a `/` is said to nobody, so a player who types one where they are no admin has told the
-room nothing and is told so themselves. `quit`, `fresh`, `settings` and `set` are the console's
-alone, each saying so when an admin tries it.
+room nothing and is told so themselves. `quit`, `settings` and `set` are the console's alone, each
+saying so when an admin tries it.
 
 Who is one starts at the console, since nobody is one on a server that has just come up:
 
@@ -428,7 +428,7 @@ admin is about, and can lose nothing that cannot be put back.
 | `clear`, `remove`, `protect`, `unprotect`, `rename` any craft | | yes | yes |
 | `save` under a new name, `load` | | yes | yes |
 | `kick`, `say` | | yes | yes |
-| `save` over a save, `delete`, `deleted`, `restore`, `reload` | | | yes |
+| `save` over a save, `delete`, `deleted`, `restore`, `reload`, `fresh` | | | yes |
 | `op`, `trust`, `deop` | | | yes |
 
 ```bash
@@ -453,7 +453,7 @@ one back under the name it had (or that name with "restored" after it, where it 
 
 Every command that changes the world, a save or a role -- `clear`, `remove`, `protect`, `rename`,
 `save`, `load`, `delete`, `restore`, `reload`, `kick`, `op`, `trust`, `deop`, and the console's own
-`fresh`, `set` and `quit` -- is written to `audit.log` in `--data`: when, who (with their role and
+`set` and `quit`, and `fresh` -- is written to `audit.log` in `--data`: when, who (with their role and
 Discord user), what they typed and what came of it. So is a role given by a Discord login. It is a
 file beside the world and not the console's log, so it outlives a restart and a redeploy.
 

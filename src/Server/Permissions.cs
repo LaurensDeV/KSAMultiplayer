@@ -44,6 +44,8 @@ public static class Permissions
         ["deleted"] = Wire.Role.Admin,
         ["restore"] = Wire.Role.Admin,
         ["reload"] = Wire.Role.Admin,
+        // The world it throws away is kept first, so an admin may; never a trusted player.
+        ["fresh"] = Wire.Role.Admin,
         ["reset"] = Wire.Role.Admin,
         ["op"] = Wire.Role.Admin,
         ["trust"] = Wire.Role.Admin,

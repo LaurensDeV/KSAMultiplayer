@@ -2184,7 +2184,7 @@ public sealed class GameServer : IDisposable
     public string Keep(string asked, Player? by = null)
     {
         if (SaveList.Name(asked, out string why) is not { } name) return why;
-        if (SaveShelf.Reserved(name)) return $"names starting with '{SaveShelf.AutoPrefix.TrimEnd()}' are reserved for automatic saves";
+        if (SaveShelf.Reserved(name)) return $"names starting with '{SaveShelf.AutoPrefix.TrimEnd()}' or '{SaveShelf.FreshPrefix.TrimEnd()}' are reserved for automatic saves";
         if (_world is null) return "there is no world to save yet";
         // A trusted player keeps worlds and never loses one: saving over a save is losing it.
         if (by is { Admin: false } && Saves.Find(name) is { } taken) return $"there's already a save called '{taken}': pick another name, or ask an admin to save over it";
@@ -2498,7 +2498,8 @@ public sealed class GameServer : IDisposable
     /// <para>Time is forgotten with them. Held, every game would load a world that has never been
     /// past a couple of minutes and then sprint to catch a clock still reading the old one's.</para>
     /// </summary>
-    public string Fresh(string why)
+    /// <param name="by">The admin who asked in a game, or null for the console.</param>
+    public string Fresh(string why, Player? by = null)
     {
         if (StockWorld.Zip(Options.EmptyWorld) is not { } zip)
         {
@@ -2507,6 +2508,23 @@ public sealed class GameServer : IDisposable
                 ? $"nothing to start from: set empty-world to one of {carried} first"
                 : $"no empty world for '{Options.EmptyWorld}'; there is one for {carried}";
         }
+        // The world thrown away is kept first, as one a load replaces is: a fresh start is the
+        // one thing here nobody could otherwise take back. Not when it is already on the shelf.
+        KeepWaiting(fresh: false);
+        string keptAs = "";
+        if (_world is not null && !_worldKept)
+        {
+            try
+            {
+                keptAs = Saves.KeepBeforeFresh(_world, _worldBuild, _worldMods, _worldSystem, _worldTimeKnown, by?.Name ?? "the operator", Protected.Names);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                return $"didn't start afresh: couldn't save the current world first ({e.Message})";
+            }
+            SaySaves();
+        }
+        if (_warpPhase != Wire.WarpPhase.None) EndWarp(_clock(), $"the warp ended because {by?.Name ?? "the operator"} is starting the world afresh");
         _crafts.Clear();
         _gone.Clear();
         UniverseClock.Forget();
@@ -2520,8 +2538,10 @@ public sealed class GameServer : IDisposable
         SetWorld(new Blob(BlobKind.World, "", 0, 0.0, zip), Options.KsaBuild, [], Options.EmptyWorld, timeKnown: false);
         int back = ReloadAll(why);
         Log($"the world is new and empty, in {Options.EmptyWorld}: {why}");
+        _worldKept = true;
         return $"a new empty world in {Options.EmptyWorld}"
-               + (back > 0 ? $", handed to {back} player{(back == 1 ? "" : "s")}" : ", with nobody here to give it to");
+               + (back > 0 ? $", handed to {back} player{(back == 1 ? "" : "s")}" : ", with nobody here to give it to")
+               + (keptAs.Length > 0 ? $"; the world before it is kept as '{keptAs}'" : "");
     }
 
     /// <summary>

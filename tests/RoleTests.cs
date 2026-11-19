@@ -39,13 +39,14 @@ public class RoleTests
         {
             Assert.Equal("run", Asks(rig, t, allowed));
         }
-        foreach (string refused in new[] { "delete Monday", "reload", "op Bob", "trust Bob", "deop Bob", "deleted", "restore Monday", "something new" })
+        foreach (string refused in new[] { "delete Monday", "reload", "fresh", "op Bob", "trust Bob", "deop Bob", "deleted", "restore Monday", "something new" })
         {
             Assert.Contains("only an admin", Asks(rig, t, refused));
         }
 
         Client a = Given(rig, "Ada", Wire.Role.Admin);
         Assert.Equal("run", Asks(rig, a, "delete Monday"));
+        Assert.Equal("run", Asks(rig, a, "fresh"));
         Assert.Equal("run", Asks(rig, a, "trust Bob"));
     }
 

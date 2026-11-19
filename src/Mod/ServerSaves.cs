@@ -184,7 +184,7 @@ internal static class ServerSaves
                 if (ImGui.MenuItem("Delete"u8))
                 {
                     ConfirmActionPopup.Create(() => Ask($"delete {s.Name}"), "DELETE SERVER SAVE", s.Auto
-                        ? $"Delete '{s.Name}'? It is the world as it was before a load. The server keeps it for 30 days, and its console can restore it."
+                        ? $"Delete '{s.Name}'? It is the world as it was before a load or a fresh start. The server keeps it for 30 days, and its console can restore it."
                         : $"Delete the server save '{s.Name}'? The server keeps it for 30 days, and its console can restore it.");
                 }
                 // The server names the ones it keeps before a load, and takes no save under such a name.

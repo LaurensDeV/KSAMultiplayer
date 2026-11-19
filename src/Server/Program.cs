@@ -71,7 +71,7 @@ const string Usage = """
 
     Console commands, on standard input: players, say <text>, kick <name> [why],
     op <name>, deop <name>, admins, clear [name], protect <craft>, unprotect <craft>, protected,
-    reload, save [name], saves, load <name>, delete <name>, status, version, help, fresh, quit,
+    reload, save [name], saves, load <name>, delete <name>, fresh, status, version, help, quit,
     settings, set <key> <value>.
 
     An admin can type those same commands into a game's chat with a / in front. op hands the player
@@ -84,14 +84,14 @@ const string Usage = """
     vouches for who they are. op <name> on a player who has logged in does the same, and deop
     discord:<user id> takes it back. Until a Discord user is an admin, nothing asks the service.
 
-    fresh, quit, settings
-    and set are the console's alone: a server nobody can start again, one whose password an admin
-    has changed, or a world thrown away under everybody standing in it, is not something to hand
-    out by accident.
+    quit, settings
+    and set are the console's alone: a server nobody can start again, or one whose password an
+    admin has changed, is not something to hand out by accident.
 
     fresh throws the world away and puts an empty one in its place, the one empty-world names:
     every craft gone, universe time started over, and everybody handed the new world where they
-    stand. There is no undoing it.
+    stand. The world it throws away is kept first as a 'before fresh' save, which load brings back;
+    an admin may run it in a game.
 
     settings reads the settings file again and set changes one line of it; either takes effect at
     once, except port, bind and data, which wait for a restart, and a setting a flag or the
@@ -398,6 +398,7 @@ if (!Console.IsInputRedirected || Environment.GetEnvironmentVariable("KSAMP_STDI
     ("delete <name>", "delete a named save; it is kept in the bin for 30 days"),
     ("deleted", "list the saves deleted or saved over in the last 30 days"),
     ("restore <name>", "put a deleted save back, by its name in deleted"),
+    ("fresh", "throw the world away and start an empty one, keeping it first as a 'before fresh' save"),
     ("status", "player count, craft count, universe time and network totals"),
     ("version", "server version, protocol version and required KSA build"),
 ];
@@ -589,22 +590,18 @@ void Run(string line, GameServer.Player? who, Action<string> Answer)
             }
             if (who is null)
             {
-                Answer($"  {"fresh".PadRight(18)} discard the world and start an empty one");
                 Answer($"  {"settings".PadRight(18)} read the settings file again");
                 Answer($"  {"set <key> <value>".PadRight(18)} change a setting and keep it in the file; set alone lists them");
                 Answer($"  {"quit".PadRight(18)} stop the server");
             }
-            else Answer("  fresh, quit, settings and set can only be run from the server console");
+            else Answer("  quit, settings and set can only be run from the server console");
             break;
         // The console's alone, as quit is: an admin who could set the password could lock every
         // other player out, and one who could set the data folder could point it anywhere.
         // The console's alone, with quit: it throws away the world everybody is standing in, and
         // there is no undoing it from a chat window.
-        case "fresh" when who is null:
-            Answer(server.Fresh("the operator started the world over"));
-            break;
         case "fresh":
-            Answer("fresh can only be run from the server console");
+            Answer(server.Fresh(who is null ? "the operator started the world over" : $"{who.Name} started the world over", who));
             break;
         case "settings" when who is null:
             Reapply(null);

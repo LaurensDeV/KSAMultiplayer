@@ -164,6 +164,29 @@ public class ServerTests
                   seconds: 20, what: "the empty world to arrive");
     }
 
+    // Nothing thrown away is gone: the world before a fresh one is a save to load again.
+    [Fact]
+    public void FreshKeepsTheWorldItThrowsAwayAndLoadBringsItBack()
+    {
+        using Rig rig = new(new ServerOptions { EmptyWorld = "SolLite" });
+        Seed(rig);
+        rig.Until(() => rig.Server.HasWorld, what: "a world");
+        byte[] was = rig.Server.World!.Data;
+
+        string said = rig.Server.Fresh("a test asked");
+        SavedWorld kept = Assert.Single(rig.Server.Saves.List());
+        Assert.StartsWith(SaveShelf.FreshPrefix, kept.Name);
+        Assert.True(kept.Auto);
+        Assert.Contains(kept.Name, said);
+        Assert.Equal(was, rig.Server.Saves.Take(kept.Name)!.Value.World.Data);
+        // Nobody can name a save so, or one could be written over by asking for a save of its name.
+        Assert.True(SaveShelf.Reserved(kept.Name));
+
+        // An empty world nobody has played in is not kept again by a second fresh.
+        rig.Server.Fresh("again");
+        Assert.Single(rig.Server.Saves.List());
+    }
+
     [Fact]
     public void FreshWithNothingToStartFromSaysSo()
     {

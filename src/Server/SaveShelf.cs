@@ -27,6 +27,9 @@ public sealed class SaveShelf(string folder = "")
     /// </summary>
     public const string AutoPrefix = "before load ";
 
+    /// <summary>As <see cref="AutoPrefix"/>, for the world kept before a fresh one replaced it.</summary>
+    public const string FreshPrefix = "before fresh ";
+
     /// <summary>How many worlds kept before a load are held on to: the newest, so a run of loads does not grow without end.</summary>
     public const int MostAuto = 5;
 
@@ -42,7 +45,7 @@ public sealed class SaveShelf(string folder = "")
     private string Bin => Path.Combine(Folder, ".deleted");
 
     public static bool Reserved(string name) =>
-        name.StartsWith(AutoPrefix, StringComparison.OrdinalIgnoreCase) || name.Equals(AutoPrefix.TrimEnd(), StringComparison.OrdinalIgnoreCase);
+        new[] { AutoPrefix, FreshPrefix }.Any(p => name.StartsWith(p, StringComparison.OrdinalIgnoreCase) || name.Equals(p.TrimEnd(), StringComparison.OrdinalIgnoreCase));
 
     /// <summary>What the named saves weigh together, the server's own aside.</summary>
     public long Bytes => List().Where(s => !s.Auto).Sum(s => (long)s.Bytes);
@@ -51,11 +54,18 @@ public sealed class SaveShelf(string folder = "")
     /// Keeps the world a load is about to replace, under a name that says when, and lets go of all
     /// but the newest <see cref="MostAuto"/> of them. The name it was kept under.
     /// </summary>
-    public string KeepBeforeLoad(Blob world, string ksaBuild, string[] mods, string system, bool timeKnown, string by, IEnumerable<string>? protect = null)
+    public string KeepBeforeLoad(Blob world, string ksaBuild, string[] mods, string system, bool timeKnown, string by, IEnumerable<string>? protect = null) =>
+        KeepBefore(AutoPrefix, world, ksaBuild, mods, system, timeKnown, by, protect);
+
+    /// <summary>As <see cref="KeepBeforeLoad"/>, for the world a fresh one is about to replace: one of the same few kept.</summary>
+    public string KeepBeforeFresh(Blob world, string ksaBuild, string[] mods, string system, bool timeKnown, string by, IEnumerable<string>? protect = null) =>
+        KeepBefore(FreshPrefix, world, ksaBuild, mods, system, timeKnown, by, protect);
+
+    private string KeepBefore(string prefix, Blob world, string ksaBuild, string[] mods, string system, bool timeKnown, string by, IEnumerable<string>? protect)
     {
-        string name = $"{AutoPrefix}{DateTime.UtcNow:yyyy-MM-dd HH-mm-ss}";
+        string name = $"{prefix}{DateTime.UtcNow:yyyy-MM-dd HH-mm-ss}";
         // Two in one second are two worlds, and the second is not to cost the first.
-        for (int n = 2; Find(name) is not null; n++) name = $"{AutoPrefix}{DateTime.UtcNow:yyyy-MM-dd HH-mm-ss} ({n})";
+        for (int n = 2; Find(name) is not null; n++) name = $"{prefix}{DateTime.UtcNow:yyyy-MM-dd HH-mm-ss} ({n})";
         Keep(name, world, ksaBuild, mods, system, timeKnown, by, auto: true, protect);
         foreach (SavedWorld old in List().Where(s => s.Auto).Skip(MostAuto)) Delete(old.Name);
         return name;
