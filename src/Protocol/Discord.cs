@@ -204,19 +204,18 @@ public sealed class DiscordCallback : IDisposable
                 string[] parts = line?.Split(' ') ?? [];
                 if (parts.Length < 2 || parts[0] != "GET" || !parts[1].StartsWith("/ksamp", StringComparison.Ordinal))
                 {
-                    Answer(stream, "404 Not Found", "Nothing here.");
+                    Answer(stream, "404 Not Found", Look.Neutral, "Nothing here", "This is where KSA Multiplayer waits for a Discord login.");
                     continue;
                 }
                 (string? pass, string? error) = Discord.ReadCallback(parts[1], State);
                 // An answer for another login is not this one's: this one goes on waiting for its own.
                 if (error == Discord.NotThisLogin)
                 {
-                    Answer(stream, "400 Bad Request", "This wasn't the login KSA Multiplayer was waiting for. Go back to the game and press the button again.");
+                    Answer(stream, "400 Bad Request", Look.Failed, "Not this login", "This isn't the login the game is waiting for. Go back to the game and press Log in with Discord again.");
                     continue;
                 }
-                Answer(stream, "200 OK", pass is not null
-                    ? "Logged in. You can close this tab and go back to the game."
-                    : $"Not logged in: {error}. You can close this tab.");
+                if (pass is not null) Answer(stream, "200 OK", Look.Done, "You're logged in", "Close this tab and go back to the game. The server is checking who you are.");
+                else Answer(stream, "200 OK", Look.Failed, "Not logged in", $"{Capital(error ?? "something went wrong")}. Close this tab and try again from the game.");
                 (Pass, Error) = (pass, error);
                 _done = true;
             }
@@ -240,11 +239,70 @@ public sealed class DiscordCallback : IDisposable
         return line.ToString();
     }
 
-    private static void Answer(Stream stream, string status, string text)
+    private enum Look { Done, Failed, Neutral }
+
+    private static string Capital(string s) => s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..];
+
+    // One page, everything in it: it is served from this machine with nothing else to load, and a
+    // browser coming back from Discord should land somewhere that looks like it meant to.
+    private static void Answer(Stream stream, string status, Look look, string title, string text)
     {
-        string html = $"<!doctype html><meta charset=utf-8><title>KSA Multiplayer</title><body style=\"font-family:sans-serif;padding:2em\"><p>{WebUtility.HtmlEncode(text)}</p>";
+        (string accent, string mark) = look switch
+        {
+            Look.Done => ("#3ddc97", "<path d=\"M14 25l7 7 15-16\"/>"),
+            Look.Failed => ("#ff6b6b", "<path d=\"M17 17l14 14M31 17L17 31\"/>"),
+            _ => ("#8b93ff", "<path d=\"M24 15v11M24 32v1\"/>"),
+        };
+        string html = $$$"""
+            <!doctype html><html lang="en"><head><meta charset="utf-8">
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <title>{{{WebUtility.HtmlEncode(title)}}} · KSA Multiplayer</title>
+            <style>
+            *{box-sizing:border-box;margin:0}
+            html,body{height:100%}
+            body{display:grid;place-items:center;padding:24px;color:#e8eaf6;
+              font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+              background:#070a1a radial-gradient(ellipse at 20% 0%,#1d2457 0%,transparent 55%),
+                radial-gradient(ellipse at 90% 100%,#2a1550 0%,transparent 50%);
+              background-color:#070a1a;overflow:hidden}
+            body::before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.7;
+              background-image:radial-gradient(1px 1px at 12% 22%,#fff 50%,transparent 51%),
+                radial-gradient(1px 1px at 72% 14%,#fff 50%,transparent 51%),
+                radial-gradient(1.5px 1.5px at 38% 68%,#cfd6ff 50%,transparent 51%),
+                radial-gradient(1px 1px at 86% 58%,#fff 50%,transparent 51%),
+                radial-gradient(1px 1px at 55% 35%,#fff 50%,transparent 51%),
+                radial-gradient(1.5px 1.5px at 22% 86%,#fff 50%,transparent 51%),
+                radial-gradient(1px 1px at 64% 88%,#cfd6ff 50%,transparent 51%),
+                radial-gradient(1px 1px at 93% 30%,#fff 50%,transparent 51%),
+                radial-gradient(1px 1px at 5% 50%,#fff 50%,transparent 51%)}
+            .card{position:relative;width:min(440px,100%);padding:40px 36px 32px;text-align:center;
+              border-radius:20px;background:rgba(20,24,52,.72);border:1px solid rgba(255,255,255,.09);
+              box-shadow:0 30px 80px -20px rgba(0,0,0,.7),0 0 0 1px rgba(88,101,242,.08) inset;
+              backdrop-filter:blur(10px);animation:rise .5s cubic-bezier(.2,.8,.2,1) both}
+            .badge{width:84px;height:84px;margin:0 auto 22px;border-radius:50%;display:grid;place-items:center;
+              background:radial-gradient(circle,{{{accent}}}33 0%,{{{accent}}}11 60%,transparent 70%);
+              box-shadow:0 0 0 1px {{{accent}}}55,0 0 40px {{{accent}}}40}
+            .badge svg{width:48px;height:48px;fill:none;stroke:{{{accent}}};stroke-width:3.5;
+              stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:40;animation:draw .6s .25s ease-out both}
+            h1{font-size:26px;font-weight:700;letter-spacing:-.01em;margin-bottom:10px}
+            p{color:#aab0d6;font-size:15px}
+            .brand{margin-top:28px;padding-top:18px;border-top:1px solid rgba(255,255,255,.07);
+              display:flex;justify-content:center;align-items:center;gap:8px;
+              font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#7179a8}
+            .brand b{color:#5865f2;font-weight:700}
+            @keyframes rise{from{opacity:0;transform:translateY(14px) scale(.98)}}
+            @keyframes draw{from{stroke-dashoffset:40}to{stroke-dashoffset:0}}
+            @media (prefers-reduced-motion:reduce){.card,.badge svg{animation:none}}
+            </style></head><body>
+            <main class="card">
+              <div class="badge"><svg viewBox="0 0 48 48" aria-hidden="true">{{{mark}}}</svg></div>
+              <h1>{{{WebUtility.HtmlEncode(title)}}}</h1>
+              <p>{{{WebUtility.HtmlEncode(text)}}}</p>
+              <div class="brand">KSA Multiplayer <span aria-hidden="true">·</span> <b>Discord</b></div>
+            </main></body></html>
+            """;
         byte[] body = Encoding.UTF8.GetBytes(html);
-        byte[] head = Encoding.ASCII.GetBytes($"HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n");
+        byte[] head = Encoding.ASCII.GetBytes($"HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n");
         stream.Write(head);
         stream.Write(body);
     }
