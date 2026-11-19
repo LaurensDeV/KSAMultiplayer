@@ -114,6 +114,19 @@ public class DiscordTests
         rig.Until(() => c.Admin, what: "Alice to be an admin");
     }
 
+    // Everybody's list marks a player whose login the server checked, and says nothing of who they are on Discord.
+    [Fact]
+    public void EveryPlayersListMarksWhoHasLoggedIn()
+    {
+        using Rig rig = Rigged(out FakeLogin login, Alice);
+        Client alice = Joined(rig, "Alice");
+        Client bob = Joined(rig, "Bob");
+        LogIn(rig, alice, login.Proof(Alice, alice.DiscordNonce));
+        rig.Until(() => bob.Players.Any(p => p.Name == "Alice" && p.Discord), what: "Bob to see Alice marked");
+        Assert.False(bob.Players.Single(p => p.Name == "Bob").Discord);
+        Assert.True(alice.Players.Single(p => p.Name == "Alice").Discord);
+    }
+
     [Fact]
     public void AnotherDiscordUserLogsInAndIsNoAdmin()
     {

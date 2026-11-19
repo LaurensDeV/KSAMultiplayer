@@ -529,10 +529,12 @@ internal static class Panel
                 ImGui.TableSetupColumn("Ping###ping"u8);
                 ImGui.TableSetupColumn("Flying###flying"u8);
                 ImGui.TableHeadersRow();
+                bool anyDiscord = c.Players.Any(q => q.Discord);
                 foreach (Wire.Player p in c.Players.OrderBy(p => p.Id))
                 {
                     ImGui.TableNextRow();
                     ImGui.TableNextColumn();
+                    DiscordMark(anyDiscord, p.Discord);
                     ImGui.Text(p.Id == c.Id ? $"{p.Name} (you)" : p.Name);
                     ImGui.TableNextColumn();
                     // Every game measures its own and tells the server, so this is each player's own line.
@@ -1502,6 +1504,28 @@ internal static class Panel
     }
 
     /// <summary>
+    /// The dot before a name on a player list for a player whose Discord login the server has
+    /// checked, and the room for one before every other name while anybody has one, so the names
+    /// stay in a column. Nothing at all where nobody has.
+    /// </summary>
+    private static void DiscordMark(bool anyone, bool verified)
+    {
+        if (!anyone) return;
+        float line = ImGui.GetTextLineHeight(), r = MathF.Round(line * 0.2f), slot = (r * 2f) + 8f;
+        float2 at = ImGui.GetCursorScreenPos();
+        if (verified)
+        {
+            float2 middle = new(at.X + r, at.Y + (line * 0.5f));
+            ImGui.GetWindowDrawList().AddCircleFilled(middle, r, (ImColor8)Blurple);
+            float2 from = new(at.X, at.Y), to = new(at.X + slot, at.Y + line);
+            if (ImGui.IsWindowHovered() && ImGui.IsMouseHoveringRect(in from, in to)) ImGui.SetTooltip("Logged in with Discord");
+        }
+        // An empty Dummy rather than a cursor moved by hand, so the line it starts is a line.
+        ImGui.Dummy(new float2(slot, line));
+        ImGui.SameLine(0f, 0f);
+    }
+
+    /// <summary>
     /// Buttons that read as links, on the right of the line just drawn: no box until the pointer is
     /// on one. Which was pressed, or -1.
     /// </summary>
@@ -1737,10 +1761,12 @@ internal static class Panel
             // joining, which the clock is set by and which reads as 0 ms on one machine.
             ImGui.TextDisabled(double.IsFinite(c.Ping) ? $"ping {c.Ping * 1000:F0} ms" : "ping ...");
             ImGui.Separator();
+            bool anyDiscord = c.Players.Any(q => q.Discord);
             foreach (Wire.Player p in c.Players)
             {
                 string flying = p.Controlling.Length > 0 ? $": {p.Controlling}" : "";
                 string state = p.Loaded ? "" : " (joining)";
+                DiscordMark(anyDiscord, p.Discord);
                 if (p.Id == c.Id) ImGui.Text($"{p.Name} (you){flying}");
                 else ImGui.Text($"{p.Name}{state}{flying}");
             }

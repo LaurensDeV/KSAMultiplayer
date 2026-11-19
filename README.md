@@ -435,7 +435,8 @@ Borea instance, so every instance on the computer is logged in at once. Logging 
 
 From then on every server they join is told who they are, with nothing to press: a server with
 Discord admins makes one of them an admin on the spot, and hands that machine a token as `op` does.
-`deop Jeb` or `deop discord:80351110224678912` takes it back, along with every token handed out for
+Everybody's player list shows a blue dot before the name of each player whose login the server
+checked, and nothing of who they are on Discord. `deop Jeb` or `deop discord:80351110224678912` takes it back, along with every token handed out for
 it, and `admins` shows the Discord user beside each name it applies to.
 
 There is nothing to set up on a server. One with no Discord admin is told nothing and asks the

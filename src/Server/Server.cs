@@ -551,6 +551,8 @@ public sealed class GameServer : IDisposable
                 continue;
             }
             (p.DiscordId, p.DiscordName) = (said.Id, Wire.Clip(said.Name, Wire.NameChars * 2));
+            // Everybody's list shows the dot within the frame, not at the next roster.
+            _rosterNext = 0.0;
             p.DiscordAnswer = new Wire.DiscordUser(said.Id, p.DiscordName, "");
             _udp.Send(p.DiscordAnswer, p.At);
             bool admin = Admins.CheckDiscord(said.Id, p.Name);
@@ -2501,7 +2503,7 @@ public sealed class GameServer : IDisposable
     }
 
     private Wire.Roster Roster() =>
-        new([.. _players.Values.OrderBy(p => p.Id).Select(p => new Wire.Player(p.Id, p.Name, p.Loaded, p.Controlling, p.Rtt, (float)p.Can))]);
+        new([.. _players.Values.OrderBy(p => p.Id).Select(p => new Wire.Player(p.Id, p.Name, p.Loaded, p.Controlling, p.Rtt, (float)p.Can, p.DiscordId.Length > 0))]);
 
     private IEnumerable<Wire.Owners> OwnerPages()
     {

@@ -406,7 +406,9 @@ public static class Wire
     /// <param name="Rtt">The player's round trip to the server, s, as that player last measured it; negative until it has.</param>
     /// <param name="Can">The speed that player's game is managing, as a multiple of real time:
     /// what the room's own speed is held to, and whose name is on it.</param>
-    public readonly record struct Player(byte Id, string Name, bool Loaded, string Controlling, float Rtt, float Can);
+    /// <param name="Discord">Whether the server has checked a Discord login for this player. Not
+    /// who they are on Discord, which is theirs to tell the room or not.</param>
+    public readonly record struct Player(byte Id, string Name, bool Loaded, string Controlling, float Rtt, float Can, bool Discord = false);
 
     public sealed record Roster(Player[] Players) : Message(Kind.Roster);
 
@@ -779,7 +781,7 @@ public static class Wire
                 {
                     w.U8(p.Id);
                     w.Text(p.Name, NameChars);
-                    w.U8(p.Loaded ? (byte)1 : (byte)0);
+                    w.U8((byte)((p.Loaded ? 1 : 0) | (p.Discord ? 2 : 0)));
                     w.Text(p.Controlling, KeyChars);
                     w.F32(p.Rtt);
                     w.F32(p.Can);
@@ -1030,7 +1032,13 @@ public static class Wire
     private static Roster ReadRoster(ref Reader r)
     {
         Player[] players = new Player[r.U8()];
-        for (int i = 0; i < players.Length; i++) players[i] = new Player(r.U8(), r.Text(NameChars), r.U8() != 0, r.Text(KeyChars), r.F32(), r.F32());
+        for (int i = 0; i < players.Length; i++)
+        {
+            byte id = r.U8();
+            string name = r.Text(NameChars);
+            byte flags = r.U8();
+            players[i] = new Player(id, name, (flags & 1) != 0, r.Text(KeyChars), r.F32(), r.F32(), (flags & 2) != 0);
+        }
         return new Roster(players);
     }
 

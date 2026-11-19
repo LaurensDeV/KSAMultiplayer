@@ -114,8 +114,8 @@ public class WireTests
         Assert.Equal(new Wire.Snapshot("why"), RoundTrip(new Wire.Snapshot("why")));
         Assert.Equal(new Wire.Got(9), RoundTrip(new Wire.Got(9)));
 
-        Wire.Roster roster = RoundTrip(new Wire.Roster([new Wire.Player(1, "A", true, "Rocket", 0.012f, 1f), new Wire.Player(2, "B", false, "", -1f, 1f)]));
-        Assert.Equal([new Wire.Player(1, "A", true, "Rocket", 0.012f, 1f), new Wire.Player(2, "B", false, "", -1f, 1f)], roster.Players);
+        Wire.Roster roster = RoundTrip(new Wire.Roster([new Wire.Player(1, "A", true, "Rocket", 0.012f, 1f), new Wire.Player(2, "B", false, "", -1f, 1f), new Wire.Player(3, "C", true, "", 0.02f, 1f, Discord: true)]));
+        Assert.Equal([new Wire.Player(1, "A", true, "Rocket", 0.012f, 1f), new Wire.Player(2, "B", false, "", -1f, 1f), new Wire.Player(3, "C", true, "", 0.02f, 1f, Discord: true)], roster.Players);
 
         Wire.Owners owners = RoundTrip(new Wire.Owners(1, 3, [new Wire.Owner("X", 1), new Wire.Owner("Y", 0)]));
         Assert.Equal((ushort)1, owners.Page);
