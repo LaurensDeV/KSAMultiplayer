@@ -216,6 +216,9 @@ docker build -f deploy/Dockerfile.directory -t ksamp-directory .
 | `KSAMP_DIRECTORY_NAME` | what it calls itself on a row, so a player knows which to switch off |
 | `KSAMP_TRUST_PROXY` | networks whose `X-Forwarded-For` is believed, comma separated; the loopback and the private ranges already, which covers a proxy beside it on a host or a Docker network |
 | `ASPNETCORE_URLS` | where it listens, default `http://0.0.0.0:8080`. Keep the 8080 inside the container — the image's health check asks `127.0.0.1:8080` — and publish it elsewhere with `-p` |
+| `KSAMP_DISCORD_CLIENT_ID`, `KSAMP_DISCORD_CLIENT_SECRET` | a Discord application, for the Discord login service at `/v1/discord`; optional, and every server uses the one at `servers.ksamp.gg` unless its `discord-login` names another |
+| `KSAMP_DISCORD_REDIRECT` | this directory's `/v1/discord/callback` as the world reaches it, registered character for character as one of the application's OAuth2 redirects |
+| `KSAMP_DISCORD_SIGNING_KEY` | an EC P-256 private key in PEM, which signs the passes servers check with `/v1/discord/key`: `openssl ecparam -name prime256v1 -genkey -noout \| openssl pkcs8 -topk8 -nocrypt` |
 
 It needs **outbound UDP** — that is how it sees anything — and inbound HTTP and nothing else. It
 keeps nothing on disk and wants no volume: every entry is listed only while a probe answered

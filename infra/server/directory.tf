@@ -64,6 +64,10 @@ resource "docker_container" "directory" {
   env = [
     "KSAMP_DIRECTORY_NAME=${var.directory_name}",
     "KSAMP_TRUST_PROXY=${var.directory_trust_proxy}",
+    "KSAMP_DISCORD_CLIENT_ID=${var.discord_client_id}",
+    "KSAMP_DISCORD_CLIENT_SECRET=${var.discord_client_secret}",
+    "KSAMP_DISCORD_SIGNING_KEY=${var.discord_signing_key}",
+    "KSAMP_DISCORD_REDIRECT=${var.discord_redirect}",
     # A line per request, with a health check every thirty seconds, is tens of thousands of lines a
     # day saying this is still up.
     "Logging__LogLevel__Microsoft.AspNetCore=Warning",

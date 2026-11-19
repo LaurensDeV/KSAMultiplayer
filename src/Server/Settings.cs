@@ -44,6 +44,7 @@ public static class Settings
         new("advertise", Kind.Flag, "false", "list this server in the public directories so players can find it; its address becomes public", true),
         new("advertise-as", Kind.Text, "", "the hostname to be listed under; empty to be listed at the address a directory sees", true),
         new("directories", Kind.Text, "", "where to announce, separated by commas; empty to read the shared list, which only an advertising server does", true),
+        new("discord-login", Kind.Text, Discord.Service, "the service whose passes say who a player is on Discord, asked only once 'op discord:<id>' has made a Discord user an admin; empty to take no Discord logins", true),
     ];
 
     public const string FileName = "ksamp-server.toml";
@@ -141,6 +142,7 @@ public static class Settings
             Advertise = Flag("advertise"),
             AdvertiseAs = Text("advertise-as").Trim(),
             Directories = Text("directories").Trim(),
+            DiscordLogin = Text("discord-login").Trim().TrimEnd('/'),
         };
         IPAddress? bind = Text("bind").Trim() is { Length: > 0 } b
             ? IPAddress.TryParse(b, out IPAddress? at) ? at : throw new FormatException($"bind is '{b}', which is not an address")

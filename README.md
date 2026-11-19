@@ -8,7 +8,7 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
 
 > **Status: played, not finished.** Two games on one machine have flown in one world through it,
 > against KSA `2026.11.10.5801`, and the server and the protocol are tested headlessly besides
-> (166 tests, real UDP over loopback, a lossy line included). An 89-part rocket has been flown in a
+> (368 tests, real UDP over loopback, a lossy line included). An 89-part rocket has been flown in a
 > shared world and staged while the other game watched, which rebuilt the dropped stage as its own
 > craft. What two games across the internet do is not known.
 > This release is built for KSA `2026.11.16.5901`, and has not been flown on it yet.
@@ -273,6 +273,7 @@ like `quit`.
 | `--advertise` | `KSAMP_ADVERTISE` | off | list this server publicly so players can find it, which publishes its address |
 | `--advertise-as` | `KSAMP_ADVERTISE_AS` | the address seen | the hostname to be listed under |
 | `--directories` | `KSAMP_DIRECTORIES` | the shared list | where to announce, separated by commas; the shared list in `directories.txt` otherwise, read hourly while advertising |
+| `--discord-login` | `KSAMP_DISCORD_LOGIN` | `https://servers.ksamp.gg/v1/discord` | the service that vouches for who a player is on Discord, [asked only once there is a Discord admin](#admins-by-discord); empty to take no Discord logins |
 
 Commands typed into the server's console: `help`, `players`, `say <text>`, `kick <name> [why]`, `op <name>`, `deop <name>`, `admins`,
 `clear [name]`, `remove <craft>`, `protect <craft>`, `unprotect <craft>`, `protected`, `rename <craft> -> <new name>`, `reload` (or `reset`), `save [name]`,
@@ -410,6 +411,35 @@ to take an admin away, not enough to become one. It is not touched by an update 
 has to be connected to be opped -- the token is said to their game until it answers, and is never
 written down where it could be said to anybody else -- and the name it is remembered under follows
 whoever last joined with it, so `deop` names the player you can see.
+
+#### Admins by Discord
+
+A token belongs to one machine. To make somebody an admin as **their Discord account** -- on any
+machine, any game instance, after any reinstall -- all a server needs is their Discord user id
+(Discord's **Copy User ID**, with Developer Mode on):
+
+```bash
+op discord:80351110224678912
+```
+
+or, once they are playing and have logged in, simply `op Jeb`.
+
+They press **Log in with Discord** in the Multiplayer window. Their browser goes through the login
+service at `servers.ksamp.gg` to Discord, which asks only to know who they are, and comes back to
+the game on port 50180 of their own machine with a pass the service has signed. The game gives it
+to the server, which checks it with the service's public key and makes them an admin, handing that
+machine a token as `op` does, so they log in once per machine rather than at every join. `deop Jeb`
+or `deop discord:80351110224678912` takes it back, along with every token handed out for it, and
+`admins` shows the Discord user beside each name it applies to.
+
+There is nothing to set up. A server with no Discord admin never asks the service anything and shows
+no login button; `--discord-login ""` turns it off altogether.
+
+A pass names the address the player typed and a nonce this server gave them, and is good for five
+minutes. A server takes one only for its own nonce and for an address that leads to itself -- its own
+interfaces, or where the login service saw it from. So a server that has your admin log in on it
+cannot hand their pass on to yours: it names the other server's address and the other server's
+login.
 
 In a server, the key and the menu entries that open KSA's **GAME SAVES** open **SERVER SAVES**
 instead, for an admin, and so does a button in the Multiplayer window. It is the same window with the

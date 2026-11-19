@@ -77,7 +77,14 @@ const string Usage = """
     An admin can type those same commands into a game's chat with a / in front. op hands the player
     a token their game keeps and offers at every join after, so they stay an admin without a
     password to type or to lose; deop takes it back, from a name whether or not it is playing. The
-    list is admins.json beside the world, and holds only each token's hash. fresh, quit, settings
+    list is admins.json beside the world, and holds only each token's hash.
+
+    op discord:<user id> makes a Discord user an admin from whichever machine they log in on: they
+    press Log in with Discord in the Multiplayer window, and the login service in discord-login
+    vouches for who they are. op <name> on a player who has logged in does the same, and deop
+    discord:<user id> takes it back. Until a Discord user is an admin, nothing asks the service.
+
+    fresh, quit, settings
     and set are the console's alone: a server nobody can start again, one whose password an admin
     has changed, or a world thrown away under everybody standing in it, is not something to hand
     out by accident.
@@ -306,6 +313,7 @@ Say($"ksamp-server {Version}, speaking protocol {Wire.Version}"
 Say($"settings: {configPath}");
 Say($"{options.Name}: listening on UDP {(bind?.ToString() ?? "*")}:{server.Port}, up to {options.MaxPlayers} players{(options.Password.Length > 0 ? ", with a password" : "")}");
 Say(server.HasWorld ? "a world is ready to hand out" : "no world yet: the first player to join gives the server theirs");
+if (server.DiscordOn) Say($"players log in with Discord through {options.DiscordLogin}, for {server.Admins.Names.Count(n => server.Admins.DiscordOf(n).Length > 0)} Discord admin(s)");
 // Said at every start whichever way it is set, so an operator reading the log at least learns that
 // the setting is there. A list nobody opts into is an empty list.
 Say(announcer.Standing());
@@ -364,8 +372,10 @@ if (!Console.IsInputRedirected || Environment.GetEnvironmentVariable("KSAMP_STDI
     ("players", "list who is connected and what they're flying"),
     ("say <text>", "send a chat message from the server to everyone"),
     ("kick <name> [why]", "disconnect a player (they can rejoin)"),
-    ("op <name>", "make a connected player an admin; they stay one when they rejoin"),
+    ("op <name>", "make a connected player an admin; they stay one when they rejoin, and on any machine if they logged in with Discord"),
+    ("op discord:<id>", "make a Discord user an admin whenever they log in with Discord, whether or not they're connected"),
     ("deop <name>", "remove a player's admin rights, whether or not they're connected"),
+    ("deop discord:<id>", "remove a Discord user's admin rights"),
     ("admins", "list the admins"),
     ("clear [name]", "remove every craft nobody is flying; clear Rocket_* removes only matching ones"),
     ("remove <craft>", "remove one craft from every game, whoever owns it, unless it's being flown or protected"),
@@ -405,6 +415,7 @@ void Command(string line, GameServer.Player? who = null)
                 // address; whoever is at the console has them in the log already.
                 Answer($"  {p.Id,3} {p.Name,-24} {(p.Loaded ? "playing" : p.WaitingForWorld ? "waiting for the world" : "loading")}"
                     + $"{(p.Admin ? ", admin" : "")}"
+                    + $"{(p.DiscordId.Length > 0 ? $", Discord {p.DiscordName} ({p.DiscordId})" : "")}"
                     + $"{(p.Controlling.Length > 0 ? $", flying {p.Controlling}" : "")}"
                     + $"{(who is null ? $", from {p.At}" : "")}, KSA {p.KsaBuild}");
             }
@@ -417,13 +428,26 @@ void Command(string line, GameServer.Player? who = null)
             string[] k = rest.Split(' ', 2, StringSplitOptions.TrimEntries);
             if (k[0].Length == 0 || !server.Kick(k[0], k.Length > 1 ? k[1] : "")) Answer($"nobody called '{k[0]}'");
             break;
+        case "op" when rest.StartsWith("discord:", StringComparison.OrdinalIgnoreCase):
+            string opId = rest["discord:".Length..].Trim();
+            if (!Discord.IsSnowflake(opId)) Answer("usage: op discord:<user id>, the number Discord's Copy User ID gives");
+            else Answer($"Discord user {opId} ({server.OpDiscord(opId)}) is now an admin, whichever machine they log in with Discord from"
+                + (server.DiscordOn ? "" : "; discord-login is empty, so nobody can log in with Discord until it is set"));
+            break;
         case "op":
-            if (rest.Length == 0) Answer("usage: op <name> (the player must be connected)");
-            else if (server.Op(rest) is not { } opped) Answer($"nobody called '{rest}' is connected: a player has to be online to be made an admin");
-            else Answer($"{opped} is now an admin, and will stay one when they rejoin; their old token works until their game has saved the new one");
+            if (rest.Length == 0) Answer("usage: op <name> (the player must be connected), or op discord:<user id>");
+            else if (server.Op(rest) is not { } opped) Answer($"nobody called '{rest}' is connected: a player has to be online to be made an admin, or op discord:<user id>");
+            else Answer($"{opped} is now an admin, and will stay one when they rejoin"
+                + (server.Admins.DiscordOf(opped) is { Length: > 0 } did ? $", from any machine they log in with Discord on (Discord user {did})" : "; their old token works until their game has saved the new one"));
+            break;
+        case "deop" when rest.StartsWith("discord:", StringComparison.OrdinalIgnoreCase):
+            string deopId = rest["discord:".Length..].Trim();
+            Answer(server.DeopDiscord(deopId) is { } was
+                ? $"Discord user {deopId} ({was}) is no longer an admin"
+                : $"Discord user {deopId} was not an admin");
             break;
         case "deop":
-            if (rest.Length == 0) Answer("usage: deop <name> (they don't need to be connected)");
+            if (rest.Length == 0) Answer("usage: deop <name> (they don't need to be connected), or deop discord:<user id>");
             // Not the sentence the server logs for itself, or the console says it twice.
             else Answer(server.Deop(rest)
                 ? $"{rest} is no longer an admin"
@@ -431,8 +455,8 @@ void Command(string line, GameServer.Player? who = null)
             break;
         case "admins":
             Answer(server.Admins.Names.Count == 0
-                ? "there are no admins yet: op <name> makes a connected player one"
-                : $"admins: {string.Join(", ", server.Admins.Names)}");
+                ? "there are no admins yet: op <name> makes a connected player one, op discord:<user id> a Discord user"
+                : $"admins: {string.Join(", ", server.Admins.Names.Select(n => server.Admins.DiscordOf(n) is { Length: > 0 } d ? $"{n} (Discord {d})" : n))}");
             break;
         case "reload" or "reset":
             int put = server.ReloadAll("an admin asked for it");
@@ -556,6 +580,10 @@ void Command(string line, GameServer.Player? who = null)
 // The settings file read again, with one line of it changed first if asked, and what changed put
 // to the running server. A flag or the environment still wins over the file, and port, bind and
 // data stay as the server was started with until it is started again.
+// The values not to put in a log, which is where the console goes.
+string Shown(string key, string value) =>
+    key is "password" ? (value.Length > 0 ? "(set)" : "(none)") : $"'{value}'";
+
 void Reapply((Settings.Setting Setting, string Value)? change)
 {
     Dictionary<string, (string Value, string From)> next;
@@ -583,11 +611,11 @@ void Reapply((Settings.Setting Setting, string Value)? change)
         (string value, string from) = next[s.Key];
         if (from is not ("the settings file" or "its default"))
         {
-            if (change?.Setting == s) Say($"{s.Key} is written to the file, but {from} still gives it as '{value}'");
+            if (change?.Setting == s) Say($"{s.Key} is written to the file, but {from} still gives it as {Shown(s.Key, value)}");
             continue;
         }
         if (value == started[s.Key].Value) continue;
-        Say(s.Live ? $"{s.Key} is now '{value}'" : $"{s.Key} is '{value}' in the file; a restart takes it up");
+        Say(s.Live ? $"{s.Key} is now {Shown(s.Key, value)}" : $"{s.Key} is {Shown(s.Key, value)} in the file; a restart takes it up");
     }
     server.Reconfigure(nextOptions);
     announcer.Reconfigure(nextOptions);
@@ -601,9 +629,7 @@ void Set(string rest)
     {
         foreach (Settings.Setting s in Settings.All)
         {
-            // The password is the one value not to put in a log, which is where the console goes.
-            string shown = s.Key == "password" ? (started[s.Key].Value.Length > 0 ? "(set)" : "(none)") : $"'{started[s.Key].Value}'";
-            Say($"  {s.Key.PadRight(15)} {shown}, from {started[s.Key].From}");
+            Say($"  {s.Key.PadRight(21)} {Shown(s.Key, started[s.Key].Value)}, from {started[s.Key].From}");
         }
         return;
     }

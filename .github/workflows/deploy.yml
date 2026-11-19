@@ -144,6 +144,10 @@ jobs:
           # variable, since they are not secret and an apply that did not know of them would plan
           # to take their containers away -- and fail on their volumes, which it may not.
           WORLDS: ${{ vars.KSAMP_WORLDS }}
+          # Discord logins through the directory: empty leaves them off.
+          TF_VAR_discord_client_id: ${{ vars.KSAMP_DISCORD_CLIENT_ID }}
+          TF_VAR_discord_client_secret: ${{ secrets.KSAMP_DISCORD_CLIENT_SECRET }}
+          TF_VAR_discord_signing_key: ${{ secrets.KSAMP_DISCORD_SIGNING_KEY }}
         run: |
           tofu init -input=false -backend-config=backend.hcl >/dev/null
           running=$(tofu state show -no-color 'docker_image.server[0]' 2>/dev/null | sed -n 's/^ *name *= *"\(.*\)"$/\1/p' | head -1)

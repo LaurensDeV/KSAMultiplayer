@@ -12,9 +12,10 @@ public sealed class Rig : IDisposable
     public readonly List<Client> Clients = [];
     public GameServer Server { get; }
 
-    public Rig(ServerOptions? options = null, WorldStore? store = null, Admins? admins = null, SaveShelf? saves = null, ProtectedCraft? protect = null)
+    public Rig(ServerOptions? options = null, WorldStore? store = null, Admins? admins = null, SaveShelf? saves = null, ProtectedCraft? protect = null,
+               ILoginService? discord = null)
     {
-        Server = new GameServer((options ?? new ServerOptions()) with { Port = 0 }, Now, store, IPAddress.Loopback, admins, saves, protect);
+        Server = new GameServer((options ?? new ServerOptions()) with { Port = 0 }, Now, store, IPAddress.Loopback, admins, saves, protect, discord);
     }
 
     // Time nobody waited for. The clocks here are the rig's, so a test about something that happens

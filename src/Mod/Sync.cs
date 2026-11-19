@@ -765,6 +765,7 @@ internal static class Sync
         _client?.Dispose();
         _client = null;
         _finding = null;
+        DiscordLogin.Forget();
         foreach (Vehicle v in Puppets.Keys) Log.Info($"let go of {v.Id}");
         Puppets.Clear();
         Built.Clear();
@@ -1624,6 +1625,7 @@ internal static class Sync
                 // Answered only once it is on disk: the server keeps the token before it good until then.
                 else if (Tokens.Keep(token)) c.Kept(token);
             }
+            DiscordLogin.Update(c);
             FollowRules(c);
             if (c.Out.Length > 0)
             {

@@ -1625,6 +1625,7 @@ internal static class Panel
                 if (p.Id == c.Id) ImGui.Text($"{p.Name} (you){flying}");
                 else ImGui.Text($"{p.Name}{state}{flying}");
             }
+            DiscordRow(c);
             if (Sync.RenamedCraft is { Count: > 0 } renamed)
             {
                 ImGui.TextDisabled($"other players see your craft as: {string.Join(", ", renamed)}");
@@ -1633,6 +1634,26 @@ internal static class Panel
         // Only where it does anything: to anybody else it would be a button that says no.
         if (Sync.Admin && BottomLeft("SERVER SAVES".AsSpan())) ServerSaves.Toggle();
         if (BottomRight("DISCONNECT".AsSpan())) Sync.Disconnect();
+    }
+
+    /// <summary>
+    /// Who this player is on Discord, or the button to say so, on a server that takes Discord
+    /// logins. Nothing on one that does not: a button there would only ever say no.
+    /// </summary>
+    private static void DiscordRow(Client c)
+    {
+        if (c.DiscordNonce.Length == 0) return;
+        ImGui.Separator();
+        if (c.Discord is { Id.Length: > 0 } me)
+        {
+            ImGui.TextDisabled($"Discord: {me.Name}");
+            return;
+        }
+        if (DiscordLogin.Waiting) ImGui.TextDisabled("Log in in your browser, then come back here.");
+        else if (c.DiscordAsking) ImGui.TextDisabled("Checking with the server...");
+        else if (ImGui.Button("Log in with Discord", null)) DiscordLogin.Start(c, Sync.ServerAddress);
+        string why = DiscordLogin.Said.Length > 0 ? DiscordLogin.Said : c.Discord?.Refused ?? "";
+        if (why.Length > 0 && !DiscordLogin.Waiting && !c.DiscordAsking) ImGui.TextDisabled(why);
     }
 
     /// <summary>

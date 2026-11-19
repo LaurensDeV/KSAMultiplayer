@@ -126,6 +126,10 @@ public static class Program
             return Results.Ok(new Noted(true, from.ToString(), false, gone ? "taken out of the list" : "was not in the list"));
         }).RequireRateLimiting("announcing");
 
+        Login login = Login.FromEnvironment();
+        login.Map(app, Address);
+        if (login.On) app.Logger.LogInformation("Discord logins on: /v1/discord");
+
         app.Logger.LogInformation("{Name}: built at protocol {Protocol}, asking in probe version {Probe}, documents of version {Document}",
                                   name, Wire.Version, Wire.ProbeVersion, Listings.Version);
         await app.RunAsync().ConfigureAwait(false);
@@ -175,7 +179,7 @@ public static class Program
     /// Where a request came from, as an IPv4 address. A v4 address arriving over a v6 socket is
     /// mapped, which is how it looks on a dual-stack listener and is not what anybody means by it.
     /// </summary>
-    private static IPAddress? Address(HttpContext http)
+    internal static IPAddress? Address(HttpContext http)
     {
         IPAddress? ip = http.Connection.RemoteIpAddress;
         if (ip is null) return null;

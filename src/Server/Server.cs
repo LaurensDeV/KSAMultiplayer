@@ -89,6 +89,13 @@ public sealed record ServerOptions
 
     /// <summary>Where to announce to, separated by commas; empty for the built-in list.</summary>
     public string Directories { get; init; } = "";
+
+    /// <summary>
+    /// The login service whose passes say who a player is on Discord; empty to take none. Asked
+    /// only while some Discord user is an admin here: a server with nobody to recognise has no
+    /// reason to call anybody.
+    /// </summary>
+    public string DiscordLogin { get; init; } = Discord.Service;
 }
 
 /// <summary>
@@ -186,6 +193,18 @@ public sealed class GameServer : IDisposable
         public bool WorldGiven => !Seeding && !WaitingForWorld;
 
         public string Controlling { get; set; } = "";
+
+        /// <summary>Who this player logged in as on Discord, empty until they have.</summary>
+        public string DiscordId { get; set; } = "";
+        public string DiscordName { get; set; } = "";
+
+        /// <summary>What a Discord login for this player has to name: made at the join, so a pass for anybody else's is no good here.</summary>
+        public string DiscordNonce { get; set; } = "";
+
+        /// <summary>The last pass this player's game handed over, and the answer to it once there is one: a game says a pass until it is answered.</summary>
+        public string DiscordPass { get; set; } = "";
+        public Wire.DiscordUser? DiscordAnswer { get; set; }
+        public double DiscordAt { get; set; } = double.NegativeInfinity;
 
         /// <summary>The player's round trip, s, as that player measured it; negative until it has one.</summary>
         public float Rtt { get; set; } = -1f;
@@ -312,10 +331,11 @@ public sealed class GameServer : IDisposable
     /// <param name="admins">Who may run commands; by default the list beside the world, or none kept at all without one.</param>
     /// <param name="saves">The worlds kept under names; by default a folder of them beside the world, or kept only while the server runs without one.</param>
     /// <param name="protect">The craft not to clear; by default the list beside the world, or kept only while the server runs without one.</param>
+    /// <param name="discord">Where passes are checked against; by default the options' login service.</param>
     public GameServer(ServerOptions options, Func<double> clock, WorldStore? store = null, IPAddress? bind = null, Admins? admins = null, SaveShelf? saves = null,
-                      ProtectedCraft? protect = null)
+                      ProtectedCraft? protect = null, ILoginService? discord = null)
     {
-        (Options, _clock, _store) = (options, clock, store);
+        (Options, _clock, _store, _discordGiven) = (options, clock, store, discord);
         Protected = protect ?? new ProtectedCraft(store?.Folder ?? "");
         _protectedSerial = Protected.Names.Count > 0 ? 1u : 0u;
         Admins = admins ?? new Admins(store?.Folder ?? "");
@@ -414,6 +434,162 @@ public sealed class GameServer : IDisposable
         ? [.. Options.Mods.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)]
         : [.. _worldMods.SelectMany(ModList.Ids)];
 
+    // ------------------------------------------------------------------ Discord
+
+    private readonly ILoginService? _discordGiven;
+    private LoginService? _discordService;
+    private readonly System.Collections.Concurrent.ConcurrentQueue<(Player Who, string Pass, DiscordPass? Said, string Why)> _discordDone = new();
+
+    // The key and where this server is seen from, fetched once and again after an hour or a pass
+    // that does not check against it: the service may have been given a new key.
+    private Task<LoginKey>? _loginKey;
+    private double _loginKeyAt = double.NegativeInfinity;
+    private const double LoginKeyHoldSeconds = 3600.0;
+
+    // A pass a second from one game would be a server resolving names as fast as one player can
+    // make it; a few seconds apart is more than a player clicking ever needs.
+    private const double DiscordAgainSeconds = 3.0, DiscordWithinSeconds = 15.0;
+
+    /// <summary>Whether this server takes Discord logins: it has a login service, and some Discord user to recognise.</summary>
+    public bool DiscordOn => Login is not null && Admins.HasDiscord;
+
+    private ILoginService? Login
+    {
+        get
+        {
+            if (_discordGiven is not null) return _discordGiven;
+            if (Options.DiscordLogin.Length == 0) return null;
+            if (_discordService?.Url != Options.DiscordLogin) (_discordService, _loginKey) = (new LoginService(Options.DiscordLogin), null);
+            return _discordService;
+        }
+    }
+
+    private Task<LoginKey> LoginKey(bool again = false)
+    {
+        double now = _clock();
+        if (_loginKey is null || again || _loginKey.IsFaulted || now - _loginKeyAt > LoginKeyHoldSeconds)
+        {
+            (_loginKey, _loginKeyAt) = (Login!.Key(CancellationToken.None), now);
+        }
+        return _loginKey;
+    }
+
+    private void OnDiscordPass(Player p, string pass, double now)
+    {
+        if (pass.Length == 0) return;
+        // Said again because the answer was lost, or is still being worked out.
+        if (pass == p.DiscordPass)
+        {
+            if (p.DiscordAnswer is { } answer) _udp.Send(answer, p.At);
+            return;
+        }
+        string? refused = !DiscordOn || p.DiscordNonce.Length == 0 ? "this server doesn't take Discord logins"
+            : p.DiscordPass.Length > 0 && p.DiscordAnswer is null ? "a Discord login is already being checked: wait for it"
+            : now - p.DiscordAt < DiscordAgainSeconds ? "wait a few seconds before logging in with Discord again"
+            : null;
+        if (refused is not null)
+        {
+            _udp.Send(new Wire.DiscordUser("", "", refused), p.At);
+            return;
+        }
+        (p.DiscordPass, p.DiscordAnswer, p.DiscordAt) = (pass, null, now);
+        Task<LoginKey> key = LoginKey(), fresh = key;
+        ILoginService login = Login!;
+        string nonce = p.DiscordNonce;
+        Task.Run(async () =>
+        {
+            using CancellationTokenSource within = new(TimeSpan.FromSeconds(DiscordWithinSeconds));
+            try
+            {
+                DiscordPass? said = DiscordPass.Verify(pass, (await key.WaitAsync(within.Token)).Key);
+                // Not signed by the key held: the service may have a new one.
+                if (said is null)
+                {
+                    fresh = Fetched(login, within.Token);
+                    said = DiscordPass.Verify(pass, (await fresh).Key);
+                }
+                string? why = said is null ? "that pass isn't signed by the login service"
+                    : said.N != nonce ? "that pass is for another login: log in again from this server"
+                    : DateTimeOffset.UtcNow.ToUnixTimeSeconds() > said.Exp ? "that pass has run out: log in again"
+                    : null;
+                if (why is null)
+                {
+                    HashSet<IPAddress> mine = Addresses.Mine((await fresh).Seen);
+                    IPAddress[] led = await login.Resolve(said!.Aud, within.Token);
+                    if (!led.Any(ip => mine.Contains(Addresses.Plain(ip)))) why = $"that pass is for {said.Aud}, which isn't this server";
+                }
+                _discordDone.Enqueue((p, pass, why is null ? said : null, why ?? ""));
+            }
+            catch (Exception e) when (e is HttpRequestException or TaskCanceledException or OperationCanceledException or TimeoutException or CryptographicException)
+            {
+                _discordDone.Enqueue((p, pass, null, $"couldn't reach the Discord login service: {e.Message}"));
+            }
+        });
+    }
+
+    // From a thread of the pool; the next pass on the server's own thread starts from it.
+    private Task<LoginKey> Fetched(ILoginService login, CancellationToken cancel)
+    {
+        Task<LoginKey> fetched = login.Key(cancel);
+        (_loginKey, _loginKeyAt) = (fetched, _clock());
+        return fetched;
+    }
+
+    // On the server's own thread, as everything else about a player is.
+    private void DiscordAnswers()
+    {
+        while (_discordDone.TryDequeue(out (Player Who, string Pass, DiscordPass? Said, string Why) done))
+        {
+            Player p = done.Who;
+            if (!_players.TryGetValue(p.Id, out Player? still) || still != p || p.DiscordPass != done.Pass) continue;
+            if (done.Said is not { } said)
+            {
+                p.DiscordAnswer = new Wire.DiscordUser("", "", Wire.Clip(done.Why, 200));
+                _udp.Send(p.DiscordAnswer, p.At);
+                Log($"{p.Name} could not log in with Discord: {done.Why}");
+                continue;
+            }
+            (p.DiscordId, p.DiscordName) = (said.Id, Wire.Clip(said.Name, Wire.NameChars * 2));
+            p.DiscordAnswer = new Wire.DiscordUser(said.Id, p.DiscordName, "");
+            _udp.Send(p.DiscordAnswer, p.At);
+            bool admin = Admins.CheckDiscord(said.Id, p.Name);
+            Log($"{p.Name} logged in with Discord as {p.DiscordName} ({said.Id}){(admin ? ", an admin" : "")}");
+            if (admin && !p.Admin) MakeAdmin(p);
+        }
+    }
+
+    /// <summary>
+    /// Makes a Discord user an admin whether or not they are playing, returning the name they are
+    /// known by. Any player logged in as them now is one at once.
+    /// </summary>
+    public string OpDiscord(string id)
+    {
+        Player[] here = [.. _players.Values.Where(p => p.DiscordId == id)];
+        string name = here.FirstOrDefault()?.Name ?? Admins.NameOfDiscord(id) ?? id;
+        Admins.AddDiscord(id, name);
+        // The first Discord admin is what turns logins on, and whoever is already here was welcomed
+        // with nothing to log in with: they are welcomed again, which a joined game reads for that alone.
+        foreach (Player p in _players.Values.Where(p => p.DiscordNonce.Length == 0 && DiscordOn))
+        {
+            p.DiscordNonce = Discord.Nonce();
+            _udp.Send(new Wire.Welcome(p.Id, "", Options.Name, true, System: _worldSystem, Discord: p.DiscordNonce), p.At);
+        }
+        foreach (Player p in here.Where(p => !p.Admin)) MakeAdmin(p);
+        if (here.Length == 0) Log($"Discord user {id} is an admin from now, once they log in");
+        return name;
+    }
+
+    /// <summary>Takes admin away from a Discord user, returning the name they were known by, or null for one who was no admin.</summary>
+    public string? DeopDiscord(string id)
+    {
+        string? name = Admins.RemoveDiscord(id);
+        HashSet<string> told = new(StringComparer.OrdinalIgnoreCase);
+        foreach (Player p in _players.Values.Where(p => p.DiscordId == id).ToArray()) if (told.Add(p.Name)) Deop(p.Name);
+        if (name is not null && told.Add(name)) Deop(name);
+        if (name is not null) Log($"Discord user {id} ({name}) is no longer an admin");
+        return name;
+    }
+
     /// <summary>Console lines typed in a game by an admin, for the console program to run as its own.</summary>
     public Queue<(Player Who, string Line)> Asked { get; } = new();
 
@@ -449,6 +625,7 @@ public sealed class GameServer : IDisposable
         double now = _clock();
         int handled = 0;
         while (handled++ < 8192 && _udp.TryReceive(out (byte[] Data, IPEndPoint From, double Arrived) d)) Handle(d.Data, d.From, d.Arrived);
+        DiscordAnswers();
 
         foreach (Player gone in _players.Values.Where(p => now - p.HeardAt > (p.Loaded ? SilentSeconds : LoadingSilentSeconds)).ToArray())
         {
@@ -561,7 +738,7 @@ public sealed class GameServer : IDisposable
         {
             case Wire.Hello:
                 // Its welcome was lost.
-                _udp.Send(new Wire.Welcome(player.Id, "", Options.Name, _world is not null || !player.Seeding, System: _worldSystem), from);
+                _udp.Send(new Wire.Welcome(player.Id, "", Options.Name, _world is not null || !player.Seeding, System: _worldSystem, Discord: player.DiscordNonce), from);
                 return;
             case Wire.Ping ping:
                 player.Rtt = ping.Rtt;
@@ -697,6 +874,9 @@ public sealed class GameServer : IDisposable
                 return;
             case Wire.Name name when player.Loaded:
                 if (RenameCraft(name.Was, name.Now, player) is { } refused) Tell(player, refused);
+                return;
+            case Wire.DiscordPass discordPass:
+                OnDiscordPass(player, Wire.Clip(discordPass.Pass, Discord.PassChars), arrived);
                 return;
             case Wire.Command asked:
                 string line = Wire.Clip(asked.Line, Wire.ChatChars).Trim();
@@ -839,7 +1019,8 @@ public sealed class GameServer : IDisposable
         _players[id] = p;
 
         bool seeding = _world is null && _players.Values.All(q => !q.Seeding);
-        _udp.Send(new Wire.Welcome(id, "", Options.Name, !seeding, System: _worldSystem), from);
+        if (DiscordOn) p.DiscordNonce = Discord.Nonce();
+        _udp.Send(new Wire.Welcome(id, "", Options.Name, !seeding, System: _worldSystem, Discord: p.DiscordNonce), from);
         Log($"{name} has joined from {from}{(p.Admin ? " as an admin" : "")}{(seeding ? ", and their world becomes the server's" : "")}");
         // Said only when there is something to say: that they are an admin, or that the token they
         // offered is no good, which is how a game deopped while it was away forgets the one it kept.
@@ -1846,13 +2027,20 @@ public sealed class GameServer : IDisposable
     public string? Op(string name)
     {
         if (Find(name) is not { } p) return null;
+        // Logged in with Discord, they are an admin as that user too, from whichever machine.
+        if (p.DiscordId.Length > 0) Admins.AddDiscord(p.DiscordId, p.Name);
+        MakeAdmin(p);
+        return p.Name;
+    }
+
+    private void MakeAdmin(Player p)
+    {
         string token = Admins.Offer(p.Name);
         p.Admin = true;
         TellAdmin(p, new Wire.Op(true, token));
         Tell(p, "you're an admin on this server: type /help in chat to see the commands");
         SendSaves(p);
         Log($"{p.Name} is an admin from now");
-        return p.Name;
     }
 
     /// <summary>

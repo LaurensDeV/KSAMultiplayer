@@ -189,8 +189,13 @@ public static class Wire
     /// player's editor would still stop its world and leave it behind the room. 28 is also where a
     /// <see cref="Swept"/> naming a protected craft in full stopped taking it: a game of 27 would
     /// still take it from its own world, and the station the server kept would be missing there.</para>
+    ///
+    /// <para>30 is logging in with Discord: a welcome that admits a player ends with the nonce a
+    /// Discord login on this server has to carry, and a game hands the server the pass the login
+    /// service signed (<see cref="DiscordPass"/>), which the server answers with who that is
+    /// (<see cref="DiscordUser"/>).</para>
     /// </summary>
-    public const ushort Version = 29;
+    public const ushort Version = 30;
 
     /// <summary>
     /// The version of <see cref="Ask"/> and <see cref="Facts"/> alone, in the first byte of each.
@@ -326,6 +331,8 @@ public static class Wire
         Facts = 30,
         Note = 31,
         Name = 32,
+        DiscordPass = 33,
+        DiscordUser = 34,
     }
 
     /// <summary>Where a warp has got to: nobody has asked, somebody has and is waiting, or it is running.</summary>
@@ -365,9 +372,13 @@ public static class Wire
     /// <param name="Players">How many players are on the server now, and <paramref name="MaxPlayers"/> the most it takes. Both are nothing to a game that has joined, which has a roster; they are what a list of servers is read for.</param>
     /// <param name="LinkId">What the operator calls this server where a name that never changes is wanted, empty when they have not said: see <see cref="ModLink"/>.</param>
     /// <param name="KsaBuild">The build this server's world wants, empty when it wants whichever it is given. On a row of a list because a game cannot change its own build without being started again, so this is the one thing a player has to act on before clicking rather than after.</param>
+    /// <param name="Discord">What a Discord login for this player has to name
+    /// (<see cref="KSAMultiplayer.DiscordPass.N"/>), empty where this server takes none. Only on a
+    /// welcome that admits a player: one that carries a cookie goes to an address nothing has
+    /// vouched for, and is kept as small as it can be.</param>
     public sealed record Welcome(byte Id, string Refused, string ServerName, bool HasWorld, string Cookie = "", string System = "", string Mods = "",
                                  byte Players = 0, byte MaxPlayers = 0, WelcomeFlags Flags = WelcomeFlags.None, string KsaBuild = "",
-                                 string LinkId = "") : Message(Kind.Welcome);
+                                 string LinkId = "", string Discord = "") : Message(Kind.Welcome);
 
     /// <summary>
     /// What is this server? Asked by a list of servers, of an address it knows nothing else about,
@@ -694,6 +705,17 @@ public static class Wire
     /// to keep: an admin who was recognised at the join already has one.</param>
     public sealed record Op(bool Admin, string Token) : Message(Kind.Op);
 
+    /// <summary>
+    /// What the login service signed when this game's player logged in with Discord, for the server
+    /// to check and take. Said until a <see cref="DiscordUser"/> answers it.
+    /// </summary>
+    public sealed record DiscordPass(string Pass) : Message(Kind.DiscordPass);
+
+    /// <summary>Who the last <see cref="DiscordPass"/> said this player is, or why the server would not take it.</summary>
+    /// <param name="Id">The Discord user's id, empty with <paramref name="Refused"/> saying why.</param>
+    /// <param name="Name">What Discord shows them as, for the game to say back to the player.</param>
+    public sealed record DiscordUser(string Id, string Name, string Refused) : Message(Kind.DiscordUser);
+
     /// <summary>The server asking a player for a save of its world, to hand players who join after.</summary>
     public sealed record Snapshot(string Why) : Message(Kind.Snapshot);
 
@@ -732,6 +754,7 @@ public static class Wire
                 w.U8((byte)m.Flags);
                 w.Text(m.KsaBuild, 64);
                 w.Text(m.LinkId, IdChars);
+                w.Text(m.Discord, KSAMultiplayer.Discord.NonceChars);
                 break;
             case Ask a:
                 w.U8(a.Probe);
@@ -894,6 +917,14 @@ public static class Wire
                 w.U8(o.Admin ? (byte)1 : (byte)0);
                 w.Text(o.Token, TokenChars);
                 break;
+            case DiscordPass dp:
+                w.LongText(dp.Pass, KSAMultiplayer.Discord.PassChars);
+                break;
+            case DiscordUser du:
+                w.Text(du.Id, KSAMultiplayer.Discord.IdChars);
+                w.Text(du.Name, NameChars * 2);
+                w.Text(du.Refused, 200);
+                break;
             case Snapshot s:
                 w.Text(s.Why, 200);
                 break;
@@ -936,7 +967,7 @@ public static class Wire
             {
                 Kind.Hello => new Hello(r.Text(NameChars), r.Text(64), r.LongText(4000), r.Text(NameChars), r.Text(64), r.Text(TokenChars), r.Text(CookieChars)),
                 Kind.Welcome => new Welcome(r.U8(), r.LongText(RefusedChars), r.Text(64), r.U8() != 0, r.Text(CookieChars), r.Text(NameChars), r.LongText(ProbeModsChars),
-                                            r.U8(), r.U8(), (WelcomeFlags)r.U8(), r.Text(64), r.Text(IdChars)),
+                                            r.U8(), r.U8(), (WelcomeFlags)r.U8(), r.Text(64), r.Text(IdChars), r.Text(KSAMultiplayer.Discord.NonceChars)),
                 Kind.Roster => ReadRoster(ref r),
                 Kind.Bye => new Bye(r.Text(200)),
                 Kind.Alive => new Alive(),
@@ -964,6 +995,8 @@ public static class Wire
                 Kind.Note => new Note(r.LongText(NoteChars)),
                 Kind.Name => new Name(r.Text(KeyChars), r.Text(KeyChars), r.U8(), r.U32()),
                 Kind.Op => new Op(r.U8() != 0, r.Text(TokenChars)),
+                Kind.DiscordPass => new DiscordPass(r.LongText(KSAMultiplayer.Discord.PassChars)),
+                Kind.DiscordUser => new DiscordUser(r.Text(KSAMultiplayer.Discord.IdChars), r.Text(NameChars * 2), r.Text(200)),
                 Kind.Snapshot => new Snapshot(r.Text(200)),
             Kind.NoWorld => new NoWorld(r.Text(200)),
                 _ => throw new FormatException(),

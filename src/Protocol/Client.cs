@@ -286,6 +286,28 @@ public sealed class Client : IDisposable
     }
     public Queue<string> Said { get; } = new();
 
+    /// <summary>What a Discord login on this server has to name, or empty where it takes none.</summary>
+    public string DiscordNonce { get; private set; } = "";
+
+    /// <summary>Who this player is on Discord, as the server last said, or null until it has.</summary>
+    public Wire.DiscordUser? Discord { get; private set; }
+
+    /// <summary>Whether a pass has gone to the server and nothing has come back for it yet.</summary>
+    public bool DiscordAsking => _discordAsk is not null;
+
+    // Said again until answered.
+    private Wire.DiscordPass? _discordAsk;
+    private double _discordNext, _discordUntil;
+    private const double DiscordEverySeconds = 1.0, DiscordWithinSeconds = 20.0;
+
+    /// <summary>Hands the server what the login service signed, for it to say who that is in <see cref="Discord"/>.</summary>
+    public void LogInWithDiscord(string pass)
+    {
+        if (!Joined || pass.Length == 0) return;
+        _discordAsk = new Wire.DiscordPass(pass);
+        (_discordNext, _discordUntil) = (0.0, _clock() + DiscordWithinSeconds);
+    }
+
     /// <summary>Set when the server asks for a save of this world; cleared by whoever answers it.</summary>
     public string? SnapshotWanted { get; set; }
 
@@ -326,6 +348,7 @@ public sealed class Client : IDisposable
         (_protected, _protectedSerial, Rules) = ([], 0, null);
         _sweeps.Clear();
         (_told, _kept) = (null, "");
+        (DiscordNonce, Discord, _discordAsk) = ("", null, null);
         _hello = new Wire.Hello(Wire.Clip(name, Wire.NameChars), ksaBuild, mods, system, password, Wire.Clip(token, Wire.TokenChars));
         (_helloNext, _joinUntil, _heardAt) = (0.0, _clock() + JoinWithinSeconds, _clock());
         (_bestRtt, _lastRtt, ServerOffset, _serverClock, _serverRate) = (double.PositiveInfinity, double.NaN, 0.0, null, 0.0);
@@ -517,6 +540,19 @@ public sealed class Client : IDisposable
             _pingNext = now + PingEverySeconds;
         }
         SayGoneAgain(now);
+        if (_discordAsk is { } discord && now >= _discordNext)
+        {
+            if (now > _discordUntil)
+            {
+                Discord = new Wire.DiscordUser("", "", "the server didn't answer the Discord login");
+                _discordAsk = null;
+            }
+            else
+            {
+                Send(discord);
+                _discordNext = now + DiscordEverySeconds;
+            }
+        }
         if (_loadedSaid is { } said && now >= _loadedNext)
         {
             if (Players.Any(p => p.Id == Id && p.Loaded)) _loadedSaid = null;
@@ -563,7 +599,12 @@ public sealed class Client : IDisposable
                     return;
                 }
                 (Id, ServerName, ServerHasWorld, _pingNext) = (w.Id, w.ServerName, w.HasWorld, 0.0);
+                DiscordNonce = w.Discord;
                 Said.Enqueue($"joined {(w.ServerName.Length > 0 ? w.ServerName : "the server")} as player {w.Id}");
+                return;
+            // Said again once this server starts taking Discord logins, with the nonce to log in with.
+            case Wire.Welcome w when Joined && w.Id == Id:
+                if (w.Discord.Length > 0) DiscordNonce = w.Discord;
                 return;
             case Wire.Roster r when Joined:
                 foreach (Wire.Player p in r.Players.Where(p => p.Id != Id && Players.All(q => q.Id != p.Id))) Said.Enqueue($"{p.Name} is here");
@@ -684,6 +725,9 @@ public sealed class Client : IDisposable
                 return;
             case Wire.Chat c when Joined:
                 Chat.Enqueue(new ChatLine(c.From == 0, c.From == 0 ? "server" : NameOf(c.From), c.Text));
+                return;
+            case Wire.DiscordUser du when Joined && _discordAsk is not null:
+                (Discord, _discordAsk) = (du, null);
                 return;
             case Wire.Op op when Joined:
                 Admin = op.Admin;

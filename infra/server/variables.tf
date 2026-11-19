@@ -184,3 +184,34 @@ variable "directory_memory_mb" {
   type        = number
   default     = 128
 }
+
+# Discord logins for every server, through the directory, which alone holds the application's
+# secret. All three, or the directory's /v1/discord answers 404 and no server can take a login.
+variable "discord_client_id" {
+  description = "The KSAMultiplayer Discord application's Application ID."
+  type        = string
+  default     = ""
+}
+
+variable "discord_client_secret" {
+  description = "That application's client secret."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+# What every server checks a pass against, fetched from /v1/discord/key. A new one is picked up by
+# a server the first time a pass does not check against the one it holds.
+variable "discord_signing_key" {
+  description = "An EC P-256 private key in PEM: openssl ecparam -name prime256v1 -genkey -noout | openssl pkcs8 -topk8 -nocrypt."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+# Has to be one of the application's OAuth2 redirects, character for character.
+variable "discord_redirect" {
+  description = "The directory's own callback, as Discord is told it."
+  type        = string
+  default     = "https://servers.ksamp.gg/v1/discord/callback"
+}

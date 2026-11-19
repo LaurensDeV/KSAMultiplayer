@@ -16,6 +16,10 @@ namespace KSAMultiplayer.Server;
 /// whatever that name was an admin by goes on working beside it: the token crosses a wire that
 /// loses things, and one retired for a replacement that never arrived is an admin nobody holds.</para>
 ///
+/// <para>A Discord user can be an admin too, by a row of their own with no hash: an admin whoever's
+/// machine they log in from, for as long as the row is there. Logging in still hands their game a
+/// token, so the login is once per machine rather than once per join.</para>
+///
 /// <para>With no folder nothing is read or written and the list lives only as long as the server:
 /// what the tests drive, and what a server given no data directory gets.</para>
 /// </summary>
@@ -23,7 +27,8 @@ public sealed class Admins(string folder = "")
 {
     /// <param name="Name">Who they were when they last joined with this token, so that revoking one names whoever is seen playing.</param>
     /// <param name="Offered">Whether nothing has shown this token yet: it was sent, and may or may not have arrived.</param>
-    private sealed record Entry(string Name, string Hash, DateTime SinceUtc, bool Offered = false);
+    /// <param name="Discord">The Discord user this row makes an admin, on a row with no hash; empty on a token's.</param>
+    private sealed record Entry(string Name, string Hash, DateTime SinceUtc, bool Offered = false, string Discord = "");
 
     private readonly List<Entry> _admins = Read(folder);
 
@@ -51,8 +56,13 @@ public sealed class Admins(string folder = "")
         Entry now = held with { Name = name, Offered = false };
         _admins[i] = now;
         // By the name it was offered under, not the one it is seen under now: the rows it replaces
-        // are that name's.
-        if (held.Offered) _admins.RemoveAll(a => !ReferenceEquals(a, now) && string.Equals(a.Name, held.Name, StringComparison.OrdinalIgnoreCase));
+        // are that name's tokens. Not its Discord user, which is what the token may have been
+        // handed out for.
+        if (held.Offered)
+        {
+            _admins.RemoveAll(a => !ReferenceEquals(a, now) && a.Discord.Length == 0
+                                   && string.Equals(a.Name, held.Name, StringComparison.OrdinalIgnoreCase));
+        }
         Write();
         return true;
     }
@@ -80,6 +90,66 @@ public sealed class Admins(string folder = "")
         if (gone > 0) Write();
         return gone;
     }
+
+    /// <summary>
+    /// Makes a Discord user an admin, under the name they are known by here: a player's when they are
+    /// playing, or their id until they first log in. Says whether they were not one already.
+    /// </summary>
+    public bool AddDiscord(string id, string name)
+    {
+        int i = _admins.FindIndex(a => a.Discord == id);
+        if (i >= 0)
+        {
+            if (string.Equals(_admins[i].Name, name, StringComparison.Ordinal)) return false;
+            _admins[i] = _admins[i] with { Name = name };
+            Write();
+            return false;
+        }
+        _admins.Add(new Entry(name, "", DateTime.UtcNow, Discord: id));
+        Write();
+        return true;
+    }
+
+    /// <summary>
+    /// Whether this Discord user is an admin, renaming their row to the name they are seen playing
+    /// under now: as with a token, an operator takes admin away from the player they can see.
+    /// </summary>
+    public bool CheckDiscord(string id, string name)
+    {
+        if (id.Length == 0) return false;
+        int i = _admins.FindIndex(a => a.Discord == id);
+        if (i < 0) return false;
+        if (!string.Equals(_admins[i].Name, name, StringComparison.Ordinal))
+        {
+            _admins[i] = _admins[i] with { Name = name };
+            Write();
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Takes admin away from a Discord user, and from every token of the name they were last known
+    /// by: those were handed out for being this user, and the name is all a token is filed under.
+    /// Returns that name, or null for a user who was no admin.
+    /// </summary>
+    public string? RemoveDiscord(string id)
+    {
+        if (_admins.FirstOrDefault(a => a.Discord == id) is not { } row) return null;
+        Remove(row.Name);
+        _admins.RemoveAll(a => a.Discord == id);
+        Write();
+        return row.Name;
+    }
+
+    /// <summary>The name a Discord user's row is under, or null for one who is no admin.</summary>
+    public string? NameOfDiscord(string id) => _admins.FirstOrDefault(a => a.Discord.Length > 0 && a.Discord == id)?.Name;
+
+    /// <summary>The Discord user that makes this name an admin, or empty.</summary>
+    public string DiscordOf(string name) =>
+        _admins.FirstOrDefault(a => a.Discord.Length > 0 && string.Equals(a.Name, name, StringComparison.OrdinalIgnoreCase))?.Discord ?? "";
+
+    /// <summary>Whether any Discord user is an admin here, and so whether Discord logins are worth taking.</summary>
+    public bool HasDiscord => _admins.Any(a => a.Discord.Length > 0);
 
     public bool Is(string name) => _admins.Any(a => string.Equals(a.Name, name, StringComparison.OrdinalIgnoreCase));
 
