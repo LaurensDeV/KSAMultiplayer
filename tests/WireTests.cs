@@ -243,4 +243,19 @@ public class WireTests
         byte[] zip = Blob.Zip([("../x", [1])]);
         Assert.Throws<InvalidDataException>(() => Blob.Unzip(zip));
     }
+
+    // A name of any writing is cut to its length without being cut through a character, and is
+    // never anything a field or a datagram cannot take.
+    [Theory]
+    [InlineData("Kitten\n\tName", 24, "KittenName")]
+    [InlineData("Ünïcødé ñame ✨ 日本語の名前", 24, "Ünïcødé ñame ✨ 日本語の名前")]
+    [InlineData("ABCDEFGHIJKLMNOPQRSTUVW😀", 24, "ABCDEFGHIJKLMNOPQRSTUVW")]
+    [InlineData("😀😀😀", 3, "😀")]
+    public void AClippedNameIsWholeCharacters(string name, int chars, string clipped)
+    {
+        string got = Wire.Clip(name, chars);
+        Assert.Equal(clipped, got);
+        Assert.DoesNotContain(got, c => char.IsSurrogate(c) && !(char.IsHighSurrogate(c) || char.IsLowSurrogate(c)));
+        Assert.Equal(got, System.Text.Encoding.UTF8.GetString(System.Text.Encoding.UTF8.GetBytes(got)));
+    }
 }

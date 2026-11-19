@@ -1095,7 +1095,11 @@ public static class Wire
     {
         string t = new((s ?? "").Where(c => !char.IsControl(c)).ToArray());
         t = t.Trim();
-        return t.Length > chars ? t[..chars] : t;
+        if (t.Length <= chars) return t;
+        // Never through the middle of a character made of two: half an emoji is no character, and
+        // is drawn and sent as a replacement mark.
+        int cut = chars > 0 && char.IsHighSurrogate(t[chars - 1]) ? chars - 1 : chars;
+        return t[..cut];
     }
 
     private ref struct Writer(Span<byte> into)
