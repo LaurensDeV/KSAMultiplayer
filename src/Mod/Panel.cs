@@ -1430,40 +1430,88 @@ internal static class Panel
 
     private static bool _linkCopied;
 
+    // Discord's own blue, and a lighter one that reads as text on the window's dark panels.
+    private static readonly float4 Blurple = new(0.345f, 0.396f, 0.949f, 1f), BlurpleHover = new(0.42f, 0.47f, 1f, 1f),
+                                    BlurpleDown = new(0.28f, 0.32f, 0.82f, 1f), BlurpleText = new(0.66f, 0.70f, 1f, 1f);
+
     /// <summary>Log in, or who this machine is and Log out, or the login under way: the same wherever it is drawn.</summary>
     private static void DiscordControls()
     {
+        // On the line of the field beside it rather than a few pixels above, which is where plain
+        // text sits next to a framed control.
+        ImGui.AlignTextToFramePadding();
         if (DiscordLogin.Waiting)
         {
-            ImGui.TextDisabled(_linkCopied ? "Link copied: paste it into your browser." : "Log in in your browser...");
+            ImGui.TextColored(in ConsoleStyle.Pending, _linkCopied ? "Link copied: paste it in your browser" : "Waiting for your browser...");
             // The browser the system opens is not always the one the player is logged in to Discord in.
-            if (ImGui.Button("Copy link", null))
+            switch (LinksAtRight("Copy link", "Cancel"))
             {
-                ImGui.SetClipboardText(DiscordLogin.Url);
-                _linkCopied = true;
+                case 0:
+                    ImGui.SetClipboardText(DiscordLogin.Url);
+                    _linkCopied = true;
+                    break;
+                case 1:
+                    DiscordLogin.Stop();
+                    break;
             }
-            ImGui.SameLine();
-            if (ImGui.Button("Cancel", null)) DiscordLogin.Stop();
             return;
         }
         if (DiscordLogin.Who is { } me)
         {
-            ImGui.Text(me.Name);
-            ImGui.SameLine();
-            if (ImGui.Button("Log out", null)) DiscordLogin.LogOut();
-            if (ImGui.IsItemHovered()) ImGui.SetTooltip("This computer stays logged in until " + DateTimeOffset.FromUnixTimeSeconds(me.Exp).LocalDateTime.ToString("d MMMM") + ".");
+            // A dot drawn rather than typed: a font without the glyph draws a box.
+            float2 at = ImGui.GetCursorScreenPos();
+            float line = ImGui.GetTextLineHeight(), r = MathF.Round(line * 0.2f);
+            ImGui.GetWindowDrawList().AddCircleFilled(new float2(at.X + r, at.Y + (line * 0.5f)), r, (ImColor8)Blurple);
+            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + (r * 2f) + 8f);
+            ImGui.TextColored(in BlurpleText, me.Name);
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip($"Logged in with Discord on this computer until {DateTimeOffset.FromUnixTimeSeconds(me.Exp).LocalDateTime:d MMMM}. Every server you join is told.");
+            }
+            if (LinksAtRight("Log out") == 0) DiscordLogin.LogOut();
             return;
         }
-        if (ImGui.Button("Log in with Discord", null))
+        ImGui.PushStyleColor(ImGuiCol.Button, in Blurple);
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, in BlurpleHover);
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, in BlurpleDown);
+        ImGui.PushStyleColor(ImGuiCol.Text, new float4(1f, 1f, 1f, 1f));
+        bool pressed = ImGui.Button("Log in with Discord###KSAMultiplayerDiscordLogIn", new float2(ImGui.GetContentRegionAvail().X, 0f));
+        ImGui.PopStyleColor(4);
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("Once per computer, for every KSA instance on it. A server where your Discord account is an admin makes you one when you join.");
+        }
+        if (pressed)
         {
             _linkCopied = false;
             DiscordLogin.Start();
         }
-        if (ImGui.IsItemHovered())
+        if (DiscordLogin.Said.Length > 0) ImGui.TextColored(in ConsoleStyle.Danger, DiscordLogin.Said);
+    }
+
+    /// <summary>
+    /// Buttons that read as links, on the right of the line just drawn: no box until the pointer is
+    /// on one. Which was pressed, or -1.
+    /// </summary>
+    private static int LinksAtRight(params string[] labels)
+    {
+        float pad = ImGui.GetStyle().FramePadding.X, gap = ImGui.GetStyle().ItemSpacing.X;
+        float wide = labels.Sum(l => ImGui.CalcTextSize(l).X + (pad * 2f)) + (gap * (labels.Length - 1));
+        ImGui.SameLine();
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + MathF.Max(0f, ImGui.GetContentRegionAvail().X - wide));
+        ImGui.PushStyleColor(ImGuiCol.Button, in ConsoleStyle.Transparent);
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, in ConsoleStyle.Inset);
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, in ConsoleStyle.Frame);
+        ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.TextMuted);
+        ImGui.PushStyleColor(ImGuiCol.Border, in ConsoleStyle.Transparent);
+        int pressed = -1;
+        for (int k = 0; k < labels.Length; k++)
         {
-            ImGui.SetTooltip("Once per computer. On a server with Discord admins, an admin is one on any computer they log in on.");
+            if (k > 0) ImGui.SameLine();
+            if (ImGui.Button($"{labels[k]}###KSAMultiplayerDiscordLink{labels[k]}", null)) pressed = k;
         }
-        if (DiscordLogin.Said.Length > 0) ImGui.TextDisabled(DiscordLogin.Said);
+        ImGui.PopStyleColor(5);
+        return pressed;
     }
 
     /// <summary>A row of KSA's two columns that says something rather than asking it.</summary>
