@@ -96,6 +96,13 @@ public sealed record ServerOptions
     /// reason to call anybody.
     /// </summary>
     public string DiscordLogin { get; init; } = Discord.Service;
+
+    /// <summary>
+    /// Discord users who are admins here whatever admins.json says: an operator with several servers
+    /// says it once, where they say everything else, rather than at each console after each reset.
+    /// Not taken away by deop, which says where they come from.
+    /// </summary>
+    public string[] DiscordAdmins { get; init; } = [];
 }
 
 /// <summary>
@@ -379,6 +386,12 @@ public sealed class GameServer : IDisposable
         if (next.ClearPads != was.ClearPads) Broadcast(new Wire.Chat(0, next.ClearPads
             ? "craft left on a launchpad for five minutes are cleared away again on this server"
             : "craft left on a launchpad are no longer cleared away on this server"), _ => true);
+        // A Discord admin added to the setting is one now, if they are here and logged in.
+        WelcomeForDiscord();
+        foreach (Player p in _players.Values.Where(p => p.DiscordId.Length > 0 && !p.Admin && next.DiscordAdmins.Contains(p.DiscordId)).ToArray())
+        {
+            MakeAdmin(p);
+        }
     }
     public UniverseClock UniverseClock { get; } = new();
     public int Port => _udp.Port;
@@ -451,7 +464,25 @@ public sealed class GameServer : IDisposable
     private const double DiscordAgainSeconds = 3.0, DiscordWithinSeconds = 15.0;
 
     /// <summary>Whether this server takes Discord logins: it has a login service, and some Discord user to recognise.</summary>
-    public bool DiscordOn => Login is not null && Admins.HasDiscord;
+    public bool DiscordOn => Login is not null && (Admins.HasDiscord || Options.DiscordAdmins.Length > 0);
+
+    /// <summary>Whether this Discord user is an admin here, by the setting or by admins.json.</summary>
+    private bool DiscordAdmin(string id, string name) => Options.DiscordAdmins.Contains(id) | Admins.CheckDiscord(id, name);
+
+    /// <summary>Whether this Discord user is an admin by the discord-admins setting, which deop cannot change.</summary>
+    public bool SetAsDiscordAdmin(string id) => Options.DiscordAdmins.Contains(id);
+
+    // Whoever is here was welcomed with nothing to log in with when logins were off: they are welcomed
+    // again, which a joined game reads for the nonce alone.
+    private void WelcomeForDiscord()
+    {
+        if (!DiscordOn) return;
+        foreach (Player p in _players.Values.Where(p => p.DiscordNonce.Length == 0))
+        {
+            p.DiscordNonce = Discord.Nonce();
+            _udp.Send(new Wire.Welcome(p.Id, "", Options.Name, true, System: _worldSystem, Discord: p.DiscordNonce), p.At);
+        }
+    }
 
     private ILoginService? Login
     {
@@ -555,7 +586,7 @@ public sealed class GameServer : IDisposable
             _rosterNext = 0.0;
             p.DiscordAnswer = new Wire.DiscordUser(said.Id, p.DiscordName, "");
             _udp.Send(p.DiscordAnswer, p.At);
-            bool admin = Admins.CheckDiscord(said.Id, p.Name);
+            bool admin = DiscordAdmin(said.Id, p.Name);
             Log($"{p.Name} logged in with Discord as {p.DiscordName} ({said.Id}){(admin ? ", an admin" : "")}");
             if (admin && !p.Admin) MakeAdmin(p);
         }
@@ -570,13 +601,7 @@ public sealed class GameServer : IDisposable
         Player[] here = [.. _players.Values.Where(p => p.DiscordId == id)];
         string name = here.FirstOrDefault()?.Name ?? Admins.NameOfDiscord(id) ?? id;
         Admins.AddDiscord(id, name);
-        // The first Discord admin is what turns logins on, and whoever is already here was welcomed
-        // with nothing to log in with: they are welcomed again, which a joined game reads for that alone.
-        foreach (Player p in _players.Values.Where(p => p.DiscordNonce.Length == 0 && DiscordOn))
-        {
-            p.DiscordNonce = Discord.Nonce();
-            _udp.Send(new Wire.Welcome(p.Id, "", Options.Name, true, System: _worldSystem, Discord: p.DiscordNonce), p.At);
-        }
+        WelcomeForDiscord();
         foreach (Player p in here.Where(p => !p.Admin)) MakeAdmin(p);
         if (here.Length == 0) Log($"Discord user {id} is an admin from now, once they log in");
         return name;

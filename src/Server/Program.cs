@@ -440,6 +440,9 @@ void Command(string line, GameServer.Player? who = null)
             else Answer($"{opped} is now an admin, and will stay one when they rejoin"
                 + (server.Admins.DiscordOf(opped) is { Length: > 0 } did ? $", from any machine they log in with Discord on (Discord user {did})" : "; their old token works until their game has saved the new one"));
             break;
+        case "deop" when rest.StartsWith("discord:", StringComparison.OrdinalIgnoreCase) && server.SetAsDiscordAdmin(rest["discord:".Length..].Trim()):
+            Answer($"Discord user {rest["discord:".Length..].Trim()} is an admin by the discord-admins setting: take them out of it to deop them");
+            break;
         case "deop" when rest.StartsWith("discord:", StringComparison.OrdinalIgnoreCase):
             string deopId = rest["discord:".Length..].Trim();
             Answer(server.DeopDiscord(deopId) is { } was
@@ -454,9 +457,18 @@ void Command(string line, GameServer.Player? who = null)
                 : $"{rest} was not an admin");
             break;
         case "admins":
-            Answer(server.Admins.Names.Count == 0
-                ? "there are no admins yet: op <name> makes a connected player one, op discord:<user id> a Discord user"
-                : $"admins: {string.Join(", ", server.Admins.Names.Select(n => server.Admins.DiscordOf(n) is { Length: > 0 } d ? $"{n} (Discord {d})" : n))}");
+            if (server.Options.DiscordAdmins.Length > 0)
+            {
+                Answer($"by the discord-admins setting: {string.Join(", ", server.Options.DiscordAdmins.Select(id => server.Players.FirstOrDefault(p => p.DiscordId == id) is { } here ? $"{id} ({here.Name})" : id))}");
+            }
+            if (server.Admins.Names.Count > 0)
+            {
+                Answer($"admins: {string.Join(", ", server.Admins.Names.Select(n => server.Admins.DiscordOf(n) is { Length: > 0 } d ? $"{n} (Discord {d})" : n))}");
+            }
+            else if (server.Options.DiscordAdmins.Length == 0)
+            {
+                Answer("there are no admins yet: op <name> makes a connected player one, op discord:<user id> a Discord user");
+            }
             break;
         case "reload" or "reset":
             int put = server.ReloadAll("an admin asked for it");

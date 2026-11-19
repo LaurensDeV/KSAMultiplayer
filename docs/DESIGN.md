@@ -140,8 +140,10 @@ stranger sent it.
   rows are removed only then, so a name being opped again has two rows for a moment and either token
   is an admin's. A file from before the field reads as every token having arrived.
 - **Who is an admin on Discord.** A row of `admins.json` with a `Discord` user id and no hash, made
-  by `op discord:<id>` or by `op` on a player who has logged in. The first such row is what turns
-  logins on: until then the server asks the login service nothing and gives no nonce. With one,
+  by `op discord:<id>` or by `op` on a player who has logged in; or a user id in the
+  `discord-admins` setting, which no `deop` changes and no lost data folder takes away, and which
+  infra/server gives every world from the `KSAMP_DISCORD_ADMINS` repository variable. The first
+  Discord admin either way is what turns logins on: until then the server asks the login service nothing and gives no nonce. With one,
   each player is given a nonce in the welcome that admits them, and anybody already in is welcomed
   again with theirs. A game logs in once per machine through the login service in the directory
   (`Login`), the only holder of the Discord application's secret: it makes a P-256 key, sends the

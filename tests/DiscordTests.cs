@@ -254,6 +254,43 @@ public class DiscordTests
         Assert.False(rig.Server.DiscordOn);
     }
 
+    // The setting an operator with several servers writes once: no admins.json, no op.
+    [Fact]
+    public void ADiscordAdminBySettingIsAnAdminAndCannotBeDeopped()
+    {
+        FakeLogin login = new();
+        using Rig rig = new(new ServerOptions { DiscordAdmins = [Alice] }, discord: login);
+        Assert.True(rig.Server.DiscordOn);
+        Client c = Joined(rig, "Alice");
+        LogIn(rig, c, login.Proof(Alice, c.DiscordNonce));
+        rig.Until(() => c.Admin, what: "Alice to be an admin by the setting");
+        Assert.True(rig.Server.SetAsDiscordAdmin(Alice));
+        Assert.False(rig.Server.SetAsDiscordAdmin(Bob));
+    }
+
+    // Added to the setting while they are playing, they are an admin then and there.
+    [Fact]
+    public void ADiscordAdminAddedToTheSettingIsOneAtOnce()
+    {
+        using Rig rig = Rigged(out FakeLogin login, Bob);
+        Client c = Joined(rig, "Alice");
+        LogIn(rig, c, login.Proof(Alice, c.DiscordNonce));
+        rig.For(0.3);
+        Assert.False(c.Admin);
+        rig.Server.Reconfigure(rig.Server.Options with { DiscordAdmins = [Alice] });
+        rig.Until(() => c.Admin, what: "Alice to be an admin once the setting names her");
+    }
+
+    [Fact]
+    public void TheSettingTakesDiscordIdsAndNothingElse()
+    {
+        Dictionary<string, string> file = new() { ["discord-admins"] = " 111111111111111111, 222222222222222222 ,111111111111111111" };
+        (ServerOptions options, _, _) = Settings.Options(Settings.Resolve(new Dictionary<string, string>(), _ => null, file));
+        Assert.Equal([Alice, Bob], options.DiscordAdmins);
+        file["discord-admins"] = "111111111111111111, MrJeranimo";
+        Assert.Throws<FormatException>(() => Settings.Options(Settings.Resolve(new Dictionary<string, string>(), _ => null, file)));
+    }
+
     [Fact]
     public void ADiscordAdminIsKeptAcrossARestart()
     {

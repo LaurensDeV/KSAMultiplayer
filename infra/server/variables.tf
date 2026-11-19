@@ -215,3 +215,11 @@ variable "discord_redirect" {
   type        = string
   default     = "https://servers.ksamp.gg/v1/discord/callback"
 }
+
+# Who runs these servers, by Discord account: admins on every world here whenever they log in with
+# Discord, and kept out of admins.json, which a world's reset or a lost volume takes with it.
+variable "discord_admins" {
+  description = "Discord user ids, separated by commas, who are admins on every server here."
+  type        = string
+  default     = ""
+}
