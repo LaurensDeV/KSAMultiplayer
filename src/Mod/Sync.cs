@@ -1278,6 +1278,7 @@ internal static class Sync
         {
             Told("spectate <name>   watch what another player is flying (anyone can use this)");
             Told("rename <new name> rename the craft you're flying, if it's yours");
+            Told("rename <craft> -> <new name>   rename another craft, the arrow between the two names");
             Told("Tab               complete a player's name as you type it");
             return false;
         }
@@ -1302,10 +1303,39 @@ internal static class Sync
     /// </summary>
     private static void RenameAsked(string asked)
     {
-        if (_client is not { Joined: true } c) return;
+        if (_client is not { Joined: true }) return;
         int arrow = asked.IndexOf("->", StringComparison.Ordinal);
         string was = arrow >= 0 ? asked[..arrow].Trim() : Flown is { } flown ? KeyOf(flown) : "";
         string now = (arrow >= 0 ? asked[(arrow + 2)..] : asked).Trim();
+        // "rename Station Purrpose One" is either the craft flown called that or Station called
+        // Purrpose One, and the words cannot say which. Guessing renamed a station to its old name
+        // and the new one run together, so where a craft's name begins the line it is asked instead.
+        if (arrow < 0 && CraftNamedAtTheStartOf(now) is { } named)
+        {
+            string rest = now[named.Length..].Trim();
+            Told($"'{named}' is a craft's name, so which is it? /rename {named} -> {rest}"
+                 + (was.Length > 0 ? $", or /rename {was} -> {now}" : ""));
+            return;
+        }
+        Rename(was, now);
+    }
+
+    // The longest name of a craft in this world that the line begins with, as a whole word, with
+    // more after it. Not the line itself: a name given whole is no question.
+    private static string? CraftNamedAtTheStartOf(string line) =>
+        World.Vehicles().Select(KeyOf)
+             .Where(k => line.Length > k.Length + 1 && line.StartsWith(k + " ", StringComparison.OrdinalIgnoreCase))
+             .OrderByDescending(k => k.Length)
+             .FirstOrDefault() is { } k ? line[..k.Length] : null;
+
+    /// <summary>What the shared world calls the craft this player flies, or null when they fly none.</summary>
+    public static string? FlownName => Flown is { } v ? KeyOf(v) : null;
+
+    /// <summary>One craft renamed to another name in every game, asked of the server, which says no where it is not this player's.</summary>
+    public static void Rename(string was, string now)
+    {
+        if (_client is not { Joined: true } c) return;
+        (was, now) = (was.Trim(), now.Trim());
         if (now.Length == 0)
         {
             Told("usage: rename <new name> for the craft you're flying, or rename <craft> -> <new name>");
@@ -1324,8 +1354,27 @@ internal static class Sync
         c.AskName(was, now);
     }
 
+    // The craft this player flew before they watched somebody else's, to go back to.
+    private static Vehicle? _flewBeforeWatching;
+
+    /// <summary>Whether the camera is on what this player is flying, and they are not flying it.</summary>
+    public static bool IsWatching(Wire.Player p) =>
+        p.Controlling.Length > 0 && World.Watched is { } v && Flown is null && KeyOf(v) == p.Controlling;
+
+    /// <summary>The craft to go back to after watching somebody else's, while there is one.</summary>
+    public static string? FlewBefore =>
+        Flown is null && _flewBeforeWatching is { } v && World.IsAlive(v) ? KeyOf(v) : null;
+
+    /// <summary>Back to the craft this player flew before watching another player's.</summary>
+    public static void BackToOwn()
+    {
+        if (_flewBeforeWatching is not { } v || !World.IsAlive(v)) return;
+        if (World.GoTo(v)) _flewBeforeWatching = null;
+        else Told($"could not go back to {KeyOf(v)}: somebody else may have taken it");
+    }
+
     /// <summary>Puts the camera on what a player is flying, without taking it over.</summary>
-    private static void Spectate(string name)
+    public static void Spectate(string name)
     {
         if (_client is not { Joined: true } c) return;
         if (name.Length == 0)
@@ -1350,6 +1399,7 @@ internal static class Sync
             Told($"{who.Name} is flying {who.Controlling}, which hasn't loaded in your game yet");
             return;
         }
+        if (Flown is { } mine) _flewBeforeWatching = mine;
         Told(World.Watch(seen)
             ? $"watching {who.Name}, flying {who.Controlling}"
             : $"could not put the camera on {who.Controlling}");

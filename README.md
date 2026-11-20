@@ -55,7 +55,8 @@ Once you're in:
 
 - **The server's name at the top right of the menu bar** opens and shuts the Multiplayer window: who
   is here, your ping, and **SERVERS**, the list from the start screen, to move to another server
-  with **JOIN**. Hold **Tab** for who is flying what.
+  with **JOIN**. Hold **Tab** for who is flying what, and click **Watch** beside a player to put
+  your camera on their craft; **Back to** beside your own name takes you back to yours.
 - **Fly anything nobody else is flying.** Take control of a craft and it's yours while you are in it
   or looking at it, and for ten seconds after. A craft someone else is flying moves where their
   game says: ask for it and the camera goes there anyway, so you ride along and watch rather than
@@ -75,10 +76,14 @@ Once you're in:
   other. The world is never warped past what the slowest machine in it is managing, and slows to
   that machine rather than leaving it behind. After joining, your game may run fast for a few
   seconds to catch up.
-- **Chat** from the window.
-- **Rename a craft.** Type `/rename New name` in the chat to rename the craft you're flying, if it's
-  yours. It's renamed in every game, crew and all. A protected craft can only be renamed by an admin,
-  who can rename any craft with `/rename Old name -> New name`.
+- **Chat** from the window. **Solid** under it gives it a background you can read over a bright
+  planet, **See-through** takes that away again, and **Hide** puts it away until you press
+  **Enter** to say something.
+- **Rename a craft.** **Rename** beside *Flying* in the Multiplayer window, or type
+  `/rename New name` in the chat, renames the craft you're flying, if it's yours. It's renamed in
+  every game, crew and all. A trusted player or an admin can rename any craft with
+  `/rename Old name -> New name`. Where the line starts with another craft's name, as
+  `/rename Station Purrpose One` does, the chat asks which you meant instead of guessing.
 
 Two craft with the same name are still two craft: the server gives the second one a name of its own,
 your game goes on calling it what you called it, and the player list says *other players see your craft as*
@@ -323,7 +328,7 @@ in the chat; it refuses a craft somebody is flying and one that is protected.
 
 `rename <craft> -> <new name>` gives a craft another name in every game, whoever owns it, and keeps
 it protected if it was. A player renames their own craft from the chat with `/rename <new name>`; a
-protected craft only an admin can rename. It refuses a name another craft has.
+protected craft only a trusted player or an admin can rename. It refuses a name another craft has.
 
 `protect <craft>` is for what is not debris. A protected craft is left by every `clear`, even one
 that names it in full: `clear`, `clear Station*` and `clear Station` all leave `Station` standing, and

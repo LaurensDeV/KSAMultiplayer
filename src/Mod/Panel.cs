@@ -60,12 +60,16 @@ internal static class Panel
     private static string _choices = "";
 
     /// <param name="Recent">Where this player has connected before, most recent first. Shown in the server list and asked about like anything else, so a server they have played on says whether anybody is on it now.</param>
-    private sealed record Settings(string Name, string Address, string Password, bool Visible, string[]? Recent = null);
+    /// <param name="ChatSolid">The chat drawn on a solid background, read against any sky, rather than seen through.</param>
+    /// <param name="ChatHidden">The chat put away until Enter is struck to say something.</param>
+    private sealed record Settings(string Name, string Address, string Password, bool Visible, string[]? Recent = null,
+                                   bool ChatSolid = false, bool ChatHidden = false);
 
     /// <summary>How many addresses are remembered. Enough for the servers somebody actually plays on, few enough that the list is not mostly history.</summary>
     private const int MostRecent = 8;
 
     private static string[] _recent = [];
+    private static bool _chatSolid, _chatHidden;
 
     private static readonly ImInputString NameText = new(Wire.NameChars * 4, ""u8);
     private static readonly ImInputString AddressText = new(128, ""u8);
@@ -515,7 +519,9 @@ internal static class Panel
     private static void Scoreboard()
     {
         if (Sync.Client is not { Joined: true } c) return;
-        if (World.InMapView || ImGui.IsAnyItemActive()) return;
+        // Not while typing, rather than while anything is active: a Watch link held down is active,
+        // and a list taken away under it would never hear it let go.
+        if (World.InMapView || ImGui.GetIO().WantTextInput) return;
         if (!World.KeyDown(GlfwKey.Tab) && Sync.Wall() >= BoardUntil) return;
 
         ImGuiViewportPtr screen = ImGui.GetMainViewport();
@@ -529,7 +535,7 @@ internal static class Panel
         const ImGuiWindowFlags board = ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoTitleBar
                                        | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove
                                        | ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.NoFocusOnAppearing
-                                       | ImGuiWindowFlags.NoNav | ImGuiWindowFlags.NoInputs;
+                                       | ImGuiWindowFlags.NoNav;
         if (ImGui.Begin("###KSAMultiplayerPlayers", board))
         {
             // A table, so a column is as wide as the widest thing in it and two of them can never
@@ -561,6 +567,19 @@ internal static class Panel
                     ImGui.TextDisabled(!p.Loaded ? "joining"
                                        : Sync.InTheEditor(p) ? (p.Controlling.Length > 0 ? $"{p.Controlling}, in the vehicle editor" : "in the vehicle editor")
                                        : p.Controlling.Length > 0 ? p.Controlling : "--");
+                    // Clicked with Tab still held: the list is up only while it is.
+                    ImGui.PushID(p.Id);
+                    if (p.Id == c.Id)
+                    {
+                        if (Sync.FlewBefore is { } mine && LinksAtRight($"Back to {mine}") == 0) Sync.BackToOwn();
+                    }
+                    else if (Sync.IsWatching(p))
+                    {
+                        ImGui.SameLine();
+                        ImGui.TextDisabled("(watching)");
+                    }
+                    else if (p.Loaded && p.Controlling.Length > 0 && !Sync.InTheEditor(p) && LinksAtRight("Watch") == 0) Sync.Spectate(p.Name);
+                    ImGui.PopID();
                 }
                 ImGui.EndTable();
             }
@@ -601,8 +620,14 @@ internal static class Panel
         else if (struck && !World.InMapView)
         {
             if (_typing) Send();
-            else if (!ImGui.IsAnyItemActive()) (_typing, _focusChat) = (true, true);
+            else if (!ImGui.IsAnyItemActive())
+            {
+                (_typing, _focusChat) = (true, true);
+                // Saying something is wanting to see what is said back.
+                if (_chatHidden) ShowChat(true);
+            }
         }
+        if (_chatHidden) return;
 
         ImGuiViewportPtr screen = ImGui.GetMainViewport();
         // Above the navball, and inside the viewport whatever its size: a window placed outside one
@@ -612,8 +637,9 @@ internal static class Panel
         float2 at = new(screen.WorkPos.X + 24f, Math.Clamp(top, screen.WorkPos.Y + 24f, lowest));
         ImGui.SetNextWindowPos(in at, ImGuiCond.FirstUseEver, null);
         ImGui.SetNextWindowSize(in ChatFirstSize, ImGuiCond.FirstUseEver);
-        // Seen through while it is only being read, solid enough to read against the sky while typed in.
-        ImGui.SetNextWindowBgAlpha(_typing ? 0.72f : 0.22f);
+        // Seen through while it is only being read, solid enough to read against the sky while typed
+        // in; solid throughout for a player who would rather read it over a bright planet.
+        ImGui.SetNextWindowBgAlpha(_chatSolid ? 0.9f : _typing ? 0.72f : 0.22f);
 
         const ImGuiWindowFlags chat = ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoNav
                                       | ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.NoFocusOnAppearing;
@@ -641,10 +667,26 @@ internal static class Panel
             }
             else
             {
-                ImGui.TextDisabled("Enter to chat, / for a command, Tab for a name");
+                ImGui.TextDisabled("Enter to chat, / for a command");
+                switch (LinksAtRight(_chatSolid ? "See-through" : "Solid", "Hide"))
+                {
+                    case 0:
+                        _chatSolid = !_chatSolid;
+                        Save();
+                        break;
+                    case 1:
+                        ShowChat(false);
+                        break;
+                }
             }
         }
         ImGui.End();
+    }
+
+    private static void ShowChat(bool shown)
+    {
+        _chatHidden = !shown;
+        Save();
     }
 
     // The line said and the box closed; an empty one just closes it.
@@ -1884,6 +1926,17 @@ internal static class Panel
                 else ImGui.Text(p.Name);
             }
             DiscordRow(c);
+            // Ids of their own: LinksAtRight names its links by place, and the Discord row has its own.
+            ImGui.PushID("craft");
+            CraftRow();
+            ImGui.PopID();
+            if (_chatHidden)
+            {
+                ImGui.PushID("chat");
+                ImGui.TextDisabled("Chat hidden: Enter to chat shows it");
+                if (LinksAtRight("Show") == 0) ShowChat(true);
+                ImGui.PopID();
+            }
             if (Sync.RenamedCraft is { Count: > 0 } renamed)
             {
                 ImGui.TextDisabled($"other players see your craft as: {string.Join(", ", renamed)}");
@@ -1898,6 +1951,49 @@ internal static class Panel
             if (ConsoleWidgets.Button("SERVER SAVES".AsSpan())) ServerSaves.Toggle();
         }
         if (BottomRight("DISCONNECT".AsSpan())) Sync.Disconnect();
+    }
+
+    private static readonly ImInputString RenameText = new(Wire.KeyChars * 4, ""u8);
+    private static string? _renaming;
+
+    /// <summary>
+    /// The craft being flown, and a box to give it another name in every game: a name typed into a
+    /// box of its own, where /rename has to tell a new name from an old one by the words alone.
+    /// </summary>
+    private static void CraftRow()
+    {
+        string? flown = Sync.FlownName;
+        if (flown is null)
+        {
+            _renaming = null;
+            return;
+        }
+        ImGui.Separator();
+        if (_renaming != flown)
+        {
+            _renaming = null;
+            ImGui.TextDisabled($"Flying {flown}");
+            if (LinksAtRight("Rename") == 0)
+            {
+                _renaming = flown;
+                RenameText.SetValue(flown);
+            }
+            return;
+        }
+        ImGui.SetNextItemWidth(-1f);
+        ImGui.InputText("##KSAMultiplayerRename", RenameText);
+        // A button, not Enter: KSA's ImGui is given typed characters and not key presses.
+        switch (LinksAtRight("Rename", "Cancel"))
+        {
+            case 0:
+                string to = RenameText.ToString().Trim();
+                if (to.Length > 0 && to != flown) Sync.Rename(flown, to);
+                _renaming = null;
+                break;
+            case 1:
+                _renaming = null;
+                break;
+        }
     }
 
     /// <summary>
@@ -1972,6 +2068,7 @@ internal static class Panel
         // to report: it means this player has been nowhere yet as far as anybody here knows.
         _recent = [.. (s.Recent ?? []).Where(a => a.Trim().Length > 0).Take(MostRecent)];
         Browser.Remembered = _recent;
+        (_chatSolid, _chatHidden) = (s.ChatSolid, s.ChatHidden);
     }
 
     /// <summary>Keeps what was typed, for the next session. Nothing to keep until the panel has read what there is.</summary>
@@ -1981,7 +2078,7 @@ internal static class Panel
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
-            File.WriteAllText(SettingsPath, JsonSerializer.Serialize(new Settings(NameText.ToString().Trim(), AddressText.ToString().Trim(), PasswordText.ToString(), Visible, _recent)));
+            File.WriteAllText(SettingsPath, JsonSerializer.Serialize(new Settings(NameText.ToString().Trim(), AddressText.ToString().Trim(), PasswordText.ToString(), Visible, _recent, _chatSolid, _chatHidden)));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
