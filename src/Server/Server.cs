@@ -1213,6 +1213,7 @@ public sealed class GameServer : IDisposable
                 }
                 p.WorldAsked = false;
                 SetWorld(blob, p.KsaBuild, p.Mods, p.System);
+                WorldsSaved++;
                 Log($"{p.Name} saved the world: {Blob.Size(blob.Data.Length)} at universe time {blob.Universe:F0} s");
                 KeepWaiting(fresh: true, from: p.Id);
                 if (p.Seeding) OnLoaded(p, blob.Universe);
@@ -1716,6 +1717,20 @@ public sealed class GameServer : IDisposable
         _warpPhase == Wire.WarpPhase.Asking
             ? [.. _players.Values.Where(q => q.Loaded && !_warpVotes.ContainsKey(q.Id)).Select(q => q.Id).Order()]
             : []);
+
+    /// <summary>Worlds a game has saved for this server since it started, which is how a wait for one knows it came.</summary>
+    public int WorldsSaved { get; private set; }
+
+    /// <summary>
+    /// Asks a game in the world for a save as the server stops, so a restart picks up where
+    /// everybody was rather than at the last autosave, up to
+    /// <see cref="ServerOptions.SnapshotEverySeconds"/> before. False when nobody is in the world
+    /// to ask, and then nothing has changed since the world on disk.
+    /// </summary>
+    public bool AskLastSave() => AskSnapshot("the server is stopping: saving the world first");
+
+    /// <summary>Whether a world asked for is part way here, which is worth waiting a little longer for.</summary>
+    public bool WorldArriving => _players.Values.Any(p => p.WorldAsked && p.Link.Arriving is not null);
 
     private bool AskSnapshot(string why, byte notThisOne = 0)
     {

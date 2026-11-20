@@ -891,6 +891,28 @@ public class ServerTests
     }
 
     [Fact]
+    public void AServerStoppingAsksForALastSaveAndKeepsIt()
+    {
+        using Rig rig = new(new ServerOptions { KeepTime = true });
+        Client a = Seed(rig, universe: 100);
+        int saved = rig.Server.WorldsSaved;
+        Assert.True(rig.Server.AskLastSave());
+        rig.Until(() => a.SnapshotWanted is not null, what: "Alice to be asked for a last save");
+        Assert.Contains("stopping", a.SnapshotWanted);
+        a.SnapshotWanted = null;
+        a.Upload(new Blob(BlobKind.World, "", a.Id, 250, Rig.FakeWorld(7)));
+        rig.Until(() => rig.Server.WorldsSaved > saved, what: "the last save to arrive");
+        Assert.Equal(250, rig.Server.World!.Universe);
+    }
+
+    [Fact]
+    public void AServerStoppingWithNobodyInTheWorldAsksNobody()
+    {
+        using Rig rig = new();
+        Assert.False(rig.Server.AskLastSave());
+    }
+
+    [Fact]
     public void AWorldGoesWholeOverALineThatLosesAFifthOfEverything()
     {
         using Rig rig = new();

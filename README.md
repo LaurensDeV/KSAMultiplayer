@@ -8,7 +8,7 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
 
 > **Status: played, not finished.** Two games on one machine have flown in one world through it,
 > against KSA `2026.11.10.5801`, and the server and the protocol are tested headlessly besides
-> (391 tests, real UDP over loopback, a lossy line included). An 89-part rocket has been flown in a
+> (393 tests, real UDP over loopback, a lossy line included). An 89-part rocket has been flown in a
 > shared world and staged while the other game watched, which rebuilt the dropped stage as its own
 > craft. What two games across the internet do is not known.
 > This release is built for KSA `2026.11.16.5901`, and has not been flown on it yet.
@@ -181,8 +181,10 @@ to the server's address.
 
 The server keeps the world in `--data` (default `./data`) and carries on from it after a restart. Every
 five minutes, and whenever someone joins a world that's more than 30 seconds old, it asks the player who
-has been in longest for a fresh save, so a player joining starts close to now. Universe time stops while
-nobody is connected, unless `--keep-time` is given.
+has been in longest for a fresh save, so a player joining starts close to now. Stopped, as an update
+stops it, it asks for one last save and waits up to 10 seconds for it (15 if it is on its way), so a
+restart carries on from where everybody was. Universe time stops while nobody is connected, unless
+`--keep-time` is given.
 
 ### Letting players find it
 

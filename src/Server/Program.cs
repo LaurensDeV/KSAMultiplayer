@@ -713,6 +713,24 @@ while (!stop.IsCancellationRequested)
 }
 
 Say("shutting down");
+// Within the 20 seconds a container is given to stop (infra/server/server.tf) with room to spare:
+// a game whose editor is open writes no save, and the world on disk is then the last autosave.
+const double LastSaveSeconds = 10.0, LastSaveArrivingSeconds = 15.0;
+int savedBefore = server.WorldsSaved;
+if (server.AskLastSave())
+{
+    Say("asking a game for a last save of the world");
+    System.Diagnostics.Stopwatch waited = System.Diagnostics.Stopwatch.StartNew();
+    while (server.WorldsSaved == savedBefore
+           && (waited.Elapsed.TotalSeconds < LastSaveSeconds || (server.WorldArriving && waited.Elapsed.TotalSeconds < LastSaveArrivingSeconds)))
+    {
+        try { server.Tick(); }
+        catch (Exception e) { Say($"error: {e}"); }
+        while (server.Said.TryDequeue(out string? s)) Say(s);
+        Thread.Sleep(TickMs);
+    }
+    if (server.WorldsSaved == savedBefore) Say("no last save came: the world on disk is the last autosave");
+}
 announcer.Dispose();
 while (announcer.Said.TryDequeue(out string? last)) Say(last);
 server.Dispose();

@@ -58,7 +58,8 @@ stranger sent it.
 - **The world.** The latest save, zipped, kept on disk in `--data`. It comes from an operator
   (`--world`), from the first player to join an empty server, or as a fresh save asked of the player
   who has been in longest: every `--snapshot-every` seconds, and whenever a player joins a world more
-  than 30 s old, the joiner waiting up to 15 s for it. Only ever from the player it was asked of: one
+  than 30 s old, the joiner waiting up to 15 s for it, and as the server stops, waiting up to 10 s
+  (15 s once it is arriving) inside the 20 s a container is given to stop. Only ever from the player it was asked of: one
   arriving unasked is left where it came from, since the world is written to disk with its sender's
   build and mods and everybody else is then held to those, so a single client could otherwise lock
   every other player out of the server and out of each restart of it.
