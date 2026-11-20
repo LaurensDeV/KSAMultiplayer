@@ -56,7 +56,9 @@ Once you're in:
 - **The server's name at the top right of the menu bar** opens and shuts the Multiplayer window: who
   is here, your ping, and **SERVERS**, the list from the start screen, to move to another server
   with **JOIN**. Hold **Tab** for who is flying what, and click **Watch** beside a player to put
-  your camera on their craft; **Back to** beside your own name takes you back to yours.
+  your camera on them. It follows them on to the next craft they fly, one launched from the vehicle
+  editor included, until you look at something else; a player in the editor is watched at the craft
+  they left. **Back to** beside your own name takes you back to yours.
 - **Fly anything nobody else is flying.** Take control of a craft and it's yours while you are in it
   or looking at it, and for ten seconds after. A craft someone else is flying moves where their
   game says: ask for it and the camera goes there anyway, so you ride along and watch rather than

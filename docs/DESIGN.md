@@ -1151,7 +1151,8 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
 - **Watching from the Tab list, the chat's background and hiding it, and renaming from the window.**
   Compiled and never drawn. The list now takes the mouse while Tab is held, so whether a click on
   **Watch** lands before the hand lets go of Tab, and whether a list that takes the mouse takes
-  KSA's camera drag from under it, are unseen; so is **Back to** finding the craft it left, and the
+  KSA's camera drag from under it, are unseen; so is **Back to** finding the craft it left, the
+  camera following a watched player on to a craft they launch from the editor or switch to, and the
   chat asking which craft `/rename Station Purrpose One` meant.
 
 - **The rest of the vehicle editor with the world running.** Seen only opened on the flown craft

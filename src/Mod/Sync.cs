@@ -1125,7 +1125,7 @@ internal static class Sync
     {
         if (flown is not null)
         {
-            _watch = null;
+            (_watch, _watchedPlayer) = (null, null);
             return;
         }
         if (_watch is { } w && !World.IsAlive(w.Craft))
@@ -1156,6 +1156,43 @@ internal static class Sync
             return;
         }
         _watch = World.Watched is { } v && World.IsAlive(v) && World.ViewOf(v) is { } view ? new Watching(v, KeyOf(v), view) : null;
+        FollowWatchedPlayer(here);
+    }
+
+    /// <summary>The player watched, and what they were flying when the camera was last put on it.</summary>
+    private sealed record WatchedPlayer(byte Id, string Key);
+
+    private static WatchedPlayer? _watchedPlayer;
+
+    /// <summary>
+    /// The camera taken on to the craft a watched player flies next -- launched from the editor,
+    /// switched to, or the same craft renamed -- so a player is watched rather than a craft they
+    /// have left. Not once the watcher has looked at something else: that is watching that instead.
+    /// </summary>
+    private static void FollowWatchedPlayer(Dictionary<string, Vehicle> here)
+    {
+        if (_watchedPlayer is not { } wp || _client is not { } c) return;
+        if (c.Players.FirstOrDefault(p => p.Id == wp.Id) is not { Id: > 0 } who)
+        {
+            _watchedPlayer = null;
+            return;
+        }
+        // Looked away from, rather than gone: a craft built again is put back by KeepWatching, so
+        // what the camera is on says nothing until that has settled.
+        if (_watch is { LostAt: 0.0 } w && w.Key != wp.Key && w.Key != who.Controlling)
+        {
+            _watchedPlayer = null;
+            return;
+        }
+        if (who.Controlling.Length == 0 || who.Controlling == wp.Key) return;
+        // Not built here yet: waited for, and taken up once it is.
+        if (!here.TryGetValue(who.Controlling, out Vehicle? next) || !World.IsAlive(next) || ToRemove.Contains(next)) return;
+        bool on = _watch is { } now && World.IsAlive(now.Craft) ? World.Watch(next, now.View) : World.Watch(next);
+        if (!on) return;
+        _watchedPlayer = wp with { Key = who.Controlling };
+        _watch = World.ViewOf(next) is { } view ? new Watching(next, who.Controlling, view) : null;
+        Told($"following {who.Name} to {who.Controlling}");
+        Log.Info($"following {who.Name} on to {who.Controlling}");
     }
 
     /// <summary>
@@ -1400,9 +1437,11 @@ internal static class Sync
             return;
         }
         if (Flown is { } mine) _flewBeforeWatching = mine;
-        Told(World.Watch(seen)
-            ? $"watching {who.Name}, flying {who.Controlling}"
-            : $"could not put the camera on {who.Controlling}");
+        bool on = World.Watch(seen);
+        _watchedPlayer = on ? new WatchedPlayer(who.Id, who.Controlling) : null;
+        Told(!on ? $"could not put the camera on {who.Controlling}"
+             : InTheEditor(who) ? $"watching {who.Name}'s {who.Controlling}, held where they left it while they're in the vehicle editor"
+             : $"watching {who.Name}, flying {who.Controlling}");
     }
 
     /// <summary>Whether this server runs everything this game asks of it.</summary>

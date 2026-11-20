@@ -578,7 +578,9 @@ internal static class Panel
                         ImGui.SameLine();
                         ImGui.TextDisabled("(watching)");
                     }
-                    else if (p.Loaded && p.Controlling.Length > 0 && !Sync.InTheEditor(p) && LinksAtRight("Watch") == 0) Sync.Spectate(p.Name);
+                    // In the editor too: the craft they left is held where it was, and the camera
+                    // goes on to whatever they launch from there.
+                    else if (p.Loaded && p.Controlling.Length > 0 && LinksAtRight("Watch") == 0) Sync.Spectate(p.Name);
                     ImGui.PopID();
                 }
                 ImGui.EndTable();
