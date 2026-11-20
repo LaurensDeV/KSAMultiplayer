@@ -670,7 +670,7 @@ internal static class Panel
             else
             {
                 ImGui.TextDisabled("Enter to chat, / for a command");
-                switch (LinksAtRight(_chatSolid ? "See-through" : "Solid", "Hide"))
+                switch (ChatButtons(_chatSolid ? "See-through" : "Solid", "Hide"))
                 {
                     case 0:
                         _chatSolid = !_chatSolid;
@@ -683,6 +683,39 @@ internal static class Panel
             }
         }
         ImGui.End();
+    }
+
+    /// <summary>
+    /// Small buttons in the bottom right corner of the chat, on a background of their own that the
+    /// sky still shows through, so they read as buttons over any of it without covering the view.
+    /// Which was pressed, or -1.
+    /// </summary>
+    private static int ChatButtons(params string[] labels)
+    {
+        ImGuiStylePtr style = ImGui.GetStyle();
+        float wide = labels.Sum(l => ImGui.CalcTextSize(l).X + (style.FramePadding.X * 2f)) + (style.ItemSpacing.X * (labels.Length - 1));
+        float high = ImGui.GetFrameHeight();
+        // Into the corner, under the last line where the window is taller than what is in it: the
+        // window's own scroll keeps them with the lines where it is not.
+        float2 corner = new(ImGui.GetWindowWidth() - style.WindowPadding.X - wide + ImGui.GetScrollX(),
+                            ImGui.GetWindowHeight() - style.WindowPadding.Y - high + ImGui.GetScrollY());
+        ImGui.SameLine();
+        float y = ImGui.GetCursorPosY();
+        if (ImGui.GetContentRegionAvail().X < wide) y += high;
+        ImGui.SetCursorPos(new float2(MathF.Max(ImGui.GetCursorPosX(), corner.X), MathF.Max(y, corner.Y)));
+        float4 frame = ConsoleStyle.Frame;
+        ImGui.PushStyleColor(ImGuiCol.Button, new float4(frame.X, frame.Y, frame.Z, 0.55f));
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new float4(frame.X, frame.Y, frame.Z, 0.8f));
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, in ConsoleStyle.Frame);
+        ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.TextMuted);
+        int pressed = -1;
+        for (int k = 0; k < labels.Length; k++)
+        {
+            if (k > 0) ImGui.SameLine();
+            if (ImGui.Button($"{labels[k]}###KSAMultiplayerChatButton{k}", null)) pressed = k;
+        }
+        ImGui.PopStyleColor(4);
+        return pressed;
     }
 
     private static void ShowChat(bool shown)
