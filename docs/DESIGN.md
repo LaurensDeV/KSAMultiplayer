@@ -523,6 +523,25 @@ nothing to say about a craft it does not own, so the two players watched one roc
 Refusing `Apply` wedges nothing: the caller nulls the event on its next line whatever the prefix
 answers, so the next frame raises another and has it refused too.
 
+**A craft read from saved data keeps what its tanks held, which KSA `2026.11.16.5901` does not
+manage by itself. This is a workaround for a bug in KSA and comes out when KSA fixes it.**
+`Vehicle.DeserializeSave` puts each tank's contents back and then applies the craft's fuel lines,
+and with one line or more that runs `PartTree.ReconfigureTanks` before the craft's resource managers
+exist: no tank has a consumer yet, so every tank not manually assigned is given no mix and emptied.
+Every craft a game builds from another player's definition is read that way, and so is every craft
+in the world a player is handed on joining, so a station with a fuel line was dry in every game but
+its owner's and dry for everybody once another player's game had held it. `Hooks.BeforeReconfigureTanks`
+answers for KSA while a craft is being read (`BeforeReadingCraft`, counted down in a finalizer) and
+lets it through at every other time, the editor's included. Reported on KSA's forum on 2026-11-21
+as "Loading a save empties every auto-assigned tank on a craft that has a fuel line". The test for
+taking it out is KSA with no mods: load a save holding a fuelled craft with a fuel line, and if the
+tanks are still full the three patches and this paragraph go.
+Seen in a game on both paths, with a station of 143 tanks and three fuel lines holding 591,720 kg:
+a world loaded in no server kept all of it where KSA alone kept none, and with two games on one
+server Bravo took the station from Alpha, Alpha's game said `rebuilding RCS Tanker Deux` and `built
+RCS Tanker Deux, Bravo's`, and the copy it built held all of it. Not tried: a craft with a manually
+assigned tank, which KSA's pass would have left alone anyway.
+
 ## Transfers
 
 A world or a definition goes as a `Link` transfer: cut into 1,100-byte pieces, each whole in a datagram

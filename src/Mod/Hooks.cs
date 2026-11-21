@@ -319,11 +319,57 @@ internal static class Hooks
             Patch(AccessTools.Method(typeof(Vehicle), nameof(Vehicle.UpdatePlumeTrailEmitters),
                                      [typeof(VolumetricTrailRenderer)]), nameof(BeforePlumeTrail),
                   "other players' engine plumes are not seen");
+            // The three below are one workaround for a bug in KSA: see BeforeReconfigureTanks.
+            Patch(AccessTools.Method(typeof(Vehicle), nameof(Vehicle.DeserializeSave), [typeof(VehicleData)]), nameof(BeforeReadingCraft),
+                  "a craft with a fuel line arrives with every tank empty, from a save or from another player");
+            PatchFinally(AccessTools.Method(typeof(Vehicle), nameof(Vehicle.DeserializeSave), [typeof(VehicleData)]), nameof(AfterReadingCraft),
+                  "tanks stop being reassigned in the editor once a craft has been read");
+            Patch(AccessTools.Method(typeof(PartTree), nameof(PartTree.ReconfigureTanks)), nameof(BeforeReconfigureTanks),
+                  "a craft with a fuel line arrives with every tank empty, from a save or from another player");
         }
         catch (Exception e)
         {
             Log.Error("could not patch the game", e);
         }
+    }
+
+    // ---------------------------------------------------------------- KSA's tank bug, worked around
+    //
+    // REMOVE THIS, and the three patches in Install that name it, once KSA no longer does it.
+    // Reported to KSA's developers on their forum on 2026-11-21 as "Loading a save empties every
+    // auto-assigned tank on a craft that has a fuel line", against build 2026.11.16.5901. The check
+    // is KSA with no mods: one that loads a save holding a craft with a fuel line and leaves its
+    // tanks full has fixed it, and this then only stands in the way of whatever KSA does there
+    // instead.
+    //
+    // What KSA does: Vehicle.DeserializeSave puts back what each tank held and then applies the
+    // craft's fuel lines, and with one line or more that runs PartTree.ReconfigureTanks before the
+    // craft's resource managers exist. No tank has a consumer yet, so each one that is not
+    // manually assigned is given no mix, which removes everything in it. It is every such tank on
+    // the craft, not only the ones a line joins.
+    //
+    // Here that is every craft built from another player's definition (World.Build) and every
+    // craft in the world a player is handed on joining: a station holding 590 t was dry in each
+    // game but its owner's, and dry for everybody once another player's game had held it.
+    //
+    // So ReconfigureTanks does nothing while a craft is being read from saved data. A tank with
+    // nothing saved for it is still filled, by AssignUnsavedTanks, which does not go through it.
+    [ThreadStatic] private static int _readingCraft;
+
+    private static void BeforeReadingCraft() => _readingCraft++;
+
+    // A finalizer, so it is counted down when the read throws: left up, no tank would be
+    // reassigned again in the editor for as long as the game ran.
+    private static void AfterReadingCraft()
+    {
+        if (_readingCraft > 0) _readingCraft--;
+    }
+
+    private static bool BeforeReconfigureTanks(ref bool __result)
+    {
+        if (_readingCraft == 0) return true;
+        __result = false;
+        return false;
     }
 
     /// <summary>
@@ -458,6 +504,23 @@ internal static class Hooks
             // left every patch after it in the list unmade: one ambiguous overload took most of the
             // mod with it and the log said only that the game could not be patched.
             Log.Error($"could not patch after {target.DeclaringType?.Name}.{target.Name}: {otherwise}", e);
+        }
+    }
+
+    private static void PatchFinally(MethodBase? target, string finalizer, string otherwise)
+    {
+        if (target is null)
+        {
+            Log.Warn($"could not patch a method KSA no longer has: {otherwise}");
+            return;
+        }
+        try
+        {
+            _harmony!.Patch(target, finalizer: new HarmonyMethod(typeof(Hooks).GetMethod(finalizer, BindingFlags.NonPublic | BindingFlags.Static)!));
+        }
+        catch (Exception e)
+        {
+            Log.Error($"could not patch {target.DeclaringType?.Name}.{target.Name}: {otherwise}", e);
         }
     }
 
