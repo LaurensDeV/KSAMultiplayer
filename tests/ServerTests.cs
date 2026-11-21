@@ -643,6 +643,37 @@ public class ServerTests
     }
 
     [Fact]
+    public void TheLogSaysWhoUndockedACraftHoweverLongAfterItDocked()
+    {
+        // A module docked to a station at night was found adrift the next afternoon, and the log
+        // held the docking by name and the undocking only as a craft said to be built.
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        Beside(rig, a, "Station", b, "Module");
+        a.SayDocked("Module", "Station");
+        rig.Until(() => b.Gone.Contains("Module"), what: "the module to be gone");
+        // Longer than a docking is said again for.
+        for (int i = 0; i < 20; i++)
+        {
+            rig.Skip(2.0, real: 0.02);
+            rig.Tick();
+        }
+
+        a.Claim("Module", controlling: false, made: true);
+        rig.Until(() => b.OwnerOf("Module") == a.Id, what: "the module to be back, Alice's");
+        Assert.Single(rig.Server.Said, s => s.EndsWith("Alice undocked Module"));
+
+        // Docked again, a craft of the same name that Bob launches is not the module coming away:
+        // the station is Alice's to undock from.
+        a.SayDocked("Module", "Station");
+        rig.Until(() => b.OwnerOf("Module") == 0, what: "the module to be gone again");
+        b.Claim("Module", controlling: true, made: true);
+        rig.Until(() => a.OwnerOf("Module") == b.Id, what: "Bob's new craft to be his");
+        Assert.Single(rig.Server.Said, s => s.Contains("undocked"));
+    }
+
+    [Fact]
     public void HowACraftIsBuiltDoesNotTakeACraftSomebodyHasNearThem()
     {
         using Rig rig = new();

@@ -1283,6 +1283,7 @@ public sealed class GameServer : IDisposable
             if (_renames.Any(r => r.Was == key && _clock() - r.At < RenameToldForSeconds)) return null;
             // Made again under its name, which is a craft that has undocked: that docking is over.
             _dockings.RemoveAll(d => d.Consumed == key);
+            if (_docked.Remove(key, out string? into) && made && Undocker(into, p)) Log($"{p.Name} undocked {key}");
             _crafts[key] = craft = new Craft();
         }
         if (craft.Owner == p.Id)
@@ -1323,6 +1324,18 @@ public sealed class GameServer : IDisposable
     // a craft the docking took from it.
     private readonly List<(string Consumed, string Survivor, byte By, double At)> _dockings = [];
     private const double DockingToldForSeconds = 30.0;
+
+    // What each craft a docking took went into, kept until its name is a craft again: a docking
+    // may be undone hours later, by a player who was not there for it, and nothing else says who.
+    private readonly Dictionary<string, string> _docked = [];
+
+    // Whether this player has what the craft went into, or nobody has: only its owner's game can
+    // undock, so a craft somebody else makes under the name is a new craft that happens to share it.
+    private bool Undocker(string into, Player p)
+    {
+        for (int i = 0; i < _docked.Count && _docked.TryGetValue(into, out string? next); i++) into = next;
+        return OwnerOf(into) is var owner && (owner == 0 || owner == p.Id);
+    }
 
     /// <summary>
     /// Two craft docked in one player's game, one of them that player's: the craft that is left is
@@ -1378,6 +1391,7 @@ public sealed class GameServer : IDisposable
                 if (q.Controlling == consumed || (q != p && q.Controlling == survivor)) Flying(q, "");
             }
             _dockings.Add((consumed, survivor, p.Id, now));
+            _docked[consumed] = survivor;
             foreach (double after in GoneAgainAfterSeconds) _goneAgain.Add((consumed, p.Id, now + after));
             OwnersChanged();
             Log($"{p.Name} docked {consumed} into {survivor}" + (was.Length > 0 ? $", taking {was}" : ""));
@@ -1438,6 +1452,7 @@ public sealed class GameServer : IDisposable
         // A name freed by a craft that went is a name this one may have, and a game that loads a
         // world from before would otherwise be told this one has gone.
         _gone.Remove(now);
+        foreach ((string consumed, string into) in _docked.ToArray()) if (into == was) _docked[consumed] = now;
         if (craft.Definition is not null && Blob.Decode(craft.Definition) is { } definition) craft.Definition = (definition with { Key = now }).Encode();
         foreach (Player q in _players.Values.Where(q => q.Controlling == was)) Flying(q, now);
         if (Protected.Remove(was))
@@ -2315,6 +2330,7 @@ public sealed class GameServer : IDisposable
         }
         _crafts.Clear();
         _gone.Clear();
+        _docked.Clear();
         // A save on its way in is of the world that is going, and would be put back over this one.
         foreach (Player p in _players.Values) p.WorldAsked = false;
         UniverseClock.Forget();
@@ -2527,6 +2543,7 @@ public sealed class GameServer : IDisposable
         if (_warpPhase != Wire.WarpPhase.None) EndWarp(_clock(), $"the warp ended because {by?.Name ?? "the operator"} is starting the world afresh");
         _crafts.Clear();
         _gone.Clear();
+        _docked.Clear();
         UniverseClock.Forget();
         // The craft they named went with the world, and a name left on the list would protect
         // whatever is next given it.

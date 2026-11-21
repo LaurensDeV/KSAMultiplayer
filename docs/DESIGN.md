@@ -427,7 +427,10 @@ one is and the other is this game's only for being near it: that docking is the 
 game's to do. `DockingPort.Undock` is refused where the craft is another player's.
 
 Undocking is KSA's own split in the owner's game: the half that comes away has its old name back,
-is a craft that game has just made, and is described to everybody. Where the half KSA leaves its
+is a craft that game has just made, and is described to everybody. The server's log names who did
+it (`undocked`): it keeps what each craft a docking took went into until that name is a craft again,
+and says so only of a player who has what it went into, since a craft anybody else makes under the
+name is a new one. It keeps that in memory, so an undocking after a restart is not named. Where the half KSA leaves its
 player flying was another player's before the docking, this game flies the other half instead. The
 player who rode along is left watching their own craft again as soon as it stands in their world,
 and it is theirs by the rule every craft follows: its owner has not been near it for ten seconds
