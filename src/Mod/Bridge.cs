@@ -227,6 +227,7 @@ internal sealed class Bridge
             "watch" => Watch(command),
             "delete" => Delete(command),
             "manifest" => ShowManifest(command),
+            "map" => ShowMap(command),
             "eva" => Eva(command),
             "stage" => Stage(command),
             "setorbit" => SetOrbit(command),
@@ -682,6 +683,13 @@ internal sealed class Bridge
     {
         if (UniverseManifest.IsOpen != command.Flag("open", true)) UniverseManifest.Toggle();
         return Done(new() { ["open"] = UniverseManifest.IsOpen });
+    }
+
+    // The map opened or shut, for a run that has to see what is drawn over it.
+    private static Reply ShowMap(BridgeCommand command)
+    {
+        if (World.ShowMap(command.Flag("open", true)) is { } no) return Failed(no);
+        return Done(new() { ["map_view"] = World.InMapView });
     }
 
     // A kitten out of a craft's hatch: the shortest way to make a craft that the loaded world did not

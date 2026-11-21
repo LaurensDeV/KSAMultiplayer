@@ -60,6 +60,7 @@ Once you're in:
   or looking at it, and for ten seconds after. A craft someone else is flying moves where their
   game says: ask for it and the camera goes there anyway, so you ride along and watch rather than
   fly. Their name is over the craft they're in; their other craft carry a faint `Alice's Lander`.
+  In the map, each player's name is over the craft they're in, however far away.
 - **Launch as usual.** A craft you launch, a stage you drop and a kitten you send on EVA show up for
   everyone else.
 - **Other mods' craft.** A mod that adds to a craft -- a car's steering and wheels -- can share

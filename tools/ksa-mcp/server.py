@@ -246,6 +246,10 @@ TOOLS = {
                    "is asked of the server as a remove, out of every game.",
                    {"craft": {"type": "string"}}, ["craft"],
                    lambda a: _dump(send("delete", **a))),
+    "ksa_map": ("Open or shut the map view, as KSA's Map Camera and Orbit Camera menu items do. ksa_status "
+                "then says what names are drawn over it (tag_draw).",
+                {"open": {"type": "boolean"}}, [],
+                lambda a: _dump(send("map", **a))),
     "ksa_manifest": ("Open or shut KSA's universe manifest, for a capture of its padlocks.",
                      {"open": {"type": "boolean"}}, [],
                      lambda a: _dump(send("manifest", **a))),

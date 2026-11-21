@@ -106,6 +106,21 @@ internal static class World
         }
     }
 
+    /// <summary>The map opened or shut, as the Map Camera and Orbit Camera items of KSA's menu do. Null if it was done.</summary>
+    public static string? ShowMap(bool open)
+    {
+        try
+        {
+            if (Program.MainViewport is not { } viewport) return "there is no view to turn to the map";
+            viewport.SetCameraMode(open ? CameraMode.Map : CameraMode.Orbit);
+            return null;
+        }
+        catch (Exception e)
+        {
+            return e.GetBaseException().Message;
+        }
+    }
+
     public static string KsaBuild => typeof(Vehicle).Assembly.GetName().Version?.ToString() ?? "";
 
     /// <summary>The celestial system being played, such as Sol entire or Earth and its Moon alone.</summary>

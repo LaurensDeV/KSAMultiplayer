@@ -280,7 +280,11 @@ shared one.
      Not a little in the past, which is smooth and at orbital speed is a kilometre away from every
      craft this game steps for itself; `errors.md`, 2026-11-10. The one a player is in carries their name, within 2,000 km and in front
      of the camera; the rest of what they own carries a faint `Alice's Lander` within 20 km, which
-     is also why it will not let you aboard. A name over the world says where somebody is, and a
+     is also why it will not let you aboard. In the map the craft each player is in carries their
+     name however far off, with its distance from this player's craft, and nothing else of theirs
+     is named: the map's camera is further than either range from every craft, so by range it
+     named nobody. Seen with two games 13,000 km apart, each naming the other in the map and not
+     in the orbit camera; how the names sit among KSA's own labels has not been looked at closely. A name over the world says where somebody is, and a
      player is in one place: ownership is sticky and a player is not, so naming every hull somebody
      has flown this session states as many falsehoods as it takes to tell one truth. What they are
      in comes from the roster's own word, the same the scoreboard reads, so the two cannot differ.

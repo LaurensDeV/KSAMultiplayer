@@ -2785,6 +2785,8 @@ internal static class Sync
             if (p.Controlling.Length > 0) flying[p.Id] = p.Controlling;
         }
 
+        bool map = World.InMapView;
+        Vehicle? mine = World.Controlled;
         foreach ((Vehicle v, string key) in Puppets)
         {
             if (!World.IsAlive(v)) continue;
@@ -2796,7 +2798,16 @@ internal static class Sync
             // somebody's name on a craft that was never theirs.
             bool flown = flying.GetValueOrDefault(owner, "") == key;
             double range = World.RangeFromCamera(v);
-            if (!(range < (flown ? NametagWithinM : ClaimWithinM))) continue;
+            if (map)
+            {
+                // The map's camera stands a planet's width off, further than either range from
+                // every craft there is, and the map is where a player looks for the others. Only
+                // the craft each is in: a name on every hull would bury the orbits it is drawn over.
+                if (!flown) continue;
+                // From this player's craft, the camera's distance being the map's zoom and no more.
+                if (mine is not null) range = World.Between(mine, v);
+            }
+            else if (!(range < (flown ? NametagWithinM : ClaimWithinM))) continue;
             if (World.ScreenOf(v) is not { } at) continue;
             bool editing = c.TrackOf(key).Newest is { } said && (said.Flags & Wire.StateFlags.Editing) != 0;
             tags.Add((at, c.NameOf(owner), key, range, flown, editing));
