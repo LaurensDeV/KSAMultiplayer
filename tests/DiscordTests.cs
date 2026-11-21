@@ -123,8 +123,9 @@ public class DiscordTests
         Client bob = Joined(rig, "Bob");
         LogIn(rig, alice, login.Proof(Alice, alice.DiscordNonce));
         rig.Until(() => bob.Players.Any(p => p.Name == "Alice" && p.Discord), what: "Bob to see Alice marked");
+        // Each client's roster is a datagram of its own, so Bob having his says nothing of Alice having hers.
+        rig.Until(() => alice.Players.Any(p => p.Name == "Alice" && p.Discord), what: "Alice to see herself marked");
         Assert.False(bob.Players.Single(p => p.Name == "Bob").Discord);
-        Assert.True(alice.Players.Single(p => p.Name == "Alice").Discord);
     }
 
     [Fact]
