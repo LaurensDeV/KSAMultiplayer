@@ -51,12 +51,14 @@ public class OperatorTests
         Assert.True(o.Admin);
         Assert.True(o.Operator);
         Assert.Equal("run", Asks(rig, o, "logs"));
+        Assert.Equal("run", Asks(rig, o, "say hi"));
         Assert.Equal("run", Asks(rig, o, "delete Monday"));
 
         Client a = LoggedIn(rig, service, "Ada", Ada);
         rig.Until(() => a.Role == Wire.Role.Admin, what: "Ada to be an admin by the setting");
         Assert.False(a.Operator);
         Assert.Contains("only an operator", Asks(rig, a, "logs 3"));
+        Assert.Contains("only an operator", Asks(rig, a, "say hi"));
     }
 
     [Fact]

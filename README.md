@@ -433,10 +433,11 @@ admin is about, and can lose nothing that cannot be put back.
 | `players`, `admins`, `protected`, `saves`, `status`, `version`, `help` | yes | yes | yes |
 | `clear`, `remove`, `protect`, `unprotect`, `rename` any craft | | yes | yes |
 | `save` under a new name, `load` | | yes | yes |
-| `kick`, `say` | | yes | yes |
+| `kick` | | yes | yes |
 | `save` over a save, `delete`, `deleted`, `restore`, `reload`, `fresh` | | | yes |
 | `op`, `trust`, `deop` | | | yes |
 | `logs`: download the server's log, for [operators](#operators-and-the-servers-log) only | | | |
+| `say`: chat as the server, for operators and the server's console only | | | |
 
 ```bash
 trust Jeb                           # Jeb is playing
@@ -470,7 +471,8 @@ Everything the console says is also kept in `logs` in `--data`, a file a day nam
 newest 14 days of them. A redeploy that throws the container's own log away leaves these, and they
 are where to look when somebody asks what happened.
 
-An **operator** is an admin who may also download that log from inside the game. It is given only by
+An **operator** is an admin who may also download that log from inside the game, and `say` something
+in the server's own name. It is given only by
 `discord-operators` and a Discord login: there is no command for it, `op`, `trust` and `deop` leave an
 operator as they are, and a machine's token makes them no more than an admin until they have logged
 in. An id listed in `discord-admins` too is an operator, and the server says at every start which ids

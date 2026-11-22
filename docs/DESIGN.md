@@ -153,7 +153,8 @@ stranger sent it.
   `Permissions` is the one table of what each command needs, and a command missing from it is an
   admin's. Trusted is everything that keeps a world tidy and nothing that cannot be put back:
   saving over a save, deleting one, reloading the world with its time, and giving roles are an
-  admin's. An `Op` ends with the role, which a game of 0.26.0 neither sends nor reads; an `Op`
+  admin's. Speaking as the server (`say`) is an operator's and the console's: every player reads it
+  as the server's own word. An `Op` ends with the role, which a game of 0.26.0 neither sends nor reads; an `Op`
   said back is matched without it (`SaysBack`), or a game of 0.26.0 would never answer one. The token itself exists in two places and neither is that file -- the server's memory
   for as long as it takes the game to answer for it, and the machine it was said to. So the list is
   enough to take an admin away and not enough to become one, and a server whose data directory leaks

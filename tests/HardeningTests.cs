@@ -65,12 +65,12 @@ public class HardeningTests
         Assert.Equal("Alice", rig.Server.Op("Alice"));
         rig.Until(() => a.Role == Wire.Role.Admin, what: "Alice to be told she is an admin");
 
-        a.Send(new Wire.Command("say forged"));
-        a.Send(new Wire.Command("say forged", "not the word"));
+        a.Send(new Wire.Command("kick forged"));
+        a.Send(new Wire.Command("kick forged", "not the word"));
         rig.For(0.3);
         Assert.Empty(rig.Server.Asked);
 
-        a.Ask("say hers");
+        a.Ask("kick hers");
         rig.Until(() => rig.Server.Asked.Count == 1, what: "her own command");
     }
 

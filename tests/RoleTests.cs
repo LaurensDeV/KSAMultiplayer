@@ -35,7 +35,7 @@ public class RoleTests
         Client t = Given(rig, "Tess", Wire.Role.Trusted);
         Assert.True(t.Trusted);
         Assert.False(t.Admin);
-        foreach (string allowed in new[] { "clear Rocket_*", "remove Rocket", "protect Station", "unprotect Station", "rename A -> B", "save Monday", "load Monday", "kick Bob", "say hi", "status" })
+        foreach (string allowed in new[] { "clear Rocket_*", "remove Rocket", "protect Station", "unprotect Station", "rename A -> B", "save Monday", "load Monday", "kick Bob", "status" })
         {
             Assert.Equal("run", Asks(rig, t, allowed));
         }
@@ -43,6 +43,7 @@ public class RoleTests
         {
             Assert.Contains("only an admin", Asks(rig, t, refused));
         }
+        Assert.Contains("only an operator", Asks(rig, t, "say hi"));
 
         Client a = Given(rig, "Ada", Wire.Role.Admin);
         Assert.Equal("run", Asks(rig, a, "delete Monday"));
