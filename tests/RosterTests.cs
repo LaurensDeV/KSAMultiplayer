@@ -271,4 +271,27 @@ public class RosterTests
         Assert.Equal("ksarmory", listing.Directory);
         Assert.Empty(listing.Servers);
     }
+
+    [Fact]
+    public void AStrangerAnnouncingSomebodysServerNeitherHoldsItNorKeepsItListed()
+    {
+        // Anybody can announce anybody's address. Taken as the server's own word, a stranger's held
+        // an unlisted server to the stranger's address for as long as the server went on
+        // announcing, and kept one listed that had stopped asking to be.
+        Roster roster = new();
+        string key = Roster.Key("mp.example.com", 50100);
+        roster.Announce("mp.example.com", 50100, Elsewhere, 0.0);
+        Assert.Equal(Elsewhere, roster.Due(1.0).Single().From);
+
+        // The server itself, announcing after: not listed yet, so it is the server's now.
+        roster.Announce("mp.example.com", 50100, Somewhere, 2.0);
+        Entry held = roster.Due(3.0).Single();
+        Assert.Equal(Somewhere, held.From);
+
+        // Listed, it stays whose it is, and a stranger's word does not count as its own.
+        roster.Heard(key, Said(), 4.0);
+        roster.Announce("mp.example.com", 50100, Elsewhere, 100.0);
+        Assert.Equal(Somewhere, held.From);
+        Assert.Equal(2.0, held.Announced);
+    }
 }

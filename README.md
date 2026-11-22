@@ -261,6 +261,7 @@ like `quit`.
 | `--id` | `KSAMP_ID` | none | a short name that never changes though the name and the address may, in letters, digits, dots, dashes and underscores (`my-clan-cars`). Borea knows the mods it installed for this server by it, and offers to update that instance when the server's mods change. Without one the server is known by the address a player reaches it at |
 | `--password` | `KSAMP_PASSWORD` | none | |
 | `--max-players` | `KSAMP_MAX_PLAYERS` | `16` | |
+| `--max-craft` | `KSAMP_MAX_CRAFT` | `2048` | the most craft one player holds at once |
 | `--data` | `KSAMP_DATA` | `./data` | where the world is kept |
 | `--world` | `KSAMP_WORLD` | | a save folder or zip to start from, replacing the kept one; not a setting in the file, since it is something to do once |
 | `--ksa-build` | `KSAMP_KSA_BUILD` | the build this server was built for | the KSA build players must run |
@@ -281,7 +282,7 @@ like `quit`.
 | `--discord-trusted` | `KSAMP_DISCORD_TRUSTED` | none | Discord user ids, comma separated, who are [trusted](#trusted-players) whenever they log in with Discord |
 | `--discord-login` | `KSAMP_DISCORD_LOGIN` | `https://servers.ksamp.gg/v1/discord` | the service that vouches for who a player is on Discord, [asked only once there is a Discord admin](#admins-by-discord); empty to take no Discord logins |
 
-Commands typed into the server's console: `help`, `players`, `say <text>`, `kick <name> [why]`, `op <name>`, `trust <name>`, `deop <name>`, `admins`,
+Commands typed into the server's console: `help`, `players`, `say <text>`, `kick <name> [why]` (or `kick #<id>` by the number `players` shows; a name may have spaces in it), `op <name>`, `trust <name>`, `deop <name>`, `admins`,
 `clear [name]`, `remove <craft>`, `protect <craft>`, `unprotect <craft>`, `protected`, `rename <craft> -> <new name>`, `reload` (or `reset`), `save [name]`,
 `saves`, `load <name>`, `delete <name>`, `deleted`, `restore <name>`, `status`, `version`, `fresh`, `set [key value]`, `settings`, `quit`.
 

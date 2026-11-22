@@ -362,7 +362,9 @@ public static class Wire
     /// first one. The server will not hold a place for an address until it has said something that
     /// address has sent back, since nothing else about a datagram says where it really came
     /// from.</param>
-    public sealed record Hello(string Name, string KsaBuild, string Mods, string System, string Password, string Token, string Cookie = "") : Message(Kind.Hello);
+    /// <param name="Sessions">Whether this game says a session's word back: read from the end of the
+    /// datagram, which a game from before it does not write and a server from before it does not read.</param>
+    public sealed record Hello(string Name, string KsaBuild, string Mods, string System, string Password, string Token, string Cookie = "", bool Sessions = false) : Message(Kind.Hello);
 
     /// <param name="Id">The number the player is known by from now, or zero with <paramref name="Refused"/> saying why.</param>
     /// <param name="HasWorld">Whether the server has a world to send; without one this player's open world becomes it.</param>
@@ -372,13 +374,18 @@ public static class Wire
     /// <param name="Players">How many players are on the server now, and <paramref name="MaxPlayers"/> the most it takes. Both are nothing to a game that has joined, which has a roster; they are what a list of servers is read for.</param>
     /// <param name="LinkId">What the operator calls this server where a name that never changes is wanted, empty when they have not said: see <see cref="ModLink"/>.</param>
     /// <param name="KsaBuild">The build this server's world wants, empty when it wants whichever it is given. On a row of a list because a game cannot change its own build without being started again, so this is the one thing a player has to act on before clicking rather than after.</param>
+    /// <param name="Session">A word only this player and the server know, on a welcome that admits a
+    /// game that said it says one back: its commands and its goodbye carry it from then, and the
+    /// server's goodbye to it. A datagram says where it is from and nothing shows it, so without this
+    /// a command with an admin's address written on it was the admin's. Read from the end of the
+    /// datagram, and empty to and from a game or a server from before it.</param>
     /// <param name="Discord">What a game logged in with Discord signs to prove it at this join
     /// (<see cref="KSAMultiplayer.Discord.Proof"/>), empty where this server takes no Discord logins. Only on a
     /// welcome that admits a player: one that carries a cookie goes to an address nothing has
     /// vouched for, and is kept as small as it can be.</param>
     public sealed record Welcome(byte Id, string Refused, string ServerName, bool HasWorld, string Cookie = "", string System = "", string Mods = "",
                                  byte Players = 0, byte MaxPlayers = 0, WelcomeFlags Flags = WelcomeFlags.None, string KsaBuild = "",
-                                 string LinkId = "", string Discord = "") : Message(Kind.Welcome);
+                                 string LinkId = "", string Discord = "", string Session = "") : Message(Kind.Welcome);
 
     /// <summary>
     /// What is this server? Asked by a list of servers, of an address it knows nothing else about,
@@ -412,7 +419,8 @@ public static class Wire
 
     public sealed record Roster(Player[] Players) : Message(Kind.Roster);
 
-    public sealed record Bye(string Why) : Message(Kind.Bye);
+    /// <param name="Session">The session's word from its <see cref="Welcome"/>, where it had one.</param>
+    public sealed record Bye(string Why, string Session = "") : Message(Kind.Bye);
 
     /// <param name="Rtt">The round trip this game last measured, s, so the server can tell every player what every other player's is. Negative until it has one.</param>
     /// <param name="Late">How far behind the server's time this game's world is, s, as it last measured.</param>
@@ -675,7 +683,8 @@ public static class Wire
     public sealed record Chat(byte From, string Text) : Message(Kind.Chat);
 
     /// <summary>A console line typed into a game's chat, which the server runs only for an admin.</summary>
-    public sealed record Command(string Line) : Message(Kind.Command);
+    /// <param name="Session">The session's word from its <see cref="Welcome"/>, where it had one.</param>
+    public sealed record Command(string Line, string Session = "") : Message(Kind.Command);
 
     /// <summary>
     /// Something a game saw that only it could see, for the server's log: a touch of two docking
@@ -765,6 +774,7 @@ public static class Wire
                 w.Text(h.Password, 64);
                 w.Text(h.Token, TokenChars);
                 w.Text(h.Cookie, CookieChars);
+                if (h.Sessions) w.U8(1);
                 break;
             case Welcome m:
                 w.U8(m.Id);
@@ -780,6 +790,7 @@ public static class Wire
                 w.Text(m.KsaBuild, 64);
                 w.Text(m.LinkId, IdChars);
                 w.Text(m.Discord, KSAMultiplayer.Discord.NonceChars);
+                if (m.Session.Length > 0) w.Text(m.Session, CookieChars);
                 break;
             case Ask a:
                 w.U8(a.Probe);
@@ -811,6 +822,7 @@ public static class Wire
                 break;
             case Bye b:
                 w.Text(b.Why, 200);
+                if (b.Session.Length > 0) w.Text(b.Session, CookieChars);
                 break;
             case Alive:
                 break;
@@ -928,6 +940,7 @@ public static class Wire
                 break;
             case Command c2:
                 w.Text(c2.Line, ChatChars);
+                if (c2.Session.Length > 0) w.Text(c2.Session, CookieChars);
                 break;
             case Note n2:
                 w.LongText(n2.Text, NoteChars);
@@ -993,11 +1006,11 @@ public static class Wire
             if (version != Version) return null;
             Message m = (Kind)data[6] switch
             {
-                Kind.Hello => new Hello(r.Text(NameChars), r.Text(64), r.LongText(4000), r.Text(NameChars), r.Text(64), r.Text(TokenChars), r.Text(CookieChars)),
+                Kind.Hello => new Hello(r.Text(NameChars), r.Text(64), r.LongText(4000), r.Text(NameChars), r.Text(64), r.Text(TokenChars), r.Text(CookieChars), r.More && r.U8() != 0),
                 Kind.Welcome => new Welcome(r.U8(), r.LongText(RefusedChars), r.Text(64), r.U8() != 0, r.Text(CookieChars), r.Text(NameChars), r.LongText(ProbeModsChars),
-                                            r.U8(), r.U8(), (WelcomeFlags)r.U8(), r.Text(64), r.Text(IdChars), r.Text(KSAMultiplayer.Discord.NonceChars)),
+                                            r.U8(), r.U8(), (WelcomeFlags)r.U8(), r.Text(64), r.Text(IdChars), r.Text(KSAMultiplayer.Discord.NonceChars), r.More ? r.Text(CookieChars) : ""),
                 Kind.Roster => ReadRoster(ref r),
-                Kind.Bye => new Bye(r.Text(200)),
+                Kind.Bye => new Bye(r.Text(200), r.More ? r.Text(CookieChars) : ""),
                 Kind.Alive => new Alive(),
                 Kind.Ping => new Ping(r.F64(), r.F32(), r.F32(), r.F32(), r.U8() != 0, r.Text(KeyChars)),
                 Kind.Pong => new Pong(r.F64(), r.F64()),
@@ -1019,7 +1032,7 @@ public static class Wire
                 Kind.Extra => new Extra(r.U8(), r.Text(KeyChars), r.Text(ChannelChars), r.Take(Math.Min((int)r.U8(), ExtraBytes)).ToArray()),
                 Kind.Swept => new Swept(r.Text(KeyChars), r.U32()),
                 Kind.Chat => new Chat(r.U8(), r.Text(ChatChars)),
-                Kind.Command => new Command(r.Text(ChatChars)),
+                Kind.Command => new Command(r.Text(ChatChars), r.More ? r.Text(CookieChars) : ""),
                 Kind.Note => new Note(r.LongText(NoteChars)),
                 Kind.Name => new Name(r.Text(KeyChars), r.Text(KeyChars), r.U8(), r.U32()),
                 Kind.Op => ReadOp(ref r),
@@ -1089,6 +1102,14 @@ public static class Wire
         for (int i = 0; i < entries.Length; i++) entries[i] = new Owner(r.Text(KeyChars), r.U8(), r.U8() != 0);
         return new Owners(page, pages, entries);
     }
+
+    /// <summary>
+    /// A player's name: <see cref="Clip"/>, and without the characters that are not seen, which let
+    /// two names look the same and one run backwards.
+    /// </summary>
+    public static string PlayerName(string? s) =>
+        Clip(new string((s ?? "").Where(c => char.GetUnicodeCategory(c) is not (System.Globalization.UnicodeCategory.Format
+            or System.Globalization.UnicodeCategory.LineSeparator or System.Globalization.UnicodeCategory.ParagraphSeparator)).ToArray()), NameChars);
 
     /// <summary>A name or text cut to so many characters, trimmed, with control characters taken out.</summary>
     public static string Clip(string? s, int chars)

@@ -136,7 +136,18 @@ public sealed class Roster
         {
             if (_entries.TryGetValue(key, out Entry? had))
             {
-                had.Announced = now;
+                // Only by whoever it is held to. Anybody can announce anybody's address: taken as
+                // the server's own word, a stranger's kept a server listed that had asked not to
+                // be, and one who announced a server before it announced itself held it to an
+                // address its probes were then refused for, for as long as it went on announcing.
+                // An entry that is not listed is given to whoever announces it now, and asked of
+                // them: the server itself is the one whose probe answers.
+                if (had.From.Equals(from)) had.Announced = now;
+                else if (!Listed(had, now))
+                {
+                    _entries[key] = new Entry { Host = had.Host, Port = had.Port, From = from, FromHere = here, Announced = now, Ask = now };
+                    return new Noted(true, from.ToString(), false, "being asked about now; it is listed once it answers");
+                }
                 return new Noted(true, from.ToString(), Listed(had, now), had.Trouble.Length > 0 ? had.Trouble : Where(had, now));
             }
             if (_entries.Count >= MostEntries)

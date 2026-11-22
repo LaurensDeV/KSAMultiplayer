@@ -28,6 +28,16 @@ public enum BlobKind : byte
 /// <param name="Universe">The universe time it was taken at.</param>
 public sealed record Blob(BlobKind Kind, string Key, byte Owner, double Universe, byte[] Data)
 {
+    /// <summary>
+    /// The most a world unpacks to, and the most files in it; and the most a craft's definition
+    /// unpacks to. A save is tens of megabytes and a craft tens of kilobytes, and what comes from
+    /// another machine says what it likes: a few hundred kilobytes can be written to unpack to
+    /// gigabytes, in the game of everybody it is sent to.
+    /// </summary>
+    public const long WorldMostBytes = 512L * 1024 * 1024;
+    public const int WorldMostFiles = 10_000;
+    public const int VehicleMostBytes = 64 * 1024 * 1024;
+
     public byte[] Encode()
     {
         byte[] key = Encoding.UTF8.GetBytes(Wire.Clip(Key, Wire.KeyChars));
@@ -62,6 +72,34 @@ public sealed record Blob(BlobKind Kind, string Key, byte Owner, double Universe
         }
     }
 
+    /// <summary>
+    /// Why a zip is not a world to hand out, or null for one that is: read from what the zip says of
+    /// itself, with nothing unpacked.
+    /// </summary>
+    public static string? WorldFault(byte[] packed)
+    {
+        try
+        {
+            using ZipArchive zip = new(new MemoryStream(packed), ZipArchiveMode.Read);
+            if (zip.Entries.Count > WorldMostFiles) return $"it holds {zip.Entries.Count} files";
+            long bytes = 0;
+            bool any = false;
+            foreach (ZipArchiveEntry entry in zip.Entries)
+            {
+                if (entry.FullName.EndsWith('/')) continue;
+                if (!SafeName(entry.FullName)) return $"it holds '{Wire.Clip(entry.FullName, 64)}', which is not a name a save has";
+                bytes += entry.Length;
+                any = true;
+            }
+            if (bytes > WorldMostBytes) return $"it unpacks to {bytes / (1024 * 1024)} MB";
+            return any ? null : "it holds no files";
+        }
+        catch (InvalidDataException)
+        {
+            return "it is not a zip";
+        }
+    }
+
     /// <summary>Files packed into one zip, each under its own name.</summary>
     /// <summary>
     /// A blob's size for a log line. Bytes under a kilobyte, because the empty worlds a server
@@ -88,16 +126,32 @@ public sealed record Blob(BlobKind Kind, string Key, byte Owner, double Universe
     {
         List<(string, byte[])> files = [];
         using ZipArchive zip = new(new MemoryStream(packed), ZipArchiveMode.Read);
+        if (zip.Entries.Count > WorldMostFiles) throw new InvalidDataException($"a world holds {zip.Entries.Count} files, which is more than a save has");
+        long left = WorldMostBytes;
         foreach (ZipArchiveEntry entry in zip.Entries)
         {
             if (entry.FullName.EndsWith('/')) continue;
             if (!SafeName(entry.FullName)) throw new InvalidDataException($"a world holds '{entry.FullName}', which is not a name a save has");
             using Stream from = entry.Open();
-            using MemoryStream data = new();
-            from.CopyTo(data);
-            files.Add((entry.FullName, data.ToArray()));
+            byte[] data = ReadAtMost(from, left, "a world");
+            left -= data.Length;
+            files.Add((entry.FullName, data));
         }
         return files;
+    }
+
+    // What a stream holds, counted as it is unpacked: what a zip says of its own sizes is not to be believed.
+    private static byte[] ReadAtMost(Stream from, long most, string what)
+    {
+        using MemoryStream into = new();
+        byte[] buffer = new byte[81920];
+        int n;
+        while ((n = from.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            if (into.Length + n > most) throw new InvalidDataException($"{what} unpacks to more than it may");
+            into.Write(buffer, 0, n);
+        }
+        return into.ToArray();
     }
 
     /// <summary>Whether a name is a plain relative path, with nothing in it that climbs out of the folder it is under.</summary>
@@ -114,6 +168,15 @@ public sealed record Blob(BlobKind Kind, string Key, byte Owner, double Universe
     public static void UnzipInto(byte[] packed, string folder)
     {
         List<(string Name, byte[] Data)> files = Unzip(packed);
+        string under = Path.GetFullPath(folder) + Path.DirectorySeparatorChar;
+        // What the file system makes of a name is asked of it, whatever SafeName made of it.
+        foreach ((string name, _) in files)
+        {
+            if (!Path.GetFullPath(Path.Combine(folder, name)).StartsWith(under, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException($"a world holds '{name}', which lands outside its folder");
+            }
+        }
         if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
         foreach ((string name, byte[] data) in files)
         {
@@ -130,12 +193,11 @@ public sealed record Blob(BlobKind Kind, string Key, byte Owner, double Universe
         return into.ToArray();
     }
 
+    /// <summary>A craft's definition unpacked, or an <see cref="InvalidDataException"/> for one bigger than a craft is.</summary>
     public static byte[] Gunzip(byte[] data)
     {
         using GZipStream gz = new(new MemoryStream(data), CompressionMode.Decompress);
-        using MemoryStream into = new();
-        gz.CopyTo(into);
-        return into.ToArray();
+        return ReadAtMost(gz, VehicleMostBytes, "a craft");
     }
 }
 
@@ -153,8 +215,20 @@ public sealed class Link
     // The receiver asks again for what is missing this often, and for all of it after so long with no piece.
     private const double NeedEverySeconds = 0.25, QuietSeconds = 1.0;
 
-    // A sender that has sent everything and heard nothing for this long sends it all again, and gives up after so long.
+    // A sender that has sent everything and heard nothing for this long sends it all again, and gives
+    // up after so long with nothing sent that was due or asked for and nothing heard: counted from
+    // when it started, a world of 50 MB could never arrive at 400 KB a second.
     private const double ResendAfterSeconds = 2.0, GiveUpSeconds = 120.0;
+
+    /// <summary>The most pieces a craft's definition comes in: 4.5 MB, many times any craft's.</summary>
+    public const ushort VehiclePieces = 4096;
+
+    /// <summary>
+    /// The most pieces a transfer starting now may say it has. A server holds a player's to
+    /// <see cref="VehiclePieces"/> unless it has asked that player for a world: every piece is kept
+    /// until the last has come, and four transfers of 65,535 are 288 MB from one player.
+    /// </summary>
+    public ushort MostPieces { get; set; } = ushort.MaxValue;
 
     /// <summary>
     /// The most things one link may be sending here at once.
@@ -192,7 +266,7 @@ public sealed class Link
     {
         foreach (Outgoing o in _out.Values.ToArray())
         {
-            if (now - o.Started > GiveUpSeconds)
+            if (now - o.ActiveAt > GiveUpSeconds)
             {
                 _out.Remove(o.Id);
                 continue;
@@ -233,7 +307,7 @@ public sealed class Link
                 {
                     // Asked of the piece before anything is held for the transfer: a piece that
                     // could never belong to one buys no room at all.
-                    if (chunk.Count == 0 || !Incoming.Could(chunk) || _in.Count >= MostIncoming) return null;
+                    if (chunk.Count == 0 || chunk.Count > MostPieces || !Incoming.Could(chunk) || _in.Count >= MostIncoming) return null;
                     _in[chunk.Transfer] = incoming = new Incoming(chunk.Transfer, chunk.Count, now);
                 }
                 incoming.Add(chunk, now);
@@ -265,20 +339,23 @@ public sealed class Link
         private readonly Queue<ushort> _due = new();
         private readonly HashSet<ushort> _queued = [];
         private double _allowance, _at, _heardAt;
+        private bool _unasked;
 
         public Outgoing(uint id, byte[] data, double now)
         {
             int count = (data.Length + ChunkBytes - 1) / ChunkBytes;
             if (count > ushort.MaxValue) throw new InvalidDataException($"{data.Length} bytes is too big to send");
             // A first burst goes at once, so a small craft is not held for the pace to allow it.
-            (Id, _data, Started, _at, _heardAt, _allowance) = (id, data, now, now, now, 8.0 * ChunkBytes);
+            (Id, _data, ActiveAt, _at, _heardAt, _allowance) = (id, data, now, now, now, 8.0 * ChunkBytes);
             Count = (ushort)Math.Max(1, count);
             for (ushort i = 0; i < Count; i++) Queue(i);
         }
 
         public uint Id { get; }
         public ushort Count { get; }
-        public double Started { get; }
+
+        /// <summary>When a piece last went that was due or asked for, or the other end was last heard: not the sending of it all again to an end that says nothing.</summary>
+        public double ActiveAt { get; private set; }
 
         public List<Wire.Chunk> Next(double now)
         {
@@ -290,6 +367,7 @@ public sealed class Link
                 // Nothing heard: the first pieces may all have been lost, and the receiver knows of nothing to ask for.
                 for (ushort i = 0; i < Count; i++) Queue(i);
                 _heardAt = now;
+                _unasked = true;
             }
             while (_allowance >= ChunkBytes && _due.TryDequeue(out ushort i))
             {
@@ -298,12 +376,13 @@ public sealed class Link
                 chunks.Add(new Wire.Chunk(Id, i, Count, _data[from..Math.Min(from + ChunkBytes, _data.Length)]));
                 _allowance -= ChunkBytes;
             }
+            if (chunks.Count > 0 && !_unasked) ActiveAt = now;
             return chunks;
         }
 
         public void Need(IEnumerable<ushort> missing, double now)
         {
-            _heardAt = now;
+            (_heardAt, ActiveAt, _unasked) = (now, now, false);
             foreach (ushort i in missing) if (i < Count) Queue(i);
         }
 
@@ -353,6 +432,16 @@ public sealed class Link
             return [.. missing];
         }
 
-        public byte[] Assemble() => [.. _pieces.SelectMany(p => p!)];
+        public byte[] Assemble()
+        {
+            byte[] whole = new byte[_pieces.Sum(p => p!.Length)];
+            int at = 0;
+            foreach (byte[]? piece in _pieces)
+            {
+                piece!.CopyTo(whole, at);
+                at += piece.Length;
+            }
+            return whole;
+        }
     }
 }

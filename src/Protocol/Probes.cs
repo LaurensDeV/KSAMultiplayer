@@ -71,6 +71,18 @@ public sealed class Probes : IDisposable
     /// <summary>What never answered. Unreachable from here, which is not the same as down.</summary>
     public IReadOnlyCollection<IPEndPoint> Silent => _silent;
 
+    /// <summary>
+    /// Lets go of what was learnt of an address, once whoever asked has read it: kept, a list that
+    /// asks of addresses strangers hand it holds an answer for every one it was ever handed.
+    /// </summary>
+    public void Drop(IPEndPoint at)
+    {
+        _answered.Remove(at);
+        _rtt.Remove(at);
+        _elsewhere.Remove(at);
+        _silent.Remove(at);
+    }
+
     /// <summary>How many are still being waited for.</summary>
     public int Waiting => _asking.Count;
 

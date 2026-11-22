@@ -89,6 +89,7 @@ public sealed class Watch(Roster roster, Ticker clock, ILogger<Watch> log) : Bac
                 }
                 else continue;
                 asked.Remove(at);
+                probes.Drop(at);
             }
 
             foreach (Entry e in roster.Due(now)) Start(e, now);

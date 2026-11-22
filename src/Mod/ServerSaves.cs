@@ -36,7 +36,7 @@ internal static class ServerSaves
             if (ImGui.MenuItem("New"u8)) StringInputPopup.Create(Keep, "", "SAVE THE SERVER'S WORLD");
             Tip("Save the server's current world under a name you choose.");
             base.DrawMenuBar();
-            ImGui.TextDisabled("(?)"u8);
+            Shown.Dim("(?)"u8);
             Tip("These saves are stored on the server. Double-click one to load it for everyone, or right-click for more options. "
                 + "Loading first keeps the current world as an automatic 'before load' save, so you can undo it.");
         }
@@ -47,7 +47,8 @@ internal static class ServerSaves
             string said = $"{count} {(count == 1 ? "SAVE" : "SAVES")}";
             bool waiting = _askedAt > Sync.ServerSaidAt && Sync.Wall() - _askedAt < AnswerWithinSeconds;
             if (waiting) said += "  -  WAITING FOR THE SERVER";
-            else if (Sync.ServerSaidAt >= _askedAt && Sync.Wall() - Sync.ServerSaidAt < AnswerShownSeconds) said += $"  -  {Sync.ServerSaid.ToUpperInvariant()}";
+            else if (Sync.ServerSaidAt >= _askedAt && Sync.Wall() - Sync.ServerSaidAt < AnswerShownSeconds) said += $"  -  {Sync.ServerSaid.ToUpperInvariant().Replace('%', ' ')}";
+            // KSA's footer hands this to ImGui as a printf format, and the server's words are in it: hence no % above.
             ConsoleStyle.FooterStatus(said.AsSpan(), waiting);
         }
 
@@ -55,7 +56,7 @@ internal static class ServerSaves
         {
             if (Sync.Saves is not { } saves)
             {
-                ImGui.TextDisabled(Sync.Trusted
+                Shown.Dim(Sync.Trusted
                     ? "No save list from this server yet. A server older than this version of the mod doesn't support saves."
                     : "Only trusted players and admins can save or load the world on this server.");
                 return;

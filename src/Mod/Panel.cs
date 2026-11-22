@@ -231,8 +231,8 @@ internal static class Panel
         {
             ImGui.PushTextWrapPos(0f);
             float4 warn = new(1.0f, 0.82f, 0.4f, 1.0f);
-            ImGui.TextColored(in warn, $"Every pad at {site} has a craft on it.");
-            ImGui.TextDisabled("You can't launch until one is free. Move or recover a craft, or pick another site.");
+            Shown.Coloured(in warn, $"Every pad at {site} has a craft on it.");
+            Shown.Dim("You can't launch until one is free. Move or recover a craft, or pick another site.");
             ImGui.PopTextWrapPos();
         }
         ImGui.End();
@@ -278,7 +278,7 @@ internal static class Panel
             if (slowest.Name is null || p.Can < slowest.Can) slowest = p;
         }
         if (slowest.Name is null || slowest.Can >= asked - 0.01) return;
-        ImGui.TextDisabled(slowest.Id == c.Id
+        Shown.Dim(slowest.Id == c.Id
             ? $"your PC can only keep up with {slowest.Can:0.##}x"
             : $"{slowest.Name}'s PC can only keep up with {slowest.Can:0.##}x");
     }
@@ -286,7 +286,7 @@ internal static class Panel
     private static void Asking(Client c, Wire.Warp w)
     {
         float4 warn = new(1.0f, 0.82f, 0.4f, 1.0f);
-        ImGui.TextColored(in warn, w.Who == c.Id
+        Shown.Coloured(in warn, w.Who == c.Id
             ? $"You asked to {Fast(w.Speed)}. Waiting for everyone to agree."
             : $"{c.NameOf(w.Who)} wants to {Fast(w.Speed)}.");
         Brake(c, w.Speed);
@@ -300,7 +300,7 @@ internal static class Panel
         }
         else
         {
-            ImGui.TextDisabled(w.Waiting.Length == 0
+            Shown.Dim(w.Waiting.Length == 0
                 ? "waiting..."
                 : $"waiting on {string.Join(", ", w.Waiting.Select(c.NameOf))}");
         }
@@ -311,7 +311,7 @@ internal static class Panel
         ImGui.Text($"The world is running at {w.Speed:0.##}x, started by {c.NameOf(w.Who)}.");
         if (w.Who != c.Id)
         {
-            ImGui.TextDisabled("only the player who started it can stop it");
+            Shown.Dim("only the player who started it can stop it");
             return;
         }
         if (ImGui.Button("Stop", null)) c.AskWarp(1.0);
@@ -478,7 +478,7 @@ internal static class Panel
         // for the server they are in, so it is where they reach for it too.
         bool hovered = ImGui.IsMouseHoveringRect(new float2(at.X - gap, at.Y), at + ImGui.CalcTextSize(where));
         float4 shade = hovered ? ConsoleStyle.TextPrimary : ConsoleStyle.TextMuted;
-        ImGui.TextColored(in shade, where);
+        Shown.Coloured(in shade, where);
         if (hovered)
         {
             ImGui.SetTooltip(Visible ? "Hide the Multiplayer window" : "Show the Multiplayer window");
@@ -556,9 +556,9 @@ internal static class Panel
                     ImGui.Text(p.Id == c.Id ? $"{p.Name} (you)" : p.Name);
                     ImGui.TableNextColumn();
                     // Every game measures its own and tells the server, so this is each player's own line.
-                    ImGui.TextDisabled(p.Rtt >= 0f ? $"{p.Rtt * 1000f:F0} ms" : "--");
+                    Shown.Dim(p.Rtt >= 0f ? $"{p.Rtt * 1000f:F0} ms" : "--");
                     ImGui.TableNextColumn();
-                    ImGui.TextDisabled(!p.Loaded ? "joining"
+                    Shown.Dim(!p.Loaded ? "joining"
                                        : Sync.InTheEditor(p) ? (p.Controlling.Length > 0 ? $"{p.Controlling}, in the vehicle editor" : "in the vehicle editor")
                                        : p.Controlling.Length > 0 ? p.Controlling : "--");
                 }
@@ -623,8 +623,8 @@ internal static class Panel
             ImGui.PushTextWrapPos(0f);
             foreach (Sync.Line line in Sync.Chat.TakeLast(ChatShown))
             {
-                if (line.NotAPlayer) ImGui.TextColored(in ServerSaid, line.Text);
-                else ImGui.TextWrapped(line.Text);
+                if (line.NotAPlayer) Shown.Coloured(in ServerSaid, line.Text);
+                else Shown.Wrapped(line.Text);
             }
             ImGui.PopTextWrapPos();
 
@@ -637,11 +637,11 @@ internal static class Panel
                 }
                 ImGui.SetNextItemWidth(-1f);
                 ImGui.InputText("##chatline", ChatText);
-                if (_choices.Length > 0) ImGui.TextDisabled(_choices);
+                if (_choices.Length > 0) Shown.Dim(_choices);
             }
             else
             {
-                ImGui.TextDisabled("Enter to chat, / for a command, Tab for a name");
+                Shown.Dim("Enter to chat, / for a command, Tab for a name");
             }
         }
         ImGui.End();
@@ -941,9 +941,9 @@ internal static class Panel
         if (Known(typed) is { } about && Refused(about) is { Length: > 0 } no)
         {
             ImGui.PushTextWrapPos(0f);
-            ImGui.TextColored(in ConsoleStyle.Danger, no);
+            Shown.Coloured(in ConsoleStyle.Danger, no);
             link = ModsLink(about, typed);
-            if (link is not null && _linkSaid.Length > 0) ImGui.TextColored(in ConsoleStyle.Pending, _linkSaid);
+            if (link is not null && _linkSaid.Length > 0) Shown.Coloured(in ConsoleStyle.Pending, _linkSaid);
             ImGui.PopTextWrapPos();
         }
 
@@ -1277,7 +1277,7 @@ internal static class Panel
         ImGui.GetWindowDrawList().AddRectFilled(new float2(at.X, at.Y - 1f), new float2(at.X + wide, at.Y + text.Y + 1f),
                                                 (ImColor8)new float4(colour.X, colour.Y, colour.Z, PillGround), (text.Y * 0.5f) + 1f);
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + inset);
-        ImGui.TextColored(in colour, says);
+        Shown.Coloured(in colour, says);
     }
 
     /// <summary>
@@ -1369,7 +1369,7 @@ internal static class Panel
             ImGui.Text("Server name"u8);
             ImGui.NextColumn();
             ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.Pending);
-            ImGui.TextWrapped(trouble);
+            Shown.Wrapped(trouble);
             ImGui.PopStyleColor();
             ImGui.NextColumn();
         }
@@ -1427,20 +1427,20 @@ internal static class Panel
                     : $"{shown.Length} needed";
         if (shown.Length == 0 && spare.Length == 0)
         {
-            ImGui.TextDisabled("none needed");
+            Shown.Dim("none needed");
         }
         else if (ImGui.TreeNode($"{what}###KSAMultiplayerMods"))
         {
             foreach ((string says, bool bad) in shown)
             {
                 float4 how = bad ? ConsoleStyle.Danger : ConsoleStyle.Positive;
-                ImGui.TextColored(in how, says);
+                Shown.Coloured(in how, says);
             }
             // The caption only where there are two lists to tell apart. With nothing above them
             // the node already says "1 to turn off", and saying it again over the one name under it
             // is the same instruction twice.
-            if (spare.Length > 0 && shown.Length > 0) ImGui.TextDisabled("turn these off:");
-            foreach (string mod in spare) ImGui.TextColored(in ConsoleStyle.Danger, mod);
+            if (spare.Length > 0 && shown.Length > 0) Shown.Dim("turn these off:");
+            foreach (string mod in spare) Shown.Coloured(in ConsoleStyle.Danger, mod);
             ImGui.TreePop();
         }
         ImGui.NextColumn();
@@ -1491,7 +1491,7 @@ internal static class Panel
         ImGui.AlignTextToFramePadding();
         if (DiscordLogin.Waiting)
         {
-            ImGui.TextColored(in ConsoleStyle.Pending, "Waiting...");
+            Shown.Coloured(in ConsoleStyle.Pending, "Waiting...");
             if (ImGui.IsItemHovered())
             {
                 ImGui.SetTooltip("Log in with Discord in your browser, then come back here. If it opened in the wrong browser, copy the link into the right one.");
@@ -1518,7 +1518,7 @@ internal static class Panel
             float middle = at.Y + ImGui.GetStyle().FramePadding.Y + (line * 0.5f);
             ImGui.GetWindowDrawList().AddCircleFilled(new float2(at.X + r, middle), r, (ImColor8)Blurple);
             ImGui.SetCursorPosX(ImGui.GetCursorPosX() + (r * 2f) + 8f);
-            ImGui.TextColored(in BlurpleText, me.Name);
+            Shown.Coloured(in BlurpleText, me.Name);
             if (ImGui.IsItemHovered())
             {
                 ImGui.SetTooltip($"Logged in with Discord on this computer until {DateTimeOffset.FromUnixTimeSeconds(me.Exp).LocalDateTime:d MMMM}. Every server you join is told.");
@@ -1541,7 +1541,7 @@ internal static class Panel
             _linkCopied = false;
             DiscordLogin.Start();
         }
-        if (DiscordLogin.Said.Length > 0) ImGui.TextColored(in ConsoleStyle.Danger, DiscordLogin.Said);
+        if (DiscordLogin.Said.Length > 0) Shown.Coloured(in ConsoleStyle.Danger, DiscordLogin.Said);
     }
 
     private static bool _serversOpen;
@@ -1602,7 +1602,7 @@ internal static class Panel
                 ImGui.SetCursorPosX(ImGui.GetStyle().WindowPadding.X);
                 ImGui.SetCursorPosY(ImGui.GetWindowHeight() - ConsoleWidgets.ButtonHeight - ImGui.GetStyle().WindowPadding.Y
                                     + ((ConsoleWidgets.ButtonHeight - ImGui.GetTextLineHeight()) * 0.5f));
-                ImGui.TextColored(in ConsoleStyle.TextMuted, here ? "You're in this server." : "This server would refuse you: see its row.");
+                Shown.Coloured(in ConsoleStyle.TextMuted, here ? "You're in this server." : "This server would refuse you: see its row.");
             }
         }
         ImGui.End();
@@ -1666,7 +1666,7 @@ internal static class Panel
     {
         ImGui.Text(label);
         ImGui.NextColumn();
-        ImGui.TextDisabled(what);
+        Shown.Dim(what);
         ImGui.NextColumn();
     }
 
@@ -1774,19 +1774,19 @@ internal static class Panel
             // and no window: a restart alone comes back here, so the system is chosen from here.
             if (World.AsksAtStart)
             {
-                ImGui.TextColored(in ConsoleStyle.Danger, $"This world is in {world} and you're in {here}. Restart KSA to join it.");
+                Shown.Coloured(in ConsoleStyle.Danger, $"This world is in {world} and you're in {here}. Restart KSA to join it.");
             }
             else if (World.StartsNextIn == system)
             {
-                ImGui.TextColored(in ConsoleStyle.Positive, $"KSA will start in {world} next time. Restart it to join this world.");
+                Shown.Coloured(in ConsoleStyle.Positive, $"KSA will start in {world} next time. Restart it to join this world.");
             }
             else if (!World.Has(system))
             {
-                ImGui.TextColored(in ConsoleStyle.Danger, $"This world is in {world}, which your game doesn't have.");
+                Shown.Coloured(in ConsoleStyle.Danger, $"This world is in {world}, which your game doesn't have.");
             }
             else
             {
-                ImGui.TextColored(in ConsoleStyle.Danger, $"This world is in {world}, but you're in {here} and KSA is set to start in {here} again.");
+                Shown.Coloured(in ConsoleStyle.Danger, $"This world is in {world}, but you're in {here} and KSA is set to start in {here} again.");
                 if (ConsoleWidgets.Button($"START IN {world.ToUpperInvariant()} NEXT TIME".AsSpan())) PressStartThere();
             }
         }
@@ -1865,11 +1865,11 @@ internal static class Panel
             string ping = double.IsFinite(c.Ping) ? $"{c.Ping * 1000:F0} ms" : "...";
             ImGui.SameLine();
             ImGui.SetCursorPosX(ImGui.GetCursorPosX() + MathF.Max(0f, ImGui.GetContentRegionAvail().X - ImGui.CalcTextSize(ping).X));
-            ImGui.TextDisabled(ping);
+            Shown.Dim(ping);
         }
         // Only while it says more than that all is well: connecting, the world on its way, the
         // clock being caught up.
-        if (Sync.Status != Sync.AllWell) ImGui.TextColored(in ConsoleStyle.Pending, Sync.Status);
+        if (Sync.Status != Sync.AllWell) Shown.Coloured(in ConsoleStyle.Pending, Sync.Status);
         ImGui.PushTextWrapPos(0f);
         if (c is { Joined: true })
         {
@@ -1880,13 +1880,13 @@ internal static class Panel
             {
                 DiscordMark(anyDiscord, p.Discord);
                 if (p.Id == c.Id) ImGui.Text($"{p.Name} (you)");
-                else if (!p.Loaded) ImGui.TextDisabled($"{p.Name} (joining)");
+                else if (!p.Loaded) Shown.Dim($"{p.Name} (joining)");
                 else ImGui.Text(p.Name);
             }
             DiscordRow(c);
             if (Sync.RenamedCraft is { Count: > 0 } renamed)
             {
-                ImGui.TextDisabled($"other players see your craft as: {string.Join(", ", renamed)}");
+                Shown.Dim($"other players see your craft as: {string.Join(", ", renamed)}");
             }
         }
         // The list of servers, as at start, to move to another without leaving first.
@@ -1911,16 +1911,16 @@ internal static class Panel
         ImGui.Separator();
         if (c.Discord is { Id.Length: > 0 } seen)
         {
-            ImGui.TextDisabled($"Discord: {seen.Name}");
+            Shown.Dim($"Discord: {seen.Name}");
             return;
         }
         if (c.DiscordAsking)
         {
-            ImGui.TextDisabled("Discord: checking with the server...");
+            Shown.Dim("Discord: checking with the server...");
             return;
         }
         DiscordControls();
-        if (c.Discord is { Refused.Length: > 0 } refused) ImGui.TextDisabled(refused.Refused);
+        if (c.Discord is { Refused.Length: > 0 } refused) Shown.Dim(refused.Refused);
     }
 
     /// <summary>

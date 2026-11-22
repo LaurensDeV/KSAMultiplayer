@@ -212,6 +212,39 @@ one they had not, that player builds craft nobody else can put together, and all
 a craft arriving that their game refuses, which reads as the mod being broken. A world given by a player
 carries that player's system; one an operator imports carries whatever its own `meta.toml` says.
 
+### What it does not take on trust
+
+A datagram says where it is from and nothing shows it, and a game that is in says what it likes.
+
+- **A game's commands and its goodbye carry its session's word**, which the welcome that admitted
+  it gave: a command with an admin's address written on it is otherwise the admin's. A game says
+  in its hello that it says the word back, and one from before does not and is held to none, so
+  the two share a server. A game holds the server's goodbye to the same word.
+- **A game of another version is answered with seven bytes**, off which it reads the server's
+  version; the sentence it shows is its own.
+- **A wrong password counts against its address**: five in a minute and the address is refused for
+  the rest of it, with the right one too. Compared as hashes. It still crosses the network as typed.
+- **A world asked for is looked at before it is kept**: a zip, of names a save has, unpacking to
+  under 512 MB by its own account. One that is not is treated as a world its game would not hand
+  over, and somebody else is asked.
+- **Room for a world is kept only for a player asked for one**; any other transfer may say 4,096
+  pieces (4.5 MB, a craft). 256 MB of craft definitions are kept from one player and 1 GB from all.
+- **One craft passes on 60 states a second and 120 of mods' words**, and a player 2 chat lines and
+  5 commands a second after a burst of 10 and of 60; a player holds `--max-craft` craft. What is
+  over is dropped, and the log says `is over a limit` once a minute. The limits are for a craft and
+  for how many, never for a player's whole traffic: a salvo of a hundred craft is play.
+- **Who holds what is told at most twenty times a second**, and less often the more pages it runs to.
+- **The roster is said with the names of craft cut short** when thirty players flying long-named
+  craft would not fit a datagram, which had it go to nobody.
+- **Nobody is called `server`**, which is how the server's own words are shown, nor by a name with
+  characters in it that are not seen. A line of the log is one line whatever a craft is called.
+- **The login service's key is fetched again at most once a minute** for a certificate the key held
+  did not sign: any game can send one nobody signed.
+
+A game does not take the server or the other players on trust either. What it unpacks is counted as
+it unpacks (512 MB for a world, 64 MB for a craft), and a name is asked of the file system before
+anything is written under it.
+
 ## What a game does
 
 `Sync.Update`, from the frame hook, steps through:
@@ -552,7 +585,8 @@ A world or a definition goes as a `Link` transfer: cut into 1,100-byte pieces, e
 under the 1,280 bytes any path carries, sent at 400 KB/s after a first burst of eight. The receiver asks
 four times a second for what it is missing below the highest piece it has, and for everything after a
 second with nothing; a sender that has heard nothing two seconds after sending everything sends it all
-again. Both give up after two minutes. What it carries says what it is in front: a world or a craft,
+again. The receiver gives up two minutes after the last piece, the sender two minutes after it last
+sent a piece that was due or asked for or heard anything. What it carries says what it is in front: a world or a craft,
 the craft's Id, its owner and the universe time. A zip from another machine is unpacked only into its
 own folder: a name that climbs out of it is refused.
 
@@ -760,6 +794,14 @@ back within the second. Not worth a flag, given that this mod places landed craf
 `Vehicle.TeleportToLocation` itself and a refusal would have to let its own calls through.
 
 ## What has been seen in a game
+
+- **A chat line of `100%s sure %n %d %x done`** drawn as typed in the other game's window, and a
+  player called `Bravo %s%n%d` in the chat of both, the server's lines in their colour and a long
+  one wrapped, with both games still running; a join refused by a server called `100%s%n%d server`;
+  an admin's command and a goodbye taken with the session's word; and a rocket flown apart by
+  `tools/breakup.sh` with every claim held and no limit met.
+- **A craft built from another game's definition through the reader that refuses a document type**:
+  `built NewRocket_1, Alpha's` in the other game's log.
 
 Two games on one machine, each with a profile of its own, joined to one server: `tools/two-games.sh
 --test` sets that up and `tools/ksa-mcp` drives both through the mod's bridge (`src/Mod/Bridge.cs`),
@@ -1169,6 +1211,12 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
 
 ## What has not been tried
 
+- **The window's text outside the chat through `ImGui.Text`.** The binding's `TextDisabled`, `TextWrapped`
+  and `TextColored` hand their text to ImGui as a printf format, and names, chat and what a server
+  calls itself were shown through them; `Shown` shows them through `ImGui.Text` with the colour or
+  the wrapping pushed. The chat has been looked at in a game; the menu's list of players, the list
+  of servers and what a refusal says take a mouse to open, and have not.
+
 - **Logging in with Discord.** Driven over loopback with the login service's key made in the test,
   and not yet run in a game against the directory at `servers.ksamp.gg`. A server behind NAT that
   players reach over IPv6 while it fetched the key over IPv4 alone would refuse their passes.
@@ -1504,6 +1552,10 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   that is one player's, and the other rides in it.
 - **No authority over physics.** Each game is trusted for its own craft; the server only checks a state
   comes from the craft's owner.
+- **Nothing is encrypted**, the password and an admin's token included, and only a command and a
+  goodbye are tied to a session: somebody who can write a player's address and port on a datagram
+  can still send states and chat as them.
+- **The password the window keeps is one**, and is offered to whichever server is joined next.
 - **The world is never warped past what the slowest machine can fly.** Every game measures what it
   is managing -- universe seconds a real second, over a couple of seconds so a hitch does not speak
   for it, floored by what KSA says it achieved of what it asked -- and tells the server with each

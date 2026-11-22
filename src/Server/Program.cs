@@ -16,6 +16,7 @@ const string Usage = """
       --name <text>          the server's name, shown to players
       --password <text>      a password players must give (default none)
       --max-players <n>      the most players at once (default 16)
+      --max-craft <n>        the most craft one player holds at once (default 2048)
       --data <dir>           where the world is kept between runs (default ./data)
       --world <path>         start from this KSA save: its folder, or a zip of it,
                              replacing any world kept in --data
@@ -377,7 +378,7 @@ if (!Console.IsInputRedirected || Environment.GetEnvironmentVariable("KSAMP_STDI
 [
     ("players", "list who is connected and what they're flying"),
     ("say <text>", "send a chat message from the server to everyone"),
-    ("kick <name> [why]", "disconnect a player (they can rejoin)"),
+    ("kick <name> [why]", "disconnect a player (they can rejoin); # and their number in players works as a name"),
     ("op <name>", "make a connected player an admin; they stay one when they rejoin, and on any machine if they logged in with Discord"),
     ("op discord:<id>", "make a Discord user an admin whenever they log in with Discord, whether or not they're connected"),
     ("trust <name>", "make a connected player trusted: clear, remove, protect, rename, save, load and kick, but not delete, reload or roles"),
@@ -416,7 +417,9 @@ void Command(string line, GameServer.Player? who = null)
         else server.Tell(who, text);
     }
     Run(line, who, Answer);
-    if (Permissions.Audits(line)) server.Audit.Write(who is null ? "console" : AuditLog.Who(who), line, answered ?? "");
+    // The password is kept out of a file that is read by whoever reads the log.
+    string written = line.StartsWith("set password", StringComparison.OrdinalIgnoreCase) ? "set password (not written here)" : line;
+    if (Permissions.Audits(line)) server.Audit.Write(who is null ? "console" : AuditLog.Who(who), written, answered ?? "");
 }
 
 void Run(string line, GameServer.Player? who, Action<string> Answer)
@@ -444,8 +447,7 @@ void Run(string line, GameServer.Player? who, Action<string> Answer)
             Say($"<server> {rest}");
             break;
         case "kick":
-            string[] k = rest.Split(' ', 2, StringSplitOptions.TrimEntries);
-            if (k[0].Length == 0 || !server.Kick(k[0], k.Length > 1 ? k[1] : "")) Answer($"nobody called '{k[0]}'");
+            if (rest.Length == 0 || server.KickLine(rest) is null) Answer($"nobody called '{rest}': give a name, or # and the number players shows");
             break;
         case "op" or "trust" when rest.StartsWith("discord:", StringComparison.OrdinalIgnoreCase):
             string opId = rest["discord:".Length..].Trim();

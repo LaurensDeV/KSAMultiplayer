@@ -839,7 +839,16 @@ internal static class World
                 return null;
             }
             using MemoryStream stream = new(Blob.Gunzip(definition));
-            if (Serializer.Deserialize(stream) is not VehicleData data)
+            // Read as the serializer reads a stream itself, but for a document type, which a craft
+            // has none of and which can be written to unpack without end: this is another player's.
+            using global::System.Xml.XmlTextReader reader = new(stream)
+            {
+                WhitespaceHandling = global::System.Xml.WhitespaceHandling.Significant,
+                Normalization = true,
+                XmlResolver = null,
+                DtdProcessing = global::System.Xml.DtdProcessing.Prohibit,
+            };
+            if (Serializer.Deserialize(reader) is not VehicleData data)
             {
                 why = "it couldn't be read";
                 return null;

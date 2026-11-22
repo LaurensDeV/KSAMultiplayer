@@ -53,6 +53,9 @@ public sealed record ServerOptions
     /// </summary>
     public double LapseWithin { get; init; } = 10.0;
 
+    /// <summary>The most craft one player holds at once: each is kept here, and told to every game.</summary>
+    public int MaxCraftPerPlayer { get; init; } = 2048;
+
     public double Speed { get; init; } = 1.0;
 
     /// <summary>
@@ -220,6 +223,22 @@ public sealed class GameServer : IDisposable
 
         /// <summary>The player's round trip, s, as that player measured it; negative until it has one.</summary>
         public float Rtt { get; set; } = -1f;
+
+        /// <summary>
+        /// The word its commands and its goodbye must carry, empty for a game from before there was
+        /// one: a player is otherwise known only by the address a datagram says it is from.
+        /// </summary>
+        public string Session { get; init; } = "";
+
+        /// <summary>Chat lines and commands it may still say, each filling again as time passes, and as of when.</summary>
+        public double Chats = ChatsAtOnce, ChatsAt = now, Commands = CommandsAtOnce, CommandsAt = now;
+
+        /// <summary>How many craft it held when they were last counted, with those given since, and when that was.</summary>
+        public int Crafts { get; set; }
+        public double CraftsAt { get; set; } = double.NegativeInfinity;
+
+        /// <summary>When each limit it went over was last written in the log.</summary>
+        public Dictionary<string, double> LimitSaid { get; } = [];
     }
 
     /// <summary>A craft the server knows of: who flies it and how it is built, if it was made after the world was saved.</summary>
@@ -254,9 +273,40 @@ public sealed class GameServer : IDisposable
         /// torn down and built again in every other game, so a craft described over and over is a
         /// fault worth seeing from here.</summary>
         public int Described;
+
+        // States and mods' words about it that may still be passed on, and as of when.
+        public double States, StatesAt = double.NegativeInfinity, Extras, ExtrasAt = double.NegativeInfinity;
     }
 
     private const double SilentSeconds = 10.0, LoadingSilentSeconds = 120.0;
+
+    // What one craft passes on a second: states at three times what a game sends of the craft it
+    // flies, and mods' words about it. A limit on a craft and not on a player, whose salvo of a
+    // hundred craft is play.
+    private const double StatesASecond = 60.0, ExtrasASecond = 120.0;
+
+    // Chat lines and commands a player may say in a burst, and how fast each fills again: more than
+    // anybody types, and far under what a loop sends. A command reads the saves folder and writes
+    // the log. A game deleting many craft at once asks for each in its own command, and a rocket
+    // that has fallen over is fifty pieces.
+    private const double ChatsAtOnce = 10.0, ChatsASecond = 2.0, CommandsAtOnce = 250.0, CommandsASecond = 5.0;
+
+    // Who holds what is told again no sooner than this after the last telling, and a hundredth of a
+    // second later for every page of it: told at the next tick, a table of a thousand craft was sent
+    // whole to everybody two hundred times a second by one game claiming and letting go.
+    private const double OwnersAtLeastSeconds = 0.05, OwnersPerPageSeconds = 0.01;
+
+    // The most craft remembered as gone, and the most bytes of craft definitions kept from one player and from all.
+    private const int MostGone = 16_384;
+    private const long PlayerDefinitionBytes = 256L * 1024 * 1024, AllDefinitionBytes = 1024L * 1024 * 1024;
+
+    // Wrong passwords from one address before it is refused for the rest of the minute.
+    private const int WrongPasswords = 5;
+    private const double WrongPasswordSeconds = 60.0;
+
+    // The login service is asked for its key again, for a certificate the one held did not sign, no
+    // more often than this: anybody admitted can send a certificate nobody signed.
+    private const double LoginKeyAgainSeconds = 60.0;
 
     /// <summary>
     /// How long a session must have been silent, s, before a game joining under its name is taken to
@@ -300,6 +350,9 @@ public sealed class GameServer : IDisposable
     // Made afresh each time the server starts, so cookies from a previous run are not accepted and
     // nothing has to be kept on disk for them.
     private readonly byte[] _cookieKey = RandomNumberGenerator.GetBytes(32);
+    private readonly Dictionary<IPAddress, (int Count, double Since)> _wrong = [];
+    private double _ownersSaidAt = double.NegativeInfinity, _loginKeyAgainAt = double.NegativeInfinity;
+    private int _ownersPages = 1;
     private readonly Func<double> _clock;
     private readonly WorldStore? _store;
     private readonly Dictionary<byte, Player> _players = [];
@@ -542,6 +595,7 @@ public sealed class GameServer : IDisposable
             return;
         }
         (p.DiscordProof, p.DiscordAnswer, p.DiscordAt) = (proof, null, now);
+        bool again = now - _loginKeyAgainAt > LoginKeyAgainSeconds;
         Task<LoginKey> key = LoginKey(), fresh = key;
         ILoginService login = Login!;
         string nonce = p.DiscordNonce;
@@ -558,8 +612,9 @@ public sealed class GameServer : IDisposable
             {
                 DiscordCert? said = DiscordCert.Verify(asked.Cert, (await key.WaitAsync(within.Token)).Key);
                 // Not signed by the key held: the service may have a new one.
-                if (said is null)
+                if (said is null && again)
                 {
+                    _loginKeyAgainAt = now;
                     fresh = Fetched(login, within.Token);
                     said = DiscordCert.Verify(asked.Cert, (await fresh).Key);
                 }
@@ -759,8 +814,13 @@ public sealed class GameServer : IDisposable
         }
         if (now >= _ownersNext)
         {
-            foreach (Wire.Owners page in OwnerPages()) Broadcast(page, p => p.Loaded);
-            _ownersNext = now + OwnersEverySeconds;
+            int pages = 0;
+            foreach (Wire.Owners page in OwnerPages())
+            {
+                Broadcast(page, p => p.Loaded);
+                pages++;
+            }
+            (_ownersNext, _ownersSaidAt, _ownersPages) = (now + OwnersEverySeconds, now, pages);
         }
         if (now >= _clockNext && UniverseClock.Known)
         {
@@ -774,6 +834,8 @@ public sealed class GameServer : IDisposable
                 _udp.Send(telling, p.At);
                 p.TellNext = now + TellAgainSeconds;
             }
+            // Room for a world is kept only for a player asked for one.
+            p.Link.MostPieces = p.WorldAsked ? ushort.MaxValue : Link.VehiclePieces;
             p.Link.Pump(now, m => _udp.Send(m, p.At));
         }
     }
@@ -785,7 +847,10 @@ public sealed class GameServer : IDisposable
         {
             if (player is null && version != 0 && version != Wire.Version)
             {
-                _udp.Send(new Wire.Welcome(0, $"this server uses protocol version {Wire.Version} and your mod uses {version}: one of them needs updating", Options.Name, false), from);
+                // A game of another version reads the version off this and nothing else, and says
+                // the rest itself. As few bytes as a datagram is: the address it goes to is only
+                // claimed, and a sentence in answer to seven bytes is a way to aim this server.
+                _udp.Send(new Wire.Alive(), from);
             }
             return;
         }
@@ -804,7 +869,7 @@ public sealed class GameServer : IDisposable
         {
             case Wire.Hello:
                 // Its welcome was lost.
-                _udp.Send(new Wire.Welcome(player.Id, "", Options.Name, _world is not null || !player.Seeding, System: _worldSystem, Discord: player.DiscordNonce), from);
+                _udp.Send(new Wire.Welcome(player.Id, "", Options.Name, _world is not null || !player.Seeding, System: _worldSystem, Discord: player.DiscordNonce, Session: player.Session), from);
                 return;
             case Wire.Ping ping:
                 player.Rtt = ping.Rtt;
@@ -868,6 +933,11 @@ public sealed class GameServer : IDisposable
                         OwnersChanged();
                     }
                 }
+                if (!Allowed(ref _crafts[state.Key].States, ref _crafts[state.Key].StatesAt, StatesASecond, StatesASecond, arrived))
+                {
+                    Limit(player, $"more than {StatesASecond:F0} states a second for one craft");
+                    return;
+                }
                 if (atTheControls && player.Controlling.Length == 0) Flying(player, state.Key);
                 else if (!atTheControls && player.Controlling == state.Key) Flying(player, "");
                 _crafts[state.Key].Said = state;
@@ -887,6 +957,11 @@ public sealed class GameServer : IDisposable
                 return;
             case Wire.Gone gone when player.Loaded && OwnerOf(gone.Key) == player.Id:
                 _crafts.Remove(gone.Key);
+                player.Crafts--;
+                if (_gone.Count >= MostGone)
+                {
+                    foreach (string old in _gone.OrderBy(g => g.Value).Take(MostGone / 2).Select(g => g.Key).ToArray()) _gone.Remove(old);
+                }
                 _gone[gone.Key] = UniverseClock.Now(_clock());
                 if (player.Controlling == gone.Key) Flying(player, "");
                 Broadcast(gone, p => p.Loaded && p != player);
@@ -906,6 +981,11 @@ public sealed class GameServer : IDisposable
             // footing: from the player who has it, and to everybody else. Not read here.
             case Wire.Extra extra when player.Loaded && extra.Channel.Length > 0 && extra.Data.Length <= Wire.ExtraBytes:
                 if (OwnerOf(extra.Key) != player.Id) return;
+                if (!Allowed(ref _crafts[extra.Key].Extras, ref _crafts[extra.Key].ExtrasAt, ExtrasASecond, ExtrasASecond, arrived))
+                {
+                    Limit(player, $"more than {ExtrasASecond:F0} of mods' words a second about one craft");
+                    return;
+                }
                 Wire.Extra passed = extra with { Owner = player.Id };
                 Broadcast(passed, p => p.Loaded && p != player);
                 return;
@@ -924,6 +1004,7 @@ public sealed class GameServer : IDisposable
             case Wire.Chat chat:
                 string text = Wire.Clip(chat.Text, Wire.ChatChars);
                 if (text.Length == 0) return;
+                if (!MaySay(player, chat: true, arrived)) return;
                 Log($"<{player.Name}> {text}");
                 Broadcast(new Wire.Chat(player.Id, text), _ => true);
                 return;
@@ -944,9 +1025,12 @@ public sealed class GameServer : IDisposable
             case Wire.DiscordProof discordProof:
                 OnDiscordProof(player, discordProof, arrived);
                 return;
-            case Wire.Command asked:
+            // With the session's word, from a game that was given one: a command is one datagram, and
+            // one with an admin's address written on it was otherwise the admin's.
+            case Wire.Command asked when asked.Session == player.Session:
                 string line = Wire.Clip(asked.Line, Wire.ChatChars).Trim();
                 if (line.Length == 0) return;
+                if (!MaySay(player, chat: false, arrived)) return;
                 Wire.Role needs = Permissions.Need(line);
                 if (player.Role < needs)
                 {
@@ -964,7 +1048,7 @@ public sealed class GameServer : IDisposable
                 // The token arrived, which is when the one before it stops working.
                 if (back.Admin && back.Token.Length > 0) Admins.Check(back.Token, player.Name);
                 return;
-            case Wire.Bye:
+            case Wire.Bye bye when bye.Session == player.Session:
                 Remove(player, "has left");
                 return;
             case Wire.Chunk or Wire.Need or Wire.Got:
@@ -1043,13 +1127,14 @@ public sealed class GameServer : IDisposable
                                        Options.Password.Length > 0 ? Wire.WelcomeFlags.Password : Wire.WelcomeFlags.None, RequiredBuild, Options.Id), from);
             return;
         }
+        // What a hello says of its game is written in the log and said to other players.
+        hello = hello with { Name = Wire.PlayerName(hello.Name), KsaBuild = Wire.Clip(hello.KsaBuild, 64), System = Wire.Clip(hello.System, Wire.NameChars) };
         string? refused = _players.Count >= Options.MaxPlayers ? $"the server is full: {Options.MaxPlayers} players"
-            : Options.Password.Length > 0 && hello.Password != Options.Password ? "wrong password"
-            : Refusal(hello);
+            : PasswordRefusal(hello.Password, from.Address, now) ?? Refusal(hello);
         if (refused is not null)
         {
             _udp.Send(new Wire.Welcome(0, refused, Options.Name, false, Mods: WorldMods), from);
-            Log($"refused {Wire.Clip(hello.Name, Wire.NameChars)} from {from}: {refused}");
+            Log($"refused {hello.Name} from {from}: {refused}");
             return;
         }
         // The same player coming back, before they are named against the session they just lost. A
@@ -1063,7 +1148,7 @@ public sealed class GameServer : IDisposable
         //
         // A living game pings once a second, so a few seconds of silence is a session that has gone
         // and not a second player who happens to have chosen the same name.
-        string asked = Wire.Clip(hello.Name, Wire.NameChars);
+        string asked = hello.Name;
         foreach (Player ghost in _players.Values
                      .Where(q => now - q.HeardAt > QuietEnoughToReplaceSeconds
                                  && string.Equals(q.Name, asked, StringComparison.OrdinalIgnoreCase)
@@ -1082,12 +1167,14 @@ public sealed class GameServer : IDisposable
             Mods = hello.Mods.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
             System = hello.System,
             Role = Admins.Check(Wire.Clip(hello.Token, Wire.TokenChars), name),
+            Session = hello.Sessions ? Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(12)) : "",
         };
+        p.Link.MostPieces = Link.VehiclePieces;
         _players[id] = p;
 
         bool seeding = _world is null && _players.Values.All(q => !q.Seeding);
         if (DiscordOn) p.DiscordNonce = Discord.Nonce();
-        _udp.Send(new Wire.Welcome(id, "", Options.Name, !seeding, System: _worldSystem, Discord: p.DiscordNonce), from);
+        _udp.Send(new Wire.Welcome(id, "", Options.Name, !seeding, System: _worldSystem, Discord: p.DiscordNonce, Session: p.Session), from);
         Log($"{name} has joined from {from}{(p.Role > Wire.Role.Player ? $" as {Permissions.Said(p.Role)}" : "")}{(seeding ? ", and their world becomes the server's" : "")}");
         // Said only when there is something to say: that they are an admin, or that the token they
         // offered is no good, which is how a game deopped while it was away forgets the one it kept.
@@ -1113,6 +1200,75 @@ public sealed class GameServer : IDisposable
         (p.WaitingForWorld, p.WaitingSince) = (true, now);
         // A world much older than now is saved afresh by someone in it first, so the player joining does not have to catch up far.
         if (_world is not null && UniverseClock.Now(now) - _world.Universe > StaleSeconds) AskSnapshot($"{name} is joining");
+    }
+
+    // Compared as hashes, so how long the comparing takes says nothing of how much was right.
+    private bool PasswordGood(string given) =>
+        CryptographicOperations.FixedTimeEquals(SHA256.HashData(Encoding.UTF8.GetBytes(given)), SHA256.HashData(Encoding.UTF8.GetBytes(Options.Password)));
+
+    // Why an address may not join on the password it gave, or null: a wrong one counts against the
+    // address it came from, which the cookie has shown to be its own, and enough of them close the
+    // door on it for the rest of the minute, to the right one too.
+    private string? PasswordRefusal(string given, IPAddress from, double now)
+    {
+        if (Options.Password.Length == 0) return null;
+        if (_wrong.TryGetValue(from, out (int Count, double Since) wrong) && now - wrong.Since > WrongPasswordSeconds)
+        {
+            _wrong.Remove(from);
+            wrong = default;
+        }
+        if (wrong.Count >= WrongPasswords) return "too many wrong passwords from your address: wait a minute";
+        if (PasswordGood(given)) return null;
+        if (_wrong.Count >= 4096)
+        {
+            foreach (IPAddress old in _wrong.Where(w => now - w.Value.Since > WrongPasswordSeconds).Select(w => w.Key).ToArray()) _wrong.Remove(old);
+            if (_wrong.Count >= 4096) _wrong.Clear();
+        }
+        _wrong[from] = (wrong.Count + 1, wrong.Count == 0 ? now : wrong.Since);
+        return "wrong password";
+    }
+
+    // Takes one from an allowance that fills at so many a second up to so many, or says there is none.
+    private static bool Allowed(ref double allowance, ref double at, double aSecond, double most, double now)
+    {
+        allowance = Math.Min(most, allowance + ((now - at) * aSecond));
+        at = now;
+        if (allowance < 1.0) return false;
+        allowance -= 1.0;
+        return true;
+    }
+
+    // Whether a player may say another chat line or command now.
+    private bool MaySay(Player p, bool chat, double now)
+    {
+        bool may = chat ? Allowed(ref p.Chats, ref p.ChatsAt, ChatsASecond, ChatsAtOnce, now) : Allowed(ref p.Commands, ref p.CommandsAt, CommandsASecond, CommandsAtOnce, now);
+        if (!may) Limit(p, chat ? $"more than {ChatsASecond:F0} chat lines a second" : $"more than {CommandsASecond:F0} commands a second");
+        return may;
+    }
+
+    // Writes a limit a player went over in the log, once a minute for each: what is over it is dropped.
+    private void Limit(Player p, string what)
+    {
+        double now = _clock();
+        if (now - p.LimitSaid.GetValueOrDefault(what, double.NegativeInfinity) < 60.0) return;
+        p.LimitSaid[what] = now;
+        Log($"{p.Name} is over a limit, and what is over it is dropped: {what}");
+    }
+
+    // How many craft a player holds: counted afresh once a second, and by what is given in between.
+    private int Held(Player p)
+    {
+        double now = _clock();
+        if (now - p.CraftsAt > 1.0) (p.Crafts, p.CraftsAt) = (_crafts.Values.Count(c => c.Owner == p.Id), now);
+        return p.Crafts;
+    }
+
+    // Whether a player may be given one more craft.
+    private bool RoomFor(Player p)
+    {
+        if (Held(p) < Options.MaxCraftPerPlayer) return true;
+        Limit(p, $"more than {Options.MaxCraftPerPlayer} craft");
+        return false;
     }
 
     // Why a player cannot be let in: another build of KSA, or a mod the world may hold parts of that it does not have.
@@ -1211,6 +1367,15 @@ public sealed class GameServer : IDisposable
                     Log($"{p.Name} sent a world nobody asked for, {Blob.Size(blob.Data.Length)}: left where it came from");
                     return;
                 }
+                // It is handed to everyone who joins after and kept on disk: one that is no zip, or
+                // holds a name that climbs out of a save, is asked of somebody else as one its
+                // game would not hand over is.
+                if (Blob.WorldFault(blob.Data) is { } fault)
+                {
+                    p.WorldAsked = false;
+                    OnNoWorld(p, fault);
+                    return;
+                }
                 p.WorldAsked = false;
                 SetWorld(blob, p.KsaBuild, p.Mods, p.System);
                 Log($"{p.Name} saved the world: {Blob.Size(blob.Data.Length)} at universe time {blob.Universe:F0} s");
@@ -1231,6 +1396,18 @@ public sealed class GameServer : IDisposable
                     return;
                 }
                 Craft craft = _crafts[blob.Key];
+                long his = 0, all = 0;
+                foreach (Craft kept in _crafts.Values)
+                {
+                    if (kept.Definition is null || kept == craft) continue;
+                    all += kept.Definition.Length;
+                    if (kept.Owner == p.Id) his += kept.Definition.Length;
+                }
+                if (his + bytes.Length > PlayerDefinitionBytes || all + bytes.Length > AllDefinitionBytes)
+                {
+                    Limit(p, "more craft definitions than the server keeps");
+                    return;
+                }
                 // Written before the one already here, by the same game: the last to arrive is
                 // not the last that was written. A piece of wreckage written down twice two
                 // seconds apart had the first finish arriving after the second on a wire that
@@ -1282,6 +1459,7 @@ public sealed class GameServer : IDisposable
             // yet still has the craft under it, and asking for it would make it two craft.
             if (_renames.Any(r => r.Was == key && _clock() - r.At < RenameToldForSeconds)) return null;
             // Made again under its name, which is a craft that has undocked: that docking is over.
+            if (!RoomFor(p)) return null;
             _dockings.RemoveAll(d => d.Consumed == key);
             if (_docked.Remove(key, out string? into) && made && Undocker(into, p)) Log($"{p.Name} undocked {key}");
             _crafts[key] = craft = new Craft();
@@ -1304,7 +1482,8 @@ public sealed class GameServer : IDisposable
         {
             // A craft this game made that happens to share a name is a second craft, not the one the
             // holder has, and is given a name of its own. Anything else is the holder's to fly.
-            if (!made) return null;
+            if (!made || !RoomFor(p)) return null;
+            p.Crafts++;
             string fresh = FreeKey(key);
             _crafts[fresh] = new Craft { Owner = p.Id, AttendedAt = _clock() };
             _gone.Remove(fresh);
@@ -1313,6 +1492,8 @@ public sealed class GameServer : IDisposable
             Log($"{holder.Name} already has a craft called {key}, so {p.Name}'s is {fresh} here");
             return fresh;
         }
+        if (!RoomFor(p)) return null;
+        p.Crafts++;
         if (_players.TryGetValue(craft.Owner, out Player? was) && was.Controlling == key) Flying(was, "");
         (craft.Owner, craft.AttendedAt, craft.Near, craft.NearAt, craft.Said) = (p.Id, _clock(), near, _clock(), null);
         _gone.Remove(key);
@@ -1545,7 +1726,9 @@ public sealed class GameServer : IDisposable
         return Wire.Clip($"{root} {Guid.NewGuid():N}", Wire.KeyChars);
     }
 
-    private void OwnersChanged() => _ownersNext = 0.0;
+    // Told at the next tick, unless it was only just told.
+    private void OwnersChanged() =>
+        _ownersNext = Math.Min(_ownersNext, _ownersSaidAt + Math.Clamp(_ownersPages * OwnersPerPageSeconds, OwnersAtLeastSeconds, OwnersEverySeconds));
 
     private string Named(byte id) => _players.TryGetValue(id, out Player? p) ? p.Name : "somebody";
 
@@ -2042,7 +2225,7 @@ public sealed class GameServer : IDisposable
     private void Remove(Player p, string why)
     {
         if (!_players.Remove(p.Id)) return;
-        _udp.Send(new Wire.Bye(why == "has left" ? "" : why), p.At);
+        _udp.Send(new Wire.Bye(why == "has left" ? "" : why, p.Session), p.At);
         bool released = false;
         foreach (Craft c in _crafts.Values.Where(c => c.Owner == p.Id))
         {
@@ -2164,6 +2347,34 @@ public sealed class GameServer : IDisposable
         if (Find(name) is not { } p) return false;
         Remove(p, $"was kicked{(why.Length > 0 ? $": {why}" : "")}");
         return true;
+    }
+
+    /// <summary>
+    /// Puts out the player a line names, "name [why]" or "#id [why]", and says who that was: the
+    /// longest name the line starts with, since a name may have spaces in it and the server itself
+    /// calls a second Bob "Bob 2". Null if it names nobody.
+    /// </summary>
+    public string? KickLine(string line)
+    {
+        line = line.Trim();
+        Player? who = null;
+        string why;
+        if (line.StartsWith('#'))
+        {
+            string[] parts = line[1..].Split(' ', 2, StringSplitOptions.TrimEntries);
+            if (byte.TryParse(parts[0], out byte id)) _players.TryGetValue(id, out who);
+            why = parts.Length > 1 ? parts[1] : "";
+        }
+        else
+        {
+            who = _players.Values
+                .Where(p => line.StartsWith(p.Name, StringComparison.OrdinalIgnoreCase) && (line.Length == p.Name.Length || line[p.Name.Length] == ' '))
+                .OrderByDescending(p => p.Name.Length).FirstOrDefault();
+            why = who is null ? "" : line[who.Name.Length..].Trim();
+        }
+        if (who is null) return null;
+        Remove(who, $"was kicked{(why.Length > 0 ? $": {why}" : "")}");
+        return who.Name;
     }
 
     /// <summary>Says something to every player, from the console.</summary>
@@ -2613,8 +2824,23 @@ public sealed class GameServer : IDisposable
         foreach ((string key, double at) in _gone.ToArray()) if (at < universe - SaveMarginSeconds) _gone.Remove(key);
     }
 
-    private Wire.Roster Roster() =>
-        new([.. _players.Values.OrderBy(p => p.Id).Select(p => new Wire.Player(p.Id, p.Name, p.Loaded, p.Controlling, p.Rtt, (float)p.Can, p.DiscordId.Length > 0))]);
+    private Wire.Roster Roster()
+    {
+        Wire.Roster roster = new([.. _players.Values.OrderBy(p => p.Id).Select(p => new Wire.Player(p.Id, p.Name, p.Loaded, p.Controlling, p.Rtt, (float)p.Can, p.DiscordId.Length > 0))]);
+        // A craft's name is up to 255 bytes, and thirty players flying such are more than a datagram:
+        // the roster then went to nobody. Said with the names of craft cut short, it still says who is here.
+        for (int chars = 32; chars >= 0 && !Fits(roster); chars -= 16)
+        {
+            roster = new([.. roster.Players.Select(p => p with { Controlling = Wire.Clip(p.Controlling, chars) })]);
+        }
+        return roster;
+    }
+
+    private bool Fits(Wire.Message m)
+    {
+        try { return Wire.Write(m, _measure) <= Wire.BufferBytes; }
+        catch (Exception e) when (e is ArgumentException or IndexOutOfRangeException) { return false; }
+    }
 
     private IEnumerable<Wire.Owners> OwnerPages()
     {
@@ -2656,7 +2882,8 @@ public sealed class GameServer : IDisposable
     /// </summary>
     private string UniqueName(string name)
     {
-        string root = name.Length > 0 ? name : "Kitten";
+        // "server" is how what the server says itself is shown.
+        string root = name.Length > 0 && !name.Equals("server", StringComparison.OrdinalIgnoreCase) ? name : "Kitten";
         string unique = root;
         for (int k = 2; _players.Values.Any(p => string.Equals(p.Name, unique, StringComparison.OrdinalIgnoreCase)); k++)
         {
@@ -2668,12 +2895,14 @@ public sealed class GameServer : IDisposable
     // How many notes a game may have written down in a burst, and how fast that fills again.
     private const double NotesAtOnce = 5.0, NotesASecond = 0.2;
 
-    private void Log(string what) => Said.Enqueue(what);
+    // On one line, whatever was in it: a craft's name and a game's build come from other machines,
+    // and one with a line break in it wrote a line of the log that never happened.
+    private void Log(string what) => Said.Enqueue(what.AsSpan().IndexOfAny('\r', '\n') < 0 ? what : what.Replace('\r', ' ').Replace('\n', ' '));
 
     /// <summary>Says goodbye to everyone and closes the socket.</summary>
     public void Dispose()
     {
-        foreach (Player p in _players.Values) _udp.Send(new Wire.Bye("the server is shutting down"), p.At);
+        foreach (Player p in _players.Values) _udp.Send(new Wire.Bye("the server is shutting down", p.Session), p.At);
         _udp.Dispose();
     }
 }

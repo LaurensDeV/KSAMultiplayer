@@ -75,6 +75,7 @@ public sealed class Client : IDisposable
     private int _ownersWant = -1;
     private IPEndPoint? _server;
     private Wire.Hello? _hello;
+    private string _session = "";
     private double _helloNext, _joinUntil, _pingNext, _heardAt;
     private double _bestRtt = double.PositiveInfinity;
     private double _offsetAt = double.NegativeInfinity;
@@ -355,7 +356,8 @@ public sealed class Client : IDisposable
         _sweeps.Clear();
         (_told, _kept) = (null, "");
         (DiscordNonce, Discord, _discordAsk) = ("", null, null);
-        _hello = new Wire.Hello(Wire.Clip(name, Wire.NameChars), ksaBuild, mods, system, password, Wire.Clip(token, Wire.TokenChars));
+        _hello = new Wire.Hello(Wire.Clip(name, Wire.NameChars), ksaBuild, mods, system, password, Wire.Clip(token, Wire.TokenChars), Sessions: true);
+        _session = "";
         (_helloNext, _joinUntil, _heardAt) = (0.0, _clock() + JoinWithinSeconds, _clock());
         (_bestRtt, _lastRtt, ServerOffset, _serverClock, _serverRate) = (double.PositiveInfinity, double.NaN, 0.0, null, 0.0);
         _saidGone.Clear();
@@ -486,7 +488,7 @@ public sealed class Client : IDisposable
     public void Ask(string line)
     {
         string t = Wire.Clip(line, Wire.ChatChars).Trim();
-        if (Joined && t.Length > 0) Send(new Wire.Command(t));
+        if (Joined && t.Length > 0) Send(new Wire.Command(t, _session));
     }
 
     /// <summary>Asks the server to give a craft another name in every game; it answers with a <see cref="Wire.Name"/> or says why not.</summary>
@@ -604,7 +606,7 @@ public sealed class Client : IDisposable
                     _server = null;
                     return;
                 }
-                (Id, ServerName, ServerHasWorld, _pingNext) = (w.Id, w.ServerName, w.HasWorld, 0.0);
+                (Id, ServerName, ServerHasWorld, _pingNext, _session) = (w.Id, w.ServerName, w.HasWorld, 0.0, w.Session);
                 DiscordNonce = w.Discord;
                 Said.Enqueue($"joined {(w.ServerName.Length > 0 ? w.ServerName : "the server")} as player {w.Id}");
                 return;
@@ -756,7 +758,9 @@ public sealed class Client : IDisposable
             case Wire.Snapshot s when Joined:
                 SnapshotWanted = s.Why;
                 return;
-            case Wire.Bye b:
+            // With the session's word, where the server gave one: a goodbye is one datagram, and
+            // anybody can write the server's address on one.
+            case Wire.Bye b when _session.Length == 0 || b.Session == _session:
                 Leave(b.Why.Length > 0 ? $"the server closed the connection: {b.Why}" : "the server closed the connection");
                 return;
             case Wire.Chunk or Wire.Need or Wire.Got when Joined:
@@ -815,7 +819,7 @@ public sealed class Client : IDisposable
     public void Dispose()
     {
         _stopped = true;
-        if (Joined) Send(new Wire.Bye("left"));
+        if (Joined) Send(new Wire.Bye("left", _session));
         Id = 0;
         // Before the socket goes, so the keepalive is not part way through sending down one that has
         // been disposed. A quarter of a second is its whole cycle; the wait is generous to a thread

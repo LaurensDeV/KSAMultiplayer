@@ -27,6 +27,9 @@ public static class Program
         if (args is ["--healthcheck", ..]) return await Healthy(args).ConfigureAwait(false);
 
         WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
+        // An announcement is a name and a port. Left at the 28 MB a request may be by default, a few
+        // at once were more than the memory this is given, and a directory restarted has forgotten its list.
+        builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = 16 * 1024);
         string name = Environment.GetEnvironmentVariable("KSAMP_DIRECTORY_NAME") is { Length: > 0 } said
             ? Wire.Clip(said, 48) : "a KSA Multiplayer directory";
 
