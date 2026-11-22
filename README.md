@@ -70,7 +70,10 @@ Once you're in:
   Docked with another player's craft, the one craft belongs to whoever's game docked them first:
   that player flies it and the other rides along, watching. Only its owner can undock it. When
   they do, each half goes back to whoever had it, the rider's about ten seconds after its owner
-  has flown the other half away.
+  has flown the other half away. Ports latch only within half a metre, so come in slow and centred,
+  with Align on roll Up: the ports' guides stop two ports turned a sixth of a turn apart 0.7 m short,
+  as roll Down should. Docking from a port's menu takes that port's craft into the other, under the
+  other's name, so dock from the visiting craft's port, not the station's.
 - **Time is shared.** Every world keeps the server's time, so changing speed is put to everyone
   first: a warp runs only if all agree, and only whoever asked can end it. Pause is a speed like any
   other. The world is never warped past what the slowest machine in it is managing, and slows to

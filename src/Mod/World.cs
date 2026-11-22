@@ -1447,6 +1447,13 @@ internal static class World
     // What DockingPort asks of two ports that touch, beside its own latching energy.
     private const double LatchWithinM = 0.5, LatchWithinDeg = 10.0, PortsNearM = 1.5, PortCraftWithinM = 300.0;
 
+    // KSA asks nothing of the roll, but the androgynous port's guides repeat every 120 degrees and
+    // slot together only where the angle between the two ports' second axes is 60 or 180 (300
+    // reads as 60, the angle having no sign). Turned a sixth of a turn from that, guide tip meets
+    // guide tip and the ports stop 0.67 m apart. 11 degrees off has docked and 30 has bounced.
+    private static readonly double[] DockingRollsDeg = [60.0, 180.0];
+    private const double GuidesMeetDeg = 30.0;
+
     /// <summary>
     /// What stood between two ports and a docking, where a craft has touched another with a free
     /// port of each close together and both craft are still there. Null where it touched nothing
@@ -1495,6 +1502,9 @@ internal static class World
             double3 mineAcross = Across(craft, n.Mine), theirsAcross = Across(n.Other, n.Theirs);
             double roll = Vec(mineAcross) < 1e-6 || Vec(theirsAcross) < 1e-6 ? double.NaN
                 : Math.Acos(Math.Clamp(double3.Dot(mineAcross, theirsAcross) / (Vec(mineAcross) * Vec(theirsAcross)), -1.0, 1.0)) * 180.0 / Math.PI;
+            // The raw angle reads 180 for two ports the flight computer's Align lines up with roll Up,
+            // and a player read that as half a turn wrong; what they can act on is how far to turn.
+            double offRoll = Math.Min(Math.Abs(roll - DockingRollsDeg[0]), Math.Abs(roll - DockingRollsDeg[1]));
             // KSA measures the closing along the lighter craft's port, and against that port's latch.
             bool lighter = craft.TotalMass <= n.Other.TotalMass;
             double closing = double3.Dot(craft.GetVelocityCce() - n.Other.GetVelocityCce(), lighter ? facing : -axis);
@@ -1502,6 +1512,8 @@ internal static class World
             double energy = closing > 0.0 ? 0.5 * reduced * closing * closing : 0.0, latch = (lighter ? n.Mine : n.Theirs).LatchingKineticEnergy;
 
             List<string> short_ = [];
+            if (offRoll >= GuidesMeetDeg)
+                short_.Add($"the port guides met, turned {offRoll:F0} degrees from a docking roll: hold Align with roll Up, or roll {offRoll:F0} degrees");
             if (n.Apart >= LatchWithinM) short_.Add($"the ports were {n.Apart:F2} m apart and KSA latches under {LatchWithinM} m");
             if (tilt > LatchWithinDeg) short_.Add($"they were {tilt:F0} degrees off facing each other and KSA allows {LatchWithinDeg:F0}");
             if (closing <= 0.0) short_.Add("they were no longer closing");
@@ -1509,7 +1521,7 @@ internal static class World
             string why = short_.Count > 0 ? string.Join(", ", short_) : "everything KSA asks of two ports held when this was read";
             return $"{craft.Id} ({craft.TotalMass:F0} kg) port {n.I + 1} of {craft.Parts.Modules.Get<DockingPort>().Length} on {n.Mine.Parent.FullPart.DisplayName}, "
                  + $"{n.Other.Id} ({n.Other.TotalMass:F0} kg) port {n.J + 1} of {n.Other.Parts.Modules.Get<DockingPort>().Length} on {n.Theirs.Parent.FullPart.DisplayName}: "
-                 + $"{along:F2} m along and {across:F2} m across, {tilt:F1} degrees of tilt, {roll:F0} of roll, closing at {closing:F2} m/s -- {why}";
+                 + $"{along:F2} m along and {across:F2} m across, {tilt:F1} degrees of tilt, {offRoll:F0} degrees of roll from docking, closing at {closing:F2} m/s -- {why}";
         }
         catch (Exception)
         {

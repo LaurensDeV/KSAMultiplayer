@@ -559,6 +559,15 @@ world, and five at once and one every five seconds after: it is a line in the op
 player's word. `Wire.Note` is a kind a server of the same version that has never heard of it
 drops unread, so `Wire.Version` did not move for it.
 
+The roll in a note is how far the two ports are turned from where their guides slot together, not
+the angle between them. KSA's androgynous port docks every 120 degrees, at 60 and 180 degrees
+between the two ports' second axes; Align with roll Up holds 180 (it aims at the target port turned
+half a turn about its Z), and roll Down, by KSA's source and not yet seen, holds 0, which is guide
+tip on guide tip. Sent as the raw
+angle, a perfect Align read "180 of roll" and a player asked how it could be half a turn out. Where
+the ports are 30 degrees or more from a docking roll the note says the guides met and to hold Align
+with roll Up: 30 has bounced off, 11 has docked, and nothing between has been seen.
+
 A craft a game made is never taken on another player's word while its name is unanswered, because
 another player's craft can be standing under that name; once the server has said the craft is this
 player's, the name is the craft's, and whoever is given it next is followed like any other owner.
