@@ -1710,6 +1710,25 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   else is waiting on changes hands: a world is mostly parked craft nobody is looking at, and letting
   those go lapsed ownership 873 times in 70 minutes, each one moving the camera of whoever was
   watching a craft when it came free.
+- **A game far behind is handed nothing.** More than 30 s behind the server's time, by its last
+  ping or, until it has sent one since loading, by the universe time it said it loaded at, a game
+  keeps the craft it has and the ones it makes, and `Grant` refuses it anything else; a craft only
+  such a game is watching is not let go of. As owner, a game's world is the one every other is
+  pulled to, and one behind is flying the past. On `ksamp.gg` a game came in 5,500 s behind, was
+  handed the protected station 14 s later by this lapse rule, and the station came apart in its
+  world 45 s after that: its owner's word that it was destroyed took it off the protected list,
+  and the operator loaded a three-hour-old backup. The server writes down once a minute who is
+  refused for it. Driven over loopback; not seen in a game.
+- **A world is told up to date from the one a game was sent.** A game holds a world it cannot load
+  yet, as it does while the vehicle editor is open, and loads it when it can. The server sends a
+  game that says it is in the craft described, gone and renamed since the world *it was sent*, not
+  since the server's last save, and a save keeps those back to the oldest world still loading
+  (`Prune`). A game that loads more than three minutes after the world was sent, where it has been
+  saved since, is sent it again and goes round the loading once more, as for an operator's reload;
+  its word that it was in, repeated every two seconds until a world comes, is not taken of a world
+  older than the one sent. Before this a game that sat in the editor for an hour came in with
+  none of that hour: two sweeps of the sky and a station moved to a polar orbit. Driven over
+  loopback; not seen in a game.
 - **The operator's broom sweeps by name, and every game sweeps its own world.** A world fills up
   with spent stages, and a `Gone` cannot clear them: that datagram is one game's word about a craft
   of its own, which the game that owns it is right to ignore, so the one game holding the debris

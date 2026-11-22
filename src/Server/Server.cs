@@ -197,6 +197,16 @@ public sealed class GameServer : IDisposable
         public bool WaitingForWorld { get; set; }
         public double WaitingSince { get; set; }
 
+        /// <summary>When the world was last sent to this game, on the server's clock, and the universe time it was saved at; zero until one is.</summary>
+        public double SentAt { get; set; }
+        public double SentUniverse { get; set; }
+
+        /// <summary>How far behind the server's time its world was when it said it was in, s: its lateness until it next says.</summary>
+        public double LoadedBehind { get; set; }
+
+        /// <summary>When it was last written down as too far behind to be handed a craft.</summary>
+        public double ToldBehindAt { get; set; } = double.NegativeInfinity;
+
         /// <summary>Asked for the first save of the world: the server had none when this player joined.</summary>
         public bool Seeding { get; set; }
 
@@ -334,6 +344,15 @@ public sealed class GameServer : IDisposable
 
     // How long a player joining waits for a fresh save before it is sent the one there is.
     private const double FreshWithinSeconds = 15.0;
+
+    // How long a world may have been on its way into a game before it is too old to play in, where
+    // there is a newer. A slow machine's first load takes a minute or two; this is the editor.
+    private const double StaleWorldAfterSeconds = 180.0;
+
+    // How far behind the server's time a game may be and still be handed a craft it does not have.
+    // One that is further is flying the past: as owner, its world is the one every other game is
+    // pulled to, and a station given to a game 5,500 s behind came apart in it 45 s later.
+    private const double TakeBehindSeconds = 30.0;
 
     // A world this old in universe time is saved afresh before it is handed to a player joining.
     private const double StaleSeconds = 30.0;
@@ -1333,6 +1352,7 @@ public sealed class GameServer : IDisposable
     {
         if (_world is null) return;
         p.WaitingForWorld = false;
+        (p.SentAt, p.SentUniverse) = (_clock(), _world.Universe);
         p.Link.Send(_world.Encode(), _clock());
         Log($"sending {p.Name} the world, {Blob.Size(_world.Data.Length)}");
     }
@@ -1357,7 +1377,21 @@ public sealed class GameServer : IDisposable
     {
         if (p.Loaded) return;
         double now = _clock();
+        // Said of a world older than the one last sent: a game says it is in every two seconds until
+        // a world comes, and the one sent again takes a while to come.
+        if (p.SentAt > 0.0 && universe < p.SentUniverse - 1.0) return;
+        // A game holds a world it cannot load yet, as it does while the vehicle editor is open, and
+        // loads it when it can: one sat on a world for an hour while the others cleared the sky twice
+        // and flew a station to a new orbit, came in with none of that, and was handed the station.
+        // Sent again, it goes round the loading once more, as for an operator's reload.
+        if (_world is not null && p.SentAt > 0.0 && now - p.SentAt > StaleWorldAfterSeconds && _world.Universe > p.SentUniverse + 1.0)
+        {
+            Log($"{p.Name} loaded the world {now - p.SentAt:F0} s after it was sent, and it has been saved since: sending it again");
+            SendWorld(p);
+            return;
+        }
         (p.Loaded, p.LoadedAt, p.Seeding) = (true, now, false);
+        p.LoadedBehind = UniverseClock.Known ? UniverseClock.Now(now) - universe : 0.0;
         if (!UniverseClock.Known)
         {
             UniverseClock.Set(universe, now);
@@ -1367,7 +1401,8 @@ public sealed class GameServer : IDisposable
         // a game builds a craft from its definition only for the player who has it, so one that
         // was described by somebody since gone was taken down for a rebuild that never came, and
         // the joiner's next save took it out of the world.
-        double since = (_world?.Universe ?? universe) - SaveMarginSeconds;
+        // Since the world this game was sent, which a save while it loaded leaves behind the one held now.
+        double since = (p.SentAt > 0.0 ? p.SentUniverse : _world?.Universe ?? universe) - SaveMarginSeconds;
         foreach ((string key, Craft c) in _crafts)
         {
             if (c.Definition is not null && c.Universe >= since && c.Owner != 0 && c.Owner != p.Id) p.Link.Send(c.Definition, now);
@@ -1470,6 +1505,8 @@ public sealed class GameServer : IDisposable
     /// <param name="near">Whether it is asked for only for being within this player's physics: given where nobody has it, and never taken from anybody.</param>
     private string? Grant(Player p, string key, bool taking = false, bool made = false, bool near = false)
     {
+        // A craft its game makes is its own whenever it is made; it asks again for anything else.
+        if (!made && OwnerOf(key) != p.Id && TooFarBehind(p)) return null;
         if (!_crafts.TryGetValue(key, out Craft? craft))
         {
             // A name that has gone is not claimed back, or a game that has not heard yet would
@@ -2227,7 +2264,8 @@ public sealed class GameServer : IDisposable
             // Only a craft somebody else is waiting on. Most of a world is parked craft nobody is
             // looking at, and letting those go handed them round hundreds of times an hour, each
             // time moving the camera of whoever happened to be watching one.
-            if (_players.Values.FirstOrDefault(q => q.Id != owner.Id && q.Loaded && q.Watching == key) is not { } waiting) continue;
+            // Nor one only a game far behind is waiting on, which could not have it anyway.
+            if (_players.Values.FirstOrDefault(q => q.Id != owner.Id && q.Loaded && q.Watching == key && BehindBy(q) <= TakeBehindSeconds) is not { } waiting) continue;
 
             craft.Owner = 0;
             any = true;
@@ -2235,6 +2273,24 @@ public sealed class GameServer : IDisposable
         }
         if (any) OwnersChanged();
     }
+
+    // By its last word since it loaded, or by the world it loaded until it has said.
+    private static double BehindBy(Player p) => p.LateAt >= p.LoadedAt ? p.Late : p.LoadedBehind;
+
+    private bool TooFarBehind(Player p)
+    {
+        double behind = BehindBy(p);
+        if (behind <= TakeBehindSeconds) return false;
+        double now = _clock();
+        if (now - p.ToldBehindAt > ToldBehindEverySeconds)
+        {
+            p.ToldBehindAt = now;
+            Log($"{p.Name} is {behind:F0} s behind: no craft is handed to them until they catch up");
+        }
+        return true;
+    }
+
+    private const double ToldBehindEverySeconds = 60.0;
 
     // How long after a craft was written down an older word of it can still be on its way.
     private const double OlderWordWithinSeconds = 30.0;
@@ -2859,6 +2915,11 @@ public sealed class GameServer : IDisposable
     // Craft defined and gone before this were saved with the world, and need not be handed out again.
     private void Prune(double universe)
     {
+        // Nor anything a game still loading an older world is yet to be told when it is in.
+        foreach (Player p in _players.Values)
+        {
+            if (!p.Loaded && !p.WaitingForWorld && p.SentAt > 0.0) universe = Math.Min(universe, p.SentUniverse);
+        }
         foreach ((string key, Craft c) in _crafts.ToArray())
         {
             if (c.Definition is not null && c.Universe < universe - SaveMarginSeconds) c.Definition = null;

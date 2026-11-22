@@ -1802,6 +1802,112 @@ public class ServerTests
         Assert.Equal(a.Id, rig.Server.OwnerOf("Rocket"));
     }
 
+    // Bob joins and is sent the world, and it is saved again before he says he is in.
+    private static (Client Bob, Blob Sent) BobSentAWorldThenSavedAgain(Rig rig, Client a, double savedAgainAt, Action? meanwhile = null)
+    {
+        Client b = rig.Join("Bob");
+        rig.Until(() => b.Blobs.Any(x => x.Kind == BlobKind.World), seconds: 20, what: "Bob to get the world");
+        Blob sent = b.Blobs.First(x => x.Kind == BlobKind.World);
+        meanwhile?.Invoke();
+        rig.Server.SnapshotNow();
+        rig.Until(() => a.SnapshotWanted is not null, what: "Alice to be asked for a save");
+        a.SnapshotWanted = null;
+        a.Upload(new Blob(BlobKind.World, "", a.Id, savedAgainAt, Rig.FakeWorld(42)));
+        rig.Until(() => rig.Server.World!.Universe >= savedAgainAt, what: "the newer save");
+        return (b, sent);
+    }
+
+    /// <summary>
+    /// What was made while a game loaded is told it from the world it was sent. Told from the last
+    /// save instead, a game that loaded across a save had nothing of what came between.
+    /// </summary>
+    [Fact]
+    public void AGameIsToldWhatWasMadeSinceTheWorldItWasSentNotSinceTheLastSave()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        (Client b, Blob sent) = BobSentAWorldThenSavedAgain(rig, a, 9000, () =>
+        {
+            a.Claim("Probe", controlling: false, made: true);
+            rig.Until(() => rig.Server.OwnerOf("Probe") == a.Id, what: "Alice to have the probe");
+            a.Upload(new Blob(BlobKind.Vehicle, "Probe", a.Id, 5002, Rig.FakeWorld(2)));
+            rig.Until(() => rig.Server.Said.Any(s => s.Contains("says how Probe is built")), what: "the probe to be described");
+        });
+        Assert.DoesNotContain(b.Blobs, x => x.Kind == BlobKind.Vehicle && x.Key == "Probe");
+
+        b.SayLoaded(sent.Universe);
+        rig.Until(() => b.Blobs.Any(x => x.Kind == BlobKind.Vehicle && x.Key == "Probe"), what: "Bob to be told of the probe");
+    }
+
+    /// <summary>
+    /// A game that sat on its world, as one with the vehicle editor open does, is sent the newer one
+    /// rather than let in with the old: on ksamp.gg one came in an hour late and was handed a station.
+    /// </summary>
+    [Fact]
+    public void AWorldLoadedLongAfterItWasSentIsSentAgainWhereThereIsANewer()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        (Client b, Blob sent) = BobSentAWorldThenSavedAgain(rig, a, 5100);
+
+        // Three minutes and more, a second at a time so that nobody goes quiet.
+        for (int i = 0; i < 200; i++)
+        {
+            rig.Skip(1.0, real: 0.0);
+            rig.For(0.01);
+        }
+        b.SayLoaded(sent.Universe);
+        rig.Until(() => b.Blobs.Count(x => x.Kind == BlobKind.World) == 2, seconds: 20, what: "Bob to be sent the world again");
+        Blob again = b.Blobs.Last(x => x.Kind == BlobKind.World);
+        Assert.Equal(5100, again.Universe);
+
+        // Not in on the old one, however often it was said.
+        b.SayLoaded(sent.Universe);
+        rig.For(3.0);
+        Assert.False(rig.Server.Players.First(p => p.Id == b.Id).Loaded);
+
+        b.SayLoaded(again.Universe);
+        rig.Until(() => rig.Server.Players.First(p => p.Id == b.Id).Loaded, what: "Bob to be in on the newer world");
+    }
+
+    /// <summary>
+    /// A game far behind the server's time is flying the past, and as a craft's owner its world is
+    /// the one every other is pulled to. It keeps what it has and what it makes, and is handed
+    /// nothing else until it has caught up.
+    /// </summary>
+    [Fact]
+    public void AGameFarBehindTheServersTimeIsHandedNoCraftUntilItCatchesUp()
+    {
+        using Rig rig = new(new ServerOptions { LapseWithin = 1.0 });
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        a.Claim("Station", controlling: true, made: false);
+        rig.Until(() => rig.Server.OwnerOf("Station") == a.Id, what: "Alice to hold the station");
+
+        b.Late = 3600.0;
+        rig.Until(() => rig.Server.Players.Any(p => p.Id == b.Id && p.Late > 1000.0), what: "the server to hear how far behind Bob is");
+
+        // Alice walks away from the station while Bob looks at it: not let go of for him.
+        a.Claim("Lander", controlling: true, made: false);
+        b.Watching = "Station";
+        rig.For(4.0);
+        Assert.Equal(a.Id, rig.Server.OwnerOf("Station"));
+
+        // Nor anything nobody has, while one his game makes is his.
+        b.Claim("Probe", controlling: true, made: false);
+        b.Claim("Debris", controlling: false, made: true);
+        rig.Until(() => rig.Server.OwnerOf("Debris") == b.Id, what: "Bob to have what his game made");
+        rig.Until(() => rig.Server.Said.Any(s => s.StartsWith("Bob is") && s.EndsWith("s behind: no craft is handed to them until they catch up")),
+                  what: "the refusal to be written down");
+        Assert.NotEqual(b.Id, rig.Server.OwnerOf("Probe"));
+
+        // Caught up, he is waited on like anybody.
+        b.Late = 0.0;
+        rig.Until(() => rig.Server.OwnerOf("Station") == 0, seconds: 15.0, what: "the station to be let go of");
+        b.Claim("Station", controlling: true, made: false);
+        rig.Until(() => rig.Server.OwnerOf("Station") == b.Id, what: "Bob to take the station");
+    }
+
     [Fact]
     public void AGameThatWillNotHandOverItsWorldHasSomebodyElseAskedInstead()
     {
