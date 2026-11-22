@@ -109,6 +109,13 @@ public sealed record ServerOptions
 
     /// <summary>Discord users who are trusted here whatever admins.json says, as <see cref="DiscordAdmins"/> are admins.</summary>
     public string[] DiscordTrusted { get; init; } = [];
+
+    /// <summary>
+    /// Discord users who are operators here: admins who may also have the server's log. Only ever by
+    /// this setting and a Discord login, never by a command or a token, so being one is never more
+    /// than this list says now. Listed here and in another list too, they are an operator.
+    /// </summary>
+    public string[] DiscordOperators { get; init; } = [];
 }
 
 /// <summary>
@@ -136,7 +143,7 @@ public sealed class GameServer : IDisposable
         /// <summary>Which commands this player's are run for: what the token offered at the join, or their Discord login, made them.</summary>
         public Wire.Role Role { get; set; }
 
-        public bool Admin => Role == Wire.Role.Admin;
+        public bool Admin => Role >= Wire.Role.Admin;
 
         /// <summary>
         /// What this player's game is being told of being an admin, until it says the same back, and
@@ -526,7 +533,7 @@ public sealed class GameServer : IDisposable
     private const double DiscordAgainSeconds = 3.0, DiscordWithinSeconds = 15.0;
 
     /// <summary>Whether this server takes Discord logins: it has a login service, and some Discord user to recognise.</summary>
-    public bool DiscordOn => Login is not null && (Admins.HasDiscord || Options.DiscordAdmins.Length > 0 || Options.DiscordTrusted.Length > 0);
+    public bool DiscordOn => Login is not null && (Admins.HasDiscord || Options.DiscordAdmins.Length > 0 || Options.DiscordTrusted.Length > 0 || Options.DiscordOperators.Length > 0);
 
     /// <summary>What this Discord user is here: the better of what the settings and admins.json say.</summary>
     private Wire.Role DiscordRole(string id, string name)
@@ -536,11 +543,27 @@ public sealed class GameServer : IDisposable
         return listed > set ? listed : set;
     }
 
-    /// <summary>What the discord-admins and discord-trusted settings make this Discord user, which deop cannot change.</summary>
+    /// <summary>What the discord-operators, discord-admins and discord-trusted settings make this Discord user, which deop cannot change.</summary>
     public Wire.Role RoleBySetting(string id) => RoleIn(Options, id);
 
+    /// <summary>The setting that makes this Discord user what they are here, or null for none.</summary>
+    public string? SettingFor(string id) => RoleBySetting(id) switch
+    {
+        Wire.Role.Operator => "discord-operators",
+        Wire.Role.Admin => "discord-admins",
+        Wire.Role.Trusted => "discord-trusted",
+        _ => null,
+    };
+
+    /// <summary>Discord users named in more than one of the role settings, with the one they are taken from.</summary>
+    public IEnumerable<(string Id, string Setting)> ListedTwice() =>
+        Options.DiscordOperators.Concat(Options.DiscordAdmins).Concat(Options.DiscordTrusted)
+            .GroupBy(id => id).Where(g => g.Count() > 1).Select(g => (g.Key, SettingFor(g.Key)!));
+
     private static Wire.Role RoleIn(ServerOptions o, string id) =>
-        o.DiscordAdmins.Contains(id) ? Wire.Role.Admin : o.DiscordTrusted.Contains(id) ? Wire.Role.Trusted : Wire.Role.Player;
+        o.DiscordOperators.Contains(id) ? Wire.Role.Operator
+        : o.DiscordAdmins.Contains(id) ? Wire.Role.Admin
+        : o.DiscordTrusted.Contains(id) ? Wire.Role.Trusted : Wire.Role.Player;
 
     // Whoever is here was welcomed with nothing to log in with when logins were off: they are welcomed
     // again, which a joined game reads for the nonce alone.
@@ -695,7 +718,7 @@ public sealed class GameServer : IDisposable
         string name = here.FirstOrDefault()?.Name ?? Admins.NameOfDiscord(id) ?? id;
         Admins.AddDiscord(id, name, role);
         WelcomeForDiscord();
-        foreach (Player p in here.Where(p => p.Role != role)) MakeRole(p, role);
+        foreach (Player p in here.Where(p => p.Role != role && p.Role != Wire.Role.Operator)) MakeRole(p, role);
         if (here.Length == 0) Log($"Discord user {id} is {Permissions.Said(role)} from now, once they log in");
         return name;
     }
@@ -1034,7 +1057,12 @@ public sealed class GameServer : IDisposable
                 Wire.Role needs = Permissions.Need(line);
                 if (player.Role < needs)
                 {
-                    Tell(player, needs == Wire.Role.Admin ? "only an admin can do that on this server" : "only trusted players and admins can do that on this server");
+                    Tell(player, needs switch
+                    {
+                        Wire.Role.Operator => "only an operator can do that on this server",
+                        Wire.Role.Admin => "only an admin can do that on this server",
+                        _ => "only trusted players and admins can do that on this server",
+                    });
                     Log($"{player.Name} asked for '{line}' and is {Permissions.Said(player.Role)}");
                     return;
                 }
@@ -2300,6 +2328,8 @@ public sealed class GameServer : IDisposable
     private string? Grant(string name, Wire.Role role)
     {
         if (Find(name) is not { } p) return null;
+        // What the setting makes them is not a command's to lower.
+        if (p.Role == Wire.Role.Operator) return p.Name;
         // Logged in with Discord, they are this as that user too, from whichever machine.
         if (p.DiscordId.Length > 0) Admins.AddDiscord(p.DiscordId, p.Name, role);
         MakeRole(p, role);
@@ -2308,7 +2338,9 @@ public sealed class GameServer : IDisposable
 
     private void MakeRole(Player p, Wire.Role role)
     {
-        string token = Admins.Offer(p.Name, role);
+        // An operator's token is an admin's: what is more than admin comes of a Discord login checked
+        // against the setting at each join, and a machine that has kept a token is not that.
+        string token = Admins.Offer(p.Name, role == Wire.Role.Operator ? Wire.Role.Admin : role);
         p.Role = role;
         TellAdmin(p, new Wire.Op(true, token, role));
         Tell(p, $"you're {Permissions.Said(role)} on this server: type /help in chat to see the commands");
@@ -2327,7 +2359,7 @@ public sealed class GameServer : IDisposable
         // name without regard to case, so clearing the flag on one of two would leave the other
         // playing as an admin while the console said otherwise.
         foreach (Player p in _players.Values
-                     .Where(q => string.Equals(q.Name, name, StringComparison.OrdinalIgnoreCase))
+                     .Where(q => string.Equals(q.Name, name, StringComparison.OrdinalIgnoreCase) && q.Role != Wire.Role.Operator)
                      .ToArray())
         {
             was |= p.Role > Wire.Role.Player;
@@ -2338,6 +2370,9 @@ public sealed class GameServer : IDisposable
         if (was) Log($"{name} is no longer an admin or trusted");
         return was;
     }
+
+    /// <summary>Whether a player of this name is here as an operator, whom op, trust and deop leave as they are.</summary>
+    public bool IsOperator(string name) => Find(name) is { Role: Wire.Role.Operator };
 
     private Player? Find(string name) =>
         _players.Values.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
@@ -2673,6 +2708,14 @@ public sealed class GameServer : IDisposable
         if (admins.Length == 0) return;
         byte[] list = SavesBlob();
         foreach (Player p in admins) p.Link.Send(list, _clock());
+    }
+
+    /// <summary>Hands an operator's game the server's log, as <see cref="LogText"/> packs it, under the days it covers.</summary>
+    public void SendLog(Player p, string text, string covers)
+    {
+        byte[] packed = LogText.Pack(LogText.Unaddressed(text));
+        p.Link.Send(new Blob(BlobKind.Log, Wire.Clip(covers, Wire.KeyChars), 0, 0.0, packed).Encode(), _clock());
+        Log($"sending {p.Name} the log of {covers}, {Blob.Size(packed.Length)}");
     }
 
     private void SendSaves(Player p) => p.Link.Send(SavesBlob(), _clock());

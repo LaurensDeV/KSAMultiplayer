@@ -72,6 +72,7 @@ resource "docker_container" "server" {
     var.server_id == "" ? [] : ["KSAMP_ID=${var.server_id}"],
     var.discord_admins == "" ? [] : ["KSAMP_DISCORD_ADMINS=${var.discord_admins}"],
     var.discord_trusted == "" ? [] : ["KSAMP_DISCORD_TRUSTED=${var.discord_trusted}"],
+    var.discord_operators == "" ? [] : ["KSAMP_DISCORD_OPERATORS=${var.discord_operators}"],
   )
 
   # Two cores and 8 GB are shared with the site. A relay of craft states needs very little of
@@ -178,6 +179,7 @@ resource "docker_container" "other_world" {
     # The same admins on every world: they are the operator's, not one world's.
     var.discord_admins == "" ? [] : ["KSAMP_DISCORD_ADMINS=${var.discord_admins}"],
     var.discord_trusted == "" ? [] : ["KSAMP_DISCORD_TRUSTED=${var.discord_trusted}"],
+    var.discord_operators == "" ? [] : ["KSAMP_DISCORD_OPERATORS=${var.discord_operators}"],
   )
 
   memory = coalesce(each.value.memory_mb, var.memory_mb)

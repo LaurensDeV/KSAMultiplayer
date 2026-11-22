@@ -224,6 +224,14 @@ variable "discord_admins" {
   default     = ""
 }
 
+# Admins on every world here who may also download its log. Each id belongs in one of the three
+# lists: one in discord_admins as well is still an operator, and the server says so at every start.
+variable "discord_operators" {
+  description = "Discord user ids, separated by commas, who are operators on every server here: admins who may also download its log."
+  type        = string
+  default     = ""
+}
+
 # Trusted on every world here: they keep it tidy -- clear, remove, protect, rename, save, load,
 # kick -- and lose nothing that cannot be put back.
 variable "discord_trusted" {

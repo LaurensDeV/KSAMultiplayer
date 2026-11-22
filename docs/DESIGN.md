@@ -66,7 +66,21 @@ stranger sent it.
   five kept before a load is moved to `saves/.deleted` under its name and when it went, and taken
   for good after 30 days, judged by when it went (`SaveShelf.Binned`, `Restore`). And `audit.log`
   beside the world has a line for every command that changes the world, a save or a role, and for
-  a role given by a Discord login: a file, because `docker logs` is lost with the container.
+  a role given by a Discord login: a file, because `docker logs` is lost with the container. For
+  the same reason everything the console says goes to `logs/<date>.log` there too (`ServerLog`), the
+  newest 14 days kept and older ones deleted as each day's first line is written, and a crash that
+  escapes the tick loop is said there before the process goes.
+- **An operator, and the log in the game.** `Wire.Role.Operator`, above admin, from the
+  `discord-operators` setting and a Discord login and nothing else: it is never written to
+  `admins.json`, the token it hands a machine is an admin's, and `op`, `trust` and `deop` leave a
+  player who is one as they are. Listed in `discord-admins` as well, an id is an operator, and the
+  server names every id listed twice at its start. `logs [days]` is the operator's alone
+  (`Permissions`): the server sends `audit.log` and up to 14 days in one `BlobKind.Log`, gzipped,
+  every address in it replaced (`LogText.Unaddressed`), since only the console is shown where
+  players connect from. A game takes one only while it is an operator, unpacks no more than 32 MB
+  of it from a server it cannot trust, writes it under `KSAMultiplayer/server-logs` in KSA's documents folder
+  and opens it with the shell (`ServerLogs`). `infra/server` gives every world the list from the
+  `KSAMP_DISCORD_OPERATORS` repository variable.
 - **Worlds under names.** `saves/` in `--data`, a zip and a `.json` each (`SaveShelf`): what an admin
   keeps to come back to and loads over the world for everybody. Keeping one asks the admin's own
   game for a fresh save and files it when it comes, or files the world as held after twenty seconds
@@ -1233,6 +1247,16 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   calls itself were shown through them; `Shown` shows them through `ImGui.Text` with the colour or
   the wrapping pushed. The chat has been looked at in a game; the menu's list of players, the list
   of servers and what a refusal says take a mouse to open, and have not.
+
+- **The server's log in the game: the button.** Seen on 2026-11-22 with two games and the Windows
+  build of the server on one machine, in `discord-operators` alone: a game that joined as an admin by
+  its token became an operator when its Discord login (a certificate from `servers.ksamp.gg`,
+  checked against the live key) came through; `/logs` typed in it brought back `audit.log` and the
+  day's log as one file, every address in it said as `(address)`, written with CRLF lines and
+  opened in Notepad. Written to `%LOCALAPPDATA%` first, it was not: a game started from a packaged
+  app writes there into the package's own copy, and Notepad, outside it, said the path did not exist. Not seen: the **SERVER LOG** button itself, which takes a mouse; the Linux
+  build's `logs` folder; more than one day; and a game that is no operator being refused, since both
+  games were the same Discord user.
 
 - **Logging in with Discord.** Driven over loopback with the login service's key made in the test,
   and not yet run in a game against the directory at `servers.ksamp.gg`. A server behind NAT that

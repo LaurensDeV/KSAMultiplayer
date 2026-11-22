@@ -17,6 +17,9 @@ public enum BlobKind : byte
 
     /// <summary>The craft a server will not clear, for every game: see <see cref="ProtectedList"/>.</summary>
     Protected = 4,
+
+    /// <summary>The server's log, gzipped text, for the operator who asked: see <see cref="LogText"/>.</summary>
+    Log = 5,
 }
 
 /// <summary>
@@ -59,7 +62,7 @@ public sealed record Blob(BlobKind Kind, string Key, byte Owner, double Universe
         {
             using BinaryReader r = new(new MemoryStream(bytes));
             BlobKind kind = (BlobKind)r.ReadByte();
-            if (kind is not (BlobKind.World or BlobKind.Vehicle or BlobKind.Saves or BlobKind.Protected)) return null;
+            if (kind is not (BlobKind.World or BlobKind.Vehicle or BlobKind.Saves or BlobKind.Protected or BlobKind.Log)) return null;
             string key = Encoding.UTF8.GetString(r.ReadBytes(r.ReadByte()));
             byte owner = r.ReadByte();
             double universe = r.ReadDouble();

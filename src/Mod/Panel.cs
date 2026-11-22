@@ -1897,6 +1897,16 @@ internal static class Panel
             ImGui.SameLine();
             if (ConsoleWidgets.Button("SERVER SAVES".AsSpan())) ServerSaves.Toggle();
         }
+        if (Sync.Operator)
+        {
+            ImGui.SameLine();
+            if (ConsoleWidgets.Button("SERVER LOG".AsSpan())) ServerLogs.Ask();
+            if (ImGui.BeginItemTooltip())
+            {
+                ImGui.Text("Download today's server log and the audit log, and open them. /logs 3 in chat gets the last three days.");
+                ImGui.EndTooltip();
+            }
+        }
         if (BottomRight("DISCONNECT".AsSpan())) Sync.Disconnect();
     }
 

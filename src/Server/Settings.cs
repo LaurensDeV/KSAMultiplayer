@@ -46,6 +46,7 @@ public static class Settings
         new("advertise-as", Kind.Text, "", "the hostname to be listed under; empty to be listed at the address a directory sees", true),
         new("directories", Kind.Text, "", "where to announce, separated by commas; empty to read the shared list, which only an advertising server does", true),
         new("discord-admins", Kind.Text, "", "Discord user ids, separated by commas, who are admins here whenever they log in with Discord, whatever admins.json says", true),
+        new("discord-operators", Kind.Text, "", "Discord user ids, separated by commas, who are operators here whenever they log in with Discord: admins who may also download the server's log; listed in discord-admins too, they are operators", true),
         new("discord-trusted", Kind.Text, "", "Discord user ids, separated by commas, who are trusted here whenever they log in with Discord: they may clear, remove, protect, rename, save, load and kick, but not delete saves, save over them, reload or give roles", true),
         new("discord-login", Kind.Text, Discord.Service, "the service whose certificates say who a player is on Discord, asked only once 'op discord:<id>' has made a Discord user an admin; empty to take no Discord logins", true),
     ];
@@ -160,6 +161,7 @@ public static class Settings
             DiscordLogin = Text("discord-login").Trim().TrimEnd('/'),
             DiscordAdmins = DiscordIds("discord-admins"),
             DiscordTrusted = DiscordIds("discord-trusted"),
+            DiscordOperators = DiscordIds("discord-operators"),
         };
         IPAddress? bind = Text("bind").Trim() is { Length: > 0 } b
             ? IPAddress.TryParse(b, out IPAddress? at) ? at : throw new FormatException($"bind is '{b}', which is not an address")

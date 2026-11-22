@@ -184,6 +184,10 @@ public sealed class Client : IDisposable
     public bool Sending => _link.Busy > 0;
 
     public Queue<Blob> Blobs { get; } = new();
+
+    /// <summary>The server's log, each time this game's operator has asked for it: <see cref="LogText"/> unpacks one.</summary>
+    public Queue<Blob> Logs { get; } = new();
+
     public Queue<string> Gone { get; } = new();
 
     /// <summary>Dockings the server has told of: the craft that went, the craft it went into, and whose that is now.</summary>
@@ -249,7 +253,10 @@ public sealed class Client : IDisposable
     public Queue<ChatLine> Chat { get; } = new();
 
     /// <summary>Whether this server runs what this game asks of it.</summary>
-    public bool Admin => Role == Wire.Role.Admin;
+    public bool Admin => Role >= Wire.Role.Admin;
+
+    /// <summary>Whether this game's player may have the server's log.</summary>
+    public bool Operator => Role == Wire.Role.Operator;
 
     /// <summary>Which of this server's commands this game's player may run.</summary>
     public Wire.Role Role { get; private set; }
@@ -774,6 +781,12 @@ public sealed class Client : IDisposable
                         {
                             (_protected, _protectedSerial) = (new HashSet<string>(names, StringComparer.Ordinal), state);
                         }
+                        return;
+                    }
+                    // Asked for by this game's player and for them alone: never a world's or a craft's to take.
+                    if (blob.Kind == BlobKind.Log)
+                    {
+                        if (Operator) Logs.Enqueue(blob);
                         return;
                     }
                     if (blob.Kind == BlobKind.Saves)

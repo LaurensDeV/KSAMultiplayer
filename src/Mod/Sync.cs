@@ -1361,6 +1361,9 @@ internal static class Sync
     /// <summary>Whether this server runs what keeps a world tidy: clear, remove, protect, rename, save and load. An admin is trusted too.</summary>
     public static bool Trusted => _client is { Trusted: true };
 
+    /// <summary>Whether this game's player may have the server's log.</summary>
+    public static bool Operator => _client is { Operator: true };
+
     // Deletes refused since the last frame, answered once for all of them: Clear Debris asks for
     // every piece in the system in one go, and a warning a piece would bury the screen.
     private static readonly List<(string Key, string Whose)> RefusedDeletes = [];
@@ -1632,6 +1635,7 @@ internal static class Sync
                 // Answered only once it is on disk: the server keeps the token before it good until then.
                 else if (Tokens.Keep(token)) c.Kept(token);
             }
+            while (c.Logs.TryDequeue(out Blob? log)) ServerLogs.Open(c.ServerName, log);
             DiscordLogin.Prove(c, _address);
             FollowRules(c);
             if (c.Out.Length > 0)

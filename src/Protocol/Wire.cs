@@ -194,8 +194,11 @@ public static class Wire
     /// this join, and a game logged in with Discord hands the server its certificate and a
     /// signature over that nonce (<see cref="DiscordProof"/>), which the server answers with who
     /// that is (<see cref="DiscordUser"/>).</para>
+    ///
+    /// <para>31 is the operator: <see cref="Role.Operator"/> in an <see cref="Op"/>, and the server's
+    /// log sent to one who asks for it as a <see cref="BlobKind.Log"/>.</para>
     /// </summary>
-    public const ushort Version = 30;
+    public const ushort Version = 31;
 
     /// <summary>
     /// The version of <see cref="Ask"/> and <see cref="Facts"/> alone, in the first byte of each.
@@ -748,6 +751,9 @@ public static class Wire
 
         /// <summary>Everything, including who else may, and what cannot be put back.</summary>
         Admin = 2,
+
+        /// <summary>An admin who may also read the server's log, which names everybody's comings and goings: given by the discord-operators setting alone.</summary>
+        Operator = 3,
     }
 
     /// <summary>
@@ -1082,7 +1088,7 @@ public static class Wire
         bool admin = r.U8() != 0;
         string token = r.Text(TokenChars);
         // Absent from a game of 0.26.0, which knew only admins.
-        Role role = r.More ? (Role)Math.Min(r.U8(), (byte)Role.Admin) : admin ? Role.Admin : Role.Player;
+        Role role = r.More ? (Role)Math.Min(r.U8(), (byte)Role.Operator) : admin ? Role.Admin : Role.Player;
         return new Op(admin, token, role);
     }
 

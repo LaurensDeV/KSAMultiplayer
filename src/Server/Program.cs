@@ -277,7 +277,16 @@ WorldStore store = new(Path.GetFullPath(dataFolder));
 Stopwatch watch = Stopwatch.StartNew();
 double Now() => watch.Elapsed.TotalSeconds;
 
-void Say(string what) => Console.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {what}");
+ServerLog serverLog = new(Path.Combine(Path.GetFullPath(dataFolder), "logs"));
+void Say(string what)
+{
+    DateTime now = DateTime.Now;
+    string line = $"{now:yyyy-MM-dd HH:mm:ss} {what}";
+    Console.WriteLine(line);
+    serverLog.Write(now, line);
+}
+// The one thing that ends this without a word through Say, and the thing most worth finding afterwards.
+AppDomain.CurrentDomain.UnhandledException += (_, e) => Say($"stopped by an error: {e.ExceptionObject}");
 
 GameServer server;
 try
@@ -326,7 +335,15 @@ if (server.DiscordOn)
     // Every Discord user given a role, by the settings and by admins.json alike, each once.
     string[] admins = [.. options.DiscordAdmins.Concat(server.Admins.Names.Where(n => server.Admins.RoleOf(n) == Wire.Role.Admin).Select(server.Admins.DiscordOf)).Where(d => d.Length > 0).Distinct()];
     string[] trusted = [.. options.DiscordTrusted.Concat(server.Admins.Names.Where(n => server.Admins.RoleOf(n) == Wire.Role.Trusted).Select(server.Admins.DiscordOf)).Where(d => d.Length > 0).Distinct().Except(admins)];
-    Say($"players log in with Discord through {options.DiscordLogin}: {admins.Length} Discord admin{(admins.Length == 1 ? "" : "s")} and {trusted.Length} trusted");
+    string[] operators = [.. options.DiscordOperators.Distinct()];
+    admins = [.. admins.Except(operators)];
+    trusted = [.. trusted.Except(operators)];
+    Say($"players log in with Discord through {options.DiscordLogin}: {operators.Length} Discord operator{(operators.Length == 1 ? "" : "s")}, "
+        + $"{admins.Length} admin{(admins.Length == 1 ? "" : "s")} and {trusted.Length} trusted");
+    foreach ((string id, string setting) in server.ListedTwice())
+    {
+        Say($"Discord user {id} is in more than one of discord-operators, discord-admins and discord-trusted: {setting} is the one that counts, so take them out of the others");
+    }
 }
 // Said at every start whichever way it is set, so an operator reading the log at least learns that
 // the setting is there. A list nobody opts into is an empty list.
@@ -392,7 +409,8 @@ if (!Console.IsInputRedirected || Environment.GetEnvironmentVariable("KSAMP_STDI
     ("trust discord:<id>", "make a Discord user trusted whenever they log in with Discord"),
     ("deop <name>", "take away a player's role, admin or trusted, whether or not they're connected"),
     ("deop discord:<id>", "take away a Discord user's role"),
-    ("admins", "list the admins and trusted players"),
+    ("admins", "list the operators, admins and trusted players"),
+    ("logs [days]", "operators only: download the server's log of today, or of the last few days up to 14, with addresses taken out"),
     ("clear [name]", "remove every craft nobody is flying; clear Rocket_* removes only matching ones"),
     ("remove <craft>", "remove one craft from every game, whoever owns it, unless it's being flown or protected"),
     ("protect <craft>", "keep a craft safe from clear, remove and being abandoned, even when named in full"),
@@ -464,6 +482,9 @@ void Run(string line, GameServer.Player? who, Action<string> Answer)
             else Answer($"Discord user {opId} ({(trusting ? server.TrustDiscord(opId) : server.OpDiscord(opId))}) is now {made}, whichever machine they log in with Discord from"
                 + (server.DiscordOn ? "" : "; discord-login is empty, so nobody can log in with Discord until it is set"));
             break;
+        case "op" or "trust" or "deop" when server.IsOperator(rest):
+            Answer($"{rest} is an operator by the discord-operators setting: take them out of it to change that");
+            break;
         case "op" or "trust":
             bool trust = parts[0].Equals("trust", StringComparison.OrdinalIgnoreCase);
             string role = trust ? "trusted" : "an admin";
@@ -474,8 +495,7 @@ void Run(string line, GameServer.Player? who, Action<string> Answer)
             break;
         case "deop" when rest.StartsWith("discord:", StringComparison.OrdinalIgnoreCase) && server.RoleBySetting(rest["discord:".Length..].Trim()) > Wire.Role.Player:
             string setId = rest["discord:".Length..].Trim();
-            Answer($"Discord user {setId} is {Permissions.Said(server.RoleBySetting(setId))} by the "
-                + $"{(server.RoleBySetting(setId) == Wire.Role.Admin ? "discord-admins" : "discord-trusted")} setting: take them out of it to deop them");
+            Answer($"Discord user {setId} is {Permissions.Said(server.RoleBySetting(setId))} by the {server.SettingFor(setId)} setting: take them out of it to deop them");
             break;
         case "deop" when rest.StartsWith("discord:", StringComparison.OrdinalIgnoreCase):
             string deopId = rest["discord:".Length..].Trim();
@@ -494,11 +514,12 @@ void Run(string line, GameServer.Player? who, Action<string> Answer)
             string Ids(string[] ids) => string.Join(", ", ids.Select(id => server.Players.FirstOrDefault(p => p.DiscordId == id) is { } here ? $"{id} ({here.Name})" : id));
             string Named(Wire.Role r) => string.Join(", ", server.Admins.Names.Where(n => server.Admins.RoleOf(n) == r)
                                                                 .Select(n => server.Admins.DiscordOf(n) is { Length: > 0 } d ? $"{n} (Discord {d})" : n));
+            if (server.Options.DiscordOperators.Length > 0) Answer($"operators by the discord-operators setting: {Ids(server.Options.DiscordOperators)}");
             if (server.Options.DiscordAdmins.Length > 0) Answer($"admins by the discord-admins setting: {Ids(server.Options.DiscordAdmins)}");
             if (server.Options.DiscordTrusted.Length > 0) Answer($"trusted by the discord-trusted setting: {Ids(server.Options.DiscordTrusted)}");
             if (Named(Wire.Role.Admin) is { Length: > 0 } admins) Answer($"admins: {admins}");
             if (Named(Wire.Role.Trusted) is { Length: > 0 } trusted) Answer($"trusted: {trusted}");
-            if (server.Admins.Names.Count == 0 && server.Options.DiscordAdmins.Length == 0 && server.Options.DiscordTrusted.Length == 0)
+            if (server.Admins.Names.Count == 0 && server.Options.DiscordAdmins.Length == 0 && server.Options.DiscordTrusted.Length == 0 && server.Options.DiscordOperators.Length == 0)
             {
                 Answer("there are no admins yet: op <name> makes a connected player one, op discord:<user id> a Discord user, and trust does the same for trusted");
             }
@@ -580,6 +601,23 @@ void Run(string line, GameServer.Player? who, Action<string> Answer)
                 + (server.RequiredBuild.Length > 0 ? $"for KSA {server.RequiredBuild}" : "any KSA build until a world says otherwise")
                 + (server.Options.KsaBuild.Length > 0 && server.Options.BuiltFor.Length > 0 && server.Options.KsaBuild != server.Options.BuiltFor
                     ? $" by its ksa-build setting, and built for {server.Options.BuiltFor}" : ""));
+            break;
+        case "logs":
+            int days = rest.Length == 0 ? 1 : int.TryParse(rest, out int asked) && asked > 0 ? Math.Min(asked, LogText.MostDays) : 0;
+            string[] logDays = serverLog.Days();
+            if (days == 0) Answer($"usage: logs [days], from 1 to {LogText.MostDays}");
+            // The console has the files, and the lines themselves are its own scrollback.
+            else if (who is null) Answer($"the log is kept a file a day in {serverLog.Folder}, the newest {LogText.MostDays} days, and the audit log at {server.Audit.Path}");
+            else if (logDays.Length == 0) Answer("this server has kept no log yet");
+            else
+            {
+                string[] sent = [.. logDays.TakeLast(days)];
+                string covers = sent.Length == 1 ? sent[0] : $"{sent[0]} to {sent[^1]}";
+                string audit = File.Exists(server.Audit.Path) ? File.ReadAllText(server.Audit.Path) : string.Join(Environment.NewLine, server.Audit.Lines);
+                // The audit log first: it is short, and it is who did what, which is most of what is asked.
+                server.SendLog(who, $"==== audit: who changed the world, a save or a role ====\n{audit}\n{serverLog.Read(days)}", covers);
+                Answer($"sending the log of {covers}: it opens on your machine when it has arrived");
+            }
             break;
         case "status":
             double u = server.UniverseClock.Now(Now());

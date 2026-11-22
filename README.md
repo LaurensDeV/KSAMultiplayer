@@ -279,12 +279,13 @@ like `quit`.
 | `--advertise-as` | `KSAMP_ADVERTISE_AS` | the address seen | the hostname to be listed under |
 | `--directories` | `KSAMP_DIRECTORIES` | the shared list | where to announce, separated by commas; the shared list in `directories.txt` otherwise, read hourly while advertising |
 | `--discord-admins` | `KSAMP_DISCORD_ADMINS` | none | Discord user ids, comma separated, who are admins whenever they log in with Discord, whatever `admins.json` says; `deop` cannot take it away |
+| `--discord-operators` | `KSAMP_DISCORD_OPERATORS` | none | Discord user ids, comma separated, who are [operators](#operators-and-the-servers-log): admins who may also download the server's log |
 | `--discord-trusted` | `KSAMP_DISCORD_TRUSTED` | none | Discord user ids, comma separated, who are [trusted](#trusted-players) whenever they log in with Discord |
 | `--discord-login` | `KSAMP_DISCORD_LOGIN` | `https://servers.ksamp.gg/v1/discord` | the service that vouches for who a player is on Discord, [asked only once there is a Discord admin](#admins-by-discord); empty to take no Discord logins |
 
 Commands typed into the server's console: `help`, `players`, `say <text>`, `kick <name> [why]` (or `kick #<id>` by the number `players` shows; a name may have spaces in it), `op <name>`, `trust <name>`, `deop <name>`, `admins`,
 `clear [name]`, `remove <craft>`, `protect <craft>`, `unprotect <craft>`, `protected`, `rename <craft> -> <new name>`, `reload` (or `reset`), `save [name]`,
-`saves`, `load <name>`, `delete <name>`, `deleted`, `restore <name>`, `status`, `version`, `fresh`, `set [key value]`, `settings`, `quit`.
+`saves`, `load <name>`, `delete <name>`, `deleted`, `restore <name>`, `status`, `version`, `fresh`, `logs`, `set [key value]`, `settings`, `quit`.
 
 `life-support` and `radiation` are KSA's two rules, which a game on its own takes from its start
 screen. In a server they are the server's, for everybody: `set life-support false` turns life support
@@ -432,6 +433,7 @@ admin is about, and can lose nothing that cannot be put back.
 | `kick`, `say` | | yes | yes |
 | `save` over a save, `delete`, `deleted`, `restore`, `reload`, `fresh` | | | yes |
 | `op`, `trust`, `deop` | | | yes |
+| `logs`: download the server's log, for [operators](#operators-and-the-servers-log) only | | | |
 
 ```bash
 trust Jeb                           # Jeb is playing
@@ -458,6 +460,25 @@ Every command that changes the world, a save or a role -- `clear`, `remove`, `pr
 `set` and `quit`, and `fresh` -- is written to `audit.log` in `--data`: when, who (with their role and
 Discord user), what they typed and what came of it. So is a role given by a Discord login. It is a
 file beside the world and not the console's log, so it outlives a restart and a redeploy.
+
+#### Operators and the server's log
+
+Everything the console says is also kept in `logs` in `--data`, a file a day named by its date, the
+newest 14 days of them. A redeploy that throws the container's own log away leaves these, and they
+are where to look when somebody asks what happened.
+
+An **operator** is an admin who may also download that log from inside the game. It is given only by
+`discord-operators` and a Discord login: there is no command for it, `op`, `trust` and `deop` leave an
+operator as they are, and a machine's token makes them no more than an admin until they have logged
+in. An id listed in `discord-admins` too is an operator, and the server says at every start which ids
+are listed twice so they can be taken out of the other list.
+
+In a game an operator has a **SERVER LOG** button beside SERVER SAVES, or types `/logs` (today) or
+`/logs 3` (the last three days, up to 14). The server sends `audit.log` and the days asked for in one
+file, with every IP address said as `(address)`, and the game saves it to
+`KSAMultiplayer\server-logs` in KSA's documents folder (`Documents\My Games\Kitten Space Agency`) and opens it in whatever opens text files. A busy day is a
+few hundred kilobytes, and gzipped on the way about a tenth of that. At the console, `logs` says where
+the files are.
 
 #### Admins by Discord
 

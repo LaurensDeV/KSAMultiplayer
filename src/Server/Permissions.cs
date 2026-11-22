@@ -7,7 +7,7 @@ namespace KSAMultiplayer.Server;
 /// <para>Trusted is what keeps a world tidy and running with no admin about: debris cleared,
 /// craft protected and renamed, worlds saved and loaded, a griefer kicked. Admin is what cannot be
 /// put back, and who else may: deleting a save, saving over one, reloading the world with its time,
-/// and giving or taking roles. A command not in here is an admin's, so one added later and
+/// and giving or taking roles. An operator is an admin who may also have the server's log. A command not in here is an admin's, so one added later and
 /// forgotten is closed rather than open.</para>
 /// </summary>
 public static class Permissions
@@ -50,6 +50,9 @@ public static class Permissions
         ["op"] = Wire.Role.Admin,
         ["trust"] = Wire.Role.Admin,
         ["deop"] = Wire.Role.Admin,
+
+        // Everybody's comings and goings, and the server's own troubles: see LogText.
+        ["logs"] = Wire.Role.Operator,
     };
 
     /// <summary>The commands that change the world, a save or who may do what: what the audit log keeps.</summary>
@@ -70,6 +73,7 @@ public static class Permissions
     /// <summary>A role as a player reads it: "an admin", "trusted".</summary>
     public static string Said(Wire.Role role) => role switch
     {
+        Wire.Role.Operator => "an operator",
         Wire.Role.Admin => "an admin",
         Wire.Role.Trusted => "trusted",
         _ => "a player",
