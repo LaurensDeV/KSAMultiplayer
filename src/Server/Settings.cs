@@ -25,7 +25,7 @@ public static class Settings
     [
         new("name", Kind.Text, "KSA server", "the server's name, shown to players", true),
         new("id", Kind.Text, "", "a short name for this server that never changes though its name and address may, in letters, digits, dots, dashes and underscores (my-clan-cars): a mod manager knows the mods it installed for this server by it; empty to be known by address", true),
-        new("port", Kind.Whole, "50100", "UDP port to listen on", false),
+        new("port", Kind.Whole, "28500", "UDP port to listen on", false),
         new("bind", Kind.Text, "", "address to listen on; empty for every address", false),
         new("password", Kind.Text, "", "a password players must give; empty for none", true),
         new("max-players", Kind.Whole, "16", "the most players at once, 1 to 250", true),

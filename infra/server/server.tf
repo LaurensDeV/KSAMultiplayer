@@ -58,6 +58,9 @@ resource "docker_container" "server" {
   env = concat(
     [
       "KSAMP_NAME=${var.server_name}",
+      # Said, and not left to the settings in the volume: a server with no settings yet takes the
+      # default port, which is not the one published below.
+      "KSAMP_PORT=50100",
       "KSAMP_MAX_PLAYERS=${var.max_players}",
       "KSAMP_SNAPSHOT_EVERY=${var.snapshot_every_seconds}",
     ],

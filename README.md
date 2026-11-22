@@ -159,7 +159,7 @@ To build it instead, on any machine with the .NET 10 SDK and no KSA files on it:
 
 That writes `dist/ksamp-server-<rid>/ksamp-server`; copy it across and run it as above.
 
-Open **UDP port 50100** in the firewall (and on the router, if the server is at home). Players connect
+Open **UDP port 28500** in the firewall (and on the router, if the server is at home). Players connect
 to the server's address.
 
 ### Giving it a world
@@ -244,7 +244,7 @@ at its default and what it does:
 name = "KSA server"
 
 # UDP port to listen on (a restart takes it up)
-port = 50100
+port = 28500
 ```
 
 At the console, `set` lists every setting and where its value came from; `set <key> <value>`
@@ -255,7 +255,7 @@ like `quit`.
 
 | Option | Environment | Default | |
 | --- | --- | --- | --- |
-| `--port` | `KSAMP_PORT` | `50100` | UDP port |
+| `--port` | `KSAMP_PORT` | `28500` | UDP port; a server that already had a world when it first ran a release with this default stays on 50100, which is written into its settings |
 | `--bind` | `KSAMP_BIND` | every address | address to listen on |
 | `--name` | `KSAMP_NAME` | `KSA server` | shown to players |
 | `--id` | `KSAMP_ID` | none | a short name that never changes though the name and the address may, in letters, digits, dots, dashes and underscores (`my-clan-cars`). Borea knows the mods it installed for this server by it, and offers to update that instance when the server's mods change. Without one the server is known by the address a player reaches it at |
@@ -512,8 +512,13 @@ one's own saves.
 Every release publishes a container image, so there is nothing to build or clone:
 
 ```bash
-docker run -dit --name ksamp -p 50100:50100/udp -v ksamp-data:/data ghcr.io/laurensdev/ksamp-server:latest
+docker run -dit --name ksamp -p 28500:28500/udp -v ksamp-data:/data ghcr.io/laurensdev/ksamp-server:latest
 ```
+
+A server set up before the default port was 28500 is on 50100, and stays there: its settings in
+the volume say so, so keep publishing `-p 50100:50100/udp` for it. 50100 is in the range Windows and
+Linux hand out for their own use, where another program can have been given it first; players reach
+a server on either by its name alone.
 
 `latest` is the newest release, which is the one players who keep the mod up to date are on. A
 container keeps the build it was started with, so a release reaches your server when you fetch it
@@ -522,7 +527,7 @@ and not before; the world is in the volume and is still there afterwards:
 ```bash
 docker pull ghcr.io/laurensdev/ksamp-server:latest
 docker rm -f ksamp
-docker run -dit --name ksamp -p 50100:50100/udp -v ksamp-data:/data ghcr.io/laurensdev/ksamp-server:latest
+docker run -dit --name ksamp -p 28500:28500/udp -v ksamp-data:/data ghcr.io/laurensdev/ksamp-server:latest
 ```
 
 A server and its players have to speak the same protocol, and a release's notes say when it

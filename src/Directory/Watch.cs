@@ -196,7 +196,7 @@ public sealed class Watch(Roster roster, Ticker clock, ILogger<Watch> log) : Bac
         // A server on a port of its own is listed with that port after its name, which is right
         // and is not what its operator set a name up for: where the name's SRV record already
         // says the port, the listing says the name is enough.
-        e.NameIsEnough = e.Port != Wire.DefaultPort && await NamedAt(e.Host, e.Port).ConfigureAwait(false);
+        e.NameIsEnough = e.Port != Wire.LegacyPort && await NamedAt(e.Host, e.Port).ConfigureAwait(false);
         if (e.FromHere)
         {
             if (found.FirstOrDefault(Roster.Reachable) is not { } usable)

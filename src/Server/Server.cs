@@ -8,7 +8,7 @@ namespace KSAMultiplayer.Server;
 /// <summary>How a server is set up: from the command line or its config file.</summary>
 public sealed record ServerOptions
 {
-    public int Port { get; init; } = 50100;
+    public int Port { get; init; } = Wire.DefaultPort;
     public string Name { get; init; } = "KSA server";
     public string Password { get; init; } = "";
     public int MaxPlayers { get; init; } = 16;

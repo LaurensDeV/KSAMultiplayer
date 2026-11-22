@@ -723,7 +723,15 @@ machine holds several worlds under names of their own: an address record cannot 
 SRV record is the only one that can. Written by hand, because .NET resolves A and AAAA and has no
 SRV at all, and the library everyone else uses is a second assembly this mod will not ship. It is a
 hint and never a requirement -- no resolver, no record, a mangled packet, or a target of `.` all end
-as the name and port 50100, which is what happened before any of it existed. A port typed after the
+as the name and no port, which is what happened before any of it existed: the server is then on
+28500, where one listens unless told otherwise, or on 50100, where every one did before and every
+one set up before still does. `Ports` asks both with a `Wire.Ask` and takes the one that answers,
+the first of them if both do. 50100 is in the range Windows and Linux hand out for their own use,
+so another program can hold it; a server whose data folder already has a world when it first writes
+its settings writes 50100 into them, since its firewall and its players' saved addresses say so
+and nothing about moving by itself would fail where anybody would see. A list anybody reads leaves
+a port unsaid only when it is 50100, which is what a game from before takes no port to mean; the
+mod's own list leaves 28500 unsaid. A port typed after the
 name skips the question: that is the player being specific, and somebody else's zone does not get to
 overrule them.
 
@@ -798,6 +806,9 @@ back within the second. Not worth a flag, given that this mod places landed craf
 
 ## What has been seen in a game
 
+- **A join by an address with no port, to a server on 50100 and to one on 28500** (two games on one
+  machine, 2026-11-22): `127.0.0.1` typed alone found the server on each, in about four seconds from
+  disconnect to in the world.
 - **A chat line of `100%s sure %n %d %x done`** drawn as typed in the other game's window, and a
   player called `Bravo %s%n%d` in the chat of both, the server's lines in their colour and a long
   one wrapped, with both games still running; a join refused by a server called `100%s%n%d server`;

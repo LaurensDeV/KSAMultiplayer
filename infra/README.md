@@ -268,7 +268,9 @@ deployed ahead of the mod zip is a server nobody can join.
 
 ## The port
 
-UDP **50100**, the mod's default, so a player types `ksamp.gg` and nothing else.
+UDP **50100**, where every server was before the default became 28500, and one of the two ports a
+game asks when a player types `ksamp.gg` and nothing else. Pinned with `KSAMP_PORT`, so a volume made
+afresh does not move the server to a port nothing here publishes.
 
 `ufw` on that machine defaults to deny and lists 22, 80 and 443. Docker publishes a port by
 rewriting the destination before the firewall's input chain sees it, so the server is reachable

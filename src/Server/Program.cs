@@ -11,7 +11,7 @@ const string Usage = """
 
     Usage: ksamp-server [options]
 
-      --port <n>             UDP port to listen on (default 50100)
+      --port <n>             UDP port to listen on (default 28500)
       --bind <address>       address to listen on (default every address)
       --name <text>          the server's name, shown to players
       --password <text>      a password players must give (default none)
@@ -61,7 +61,7 @@ const string Usage = """
     Every option but --config and --trace can also be given as an environment variable -- KSAMP_PORT,
     KSAMP_NAME, KSAMP_PASSWORD and so on, the option's name in capitals with dashes as
     underscores -- and every one but --world, --config and --trace as a line in the settings file:
-    port = 50100. A flag wins over the environment, and the environment over the file. With no
+    port = 28500. A flag wins over the environment, and the environment over the file. With no
     file, the server writes one with every setting at its default.
 
     A variable set here overrides the file for good, so the console cannot change what it gives:
@@ -223,15 +223,22 @@ Dictionary<string, string> ReadFile()
 {
     if (!File.Exists(configPath))
     {
+        // A server with a world and no settings was set up before 28500 was the port, and its
+        // firewall and its players' saved addresses say 50100: it stays there until it is told
+        // otherwise, since nothing about moving by itself would fail where anybody would see.
+        string dataHeld = Path.GetFullPath(Opt("data") ?? Settings.Find("data")!.Default);
+        bool before = File.Exists(Path.Combine(dataHeld, "world.zip"));
+        string template = before ? Settings.Write(Settings.Template(), Settings.Find("port")!, Wire.LegacyPort.ToString()) : Settings.Template();
+        if (before) Console.WriteLine($"this server has a world from before the default port was {Wire.DefaultPort}: it stays on {Wire.LegacyPort} unless it is given another");
         try
         {
-            File.WriteAllText(configPath, Settings.Template());
+            File.WriteAllText(configPath, template);
             Console.WriteLine($"wrote the default settings to {configPath}");
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             Console.Error.WriteLine($"no settings file, and none could be written at {configPath} ({e.Message}): give --config a path that can be");
-            return [];
+            return before ? new() { ["port"] = Wire.LegacyPort.ToString() } : [];
         }
     }
     return Settings.Read(File.ReadAllText(configPath));

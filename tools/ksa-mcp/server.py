@@ -211,7 +211,7 @@ TOOLS = {
     "ksa_craft": ("Every craft in this world: its Id, body, situation, parts, whether it has physics, and "
                   "whether this game owns it or holds it as another player's puppet.", {}, [],
                   lambda a: _dump(send("craft"))),
-    "ksa_mp": ("Join a server (connect, as host:port or a host for port 50100, with name and password), "
+    "ksa_mp": ("Join a server (connect, as host:port or a host for a server on its default port, with name and password), "
                "leave it (disconnect=true), or type a line into the chat (chat), which goes to the "
                "server as a command when it starts with a / and to everyone otherwise. With no "
                "argument it answers as ksa_status does.",

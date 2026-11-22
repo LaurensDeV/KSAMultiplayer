@@ -28,7 +28,7 @@ public static class Card
     public const string Under = "/s/";
 
     /// <summary>A server as a player types it: the name alone where that finds it.</summary>
-    public static string Where(Listed s) => s.Port == Wire.DefaultPort || s.Srv ? s.Host : $"{s.Host}:{s.Port}";
+    public static string Where(Listed s) => s.Port == Wire.LegacyPort || s.Srv ? s.Host : $"{s.Host}:{s.Port}";
 
     /// <summary>The server a page's address names, by what a player types or by host and port written out.</summary>
     public static Listed? Find(Everything all, string where) =>

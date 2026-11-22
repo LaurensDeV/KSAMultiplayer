@@ -415,8 +415,18 @@ internal static class Browser
     {
         if (!Placing.Add(host)) return;
         _resolving++;
-        _ = Srv.LookupAsync(host, PortWait).ContinueWith(
+        _ = Where(host).ContinueWith(
             t => Placed.Enqueue((host, t.IsCompletedSuccessfully ? t.Result : null)), TaskScheduler.Default);
+    }
+
+    // The port a record names, and without one whichever of the two a server may be on by default
+    // answers: what a join does with the same name.
+    private static async Task<(string Host, int Port)?> Where(string host)
+    {
+        if (await Srv.LookupAsync(host, PortWait).ConfigureAwait(false) is { } said) return said;
+        IPAddress[] found = IPAddress.TryParse(host, out IPAddress? ip) ? [ip.MapToIPv4()]
+            : await Dns.GetHostAddressesAsync(host, global::System.Net.Sockets.AddressFamily.InterNetwork).ConfigureAwait(false);
+        return found.Length > 0 ? (host, await Ports.AnsweringAsync(found[0], PortWait).ConfigureAwait(false)) : null;
     }
 
     /// <summary>As long as a join waits for the same answer, so the list and the join agree on which server a name is.</summary>

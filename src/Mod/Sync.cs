@@ -566,7 +566,7 @@ internal static class Sync
         Disconnect(quietly: true);
         if (!TryAddress(address, out string host, out int port, out bool portGiven))
         {
-            Say("that doesn't look like an address: use host:port, or just a host for the default port 50100");
+            Say("that doesn't look like an address: use host:port, or just a host for a server on its default port");
             return;
         }
         try
@@ -637,7 +637,7 @@ internal static class Sync
         (Server, ServerAsked) = (null, "");
         if (!TryAddress(address, out string host, out int port, out bool portGiven))
         {
-            Trouble(address, "that is not an address: give host:port, or a host for port 50100");
+            Trouble(address, "that is not an address: give host:port, or a host for a server on its default port");
             return;
         }
         try
@@ -2989,12 +2989,19 @@ internal static class Sync
 
     private static async Task<IPEndPoint?> Find(string host, int port, bool portGiven)
     {
-        if (IPAddress.TryParse(host, out IPAddress? ip)) return new IPEndPoint(ip.MapToIPv4(), port);
+        // Without a port said, by the player or by a record, a server is on one of two: asked, since
+        // one set up before the default moved is still where it was. See Ports.
+        if (IPAddress.TryParse(host, out IPAddress? ip))
+        {
+            return new IPEndPoint(ip.MapToIPv4(), portGiven ? port : await Ports.AnsweringAsync(ip.MapToIPv4(), SrvWait));
+        }
         // Only when nobody said which port. A port typed after the name is the player being specific,
         // and a record in somebody else's zone does not get to overrule them.
-        if (!portGiven && await Srv.LookupAsync(host, SrvWait) is { } said) (host, port) = (said.Host, said.Port);
+        bool said = false;
+        if (!portGiven && await Srv.LookupAsync(host, SrvWait) is { } record) (host, port, said) = (record.Host, record.Port, true);
         IPAddress[] found = await Dns.GetHostAddressesAsync(host, AddressFamily.InterNetwork);
-        return found.Length > 0 ? new IPEndPoint(found[0], port) : null;
+        if (found.Length == 0) return null;
+        return new IPEndPoint(found[0], portGiven || said ? port : await Ports.AnsweringAsync(found[0], SrvWait));
     }
 
     /// <summary>A server's address read: "host:port", or a host alone for the default port.</summary>

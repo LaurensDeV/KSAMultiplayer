@@ -224,8 +224,20 @@ public static class Wire
     /// </summary>
     public const int AskBytes = 1200;
 
-    /// <summary>The port a server listens on unless it is given another, and what an address with no port in it means.</summary>
-    public const int DefaultPort = 50100;
+    /// <summary>
+    /// The port a server listens on unless it is given another. Under 32768, where Linux begins
+    /// handing ports out for its own use, and so under Windows' 49152 too: a port in that range is
+    /// another program's by chance on some machines, and a server there cannot listen.
+    /// </summary>
+    public const int DefaultPort = 28500;
+
+    /// <summary>
+    /// The port every server listened on before <see cref="DefaultPort"/>, and every one set up
+    /// before still does: its port is written in its settings, and in somebody's firewall. An
+    /// address with no port in it means either, and <see cref="Ports"/> asks which. To a game from
+    /// before, it means this one alone, so a list anybody reads leaves a port unsaid only for this.
+    /// </summary>
+    public const int LegacyPort = 50100;
 
     public const int BufferBytes = 8192;
     public const int NameChars = 24;

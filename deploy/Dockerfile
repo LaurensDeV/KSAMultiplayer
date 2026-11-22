@@ -1,7 +1,7 @@
 # The dedicated server in a container. From the repository root:
 #
 #   docker build -f deploy/Dockerfile -t ksamp-server .
-#   docker run -dit --name ksamp -p 50100:50100/udp -v ksamp-data:/data ksamp-server
+#   docker run -dit --name ksamp -p 28500:28500/udp -v ksamp-data:/data ksamp-server
 #
 # Settings are /data/ksamp-server.toml, in the volume so they outlive the container, written with
 # every default on the first start. Edit it and restart, or set them from the console.
@@ -24,6 +24,7 @@ WORKDIR /data
 COPY --from=build /out /app
 RUN useradd --system --home /data ksamp && chown ksamp /data
 USER ksamp
-EXPOSE 50100/udp
+# 50100 is where a server set up before 28500 was the default still listens.
+EXPOSE 28500/udp 50100/udp
 VOLUME /data
 ENTRYPOINT ["dotnet", "/app/ksamp-server.dll", "--config", "/data/ksamp-server.toml", "--data", "/data"]

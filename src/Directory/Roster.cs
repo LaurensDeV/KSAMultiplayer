@@ -34,7 +34,7 @@ public sealed class Entry
     /// <summary>Whether every SRV record under its name gives its port, so that the name alone finds it. Looked up each time the name is.</summary>
     public bool NameIsEnough { get; set; }
 
-    public string Where => Port == Wire.DefaultPort ? Host : $"{Host}:{Port}";
+    public string Where => Port == Wire.LegacyPort ? Host : $"{Host}:{Port}";
 }
 
 /// <summary>

@@ -235,7 +235,7 @@ jobs:
           ## Hosting
 
           \`\`\`bash
-          docker run -dit --name ksamp -p 50100:50100/udp -v ksamp-world:/data \\
+          docker run -dit --name ksamp -p 28500:28500/udp -v ksamp-world:/data \\
               -e KSAMP_NAME="My server" ghcr.io/$OWNER/ksamp-server@$DIGEST
           \`\`\`
 
