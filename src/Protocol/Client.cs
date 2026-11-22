@@ -405,12 +405,13 @@ public sealed class Client : IDisposable
 
     /// <param name="made">Whether this game made the craft, rather than finding it in the world everyone loaded.</param>
     /// <param name="near">Whether it is asked for only because it is within this game's physics. See <see cref="Wire.Claim"/>.</param>
-    public void Claim(string key, bool controlling, bool made = false, bool near = false)
+    /// <param name="undocked">Whether it came away at a port. See <see cref="Wire.Claim"/>.</param>
+    public void Claim(string key, bool controlling, bool made = false, bool near = false, bool undocked = false)
     {
         if (!Joined || key.Length == 0) return;
         // Asked for again, so whatever was said gone under this name is not this craft.
         _saidGone.Remove(key);
-        Send(new Wire.Claim(key, controlling, made, near));
+        Send(new Wire.Claim(key, controlling, made, near, undocked));
     }
 
     /// <summary>Tells the server two craft have docked in this game, one of them this player's. See <see cref="Wire.Dock"/>.</summary>

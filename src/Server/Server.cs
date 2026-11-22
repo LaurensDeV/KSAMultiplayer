@@ -989,7 +989,7 @@ public sealed class GameServer : IDisposable
             case Wire.Claim claim when player.Loaded && claim.Key.Length > 0:
                 bool had = OwnerOf(claim.Key) == player.Id;
                 // Only once it is theirs: a player refused a craft is not flying it, whatever they asked.
-                if (Grant(player, claim.Key, taking: claim.Controlling, made: claim.Made, near: claim.Near) is not { } granted)
+                if (Grant(player, claim.Key, taking: claim.Controlling, made: claim.Made, near: claim.Near, undocked: claim.Made && claim.Undocked) is not { } granted)
                 {
                     SayDockedAgain(player, claim.Key);
                     return;
@@ -1503,7 +1503,8 @@ public sealed class GameServer : IDisposable
     /// that name is another player's and this is a craft their game made. Null when it is not theirs.
     /// </summary>
     /// <param name="near">Whether it is asked for only for being within this player's physics: given where nobody has it, and never taken from anybody.</param>
-    private string? Grant(Player p, string key, bool taking = false, bool made = false, bool near = false)
+    /// <param name="undocked">Whether their game made it by undocking it at a port, which is what the log names an undocking by.</param>
+    private string? Grant(Player p, string key, bool taking = false, bool made = false, bool near = false, bool undocked = false)
     {
         // A craft its game makes is its own whenever it is made; it asks again for anything else.
         if (!made && OwnerOf(key) != p.Id && TooFarBehind(p)) return null;
@@ -1526,7 +1527,8 @@ public sealed class GameServer : IDisposable
             // Made again under its name, which is a craft that has undocked: that docking is over.
             if (!RoomFor(p)) return null;
             _dockings.RemoveAll(d => d.Consumed == key);
-            if (_docked.Remove(key, out string? into) && made && Undocker(into, p)) Log($"{p.Name} undocked {key}");
+            _docked.Remove(key, out string? into);
+            if (undocked) Log($"{p.Name} undocked {key}" + (into is null ? "" : $" from {Survivor(into)}"));
             _crafts[key] = craft = new Craft();
         }
         if (craft.Owner == p.Id)
@@ -1571,16 +1573,15 @@ public sealed class GameServer : IDisposable
     private readonly List<(string Consumed, string Survivor, byte By, double At)> _dockings = [];
     private const double DockingToldForSeconds = 30.0;
 
-    // What each craft a docking took went into, kept until its name is a craft again: a docking
-    // may be undone hours later, by a player who was not there for it, and nothing else says who.
+    // What each craft a docking took went into, kept until its name is a craft again, so the log can
+    // say what a craft undocked from.
     private readonly Dictionary<string, string> _docked = [];
 
-    // Whether this player has what the craft went into, or nobody has: only its owner's game can
-    // undock, so a craft somebody else makes under the name is a new craft that happens to share it.
-    private bool Undocker(string into, Player p)
+    // The craft standing now that one went into: what it went into may itself have docked since.
+    private string Survivor(string into)
     {
         for (int i = 0; i < _docked.Count && _docked.TryGetValue(into, out string? next); i++) into = next;
-        return OwnerOf(into) is var owner && (owner == 0 || owner == p.Id);
+        return into;
     }
 
     /// <summary>

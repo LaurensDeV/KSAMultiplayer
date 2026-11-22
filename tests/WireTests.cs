@@ -108,6 +108,7 @@ public class WireTests
         Assert.Equal(new Wire.Loaded(42), RoundTrip(new Wire.Loaded(42)));
         Assert.Equal(new Wire.Claim("Rocket", true, false), RoundTrip(new Wire.Claim("Rocket", true, false)));
         Assert.Equal(new Wire.Claim("Kitten", false, true), RoundTrip(new Wire.Claim("Kitten", false, true)));
+        Assert.Equal(new Wire.Claim("Module", false, true, Undocked: true), RoundTrip(new Wire.Claim("Module", false, true, Undocked: true)));
         Assert.Equal(new Wire.Rename("Kitten", "Kitten 2"), RoundTrip(new Wire.Rename("Kitten", "Kitten 2")));
         Assert.Equal(new Wire.Gone("Rocket Debris"), RoundTrip(new Wire.Gone("Rocket Debris")));
         Assert.Equal(new Wire.Chat(2, "hello 🐱"), RoundTrip(new Wire.Chat(2, "hello 🐱")));

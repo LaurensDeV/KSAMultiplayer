@@ -2201,10 +2201,11 @@ internal static class Sync
             // claimed, none was described, and the others watched the rocket vanish whole and never
             // saw it come apart. The name is the surer answer in any case -- it is already the one
             // trusted a few lines up to give another player their debris.
-            if (ReferenceEquals(v, flown) || shed is not null || SplitHere.Remove(v))
+            bool split = SplitHere.Remove(v);
+            if (ReferenceEquals(v, flown) || shed is not null || split)
             {
                 if (shed is { From: var hull }) ShedLately[hull] = Wall();
-                Own(c, v, define: true, made: true);
+                Own(c, v, define: true, made: true, undocked: split);
                 continue;
             }
             double mine = Owned.Values.Where(m => World.IsAlive(m.Craft)).Select(m => World.Between(m.Craft, v)).DefaultIfEmpty(double.PositiveInfinity).Min();
@@ -2279,14 +2280,14 @@ internal static class Sync
         return dead is null ? local : KeyOf(dead);
     }
 
-    private static void Own(Client c, Vehicle v, bool define, bool made)
+    private static void Own(Client c, Vehicle v, bool define, bool made, bool undocked = false)
     {
         string key = KeyOf(v);
         Mine mine = new(v);
         Owned[key] = mine;
         WentAs.Remove(key);
         DockedAway.Remove(key);
-        c.Claim(key, controlling: ReferenceEquals(v, Flown), made: made);
+        c.Claim(key, controlling: ReferenceEquals(v, Flown), made: made, undocked: undocked);
         // A shape of 0 is one no craft has, so the sending round tries again. Mine records the
         // craft's shape as it is made, so a definition that failed here would otherwise never be
         // asked for again: the craft would be claimed, its states sent, its name in everybody's

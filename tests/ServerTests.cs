@@ -660,17 +660,43 @@ public class ServerTests
             rig.Tick();
         }
 
-        a.Claim("Module", controlling: false, made: true);
+        a.Claim("Module", controlling: false, made: true, undocked: true);
         rig.Until(() => b.OwnerOf("Module") == a.Id, what: "the module to be back, Alice's");
-        Assert.Single(rig.Server.Said, s => s.EndsWith("Alice undocked Module"));
+        Assert.Single(rig.Server.Said, s => s.EndsWith("Alice undocked Module from Station"));
 
-        // Docked again, a craft of the same name that Bob launches is not the module coming away:
-        // the station is Alice's to undock from.
+        // Docked again, a craft of the same name that Bob launches is not the module coming away.
         a.SayDocked("Module", "Station");
         rig.Until(() => b.OwnerOf("Module") == 0, what: "the module to be gone again");
         b.Claim("Module", controlling: true, made: true);
         rig.Until(() => a.OwnerOf("Module") == b.Id, what: "Bob's new craft to be his");
         Assert.Single(rig.Server.Said, s => s.Contains("undocked"));
+    }
+
+    [Fact]
+    public void APieceShedUnderADockedCraftsNameIsNoUndocking()
+    {
+        // KSA hands a freed name to the next piece shed: a station breaking up put a docked module's
+        // name on a 1 KB piece, and the log said its owner had undocked the module.
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        Beside(rig, a, "Station", b, "Module");
+        a.SayDocked("Module", "Station");
+        rig.Until(() => b.Gone.Contains("Module"), what: "the module to be gone");
+
+        a.Claim("Module", controlling: false, made: true);
+        rig.Until(() => b.OwnerOf("Module") == a.Id, what: "the piece to be Alice's");
+        Assert.DoesNotContain(rig.Server.Said, s => s.Contains("undocked"));
+    }
+
+    [Fact]
+    public void AnUndockingIsNamedWhenTheServerNeverSawTheDocking()
+    {
+        // Docked before a restart, or in the world as it was saved: the game still knows it undocked.
+        using Rig rig = new();
+        Client a = Seed(rig);
+        a.Claim("Module", controlling: false, made: true, undocked: true);
+        rig.Until(() => rig.Server.Said.Any(s => s.EndsWith("Alice undocked Module")), what: "the undocking to be logged");
     }
 
     [Fact]

@@ -197,8 +197,10 @@ public static class Wire
     ///
     /// <para>31 is the operator: <see cref="Role.Operator"/> in an <see cref="Op"/>, and the server's
     /// log sent to one who asks for it as a <see cref="BlobKind.Log"/>.</para>
+    ///
+    /// <para>32 is <see cref="Claim.Undocked"/>.</para>
     /// </summary>
-    public const ushort Version = 31;
+    public const ushort Version = 32;
 
     /// <summary>
     /// The version of <see cref="Ask"/> and <see cref="Facts"/> alone, in the first byte of each.
@@ -569,7 +571,13 @@ public static class Wire
     /// as there are games: held by one, it is in one. Such a hold is given up to whoever asks to
     /// fly the craft, and lapses when its holder stops saying the craft is near.
     /// </param>
-    public sealed record Claim(string Key, bool Controlling, bool Made, bool Near = false) : Message(Kind.Claim);
+    /// <param name="Undocked">
+    /// Whether the game made it by undocking it at a port. KSA gives the half that comes away its old
+    /// name back, and gives a freed name to the next piece shed in a crash as well, so the server
+    /// cannot tell the two apart by the name: taking every craft made under a docked name for an
+    /// undocking, its log said a player undocked a module that had broken off in a crash.
+    /// </param>
+    public sealed record Claim(string Key, bool Controlling, bool Made, bool Near = false, bool Undocked = false) : Message(Kind.Claim);
 
     /// <summary>A craft of this game's whose name another player already had, and what it is called from now on.</summary>
     public sealed record Rename(string Was, string Now) : Message(Kind.Rename);
@@ -904,6 +912,7 @@ public static class Wire
                 w.U8(c.Controlling ? (byte)1 : (byte)0);
                 w.U8(c.Made ? (byte)1 : (byte)0);
                 w.U8(c.Near ? (byte)1 : (byte)0);
+                w.U8(c.Undocked ? (byte)1 : (byte)0);
                 break;
             case Rename n:
                 w.Text(n.Was, KeyChars);
@@ -1039,7 +1048,7 @@ public static class Wire
                 Kind.Loaded => new Loaded(r.F64()),
                 Kind.State => new State(r.U8(), r.Text(KeyChars), r.U32(), r.F64(), r.Text(64), r.V3d(), r.V3f(), r.V3d(), r.V3f(),
                                         new Quat(r.F32(), r.F32(), r.F32(), r.F32()).Normalized(), r.V3f(), r.F32(), (StateFlags)r.U8(), r.U16()),
-                Kind.Claim => new Claim(r.Text(KeyChars), r.U8() != 0, r.U8() != 0, r.U8() != 0),
+                Kind.Claim => new Claim(r.Text(KeyChars), r.U8() != 0, r.U8() != 0, r.U8() != 0, r.U8() != 0),
                 Kind.Rename => new Rename(r.Text(KeyChars), r.Text(KeyChars)),
                 Kind.WarpAsk => new WarpAsk(r.F32()),
                 Kind.WarpVote => new WarpVote(r.U8() != 0),
