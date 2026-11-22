@@ -437,7 +437,7 @@ public class DiscordTests
     public void TheCallbackWaitsOutAnAnswerForAnotherLoginAndTakesItsOwn()
     {
         using ECDsa key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        using DiscordCallback callback = new(System.Buffers.Text.Base64Url.EncodeToString(key.ExportSubjectPublicKeyInfo()), port: 0);
+        using DiscordCallback callback = new(System.Buffers.Text.Base64Url.EncodeToString(key.ExportSubjectPublicKeyInfo()));
         Assert.Contains("400", Get(callback.Port, "/ksamp?cert=theirs&state=wrong"));
         Assert.Contains("404", Get(callback.Port, "/favicon.ico"));
         Assert.False(callback.Finished);
@@ -481,5 +481,38 @@ public class DiscordTests
         stream.Write(Encoding.ASCII.GetBytes($"GET {target} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"));
         using StreamReader reader = new(stream);
         return reader.ReadLine() ?? "";
+    }
+
+    [Fact]
+    public void ALoginListensOnAPortTheSystemPicksAndSaysWhich()
+    {
+        // The one port every login used to listen on is in the range Windows and Linux hand out
+        // themselves: Docker Desktop had Windows set it aside on one machine, and a login there
+        // could not listen at all. Two at once is two games on one machine, which that also stopped.
+        using ECDsa key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        string spki = System.Buffers.Text.Base64Url.EncodeToString(key.ExportSubjectPublicKeyInfo());
+        using DiscordCallback one = new(spki), other = new(spki);
+
+        Assert.NotEqual(one.Port, other.Port);
+        Assert.Equal(one.Port, Discord.ReadState(one.State)!.Port);
+        Assert.StartsWith($"http://127.0.0.1:{one.Port}/ksamp?", Login.BackToGame(one.State, "cert", null));
+        Assert.StartsWith($"http://127.0.0.1:{other.Port}/ksamp?", Login.BackToGame(other.State, "cert", null));
+    }
+
+    [Theory]
+    [InlineData(28581, 28581)]
+    [InlineData(61234, 61234)]
+    // Not a port a program listens on without privileges, or not a port: sent where a game from before listened.
+    [InlineData(22, 50180)]
+    [InlineData(70000, 50180)]
+    [InlineData(-1, 50180)]
+    // A game from before names none.
+    [InlineData(0, 50180)]
+    public void TheServiceSendsABrowserToThePortAGameNamedOnItsOwnMachine(int named, int sent)
+    {
+        using ECDsa key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        string state = Discord.State(System.Buffers.Text.Base64Url.EncodeToString(key.ExportSubjectPublicKeyInfo()), "mine", named);
+        Assert.NotNull(Discord.ReadState(state));
+        Assert.StartsWith($"http://127.0.0.1:{sent}/ksamp?", Login.BackToGame(state, "cert", null));
     }
 }

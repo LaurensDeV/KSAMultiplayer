@@ -82,7 +82,7 @@ internal static class DiscordLogin
         catch (SocketException e)
         {
             Stop();
-            Said = $"couldn't listen for the login on port {Discord.CallbackPort}: {e.Message}";
+            Said = $"couldn't listen for the login: {e.Message}";
             Log.Warn(Said);
             return;
         }

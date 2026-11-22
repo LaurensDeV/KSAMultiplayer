@@ -60,7 +60,7 @@ public sealed class Login
 
     /// <summary>Back to the game on its own machine, with a certificate or why there is none, and its state.</summary>
     public static string BackToGame(string state, string? cert, string? error) =>
-        $"http://127.0.0.1:{Discord.CallbackPort}/ksamp?"
+        $"http://127.0.0.1:{Discord.ReadState(state)?.Port ?? Discord.CallbackPort}/ksamp?"
         + (cert is not null ? $"cert={Uri.EscapeDataString(cert)}" : $"error={Uri.EscapeDataString(error ?? "unknown")}")
         + $"&state={Uri.EscapeDataString(state)}";
 

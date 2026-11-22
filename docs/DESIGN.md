@@ -160,8 +160,11 @@ stranger sent it.
   public half through the browser to `/v1/discord/login` in the state with a random part of its
   own, on to Discord with `identify` alone, and back through `/v1/discord/callback`, where the code
   is traded, Discord's token revoked, and a `DiscordCert` binding that key to the Discord user for
-  30 days is signed and caught on `127.0.0.1:50180` (`DiscordCallback`, a bare socket, since
-  `HttpListener` on Windows wants a URL reservation). Key and certificate are kept in
+  30 days is signed and caught on `127.0.0.1` (`DiscordCallback`, a bare socket, since
+  `HttpListener` on Windows wants a URL reservation), on a port the system picks, which the game says in its
+  state (RFC 8252's way for a program's login): the service sends the browser to that port of the
+  loopback address where it is 1024 or above, and to 50180 for a state that names none, which is
+  where a game from before listened. That one port was another program's on some machines. Key and certificate are kept in
   `%LOCALAPPDATA%\KSAMultiplayer\discord.json` (`DiscordIdentity`), the Windows account's and not
   one game instance's, so every instance is logged in at once. At every join the game signs the
   nonce and the address the player typed and says the certificate and signature until answered
@@ -1210,6 +1213,9 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   roster following the name -- the server's half of the first three is in its tests.
 
 ## What has not been tried
+
+- **A Discord login on a port the system picks.** The listener and the service's redirect are
+  driven in the tests; no browser has come back to a game on one.
 
 - **The window's text outside the chat through `ImGui.Text`.** The binding's `TextDisabled`, `TextWrapped`
   and `TextColored` hand their text to ImGui as a printf format, and names, chat and what a server

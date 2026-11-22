@@ -475,7 +475,7 @@ a lost data folder takes nobody's admin with it.
 
 Players log in **once per computer**: **Log in with Discord** under the name in the Multiplayer
 window. Their browser goes through the login service at `servers.ksamp.gg` to Discord, which asks
-only to know who they are, and comes back to the game on port 50180 of their own machine. If the
+only to know who they are, and comes back to the game on their own machine, on a port the system picks for that login. If the
 browser that opens is not the one they use Discord in, **Copy link** puts the login's address on the
 clipboard. The login lasts 30 days, and **Log out** forgets it. It is kept in
 `%LOCALAPPDATA%\KSAMultiplayer\discord.json`, for the Windows account rather than for one StarMap or

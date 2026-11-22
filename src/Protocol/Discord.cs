@@ -28,7 +28,12 @@ public static class Discord
     /// <summary>The login service every game opens and every server takes the key of.</summary>
     public const string Service = "https://servers.ksamp.gg/v1/discord";
 
-    /// <summary>Where on this machine a game listens for the browser to come back. Fixed, because the service sends it there.</summary>
+    /// <summary>
+    /// Where a browser is sent back to for a state that names no port: the one port a game from
+    /// before a state named one listened on. No game listens there now. It is in the range Windows
+    /// and Linux hand out for their own use, and on a machine where another program had been
+    /// handed it a login could not listen at all.
+    /// </summary>
     public const int CallbackPort = 50180;
 
     /// <summary>The longest a Discord user id is: a snowflake, at most 20 digits.</summary>
@@ -57,12 +62,26 @@ public static class Discord
     /// for the certificate, and a random part only this game knows, so an answer some other page
     /// sent the browser to is not taken for this login's.
     /// </summary>
-    public static string State(string publicKey, string mine) =>
-        Base64Url.EncodeToString(JsonSerializer.SerializeToUtf8Bytes(new LoginState(mine, publicKey)));
+    /// <param name="port">The port the game listens on for the browser to come back, or 0 to name none.</param>
+    public static string State(string publicKey, string mine, int port = 0) =>
+        Base64Url.EncodeToString(JsonSerializer.SerializeToUtf8Bytes(new LoginState(mine, publicKey, port == 0 ? null : port), StateJson));
+
+    private static readonly JsonSerializerOptions StateJson = new() { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
 
     /// <param name="R">The game's own random part.</param>
     /// <param name="K">The game's public key, SubjectPublicKeyInfo in base64url.</param>
-    public sealed record LoginState(string R, string K);
+    /// <param name="P">The port the game listens on, which the system picked for it; nothing from a game from before it said.</param>
+    public sealed record LoginState(string R, string K, int? P = null)
+    {
+        /// <summary>
+        /// The port on the player's own machine the browser is sent back to: the one named, where
+        /// it is one a program may listen on without privileges, and <see cref="CallbackPort"/>
+        /// otherwise. Any such port and not a list of them, as RFC 8252 has it for a program's
+        /// login: what is sent there is a certificate for a key only the game holds, to the
+        /// loopback address and no other.
+        /// </summary>
+        public int Port => P is >= 1024 and <= 65535 ? P.Value : CallbackPort;
+    }
 
     public static LoginState? ReadState(string state)
     {
@@ -348,13 +367,16 @@ public sealed class DiscordCallback : IDisposable
 
     public bool Finished => Cert is not null || Error is not null;
 
-    /// <summary>Listens at once. Throws <see cref="SocketException"/> when the port is taken, as by another login still waiting.</summary>
+    /// <summary>
+    /// Listens at once, on a port the system picks, and says which in its state: no port is this
+    /// program's to count on being free.
+    /// </summary>
     /// <param name="publicKey">The public half of the key the certificate is to be for.</param>
-    public DiscordCallback(string publicKey, int port = Discord.CallbackPort)
+    public DiscordCallback(string publicKey)
     {
-        State = Discord.State(publicKey, Discord.Nonce());
-        _listener = new TcpListener(IPAddress.Loopback, port);
+        _listener = new TcpListener(IPAddress.Loopback, 0);
         _listener.Start();
+        State = Discord.State(publicKey, Discord.Nonce(), Port);
         Thread t = new(Run) { IsBackground = true, Name = "KSAMultiplayer Discord login" };
         t.Start();
     }
