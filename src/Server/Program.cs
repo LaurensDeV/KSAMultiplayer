@@ -387,6 +387,12 @@ using PosixSignalRegistration term = PosixSignalRegistration.Create(PosixSignal.
     AskStop("the server is restarting");
 });
 
+// Where an operator who has attached to the console is told how to leave it without stopping it.
+string detach = File.Exists("/.dockerenv")
+    ? "this is the server's console, not a shell: Ctrl+P then Ctrl+Q leaves it running; Ctrl+C, quit or exit stops it"
+    : "this is the server's console, not a shell: Ctrl+C, quit or exit stops it";
+HashSet<string> shellWords = new(StringComparer.Ordinal) { "docker", "ls", "cd", "ps", "sudo", "cat", "tail", "journalctl", "ssh", "git", "tofu", "systemctl" };
+
 System.Collections.Concurrent.ConcurrentQueue<string> commands = new();
 if (!Console.IsInputRedirected || Environment.GetEnvironmentVariable("KSAMP_STDIN") == "1")
 {
@@ -648,16 +654,17 @@ void Run(string line, GameServer.Player? who, Action<string> Answer)
                 Answer($"  {"settings".PadRight(18)} read the settings file again");
                 Answer($"  {"set <key> <value>".PadRight(18)} change a setting and keep it in the file; set alone lists them");
                 Answer($"  {"quit [why]".PadRight(18)} stop the server, after counting the players down; again to stop at once");
+                Answer($"  {detach}");
             }
             else Answer("  quit, settings and set can only be run from the server console");
             break;
-        // The console's alone, as quit is: an admin who could set the password could lock every
-        // other player out, and one who could set the data folder could point it anywhere.
-        // The console's alone, with quit: it throws away the world everybody is standing in, and
-        // there is no undoing it from a chat window.
+        // An admin's as well as the console's (Permissions): what it throws away is kept first as a
+        // "before fresh" save, which load brings back.
         case "fresh":
             Answer(server.Fresh(who is null ? "the operator started the world over" : $"{who.Name} started the world over", who));
             break;
+        // The console's alone, as quit is: an admin who could set the password could lock every
+        // other player out, and one who could set the data folder could point it anywhere.
         case "settings" when who is null:
             Reapply(null);
             break;
@@ -675,6 +682,9 @@ void Run(string line, GameServer.Player? who, Action<string> Answer)
             break;
         default:
             Answer($"no command '{parts[0]}'; try help");
+            // docker attach and docker ps were typed into this console, by somebody who took it for
+            // their shell and went on to type fresh twice.
+            if (who is null && shellWords.Contains(parts[0])) Answer(detach);
             break;
     }
 }

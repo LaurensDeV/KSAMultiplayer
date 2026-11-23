@@ -187,6 +187,29 @@ public class ServerTests
         Assert.Single(rig.Server.Saves.List());
     }
 
+    /// <summary>
+    /// 2026-11-22: fresh, a restart that loaded the empty world it left and so forgot it was kept,
+    /// and fresh again, which kept the empty world as a second "before fresh" save. Five are kept,
+    /// and the world played in was two more mistakes from the bin.
+    /// </summary>
+    [Fact]
+    public void FreshOverAnEmptyWorldNobodyPlayedInIsRefused()
+    {
+        using Rig rig = new(new ServerOptions { EmptyWorld = "SolLite" });
+        Seed(rig);
+        rig.Until(() => rig.Server.HasWorld, what: "a world");
+        string first = rig.Server.Fresh("a test asked");
+        // What was kept says what it is, so a played world is told from an empty one by the line alone.
+        Assert.Contains("KB", first);
+        Assert.Contains("universe time 5000 s", first);
+
+        // As a restart loads it from the disk.
+        rig.Server.SetWorld(new Blob(BlobKind.World, "", 0, 0.0, StockWorld.Zip("SolLite")!), "", [], "SolLite", timeKnown: false);
+        string again = rig.Server.Fresh("again");
+        Assert.Contains("already a new empty one", again);
+        Assert.Single(rig.Server.Saves.List());
+    }
+
     [Fact]
     public void FreshWithNothingToStartFromSaysSo()
     {

@@ -306,7 +306,9 @@ standing next to their rocket keeps it. The chat says what was cleared and why.
 `fresh` throws the world away and puts an empty one in its place -- the one `empty-world` names:
 every craft gone, universe time started over, and everybody handed the new world where they stand.
 The world it throws away is kept first, as a `before fresh` save in SERVER SAVES, so `load` brings
-it back. An admin can type it in chat as `/fresh`; a trusted player cannot.
+it back, and the line that says so gives its size and universe time, as SERVER SAVES does. It
+refuses to start over a world that is still an empty one nobody has played in. An admin can type it
+in chat as `/fresh`; a trusted player cannot.
 It shuts down cleanly on Ctrl+C, on SIGTERM and on `quit [why]`: with players in the world, it
 counts them down on screen for `stop-notice` seconds, refuses new joins, asks for a last save and
 waits up to 5 s for it, says goodbye with the reason, and only then leaves the directories. A second

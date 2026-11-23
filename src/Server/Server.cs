@@ -2488,6 +2488,10 @@ public sealed class GameServer : IDisposable
     /// <summary>Asks for a fresh save of the world now, from the console.</summary>
     public void SnapshotNow() => AskSnapshot("the operator asked for a save");
 
+    // What a world kept is, so one played in is told from an empty one by its name's line alone.
+    private static string Described(Blob world, bool timeKnown) =>
+        Blob.Size(world.Data.Length) + (timeKnown ? $", universe time {world.Universe:F0} s" : "");
+
     /// <summary>Whether anybody is in the world, and so anybody to count down for or to save it.</summary>
     public bool AnyonePlaying => _players.Values.Any(p => p.Loaded);
 
@@ -2660,9 +2664,10 @@ public sealed class GameServer : IDisposable
         if (_warpPhase != Wire.WarpPhase.None) EndWarp(_clock(), $"the warp ended because {who} is loading a save");
         // What was asked to be kept is kept of the world that is about to go.
         KeepWaiting(fresh: false);
-        string keptAs = "";
+        string keptAs = "", keptWhat = "";
         if (_world is not null && !_worldKept)
         {
+            keptWhat = Described(_world, _worldTimeKnown);
             try
             {
                 keptAs = Saves.KeepBeforeLoad(_world, _worldBuild, _worldMods, _worldSystem, _worldTimeKnown, who, Protected.Names);
@@ -2689,7 +2694,7 @@ public sealed class GameServer : IDisposable
         }
         _worldKept = true;
         int back = ReloadAll($"{who} loaded the save '{name}'");
-        string previous = keptAs.Length > 0 ? $"; the previous world is saved as '{keptAs}'" : "";
+        string previous = keptAs.Length > 0 ? $"; the previous world is saved as '{keptAs}' ({keptWhat})" : "";
         Log($"the world is now the save '{name}', loaded by {who}"
             + (save.TimeKnown ? $", at universe time {save.World.Universe:F0} s" : "") + previous);
         SaySaves();
@@ -2876,12 +2881,20 @@ public sealed class GameServer : IDisposable
                 ? $"nothing to start from: set empty-world to one of {carried} first"
                 : $"no empty world for '{Options.EmptyWorld}'; there is one for {carried}";
         }
+        // An empty world nobody has played in has nothing to start over from, and starting over
+        // anyway kept it as a "before fresh" save that pushed a world played in towards the five
+        // that are kept: a restart between two of them had forgotten the first was kept.
+        if (_world is not null && _crafts.Count == 0 && _world.Data.AsSpan().SequenceEqual(zip))
+        {
+            return $"the world is already a new empty one in {Options.EmptyWorld}, so there is nothing to start over";
+        }
         // The world thrown away is kept first, as one a load replaces is: a fresh start is the
         // one thing here nobody could otherwise take back. Not when it is already on the shelf.
         KeepWaiting(fresh: false);
-        string keptAs = "";
+        string keptAs = "", keptWhat = "";
         if (_world is not null && !_worldKept)
         {
+            keptWhat = Described(_world, _worldTimeKnown);
             try
             {
                 keptAs = Saves.KeepBeforeFresh(_world, _worldBuild, _worldMods, _worldSystem, _worldTimeKnown, by?.Name ?? "the operator", Protected.Names);
@@ -2910,7 +2923,7 @@ public sealed class GameServer : IDisposable
         _worldKept = true;
         return $"a new empty world in {Options.EmptyWorld}"
                + (back > 0 ? $", handed to {back} player{(back == 1 ? "" : "s")}" : ", with nobody here to give it to")
-               + (keptAs.Length > 0 ? $"; the world before it is kept as '{keptAs}'" : "");
+               + (keptAs.Length > 0 ? $"; the world before it is kept as '{keptAs}' ({keptWhat})" : "");
     }
 
     /// <summary>

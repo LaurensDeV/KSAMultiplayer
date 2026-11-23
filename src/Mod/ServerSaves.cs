@@ -19,7 +19,7 @@ namespace KSAMultiplayer;
 /// </summary>
 internal static class ServerSaves
 {
-    private enum Column { Name, Size, Version, By, Date }
+    private enum Column { Name, Size, Time, Version, By, Date }
 
     /// <summary>KSA's window base, so the frame, the menu strip and the footer are the game's own and not a likeness of them.</summary>
     private sealed class Window : ImGuiWindow, IStaticWindow
@@ -63,10 +63,13 @@ internal static class ServerSaves
             }
             const ImGuiTableFlags flags = ImGuiTableFlags.BordersV | ImGuiTableFlags.Resizable | ImGuiTableFlags.Sortable | ImGuiTableFlags.RowBg
                                           | ImGuiTableFlags.BordersOuterH | ImGuiTableFlags.NoBordersInBody | ImGuiTableFlags.ScrollY;
-            if (!ImGui.BeginTable("ksampserversaves"u8, 5, flags, (float2?)null)) return;
+            if (!ImGui.BeginTable("ksampserversaves"u8, 6, flags, (float2?)null)) return;
             ImGui.TableSetupScrollFreeze(0, 1);
             ImGui.TableSetupColumn("Name"u8, ImGuiTableColumnFlags.None, 0f, (uint)Column.Name);
             ImGui.TableSetupColumn("Size"u8, ImGuiTableColumnFlags.None, 0.2f, (uint)Column.Size);
+            // With the size, what tells a world played in from an empty one put in its place: two
+            // "before fresh" saves a minute apart were 319 KB and 977 B, and the empty one was loaded first.
+            ImGui.TableSetupColumn("Universe time"u8, ImGuiTableColumnFlags.None, 0.3f, (uint)Column.Time);
             ImGui.TableSetupColumn("Version"u8, ImGuiTableColumnFlags.None, 0.3f, (uint)Column.Version);
             ImGui.TableSetupColumn("Saved by"u8, ImGuiTableColumnFlags.None, 0.3f, (uint)Column.By);
             ImGui.TableSetupColumn("Date"u8, ImGuiTableColumnFlags.DefaultSort | ImGuiTableColumnFlags.PreferSortDescending, 0.3f, (uint)Column.Date);
@@ -142,6 +145,7 @@ internal static class ServerSaves
         {
             Column.Name => saves.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase),
             Column.Size => saves.OrderBy(s => s.Bytes),
+            Column.Time => saves.OrderBy(s => s.Universe),
             Column.Version => saves.OrderBy(s => s.KsaBuild, StringComparer.Ordinal),
             Column.By => saves.OrderBy(s => By(s), StringComparer.OrdinalIgnoreCase),
             _ => saves.OrderBy(s => s.SavedUtc),
@@ -158,6 +162,14 @@ internal static class ServerSaves
         ImGui.Text(text);
         ImGui.PopTextWrapPos();
         ImGui.EndTooltip();
+    }
+
+    // Days and the time of day, as KSA counts a mission's; nothing for a world whose time is not known.
+    private static string UniverseTime(double seconds)
+    {
+        if (!(seconds > 0) || !double.IsFinite(seconds)) return "-";
+        TimeSpan t = TimeSpan.FromSeconds(Math.Min(seconds, TimeSpan.MaxValue.TotalSeconds / 2));
+        return $"{(int)t.TotalDays}d {t.Hours:00}:{t.Minutes:00}:{t.Seconds:00}";
     }
 
     private static string By(SavedWorld s) => s.Auto ? "automatic" : s.By.Length > 0 ? s.By : "copied in by hand";
@@ -196,6 +208,8 @@ internal static class ServerSaves
         ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.TextMuted);
         ImGui.TableNextColumn();
         ImGui.Text(Blob.Size(s.Bytes));
+        ImGui.TableNextColumn();
+        ImGui.Text(UniverseTime(s.Universe));
         ImGui.TableNextColumn();
         ImGui.Text(s.KsaBuild.Length > 0 ? s.KsaBuild : "-");
         ImGui.TableNextColumn();
