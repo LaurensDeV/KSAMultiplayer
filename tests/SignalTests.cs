@@ -51,6 +51,18 @@ public class SignalTests
 
         public void Signal(string name) => Process.Start("kill", $"-{name} {Process.Id}")!.WaitForExit();
 
+        /// <summary>
+        /// Waits for the server to exit and then for the last of what it wrote to be read: a wait
+        /// with a timeout returns as the process goes, before the lines it wrote on the way out
+        /// have reached the handlers, and a check of them then failed on a busier machine.
+        /// </summary>
+        public bool Exited(int ms)
+        {
+            if (!Process.WaitForExit(ms)) return false;
+            Process.WaitForExit();
+            return true;
+        }
+
         public void Dispose()
         {
             if (!Process.HasExited) Process.Kill();
@@ -94,7 +106,7 @@ public class SignalTests
 
         Pump(a, () => a.Out.Length > 0, 15, "the goodbye");
         Assert.Equal("the server closed the connection: the server is restarting", a.Out);
-        Assert.True(server.Process.WaitForExit(10000), "the server did not exit");
+        Assert.True(server.Exited(10000), "the server did not exit");
         Assert.Equal(0, server.Process.ExitCode);
         Assert.Contains(server.Said, l => l.Contains("stopping in 3 s: the server is restarting"));
         Assert.Contains(server.Said, l => l.Contains("Alice saved the world"));
@@ -108,7 +120,7 @@ public class SignalTests
         using Running server = new();
         Stopwatch w = Stopwatch.StartNew();
         server.Signal("TERM");
-        Assert.True(server.Process.WaitForExit(10000), "the server did not exit");
+        Assert.True(server.Exited(10000), "the server did not exit");
         Assert.Equal(0, server.Process.ExitCode);
         Assert.InRange(w.Elapsed.TotalSeconds, 0.0, 5.0);
         Assert.Contains(server.Said, l => l.Contains("stopping: the server is restarting"));
@@ -128,7 +140,7 @@ public class SignalTests
         Pump(a, () => double.IsFinite(a.ClosingAt), 5, "the countdown");
         Stopwatch w = Stopwatch.StartNew();
         server.Signal("TERM");
-        Assert.True(server.Process.WaitForExit(10000), "the server did not exit");
+        Assert.True(server.Exited(10000), "the server did not exit");
         Assert.InRange(w.Elapsed.TotalSeconds, 0.0, 8.0);
     }
 }
