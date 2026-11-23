@@ -64,8 +64,6 @@ th { color: var(--quiet); font-weight: 500; }
 .bar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin: 14px 0 10px; }
 
 canvas { width: 100%; display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
-#map2d { aspect-ratio: 1 / 1; max-height: 70vh; }
-#ground { aspect-ratio: 2 / 1; max-height: 30vh; }
 .stage { position: relative; height: 72vh; }
 #map3d { height: 100%; cursor: grab; }
 #map3d-labels { position: absolute; inset: 0; height: 100%; pointer-events: none; background: none; border-color: transparent; }

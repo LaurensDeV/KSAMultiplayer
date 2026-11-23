@@ -6,7 +6,7 @@
 // solar system from the origin would jitter by kilometres, and a linear depth buffer could not
 // hold a craft a few metres away and a star an AU away in one frame.
 import * as THREE from "./three.module.min.js";
-import { bodyEcl, craftNow, orbitPoints, rotate, colourOf, bodyOf, add } from "./map2d.js";
+import { bodyEcl, craftNow, orbitPoints, rotate, colourOf, bodyOf, add } from "./orbits.js";
 
 const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
 const BODY_COLOURS = { star: 0xffd27a, planet: 0x6c9fe0, moon: 0xa7adb8, minor: 0x8a7a66 };

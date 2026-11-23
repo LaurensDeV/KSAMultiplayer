@@ -1,7 +1,6 @@
 // The KSA Multiplayer web viewer. Everything a server's world shows, from /api/v1/view and the live
 // socket, kept in one `state` the maps draw from. Names and chat come from players: they are only
 // ever written as text, never as markup.
-import { Map2d } from "./map2d.js";
 import { System3d } from "./map3d.js";
 
 export const state = {
@@ -52,7 +51,6 @@ async function loadBodies() {
   if (!r.ok) return;
   state.bodiesEtag = r.headers.get("ETag");
   state.bodies = await r.json();
-  fillBodies();
 }
 
 // ---------------------------------------------------------------- status
@@ -173,18 +171,9 @@ for (const b of document.querySelectorAll("nav button")) {
   };
 }
 
-const map2d = new Map2d($("map2d"), $("ground"), state, universeNow);
 const system3d = new System3d($("map3d"), $("map3d-labels"), state, universeNow, {
   orbits: $("show-orbits"), labels: $("show-labels"), debris: $("show-debris"), follow: $("follow"), note: $("system-note"),
 });
-
-function fillBodies() {
-  const sel = $("body");
-  const names = new Set([...(state.bodies?.bodies ?? []).map(b => b.id), ...[...state.crafts.values()].map(c => c.body)]);
-  const had = sel.value;
-  sel.replaceChildren(...[...names].sort().map(n => { const o = el("option", n); o.value = n; return o; }));
-  if (had && names.has(had)) sel.value = had;
-}
 
 function fillFollow() {
   const sel = $("follow");
@@ -196,13 +185,10 @@ function fillFollow() {
     sel.options[0].value = "";
     if (names.includes(had)) sel.value = had;
   }
-  if (!$("body").value || ![...$("body").options].some(o => o.value === $("body").value)) fillBodies();
-  else if ([...state.crafts.values()].some(c => ![...$("body").options].some(o => o.value === c.body))) fillBodies();
 }
 
 function frame() {
   drawHeader();
-  if (tab === "map") map2d.draw($("body").value);
   if (tab === "system") system3d.draw();
   requestAnimationFrame(frame);
 }

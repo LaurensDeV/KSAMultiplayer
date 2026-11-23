@@ -14,7 +14,7 @@ internal static class Page
         ("index.html", "text/html; charset=utf-8"),
         ("viewer.css", "text/css; charset=utf-8"),
         ("viewer.js", "text/javascript; charset=utf-8"),
-        ("map2d.js", "text/javascript; charset=utf-8"),
+        ("orbits.js", "text/javascript; charset=utf-8"),
         ("map3d.js", "text/javascript; charset=utf-8"),
         // three.js r170, MIT, vendored from the npm package with its licence header kept: nothing is fetched from elsewhere.
         ("three.module.min.js", "text/javascript; charset=utf-8"),
