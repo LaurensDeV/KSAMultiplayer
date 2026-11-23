@@ -105,6 +105,7 @@ public class WireTests
         Assert.Equal(Wire.WorldRules.All, ((Wire.Clock)RoundTrip(new Wire.Clock(1e6, 3.25, 1f))).Rules);
         Assert.Equal(new Wire.Clock(1e6, 3.25, 1f, Wire.WorldRules.Radiation), RoundTrip(new Wire.Clock(1e6, 3.25, 1f, Wire.WorldRules.Radiation)));
         Assert.Equal(new Wire.Swept("Stage *", 7), RoundTrip(new Wire.Swept("Stage *", 7)));
+        Assert.Equal(["Rocket", "Station 2"], RoundTrip(new Wire.Swept("", 7, ["Rocket", "Station 2"])).Spared!);
         Assert.Equal(new Wire.Loaded(42), RoundTrip(new Wire.Loaded(42)));
         Assert.Equal(new Wire.Claim("Rocket", true, false), RoundTrip(new Wire.Claim("Rocket", true, false)));
         Assert.Equal(new Wire.Claim("Kitten", false, true), RoundTrip(new Wire.Claim("Kitten", false, true)));

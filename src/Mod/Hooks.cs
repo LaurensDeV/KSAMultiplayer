@@ -59,7 +59,10 @@ internal static class Hooks
     private const string HarmonyId = "com.ksamultiplayer";
 
     private static Harmony? _harmony;
-    private static bool _complained;
+
+    // Each hook's faults, counted. Only the first across every hook used to be written, so a
+    // second hook failing all evening said nothing at all.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> Complaints = new();
 
     /// <summary>
     /// What has to be in place before KSA's configuration at start, which comes before every other
@@ -1000,6 +1003,7 @@ internal static class Hooks
     {
         try
         {
+            Sync.WreckedUnspared(vehicle, "destroyed");
             return !Sync.Spared(vehicle);
         }
         catch (Exception e)
@@ -1033,6 +1037,7 @@ internal static class Hooks
     {
         try
         {
+            Sync.WreckedUnspared(vehicle, "failing parts");
             return !Sync.Spared(vehicle);
         }
         catch (Exception e)
@@ -1325,7 +1330,7 @@ internal static class Hooks
     }
 
     /// <summary>Whether KSA has stopped this player's world for a menu of its own.</summary>
-    private static bool Paused() =>
+    internal static bool Paused() =>
         Program.IsEditorOpen || EscMenu.Open || GameSettings.Show || GameSaves.IsOpen || VehicleSaves.IsOpen;
 
 
@@ -1354,11 +1359,23 @@ internal static class Hooks
         }
     }
 
+    // The first of each in full, and then at every power of ten: a hook failing every frame would
+    // write a line a frame. The first goes to the server too, so its log shows a game in trouble.
     private static void Complain(string what, Exception e)
     {
-        if (_complained) return;
-        _complained = true;
-        Log.Error($"{what} failed", e);
+        int n = Complaints.AddOrUpdate(what, 1, (_, had) => had + 1);
+        if (n == 1)
+        {
+            Log.Error($"{what} failed", e);
+            Sync.NoteLater($"{what} failed: {e.GetBaseException().GetType().Name}: {e.GetBaseException().Message}");
+        }
+        else if (IsPowerOfTen(n)) Log.Warn($"{what} has failed {n} times");
+    }
+
+    private static bool IsPowerOfTen(int n)
+    {
+        while (n >= 10 && n % 10 == 0) n /= 10;
+        return n == 1;
     }
 
     // Never called: puts the patched methods in this assembly's metadata, so a KSA change to one is a build error.

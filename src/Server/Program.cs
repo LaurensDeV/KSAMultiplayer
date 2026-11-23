@@ -414,7 +414,7 @@ if (!Console.IsInputRedirected || Environment.GetEnvironmentVariable("KSAMP_STDI
 // in it, so a command added without a line here is a command nobody is told about.
 (string What, string Does)[] Commands =
 [
-    ("players", "list who is connected and what they're flying"),
+    ("players", "list who is connected, what they're flying, their ping and how much of it is lost"),
     ("say <text>", "send a chat message from the server to everyone"),
     ("kick <name> [why]", "disconnect a player (they can rejoin); # and their number in players works as a name"),
     ("op <name>", "make a connected player an admin; they stay one when they rejoin, and on any machine if they logged in with Discord"),
@@ -425,7 +425,7 @@ if (!Console.IsInputRedirected || Environment.GetEnvironmentVariable("KSAMP_STDI
     ("deop discord:<id>", "take away a Discord user's role"),
     ("admins", "list the operators, admins and trusted players"),
     ("logs [days]", "operators only: download the server's log of today, or of the last few days up to 14, with addresses taken out"),
-    ("clear [name]", "remove every craft nobody is flying; clear Rocket_* removes only matching ones"),
+    ("clear [name]", "remove every craft nobody is flying, except one a player here holds and has flown; clear Rocket_* removes only matching ones"),
     ("remove <craft>", "remove one craft from every game, whoever owns it, unless it's being flown or protected"),
     ("protect <craft>", "keep a craft safe from clear, remove and being abandoned, even when named in full"),
     ("unprotect <craft>", "take a craft off the protected list"),
@@ -478,6 +478,8 @@ void Run(string line, GameServer.Player? who, Action<string> Answer)
                     + $"{(p.Role > Wire.Role.Player ? $", {Permissions.Said(p.Role)}" : "")}"
                     + $"{(p.DiscordId.Length > 0 ? $", Discord {p.DiscordName} ({p.DiscordId})" : "")}"
                     + $"{(p.Controlling.Length > 0 ? $", flying {p.Controlling}" : "")}"
+                    + $"{(p.Rtt >= 0f ? $", ping {p.Rtt * 1000.0:0} ms" : "")}"
+                    + $"{(double.IsFinite(p.Loss) ? $", {p.Loss:0.#%} lost" : "")}"
                     + $"{(who is null ? $", from {p.At}" : "")}, KSA {p.KsaBuild}");
             }
             break;

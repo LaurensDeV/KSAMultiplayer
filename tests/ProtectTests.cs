@@ -97,8 +97,8 @@ public class ProtectTests
         rig.Until(() => a.Swept.Count == 1 && b.Swept.Count == 1 && b.OwnerOf("Stage 1") == 0, what: "both games to be told");
         foreach (Client c in new[] { a, b })
         {
-            Assert.Equal("Stage 1", c.Swept.Peek());
-            Assert.False(Wire.IsPattern(c.Swept.Peek()));
+            Assert.Equal("Stage 1", c.Swept.Peek().Like);
+            Assert.False(Wire.IsPattern(c.Swept.Peek().Like));
             Assert.Equal(a.Id, c.OwnerOf("Rocket"));
             Assert.Equal(a.Id, c.OwnerOf("Station"));
         }

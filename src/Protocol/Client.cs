@@ -211,11 +211,11 @@ public sealed class Client : IDisposable
     /// Names the operator has swept the world by: this game takes away every craft of its own that
     /// matches and that <see cref="Spared"/> does not hold back.
     /// </summary>
-    public Queue<string> Swept { get; } = new();
+    public Queue<Sweep> Swept { get; } = new();
 
     // Sweeps heard and not yet handed on, each with the state of the protected list it was made
     // against: held until that state has come, or the craft it protects would go with the rest.
-    private readonly List<(string Like, uint Needs, double At)> _sweeps = [];
+    private readonly List<(string Like, uint Needs, double At, string[] Spared)> _sweeps = [];
     private HashSet<string> _protected = [];
     private uint _protectedSerial;
 
@@ -766,7 +766,7 @@ public sealed class Client : IDisposable
                 Gone.Enqueue(g.Key);
                 return;
             case Wire.Swept sw when Joined:
-                _sweeps.Add((sw.Like, sw.Protected, arrived));
+                _sweeps.Add((sw.Like, sw.Protected, arrived, sw.Spared ?? []));
                 return;
             case Wire.Chat c when Joined:
                 Chat.Enqueue(new ChatLine(c.From == 0, c.From == 0 ? "server" : NameOf(c.From), c.Text));
@@ -844,20 +844,21 @@ public sealed class Client : IDisposable
     // who has what and handed on for the game to take out of its world.
     private void Sweep(double now)
     {
-        foreach ((string like, uint needs, double at) in _sweeps.ToArray())
+        foreach ((string like, uint needs, double at, string[] spared) in _sweeps.ToArray())
         {
             if (needs > _protectedSerial && now - at < SweepWaitsSeconds) continue;
-            _sweeps.RemoveAll(s => s.Like == like && s.Needs == needs);
-            foreach (string key in _owners.Keys.Where(k => Wire.Matches(k, like) && !Spared(k)).ToArray())
+            _sweeps.RemoveAll(s => s.Like == like && s.Needs == needs && s.At == at);
+            HashSet<string> left = [.. spared];
+            foreach (string key in _owners.Keys.Where(k => Wire.Matches(k, like) && !Spared(k) && !left.Contains(k)).ToArray())
             {
                 _owners.Remove(key);
                 _tracks.Remove(key);
             }
-            foreach (string key in _ownersComing.Keys.Where(k => Wire.Matches(k, like) && !Spared(k)).ToArray())
+            foreach (string key in _ownersComing.Keys.Where(k => Wire.Matches(k, like) && !Spared(k) && !left.Contains(k)).ToArray())
             {
                 _ownersComing.Remove(key);
             }
-            Swept.Enqueue(like);
+            Swept.Enqueue(new Sweep(like, left));
         }
     }
 
@@ -874,3 +875,6 @@ public sealed class Client : IDisposable
         _udp.Dispose();
     }
 }
+
+/// <summary>What the operator swept by, and the craft it matches that are left.</summary>
+public sealed record Sweep(string Like, IReadOnlySet<string> Spared);

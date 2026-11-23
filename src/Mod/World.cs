@@ -308,19 +308,16 @@ internal static class World
     public static bool IsBody(string name) =>
         KSA.Universe.CurrentSystem is { } system && system.All.TryGet(name, out Astronomical? found) && found is not Vehicle;
 
-    // What a craft's parts look like from outside, cheaply: a change means its definition is sent again.
     /// <summary>
     /// What a craft is, for deciding whether the others have to be told how it is built again: its
-    /// parts and the body it is going round.
-    ///
-    /// <para>The body because a definition carries one -- <c>VehicleData.ParentBody</c> -- and it
-    /// was only ever sent again when the part count changed. So every game's stored definition of a
-    /// craft stayed pinned to wherever it was when they last heard, and a player who joined after
-    /// somebody flew to the Moon built that craft back at the Earth, where nothing then moved it.
-    /// Only a hash within this process, so what it is made of does not matter.</para>
+    /// parts. Not the body it goes round, though a definition carries one: every copy is put round
+    /// its owner's body from their newest state as it is built, and moved if found round another,
+    /// so a change of body re-sent the whole craft to every game for nothing. A late joiner is sent
+    /// definitions only of craft somebody owns, who is saying where it is.
+    /// Only a hash within this process, so what it is made of does not matter.
     /// </summary>
     public static int Shape(Vehicle v) =>
-        (v.Parts.Count * 397) ^ (v.Parts.Root?.Template?.Id?.GetHashCode() ?? 0) ^ (BodyOf(v)?.GetHashCode() ?? 0);
+        (v.Parts.Count * 397) ^ (v.Parts.Root?.Template?.Id?.GetHashCode() ?? 0);
 
     /// <summary>What this game has a craft going round, by its own physics origin, or null.</summary>
     public static string? BodyOf(Vehicle v) => (v.GetPhysicsStatesMutable().Origin.Parent as Astronomical)?.Id;
@@ -1363,18 +1360,48 @@ internal static class World
     /// <para>Asked for from the frame's quiet window, because it moves the craft between two
     /// celestials' lists of children.</para>
     /// </summary>
+    /// <summary>
+    /// The orbit its owner's word puts a craft on, as of another universe time. KSA stands a craft
+    /// at the place its new orbit was made from until the next step carries it on, and a word is a
+    /// twentieth of a second old at the least: handed the orbit as said, the craft was drawn for
+    /// one frame where it had been then, 350 to 650 m back in low orbit, every time it was put right.
+    /// </summary>
+    public static (Celestial Body, StateVectors Now)? OrbitAt(Wire.State s, double universe)
+    {
+        if (KSA.Universe.CurrentSystem?.Get(s.Body) is not Celestial body) return null;
+        Orbit said = Orbit.CreateFromStateCci(body, new UniverseTime(s.Universe), D(s.PositionCci), D(s.VelocityCci), default);
+        return (body, said.GetStateVectorsAt(new UniverseTime(universe)));
+    }
+
+    /// <summary>
+    /// How far a craft stands from the orbit its owner's word puts it on, at this world's time: the
+    /// same orbit <see cref="Rebase"/> puts it on, so a craft put there measures nothing. Measured
+    /// against the owner's state carried on instead, a craft put on its orbit was a metre from where
+    /// it was measured, and was put on it again every half second.
+    /// Null for another body, or a word too far from now to carry an orbit across.
+    /// </summary>
+    public static double? OffItsOrbit(Wire.State stands, Wire.State said)
+    {
+        if (stands.Body != said.Body || Math.Abs(Universe - said.Universe) > CarryOrbitWithinSeconds) return null;
+        try
+        {
+            return OrbitAt(said, Universe) is ({ }, var now) ? Vec(D(stands.PositionCci) - now.PositionCci) : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    // A game behind the clock is told no state of now, and was corrected for nothing while it
+    // caught up: one put on nothing for 33 s after a warp, and then found a craft 4,542 km off.
+    private const double CarryOrbitWithinSeconds = 600.0;
+
     public static bool Rebase(Vehicle v, Wire.State s)
     {
         try
         {
-            if (KSA.Universe.CurrentSystem?.Get(s.Body) is not Celestial body) return false;
-            // The orbit its owner's word puts it on, and then that orbit as of now. KSA stands a
-            // craft at the place its new orbit was made from until the next step carries it on,
-            // and a word is a twentieth of a second old at the least: handed the orbit as said,
-            // the craft was drawn for one frame where it had been then, 350 to 650 m back in low
-            // orbit, every time it was put right.
-            Orbit said = Orbit.CreateFromStateCci(body, new UniverseTime(s.Universe), D(s.PositionCci), D(s.VelocityCci), v.OrbitColor);
-            StateVectors now = said.GetStateVectorsAt(new UniverseTime(Universe));
+            if (OrbitAt(s, Universe) is not ({ } body, var now)) return false;
             Orbit orbit = Orbit.CreateFromStateCci(body, new UniverseTime(Universe), now.PositionCci, now.VelocityCci, v.OrbitColor);
             // Refused rather than thrown when the trajectory cannot be worked out, so this is asked
             // again rather than taken as done.

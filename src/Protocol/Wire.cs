@@ -200,8 +200,11 @@ public static class Wire
     ///
     /// <para>32 is <see cref="Claim.Undocked"/>. <see cref="Closing"/> came later without moving
     /// it: a game that does not know the kind drops it and still gets the goodbye.</para>
+    ///
+    /// <para>33 is <see cref="Swept.Spared"/>: a game that swept those craft as well would have taken
+    /// out of its world what every other game keeps.</para>
     /// </summary>
-    public const ushort Version = 32;
+    public const ushort Version = 33;
 
     /// <summary>
     /// The version of <see cref="Ask"/> and <see cref="Facts"/> alone, in the first byte of each.
@@ -649,7 +652,14 @@ public static class Wire
     /// transfer and this by a datagram, so a game sweeps only once it holds that state or a later
     /// one: swept first, a craft protected a moment before the sweep would go with the debris.
     /// </param>
-    public sealed record Swept(string Like, uint Protected = 0) : Message(Kind.Swept);
+    /// <param name="Spared">
+    /// Craft the sweep matches and leaves, by name: those a connected player holds and has flown,
+    /// which are their craft and not debris. Null for none.
+    /// </param>
+    public sealed record Swept(string Like, uint Protected = 0, string[]? Spared = null) : Message(Kind.Swept);
+
+    /// <summary>The most craft one <see cref="Swept"/> spares, which is what one datagram holds.</summary>
+    public const int MostSparedInASweep = 48;
 
     /// <summary>
     /// Whether a craft's name matches what the operator swept by: empty or "*" is everything, and
@@ -972,6 +982,9 @@ public static class Wire
             case Swept s2:
                 w.Text(s2.Like, KeyChars);
                 w.U32(s2.Protected);
+                string[] spared = s2.Spared ?? [];
+                w.U8((byte)Math.Min(spared.Length, MostSparedInASweep));
+                foreach (string name in spared.Take(MostSparedInASweep)) w.Text(name, KeyChars);
                 break;
             case Chat c:
                 w.U8(c.From);
@@ -1074,7 +1087,7 @@ public static class Wire
                 Kind.Gone => new Gone(r.Text(KeyChars)),
                 Kind.Dock => new Dock(r.Text(KeyChars), r.Text(KeyChars), r.U8()),
                 Kind.Extra => new Extra(r.U8(), r.Text(KeyChars), r.Text(ChannelChars), r.Take(Math.Min((int)r.U8(), ExtraBytes)).ToArray()),
-                Kind.Swept => new Swept(r.Text(KeyChars), r.U32()),
+                Kind.Swept => ReadSwept(ref r),
                 Kind.Chat => new Chat(r.U8(), r.Text(ChatChars)),
                 Kind.Command => new Command(r.Text(ChatChars), r.More ? r.Text(CookieChars) : ""),
                 Kind.Note => new Note(r.LongText(NoteChars)),
@@ -1138,6 +1151,15 @@ public static class Wire
         ushort[] missing = new ushort[Math.Min((int)r.U16(), MostNeeded)];
         for (int i = 0; i < missing.Length; i++) missing[i] = r.U16();
         return new Need(transfer, missing);
+    }
+
+    private static Swept ReadSwept(ref Reader r)
+    {
+        string like = r.Text(KeyChars);
+        uint serial = r.U32();
+        string[] spared = new string[Math.Min((int)r.U8(), MostSparedInASweep)];
+        for (int i = 0; i < spared.Length; i++) spared[i] = r.Text(KeyChars);
+        return new Swept(like, serial, spared.Length > 0 ? spared : null);
     }
 
     private static Owners ReadOwners(ref Reader r)

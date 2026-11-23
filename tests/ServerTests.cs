@@ -2191,9 +2191,9 @@ public class ServerTests
         rig.Until(() => a.Swept.Count == 1 && b.Swept.Count == 1, what: "both games to be told");
         // The name, not the list: a game sweeps its own world by it, since most of what is out
         // there was claimed by nobody and the server has never heard of it.
-        Assert.Equal("Stage *", a.Swept.Peek());
-        Assert.True(Wire.Matches("Stage 2", a.Swept.Peek()));
-        Assert.False(Wire.Matches("Lander", a.Swept.Peek()));
+        Assert.Equal("Stage *", a.Swept.Peek().Like);
+        Assert.True(Wire.Matches("Stage 2", a.Swept.Peek().Like));
+        Assert.False(Wire.Matches("Lander", a.Swept.Peek().Like));
 
         // Gone from the server too, and what is being flown is left alone.
         Assert.Equal(0, rig.Server.OwnerOf("Stage 1"));

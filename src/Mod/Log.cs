@@ -3,8 +3,9 @@ using System.Collections.Concurrent;
 namespace KSAMultiplayer;
 
 /// <summary>
-/// The mod's own log, in the Logs folder of the profile KSA was started with, the session before kept
-/// beside it. Written from a thread of its own, since a write can wait on the disk and the game cannot.
+/// The mod's own log, in the Logs folder of the profile KSA was started with, the sessions before kept
+/// beside it under the time each began, as KSA names its own. Written from a thread of its own, since a
+/// write can wait on the disk and the game cannot.
 /// </summary>
 internal static class Log
 {
@@ -45,8 +46,9 @@ internal static class Log
             string folder = System.IO.Path.Combine(KSA.Constants.DocumentsFolderPath, "Logs");
             Directory.CreateDirectory(folder);
             Path = System.IO.Path.Combine(folder, "KSAMultiplayer.log");
-            if (File.Exists(Path)) File.Move(Path, System.IO.Path.Combine(folder, "KSAMultiplayer.prev.log"), overwrite: true);
+            Keep(folder, Path);
             file = new StreamWriter(Path) { AutoFlush = false };
+            file.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss} began");
         }
         catch (Exception)
         {
@@ -60,6 +62,29 @@ internal static class Log
             if (_closing && Lines.IsEmpty) break;
         }
         file?.Dispose();
+    }
+
+    // One previous log was not enough: a crash's was overwritten by the two launches after it, which
+    // is what a player does after a crash.
+    private const int SessionsKept = 10;
+
+    private static void Keep(string folder, string path)
+    {
+        if (File.Exists(path))
+        {
+            DateTime began = File.GetCreationTime(path);
+            if (File.ReadLines(path).FirstOrDefault() is { } first && first.EndsWith(" began")
+                && DateTime.TryParse(first[..^" began".Length], out DateTime said)) began = said;
+            string kept = System.IO.Path.Combine(folder, $"KSAMultiplayer.{began:yyMMdd-HHmmss}.log");
+            File.Move(path, kept, overwrite: true);
+        }
+        string old = System.IO.Path.Combine(folder, "KSAMultiplayer.prev.log");
+        if (File.Exists(old)) File.Delete(old);
+        foreach (FileInfo gone in new DirectoryInfo(folder).GetFiles("KSAMultiplayer.??????-??????.log")
+                                                           .OrderByDescending(f => f.Name).Skip(SessionsKept))
+        {
+            gone.Delete();
+        }
     }
 
     public static void Shutdown()

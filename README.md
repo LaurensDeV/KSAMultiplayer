@@ -322,7 +322,10 @@ attaching to anything.
 
 `clear` is the broom for a world filling up with spent stages. Every craft nobody is flying is taken
 out of every game that is in the world; a name narrows it, with `*` and `?` for wildcards --
-`clear Rocket_*` -- and a craft somebody is flying is never taken, whatever is asked for. The name
+`clear Rocket_*` -- and a craft somebody is flying is never taken, whatever is asked for. Nor is a
+craft a connected player holds and has flown: their parked ship is not debris, though what it shed
+is. `remove <craft>` takes one of those by name. A game still loading the world when the clear is
+made is told of it once it is in. The name
 goes to the games and each sweeps its own world by it, because the server only hears of a craft when
 somebody claims it: the fragments a spent stage breaks into belong to nobody, and they are most of
 what there is to sweep. The world on disk still holds them, so a fresh save is asked for -- from a game

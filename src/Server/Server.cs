@@ -255,6 +255,11 @@ public sealed class GameServer : IDisposable
         /// <summary>The player's round trip, s, as that player measured it; negative until it has one.</summary>
         public float Rtt { get; set; } = -1f;
 
+        /// <summary>The share of this player's pings lost on the way over the last minute; NaN until there is enough to say.</summary>
+        public double Loss => Pings.Share;
+
+        public PingLoss Pings { get; } = new();
+
         /// <summary>
         /// The word its commands and its goodbye must carry, empty for a game from before there was
         /// one: a player is otherwise known only by the address a datagram says it is from.
@@ -298,6 +303,9 @@ public sealed class GameServer : IDisposable
         public byte FreedFor;
         public double FreedAt;
         public bool FreedSaid;
+
+        /// <summary>The last player to fly it: held by them as well, it is their craft and not their debris.</summary>
+        public byte FlownBy;
 
         /// <summary>Who last said how it is built, and the universe time their game wrote that down at.</summary>
         public byte WrittenBy;
@@ -957,6 +965,7 @@ public sealed class GameServer : IDisposable
                 return;
             case Wire.Ping ping:
                 player.Rtt = ping.Rtt;
+                player.Pings.Heard(ping.Sent, arrived);
                 double late = float.IsFinite(ping.Late) ? ping.Late : 0.0, heard = _clock(), universe = UniverseClock.Now(heard);
                 // A word that set out before its game could have heard the clock had gone on is
                 // about the clock as it was: the game is that much less far past it now. Taken as
@@ -1448,6 +1457,11 @@ public sealed class GameServer : IDisposable
         // the joiner's next save took it out of the world.
         // Since the world this game was sent, which a save while it loaded leaves behind the one held now.
         double since = (p.SentAt > 0.0 ? p.SentUniverse : _world?.Universe ?? universe) - SaveMarginSeconds;
+        // Swept first, before anything made since is built from its definition.
+        foreach ((string like, string[] spared, double at) in _sweeps)
+        {
+            if (at >= since) _udp.Send(new Wire.Swept(like, _protectedSerial, spared.Length > 0 ? spared : null), p.At);
+        }
         foreach ((string key, Craft c) in _crafts)
         {
             if (c.Definition is not null && c.Universe >= since && c.Owner != 0 && c.Owner != p.Id) p.Link.Send(c.Definition, now);
@@ -1595,14 +1609,17 @@ public sealed class GameServer : IDisposable
             // A craft this game made that happens to share a name is a second craft, not the one the
             // holder has, and is given a name of its own. Anything else is the holder's to fly.
             if (!made || !RoomFor(p)) return null;
-            p.Crafts++;
-            string fresh = FreeKey(key);
-            _crafts[fresh] = new Craft { Owner = p.Id, AttendedAt = _clock() };
-            _gone.Remove(fresh);
-            OwnersChanged();
-            _udp.Send(new Wire.Rename(key, fresh), p.At);
-            Log($"{holder.Name} already has a craft called {key}, so {p.Name}'s is {fresh} here");
-            return fresh;
+            return Renamed($"{holder.Name} already has a craft called {key}");
+        }
+        // Nobody's, but another game's: the last to say how it is built was somebody else. KSA
+        // numbers the pieces a craft sheds in each game by itself, so two games' debris come out
+        // under one name, and the second taking the first's record replaced that craft in every
+        // world. A craft this game describes itself, or one undocked under its own name again, is
+        // the same craft carrying on.
+        if (made && !undocked && craft.Owner == 0 && craft.WrittenBy != 0 && craft.WrittenBy != p.Id)
+        {
+            if (!RoomFor(p)) return null;
+            return Renamed($"a craft {Named(craft.WrittenBy)} made is already called {key}");
         }
         // Let go of for somebody a moment ago, and asked for by anyone else without meaning to fly
         // it: kept for them. Flying it outright is still anybody's to do.
@@ -1624,6 +1641,18 @@ public sealed class GameServer : IDisposable
         _gone.Remove(key);
         OwnersChanged();
         return key;
+
+        string Renamed(string why)
+        {
+            p.Crafts++;
+            string fresh = FreeKey(key);
+            _crafts[fresh] = new Craft { Owner = p.Id, AttendedAt = _clock() };
+            _gone.Remove(fresh);
+            OwnersChanged();
+            _udp.Send(new Wire.Rename(key, fresh), p.At);
+            Log($"{why}, so {p.Name}'s is {fresh} here");
+            return fresh;
+        }
     }
 
     // Dockings lately told of, so a game that never heard can be told again when it next speaks of
@@ -2389,6 +2418,7 @@ public sealed class GameServer : IDisposable
     {
         if (p.Controlling == key) return;
         p.Controlling = key;
+        if (key.Length > 0 && _crafts.TryGetValue(key, out Craft? craft)) craft.FlownBy = p.Id;
         _rosterNext = 0.0;
     }
 
@@ -2750,6 +2780,7 @@ public sealed class GameServer : IDisposable
             }
         }
         _crafts.Clear();
+        _sweeps.Clear();
         _gone.Clear();
         _docked.Clear();
         // A save on its way in is of the world that is going, and would be put back over this one.
@@ -2840,6 +2871,7 @@ public sealed class GameServer : IDisposable
         if (known) _gone[name] = UniverseClock.Now(_clock());
         // The name, as a sweep is: the server need not have heard of it for it to be in every world.
         Broadcast(new Wire.Swept(name, _protectedSerial), p => p.Loaded);
+        Swept(name, [], UniverseClock.Now(_clock()));
         if (known) OwnersChanged();
         Log($"{by?.Name ?? "the operator"} removed {name}{(known ? "" : ", which nobody had claimed")}");
         Broadcast(new Wire.Chat(0, $"{by?.Name ?? "the operator"} removed {name}"), p => p.Loaded);
@@ -2979,6 +3011,7 @@ public sealed class GameServer : IDisposable
         }
         if (_warpPhase != Wire.WarpPhase.None) EndWarp(_clock(), $"the warp ended because {by?.Name ?? "the operator"} is starting the world afresh");
         _crafts.Clear();
+        _sweeps.Clear();
         _gone.Clear();
         _docked.Clear();
         UniverseClock.Forget();
@@ -3009,11 +3042,17 @@ public sealed class GameServer : IDisposable
     public List<string> Sweep(string like = "")
     {
         HashSet<string> flown = [.. _players.Values.Where(p => p.Controlling.Length > 0).Select(p => p.Controlling)];
+        // Nor a craft a player here holds outright and has flown: at the 2026-11-22 session's last
+        // clear that was a player's own craft, parked while they flew another. What they hold and
+        // never flew -- what their game shed, or took for being near -- is debris like any other.
+        string[] spared = [.. _crafts.Where(k => !flown.Contains(k.Key) && Wire.Matches(k.Key, like) && !ProtectedList.Spares(Protected.Names, k.Key)
+                                                 && k.Value.Owner != 0 && !k.Value.Near && k.Value.FlownBy == k.Value.Owner && _players.ContainsKey(k.Value.Owner))
+                                     .Select(k => k.Key).Take(Wire.MostSparedInASweep)];
         List<string> swept = [];
         double universe = UniverseClock.Now(_clock());
         foreach ((string key, Craft _) in _crafts.ToArray())
         {
-            if (flown.Contains(key) || !Wire.Matches(key, like) || ProtectedList.Spares(Protected.Names, key)) continue;
+            if (flown.Contains(key) || spared.Contains(key) || !Wire.Matches(key, like) || ProtectedList.Spares(Protected.Names, key)) continue;
             _crafts.Remove(key);
             _gone[key] = universe;
             swept.Add(key);
@@ -3022,11 +3061,14 @@ public sealed class GameServer : IDisposable
         // server has never heard of it and a list drawn up here would miss the whole of the debris.
         // Each game matches the name against its own world, and what the server knew of them is
         // dropped above so that nothing hands them back.
-        Broadcast(new Wire.Swept(like, _protectedSerial), p => p.Loaded);
+        Broadcast(new Wire.Swept(like, _protectedSerial, spared.Length > 0 ? spared : null), p => p.Loaded);
+        Swept(like, spared, universe);
         OwnersChanged();
         Log($"the operator is sweeping the world by '{(like.Length > 0 ? like : "*")}'"
-            + $"{(swept.Count > 0 ? $"; {swept.Count} of them were known here: {Named(swept)}" : "")}");
-        Broadcast(new Wire.Chat(0, "clearing out every craft that nobody is flying"), p => p.Loaded);
+            + $"{(swept.Count > 0 ? $"; {swept.Count} of them were known here: {Named(swept)}" : "")}"
+            + $"{(spared.Length > 0 ? $"; spared, as their players' own: {SparedNamed(spared)}" : "")}");
+        Broadcast(new Wire.Chat(0, "clearing out every craft that nobody is flying"
+                                   + (spared.Length > 0 ? $", except {spared.Length} that players here have flown" : "")), p => p.Loaded);
         // The world on disk still holds them, so the next player to join would be handed them all
         // back: this is the one moment it is worth saving afresh. The save comes from a game that
         // has already swept, so it is clean, and nobody has to be put back on it -- everybody is
@@ -3034,6 +3076,24 @@ public sealed class GameServer : IDisposable
         // does not touch the clock; reload is there for an operator who wants that, and says so.
         AskSnapshot("the world was cleared of craft nobody was flying");
         return swept;
+    }
+
+    private string SparedNamed(string[] keys) =>
+        string.Join(", ", keys.Take(6).Select(k => $"{Named(_crafts[k].Owner)}'s {k}")) + (keys.Length > 6 ? $" and {keys.Length - 6} more" : "");
+
+    /// <summary>
+    /// Sweeps lately made, so a game still loading a world from before one is told it once it is
+    /// in: a sweep goes to games in the world, and one sent the world the same second as a clear
+    /// came in with everything the clear had taken. The server can say gone only what it knew of,
+    /// which is not most of the debris.
+    /// </summary>
+    private readonly List<(string Like, string[] Spared, double Universe)> _sweeps = [];
+    private const int SweepsKept = 32;
+
+    private void Swept(string like, string[] spared, double universe)
+    {
+        _sweeps.Add((like, spared, universe));
+        if (_sweeps.Count > SweepsKept) _sweeps.RemoveAt(0);
     }
 
     private static string Named(List<string> keys) =>
@@ -3138,5 +3198,40 @@ public sealed class GameServer : IDisposable
         string why = _closingWhy.Length > 0 ? _closingWhy : "the server is shutting down";
         foreach (Player p in _players.Values) _udp.Send(new Wire.Bye(Wire.Clip(why, 200), p.Session), p.At);
         _udp.Dispose();
+    }
+}
+
+/// <summary>
+/// How many of one game's pings were lost on the way, over the last minute. A game pings once a
+/// second by its own clock and says when, so a gap of a few seconds between two that came is the
+/// ones that did not. A longer gap is a game that stopped -- loading, or stalled -- which is not
+/// the line's doing, and counts for nothing.
+/// </summary>
+public sealed class PingLoss
+{
+    private const double GapAtMostSeconds = 5.0, OverSeconds = 60.0;
+    private const int AtLeastHeard = 30;
+    private readonly Queue<(double At, int Missed)> _gaps = new();
+    private double _sent = double.NaN;
+
+    public void Heard(double sent, double arrived)
+    {
+        if (!double.IsFinite(sent)) return;
+        double gap = sent - _sent;
+        _sent = sent;
+        // Out of order, or the first: nothing to count.
+        if (!(gap > 0.0)) return;
+        _gaps.Enqueue((arrived, gap <= GapAtMostSeconds ? Math.Max(0, (int)Math.Round(gap) - 1) : 0));
+        while (_gaps.TryPeek(out (double At, int Missed) old) && arrived - old.At > OverSeconds) _gaps.Dequeue();
+    }
+
+    public double Share
+    {
+        get
+        {
+            if (_gaps.Count < AtLeastHeard) return double.NaN;
+            int missed = _gaps.Sum(g => g.Missed);
+            return (double)missed / (_gaps.Count + missed);
+        }
     }
 }

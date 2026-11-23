@@ -131,12 +131,21 @@ public sealed class MultiplayerMod
         Log.Shutdown();
     }
 
+    // Told to the server as well, the first and the last: a game whose mod switched itself off was
+    // otherwise only a player who had left.
     private void Fault(string where, Exception e)
     {
         Log.Error($"{where} hook failed", e);
-        if (++_faults < FaultLimit) return;
+        if (++_faults == 1) Tell($"the {where} hook failed: {e.GetBaseException().GetType().Name}: {e.GetBaseException().Message}");
+        if (_faults < FaultLimit) return;
         _disabled = true;
         Log.Warn($"{FaultLimit} faults: KSA Multiplayer is switched off for the rest of the session");
+        Tell($"{FaultLimit} faults: KSA Multiplayer switched itself off");
         try { Sync.Disconnect(); } catch (Exception) { }
+    }
+
+    private static void Tell(string what)
+    {
+        try { Sync.Client?.Note(what); } catch (Exception) { }
     }
 }

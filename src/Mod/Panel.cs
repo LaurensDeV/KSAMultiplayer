@@ -18,6 +18,13 @@ internal static class Panel
     private const ImGuiWindowFlags Flags = ImGuiWindowFlags.NoCollapse
                                            | ImGuiWindowFlags.NoFocusOnAppearing | ImGuiWindowFlags.NoNav;
 
+    // Written down, as the question is in Sync: "not everyone answered" said nothing of who had seen it.
+    private static void Vote(Client c, Wire.Warp w, bool yes)
+    {
+        Log.Info($"answered {(yes ? "yes" : "no")} to {c.NameOf(w.Who)}'s warp to {w.Speed:0.##}x");
+        c.VoteWarp(yes);
+    }
+
     private static readonly float2 FirstSize = new(400f, 300f);
     private static readonly float2 SmallestSize = new(320f, 120f);
     private static readonly float2 LargestSize = new(560f, 720f);
@@ -295,9 +302,9 @@ internal static class Panel
         if (w.Waiting.Contains(c.Id))
         {
             // Everyone has to agree, so saying nothing is not a quiet yes: it simply runs out.
-            if (ImGui.Button("Agree", null)) c.VoteWarp(true);
+            if (ImGui.Button("Agree", null)) Vote(c, w, true);
             ImGui.SameLine(0f, -1f);
-            if (ImGui.Button("No", null)) c.VoteWarp(false);
+            if (ImGui.Button("No", null)) Vote(c, w, false);
         }
         else
         {

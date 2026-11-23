@@ -323,7 +323,18 @@ name, and a lost Sun is logged, told to the server and shown to the player once.
      says it is, and a game handed a world holding one aborts on its first physics step with
      "cannot construct a UniverseTime from NaN". Finite is not enough -- the centre of the Earth is
      a finite place to be. Nor is such a world handed over: the game asked for it says no and names
-     the craft, and the server asks somebody else rather than keeping a world nobody can open. A craft whose parts change, as one that stages does, is described again.
+     the craft, and the server asks somebody else rather than keeping a world nobody can open. A craft whose parts change, as one that stages does, is described again. A craft taken back whose
+     definition the server holds is this game's, and which has not changed shape since, is not:
+     every game built it from that, and a station handed back and forth was otherwise sent whole,
+     160 to 240 KB, on each return and built again in every game. Nor is new debris described twice:
+     a claim the server has not answered is held to for five seconds, where it used to be let go of
+     on a roster older than the claim and taken, and described, again. A name the server gave a
+     craft this game made, when that craft has gone by the time the rename comes, is said gone, so
+     the server holds no record of a craft that does not exist. And a craft a game has just made
+     under the name of a craft nobody holds that another game described is given a name of its own,
+     as one under a held craft's name is: KSA numbers the pieces each game sheds by itself, and the
+     second game's piece took the first's record and replaced it in every world. A game making its
+     own craft again, or one undocked under its own name, keeps the name.
    - **Every other player's craft is a puppet.** Built from its definition if this world has none
      (`Vehicle.CreateVehicleFromSaveGameData`, or `KittenEva.CreateKittenFromSaveData` for a kitten),
      one a frame, and then remembered by name: KSA does not list a craft the moment it is made, so a
@@ -347,7 +358,15 @@ name, and a lost Sun is logged, told to the server and shown to the player once.
      is coasting is stepped along its own orbit by KSA whatever is written into it, which is right to
      the millimetre while that orbit is its owner's; where it is not, the craft is given its owner's
      orbit through KSA's own mover, in the frame's quiet window, and at once when its owner stops
-     pushing it or when the pull has had to put it anywhere outright. Without physics it is placed once a second at most, and only if 25 m out.
+     pushing it or when the pull has had to put it anywhere outright. How far out it is, is measured
+     against that same orbit carried to this world's time, so a game behind the clock still
+     corrects what coasts, and a craft put on its orbit measures nothing: under 5 cm it is not put
+     on at all, since each put-on takes it out of physics. A word off rails re-arms the put-on
+     only when its engine was on or it lasted half a second, since KSA flickers a coasting craft
+     that shares its owner's bubble between freefall and manoeuvring by itself. While its owner
+     burns and the copy is on rails here, which throws away what the pull writes, it is put on its
+     owner's orbit every half second it is over 25 m out, and what the pull did is written down once
+     a second. Without physics it is placed once a second at most, and only if 25 m out.
      `Track` says where each is at this world's own universe time, since every world keeps the same
      one: carried on from its newest state by the speed it had and the way that speed was changing.
      Not a little in the past, which is smooth and at orbital speed is a kilometre away from every
@@ -854,8 +873,11 @@ the right body.
 
 The same held for an ordinary flight to the Moon, for anyone who joined afterwards. A definition
 carries the body it was written at, and it was only sent again when a craft's part count changed --
-so a late joiner built the craft back at the Earth and nothing moved it. The body is part of what
-counts as a change of shape now.
+so a late joiner built the craft back at the Earth and nothing moved it. That is answered where a
+copy is built: it is put round its owner's body from their newest state before it is first drawn,
+and moved if it is found round another. So the body is not part of a craft's shape, and a change of
+body sends nothing; a late joiner is sent definitions only of craft somebody owns, who is saying
+where they are.
 
 The one gap left is a frame's worth: a craft this game is controlling before the roster says who
 owns it is not yet a puppet, so a teleport then would move it here alone -- and the pull drags it
@@ -1282,6 +1304,14 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   roster following the name -- the server's half of the first three is in its tests.
 
 ## What has not been tried
+
+- **The 2026-11-22 review's sections 5 to 8, in a game.** The re-describe skipped on taking a
+  craft back, debris described once, the body out of a craft's shape, corrections measured against
+  the orbit they put a craft on, copies under thrust put on their owner's orbit, pieces held while
+  their hull is rebuilt, copies spared from their first step, and the mod's ten kept logs and its
+  faults told to the server: built and reasoned from KSA's code, not run in a game. The server's
+  side -- the rename, the clear's spared craft and its replay to a loading game, and the ping loss
+  in `players` -- is driven over loopback.
 
 - **Watching another player's craft.** Its gauges and navball shown, and keys kept off the
   player's own craft: patched from KSA's code, and not looked at in a game. Nor has a craft taken
@@ -1802,6 +1832,14 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   very thing it is about to take away -- so what lands on disk is clean and nobody is moved. A
   clear therefore costs no loading screen and leaves universe time where it is; `reload` is the
   command for that, and is asked for on its own.
+
+  Two things it leaves. A craft a connected player holds outright and has flown, which is their
+  craft and not their debris: the server names those in the `Swept` (`Spared`, at most 48), since a
+  game cannot tell from its own world which of a player's craft they have been in, and every game
+  has to leave the same ones. What a player's game shed, or holds for being near it, was never
+  flown, and goes. And a game still loading a world from before the clear is sent the `Swept`
+  once it says it is in, ahead of anything made since: the world it loaded still has everything
+  the clear took, and the server can say gone only what it knew of.
 - **The world is handed out again rather than the clock put back.** Universe time cannot be moved
   backwards by telling anyone: each game keeps its own, one more than three seconds ahead of the
   server holds at a standstill until the server catches up (`ClockFollow.Speed`), and the only thing
