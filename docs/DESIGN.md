@@ -507,7 +507,15 @@ every game. Whether that is fair is the operator's call, and why the list is the
 mod's word about itself. Not yet seen with such a mod in a game.
 
 **Players' logs go to the developer's test server and nowhere else.** As a game joins it sends its
-mod logs of the sessions before this one, the newest three not sent before
+logs of the sessions before this one, the newest three of the mod's and the newest three of KSA's
+own not sent before -- KSA's says what it did to its own world, a name registered twice or an
+exception in the editor, which the mod's cannot; one KSA names `.abnormal-exit` is a crash, and
+the session being written now is told by its process id and left out, every file of each KSA
+session going together, since one that ended badly leaves an `.abnormal-exit` summary of its last
+lines beside the full log. `playerlogs [name]` at the server's console, and only there -- a game
+that types it is told there is no such command -- asks every game, or one, for its logs
+now (`Wire.LogsWanted`, a kind a game of before drops), this session's as it stands among them,
+for something going wrong while people are still in it; each ask lets a game send a full set again
 (`src/Mod/PlayerLogs.cs`), each cleaned of addresses and of the user's name in its paths
 (`LogText.Scrubbed`), as a `BlobKind.Log` the server has always been able to read. Which server is
 the game's decision, not the server's: only when the address it joined is what `ksamp.gg` resolves
@@ -516,8 +524,8 @@ setting a server has, `collect-logs`, only decides whether that server keeps wha
 on, in `infra/server/server.tf`, for that one container. There is no switch to stop it in the
 game; the chat says when it has happened. A previous session is what is worth having: a crash or
 a mod that switched itself off is written there, and a player cannot be asked for it once two
-more launches have written over it. The server cleans each again, keeps at most five a session
-under `player-logs/<day>/`, and takes away days older than two weeks. Each is filed as
+more launches have written over it. The server cleans each again, keeps them
+under `player-logs/<day>/`, at most eight a session, and takes away days older than two weeks. Each is filed as
 `discord-<id>.player-<n>.<session>.<time>.log.gz`, or `no-discord.` for a player not logged in
 with Discord: by the account the server has checked and their number on it, never by name, which
 a player types, another can type too, and would land in a path. The name heads the text instead,
@@ -1360,7 +1368,9 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
 
 - **Players' logs to the test server, on `ksamp.gg` itself.** Seen with two games pointed at the
   rig's server by `KSAMP_LOGS_TO`: each sent its last three sessions as it joined, the server kept
-  all six, cleaned, and a rejoin sent none again. Not yet seen: a deploy with `collect-logs` on,
+  all six, cleaned, and a rejoin sent none again. KSA's own logs went with them, a crashed session's
+  `.abnormal-exit` among them, and `playerlogs` at the console had both games send the session in
+  progress, the mod's and KSA's, within the second. Not yet seen: a deploy with `collect-logs` on,
   and a game deciding by `ksamp.gg`'s own address.
 
 - **The 2026-11-22 review's work, in two games on 2026-11-23.** Seen with the rig, on loopback and

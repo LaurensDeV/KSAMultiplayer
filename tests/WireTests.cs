@@ -113,6 +113,7 @@ public class WireTests
         Assert.Equal(["Rocket", "Station 2"], RoundTrip(new Wire.Swept("", 7, Spared: ["Rocket", "Station 2"])).Spared!);
         Assert.Equal(new Wire.Swept("", 7, Debris: true), RoundTrip(new Wire.Swept("", 7, Debris: true)));
         Assert.Equal(new Wire.Loaded(42), RoundTrip(new Wire.Loaded(42)));
+        Assert.Equal(new Wire.LogsWanted("the station is wobbling", "s1"), RoundTrip(new Wire.LogsWanted("the station is wobbling", "s1")));
         Assert.Equal(new Wire.Claim("Rocket", true, false), RoundTrip(new Wire.Claim("Rocket", true, false)));
         Assert.Equal(new Wire.Claim("Kitten", false, true), RoundTrip(new Wire.Claim("Kitten", false, true)));
         Assert.Equal(new Wire.Claim("Module", false, true, Undocked: true), RoundTrip(new Wire.Claim("Module", false, true, Undocked: true)));

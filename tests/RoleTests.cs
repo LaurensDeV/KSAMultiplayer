@@ -48,6 +48,8 @@ public class RoleTests
         Client a = Given(rig, "Ada", Wire.Role.Admin);
         Assert.Equal("run", Asks(rig, a, "delete Monday"));
         Assert.Equal("run", Asks(rig, a, "fresh"));
+        // Not even an admin, nor an operator, can ask for players' logs from a game: it is the console's.
+        Assert.Equal("no command 'playerlogs'; try help", Asks(rig, a, "playerlogs"));
         Assert.Equal("run", Asks(rig, a, "trust Bob"));
     }
 

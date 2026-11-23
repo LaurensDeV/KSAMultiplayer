@@ -57,6 +57,18 @@ public static class Permissions
         ["say"] = Wire.Role.Operator,
     };
 
+    /// <summary>
+    /// Commands for the console alone: not run from a game whatever the player is, not listed in a
+    /// game's help, and answered there as a command that does not exist.
+    /// </summary>
+    private static readonly HashSet<string> ConsoleOnly = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Every player's game asked for its logs, which is the developer's business and nobody's in the world.
+        "playerlogs",
+    };
+
+    public static bool OnlyAtTheConsole(string line) => ConsoleOnly.Contains(Verb(line));
+
     /// <summary>The commands that change the world, a save or who may do what: what the audit log keeps.</summary>
     private static readonly HashSet<string> Audited = new(StringComparer.OrdinalIgnoreCase)
     {

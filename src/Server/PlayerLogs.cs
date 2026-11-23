@@ -15,8 +15,8 @@ public sealed class PlayerLogs(string folder = "")
     /// <summary>How long a log is kept.</summary>
     public const int KeptDays = 14;
 
-    /// <summary>The most logs one player's game is taken from in one session: it sends its last few at most.</summary>
-    public const int MostPerSession = 5;
+    /// <summary>The most logs one player's game is taken from in one session: it sends its last three of the mod's and three of KSA's at most.</summary>
+    public const int MostPerSession = 8;
 
     public string Folder => Path.Combine(folder, "player-logs");
 

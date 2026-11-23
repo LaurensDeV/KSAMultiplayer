@@ -199,7 +199,8 @@ public static class Wire
     /// log sent to one who asks for it as a <see cref="BlobKind.Log"/>.</para>
     ///
     /// <para>32 is <see cref="Claim.Undocked"/>. <see cref="Closing"/> came later without moving
-    /// it: a game that does not know the kind drops it and still gets the goodbye.</para>
+    /// it: a game that does not know the kind drops it and still gets the goodbye. Nor did
+    /// <see cref="LogsWanted"/> move 33, for the same reason.</para>
     ///
     /// <para>33 is the two things a <see cref="Swept"/> may leave: <see cref="Swept.Debris"/>, a sweep
     /// of debris alone, which a game of 32 would read as one of everything nobody is flying; and
@@ -360,6 +361,7 @@ public static class Wire
         DiscordProof = 33,
         DiscordUser = 34,
         Closing = 35,
+        LogsWanted = 36,
     }
 
     /// <summary>Where a warp has got to: nobody has asked, somebody has and is waiting, or it is running.</summary>
@@ -755,6 +757,15 @@ public static class Wire
     public sealed record Closing(float Seconds, string Why, string Session = "") : Message(Kind.Closing);
 
     /// <summary>
+    /// The server asking a game for its logs, this session's as it stands among them. A game sends
+    /// them only to the developer's test server, by the address it joined, whatever server asks;
+    /// one that does not know the kind drops it.
+    /// </summary>
+    /// <param name="Why">What they are wanted for, said by whoever asked.</param>
+    /// <param name="Session">The session's word, as on a <see cref="Closing"/>.</param>
+    public sealed record LogsWanted(string Why, string Session = "") : Message(Kind.LogsWanted);
+
+    /// <summary>
     /// A craft given another name: asked of the server by a game, with nobody in
     /// <paramref name="By"/>, and said by the server to every game once it has done it, with who
     /// asked. Every record of the craft follows the name, and every game renames its copy.
@@ -1019,6 +1030,10 @@ public static class Wire
                 w.Text(cl.Why, 200);
                 w.Text(cl.Session, CookieChars);
                 break;
+            case LogsWanted lw:
+                w.Text(lw.Why, 200);
+                w.Text(lw.Session, CookieChars);
+                break;
             case Name nm:
                 w.Text(nm.Was, KeyChars);
                 w.Text(nm.Now, KeyChars);
@@ -1110,6 +1125,7 @@ public static class Wire
                 Kind.Command => new Command(r.Text(ChatChars), r.More ? r.Text(CookieChars) : ""),
                 Kind.Note => new Note(r.LongText(NoteChars)),
                 Kind.Closing => new Closing(r.F32(), r.Text(200), r.Text(CookieChars)),
+                Kind.LogsWanted => new LogsWanted(r.Text(200), r.Text(CookieChars)),
                 Kind.Name => new Name(r.Text(KeyChars), r.Text(KeyChars), r.U8(), r.U32()),
                 Kind.Op => ReadOp(ref r),
                 Kind.DiscordProof => new DiscordProof(r.LongText(KSAMultiplayer.Discord.CertChars), r.Text(255), r.Text(KSAMultiplayer.Discord.SignatureChars)),

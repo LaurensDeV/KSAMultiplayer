@@ -315,6 +315,9 @@ public sealed class Client : IDisposable
     /// </summary>
     public double ClosingAt { get; private set; } = double.NaN;
 
+    /// <summary>Why the server last asked for this game's logs, until the game has taken that up; null when it has not asked.</summary>
+    public string? LogsAsked { get; set; }
+
     /// <summary>What the server said its stop is for, with <see cref="ClosingAt"/>.</summary>
     public string ClosingWhy { get; private set; } = "";
 
@@ -806,6 +809,9 @@ public sealed class Client : IDisposable
                 return;
             // With the session's word, where the server gave one: a goodbye is one datagram, and
             // anybody can write the server's address on one.
+            case Wire.LogsWanted lw when Joined && lw.Session == _session:
+                LogsAsked = lw.Why;
+                return;
             case Wire.Closing cl when Joined && cl.Session == _session && float.IsFinite(cl.Seconds):
                 (ClosingAt, ClosingWhy) = (arrived + Math.Clamp(cl.Seconds, 0f, 3600f), cl.Why);
                 return;

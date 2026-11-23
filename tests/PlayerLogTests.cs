@@ -92,4 +92,41 @@ public class PlayerLogTests
             if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
         }
     }
+
+    /// <summary>An operator asks for logs mid-session: the game is told, and may send a full set again.</summary>
+    [Fact]
+    public void AnOperatorCanAskEveryGameForItsLogsNow()
+    {
+        using Rig rig = new(new ServerOptions { CollectLogs = true });
+        Client a = Seed(rig);
+        for (int i = 0; i < PlayerLogs.MostPerSession; i++) a.Upload(Sent(a, $"KSAMultiplayer.26112{i}-000000"));
+        rig.Until(() => rig.Server.PlayerLogs.Kept.Count == PlayerLogs.MostPerSession, what: "a full set");
+
+        Assert.StartsWith("asked Alice for their game's logs", rig.Server.AskLogs("", "the station is wobbling"));
+        rig.Until(() => a.LogsAsked is not null, what: "Alice's game to be asked");
+        Assert.Equal("the station is wobbling", a.LogsAsked);
+        a.Upload(Sent(a, "KSAMultiplayer.now-180000"));
+        rig.Until(() => rig.Server.PlayerLogs.Kept.Count == PlayerLogs.MostPerSession + 1, what: "the log sent when asked");
+
+        Assert.Equal("nobody called 'Bob'", rig.Server.AskLogs("Bob", "why"));
+    }
+
+    [Fact]
+    public void AServerNotCollectingLogsAsksForNone()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Assert.Contains("collect-logs is off", rig.Server.AskLogs("", "why"));
+        rig.For(1.0);
+        Assert.Null(a.LogsAsked);
+    }
+
+    /// <summary>Asking for players' logs is the console's alone: a game is told there is no such command, whoever plays it.</summary>
+    [Fact]
+    public void NoPlayerCanAskForPlayersLogsFromAGame()
+    {
+        Assert.True(Permissions.OnlyAtTheConsole("playerlogs"));
+        Assert.True(Permissions.OnlyAtTheConsole("PlayerLogs Bob"));
+        Assert.False(Permissions.OnlyAtTheConsole("logs"));
+    }
 }

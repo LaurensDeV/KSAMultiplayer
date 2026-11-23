@@ -83,7 +83,7 @@ Once you're in:
   seconds to catch up.
 - **Chat** from the window.
 - **On the developer's test server at `ksamp.gg`**, and on no other, your game sends the server its
-  mod logs of your last few sessions when you join, with addresses and your user name taken out,
+  logs of your last few sessions when you join, the mod's and KSA's own, with addresses and your user name taken out,
   so what went wrong can be found. The chat says when it has.
 - **Rename a craft.** Type `/rename New name` in the chat to rename the craft you're flying, if it's
   yours. It's renamed in every game, crew and all. A protected craft can only be renamed by an admin,
@@ -285,7 +285,7 @@ like `quit`.
 | `--lapse-within` | `KSAMP_LAPSE_WITHIN` | `10` | seconds a craft stays its owner's once another player flying nothing has watched it for 3 s and they are neither in it nor looking at it |
 | `--speed` | `KSAMP_SPEED` | `1` | how fast universe time runs |
 | `--empty-world` | `KSAMP_EMPTY_WORLD` | | start with an empty world of this system (`SolLite` or `Sol`) instead of waiting for a player; also what `fresh` puts in place |
-| `--collect-logs` | `KSAMP_COLLECT_LOGS` | off | keep the mod's logs players' games send, under `player-logs/` in the data folder, for two weeks. Games send them only to the developer's test server at `ksamp.gg`, so on any other server this does nothing |
+| `--collect-logs` | `KSAMP_COLLECT_LOGS` | off | keep the mod's and KSA's logs players' games send as they join, or whenever `playerlogs [name]` is typed at the server's console, which no game can type, under `player-logs/` in the data folder, for two weeks. Games send them only to the developer's test server at `ksamp.gg`, so on any other server this does nothing |
 | `--advertise` | `KSAMP_ADVERTISE` | off | list this server publicly so players can find it, which publishes its address |
 | `--advertise-as` | `KSAMP_ADVERTISE_AS` | the address seen | the hostname to be listed under |
 | `--directories` | `KSAMP_DIRECTORIES` | the shared list | where to announce, separated by commas; the shared list in `directories.txt` otherwise, read hourly while advertising |
@@ -296,7 +296,7 @@ like `quit`.
 
 Commands typed into the server's console: `help`, `players`, `say <text>`, `kick <name> [why]` (or `kick #<id>` by the number `players` shows; a name may have spaces in it), `op <name>`, `trust <name>`, `deop <name>`, `admins`,
 `clear [name]`, `debris [name]`, `remove <craft>`, `protect <craft>`, `unprotect <craft>`, `protected`, `rename <craft> -> <new name>`, `reload` (or `reset`), `save [name]`,
-`saves`, `load <name>`, `delete <name>`, `deleted`, `restore <name>`, `status`, `version`, `fresh`, `logs`, `set [key value]`, `settings`, `quit`.
+`saves`, `load <name>`, `delete <name>`, `deleted`, `restore <name>`, `status`, `version`, `fresh`, `logs`, `playerlogs [name]`, `set [key value]`, `settings`, `quit`.
 
 `life-support` and `radiation` are KSA's two rules, which a game on its own takes from its start
 screen. In a server they are the server's, for everybody: `set life-support false` turns life support
@@ -406,7 +406,8 @@ In a game they are an admin's: see below.
 ### Admins
 
 An admin types those same commands into the game's chat with a `/` in front -- `/clear Rocket_*`,
-`/reload`, `/players` -- and the answer comes back in their own chat.
+`/reload`, `/players` -- and the answer comes back in their own chat. All but `playerlogs`, which is
+the console's alone and does not exist as far as a game is concerned.
 KSA's universe manifest works for an admin too. Its Delete on another player's craft is a `remove`,
 taken out of every game, owner's included; a player who is no admin is told only an admin can. Each
 craft's row has a padlock before its name: shut for a protected craft, which everybody sees, and open

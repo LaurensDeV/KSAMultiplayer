@@ -1148,6 +1148,11 @@ public sealed class GameServer : IDisposable
                 string line = Wire.Clip(asked.Line, Wire.ChatChars).Trim();
                 if (line.Length == 0) return;
                 if (!MaySay(player, chat: false, arrived)) return;
+                if (Permissions.OnlyAtTheConsole(line))
+                {
+                    Tell(player, $"no command '{Permissions.Verb(line)}'; try help");
+                    return;
+                }
                 Wire.Role needs = Permissions.Need(line);
                 if (player.Role < needs)
                 {
@@ -2646,6 +2651,29 @@ public sealed class GameServer : IDisposable
     /// Counts every player down to the server stopping, on their screens, from now. Said again
     /// each second, since a datagram can be lost, until <see cref="Dispose"/>.
     /// </summary>
+    /// <summary>
+    /// Asks every game in the world, or one player's, for its logs now, this session's among them,
+    /// and lets each send a full set again. Kept only with <see cref="ServerOptions.CollectLogs"/>,
+    /// and sent only to the developer's test server: the games decide that.
+    /// </summary>
+    /// <returns>What came of asking, for whoever asked.</returns>
+    public string AskLogs(string who, string why)
+    {
+        if (!Options.CollectLogs) return "this server keeps no players' logs: collect-logs is off";
+        Player[] asked = who.Length == 0
+            ? [.. _players.Values.Where(p => p.Loaded)]
+            : Find(who) is { } one ? [one] : [];
+        if (asked.Length == 0) return who.Length == 0 ? "nobody is playing" : $"nobody called '{who}'";
+        foreach (Player p in asked)
+        {
+            p.LogsKept = 0;
+            _udp.Send(new Wire.LogsWanted(why, p.Session), p.At);
+        }
+        string named = string.Join(", ", asked.Select(p => p.Name));
+        Log($"asked {named} for their game's logs: {why}");
+        return $"asked {named} for their game's logs; they are kept under {PlayerLogs.Folder} as they arrive";
+    }
+
     public void Close(double seconds, string why)
     {
         double now = _clock();

@@ -425,6 +425,7 @@ if (!Console.IsInputRedirected || Environment.GetEnvironmentVariable("KSAMP_STDI
     ("deop discord:<id>", "take away a Discord user's role"),
     ("admins", "list the operators, admins and trusted players"),
     ("logs [days]", "operators only: download the server's log of today, or of the last few days up to 14, with addresses taken out"),
+    ("playerlogs [name]", "console only: ask every player's game, or one player's, for its logs now, this session's included; kept under player-logs where collect-logs is on"),
     ("clear [name]", "remove every craft nobody is flying, except one a player here holds and has flown; clear Rocket_* removes only matching ones"),
     ("debris [name]", "remove only debris nobody is flying: broken-off pieces and craft with nothing to control them, such as spent stages"),
     ("remove <craft>", "remove one craft from every game, whoever owns it, unless it's being flown or protected"),
@@ -623,6 +624,10 @@ void Run(string line, GameServer.Player? who, Action<string> Answer)
                 + (server.Options.KsaBuild.Length > 0 && server.Options.BuiltFor.Length > 0 && server.Options.KsaBuild != server.Options.BuiltFor
                     ? $" by its ksa-build setting, and built for {server.Options.BuiltFor}" : ""));
             break;
+        // The server already refuses this from a game; this is the console's own guard as well.
+        case "playerlogs" when who is null:
+            Answer(server.AskLogs(rest, who is null ? "asked at the server's console" : $"asked by {who.Name}"));
+            break;
         case "logs":
             int days = rest.Length == 0 ? 1 : int.TryParse(rest, out int asked) && asked > 0 ? Math.Min(asked, LogText.MostDays) : 0;
             string[] logDays = serverLog.Days();
@@ -652,7 +657,7 @@ void Run(string line, GameServer.Player? who, Action<string> Answer)
             // Said as it has to be typed: bare at the console, behind a / by an admin in a game.
             string slash = who is null ? "" : "/";
             // In a game, only what this player may run: a list of commands they would be refused is a list of refusals.
-            foreach ((string what, string does) in Commands.Where(c => who is null || Permissions.Need(c.What) <= who.Role))
+            foreach ((string what, string does) in Commands.Where(c => who is null || (Permissions.Need(c.What) <= who.Role && !Permissions.OnlyAtTheConsole(c.What))))
             {
                 Answer($"  {slash}{what.PadRight(18)} {does}");
             }

@@ -67,8 +67,8 @@ internal static class Sync
 
     // What the pull last did to each copy, from physics, and when that was said from the frame.
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string What, double At)> PullDid = new();
-    private static readonly Dictionary<string, double> PullSaidAt = [];
-    private const double PullSaidEverySeconds = 1.0;
+    private static readonly Dictionary<string, (double At, string Said)> PullSaidAt = [];
+    private const double PullSaidEverySeconds = 10.0;
 
     // A puppet whose owner has said nothing for this long of universe time is let go of and left where it is.
     // How long a craft may go unheard before it is let go of. Counted in the world's own seconds,
@@ -996,6 +996,20 @@ internal static class Sync
         _client?.Note(what);
     }
 
+    // KSA's debug "Override Is Controllable" makes every craft count as having a control module, and
+    // so makes Clear Debris find nothing: a player saw a manifest full of debris and a button saying
+    // there was none. Said once a session it is on, in this log and the server's.
+    private static bool _overrideSaid;
+    private static readonly System.Reflection.FieldInfo? ControlOverride =
+        typeof(Vehicle).GetField("_overrideIsControllable", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+
+    private static void SayTheControlOverride()
+    {
+        if (_overrideSaid || ControlOverride?.GetValue(null) is not true) return;
+        _overrideSaid = true;
+        Noted("KSA's \"Override Is Controllable\" is on: every craft counts as controllable, so Clear Debris finds no debris");
+    }
+
     // Each warp question and what became of it, as this game saw them: whether it was asked, and
     // where its player was, is what a warp that ran out never said.
     private static string _warpSaid = "";
@@ -1784,6 +1798,7 @@ internal static class Sync
         _frameAt = now;
         MeasureWhatThisMachineDoes(now);
         while (NotesWaiting.TryDequeue(out string? note)) _client?.Note(note);
+        SayTheControlOverride();
         if (_client is { } logs && Now == Stage.Playing) PlayerLogs.Update(logs);
         SayTheWarp();
         Vehicle? eyed = World.Watched is { } seen && World.IsAlive(seen) ? seen : null;
@@ -2959,14 +2974,18 @@ internal static class Sync
         if (lit || now - since >= UnderWayAtLeastSeconds) UnderWay.Add(key);
     }
 
-    // Once a second while its owner pushes it: whether the pull reached it, and whether it is on
-    // rails here. A copy that drifted kilometres under thrust could have been either.
+    // While its owner pushes it: whether the pull reached it, and whether it is on rails here. A copy
+    // that drifted kilometres under thrust could have been either. Said when that changes, and every
+    // ten seconds otherwise: once a second for each of ten copies was a hundred lines a minute.
     private static void SayWhatThePullDid(string key, Vehicle v, double now)
     {
-        if (now - PullSaidAt.GetValueOrDefault(key, double.NegativeInfinity) < PullSaidEverySeconds) return;
-        PullSaidAt[key] = now;
-        string did = PullDid.TryGetValue(key, out (string What, double At) last) ? $"{last.What} {now - last.At:0.0} s ago" : "never pulled";
-        Log.Info($"{key} is under way in its owner's game, and here is {(World.UnderWay(v) ? "in physics" : "on rails")}: the pull {did}");
+        string here = World.UnderWay(v) ? "in physics" : "on rails";
+        (string what, double at) = PullDid.TryGetValue(key, out (string What, double At) last) ? last : ("never pulled", now);
+        // Stale by more than a second is the pull not reaching it, which is a change worth a line.
+        string said = $"{here}, {what}{(now - at > 1.0 ? ", not lately" : "")}";
+        if (PullSaidAt.TryGetValue(key, out (double At, string Said) before) && before.Said == said && now - before.At < PullSaidEverySeconds) return;
+        PullSaidAt[key] = (now, said);
+        Log.Info($"{key} is under way in its owner's game, and here is {here}: the pull {what} {now - at:0.0} s ago");
     }
 
     private static bool WaitsForItsHull(string key, Dictionary<string, Vehicle> here, double now)
