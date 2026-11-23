@@ -28,6 +28,7 @@ public static class Permissions
 
         ["kick"] = Wire.Role.Trusted,
         ["clear"] = Wire.Role.Trusted,
+        ["debris"] = Wire.Role.Trusted,
         ["sweep"] = Wire.Role.Trusted,
         ["remove"] = Wire.Role.Trusted,
         ["protect"] = Wire.Role.Trusted,
@@ -59,7 +60,7 @@ public static class Permissions
     /// <summary>The commands that change the world, a save or who may do what: what the audit log keeps.</summary>
     private static readonly HashSet<string> Audited = new(StringComparer.OrdinalIgnoreCase)
     {
-        "kick", "clear", "sweep", "remove", "protect", "unprotect", "rename", "save", "snapshot", "load",
+        "kick", "clear", "debris", "sweep", "remove", "protect", "unprotect", "rename", "save", "snapshot", "load",
         "delete", "restore", "reload", "reset", "op", "trust", "deop", "fresh", "set", "settings", "quit", "exit", "stop",
     };
 

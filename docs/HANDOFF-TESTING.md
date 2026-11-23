@@ -91,10 +91,11 @@ KSA_USER_DIR=<profile> python3 tools/ksa-mcp/server.py cli <command> '<json>'
 ```
 
 `status` `craft` `mp` `goto` `watch` `eva` `stage` `setorbit` `engine` `attitude` `land` `dock` `approach` `move` `put`
-`design` `fail` `motion` `save` `load` `start` `step` `capture` `pause` `resume` `speed` `modspeed` `pickspeed` `warpkey` `log`.
+`design` `fail` `motion` `save` `load` `start` `step` `capture` `pause` `resume` `speed` `modspeed` `pickspeed` `warpkey` `key` `log`.
 
 `mp` carries the rest as flags: `connect` `disconnect` `name` `password` `chat` `editor` `blank`
-`launch` `pads` `warp` `vote` `board` `window`; `window` false shuts the Multiplayer window, and
+`launch` `pads` `warp` `vote` `warps` `board` `window`; `warps` is the "Agree to warps" choice (`Ask`,
+`NotFlying` or `Always`, kept as the window keeps it), `window` false shuts the Multiplayer window, and
 `status` says whether it is open. With no flag it answers as `status` does.
 
 Three worth knowing about because they are new and change what is reachable:

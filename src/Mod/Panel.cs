@@ -67,7 +67,7 @@ internal static class Panel
     private static string _choices = "";
 
     /// <param name="Recent">Where this player has connected before, most recent first. Shown in the server list and asked about like anything else, so a server they have played on says whether anybody is on it now.</param>
-    private sealed record Settings(string Name, string Address, string Password, bool Visible, string[]? Recent = null);
+    private sealed record Settings(string Name, string Address, string Password, bool Visible, string[]? Recent = null, string? Warps = null);
 
     /// <summary>How many addresses are remembered. Enough for the servers somebody actually plays on, few enough that the list is not mostly history.</summary>
     private const int MostRecent = 8;
@@ -1055,7 +1055,7 @@ internal static class Panel
         string of = $"{typed}\n{f.ServerName}\n{f.LinkId}\n{f.Mods}";
         if (of == _linkOf) return _link;
         (_linkOf, _linkSaid) = (of, "");
-        (string missing, string extra, string wrong) = Sync.ModsAgainst(f.Mods);
+        (string missing, string extra, string wrong) = Sync.ModsAgainst(f.Mods, f.Optional);
         _link = missing.Length > 0 || wrong.Length > 0 || (f.Mods.Length > 0 && extra.Length > 0)
             ? ModLink.For(f.Mods, World.Mods, f.ServerName, typed, f.LinkId)
             : null;
@@ -1357,7 +1357,7 @@ internal static class Panel
         {
             return $"This server runs KSA {f.KsaBuild} and you have {World.KsaBuild}. You need the same build to join.";
         }
-        (string missing, string extra, string wrong) = Sync.ModsAgainst(f.Mods);
+        (string missing, string extra, string wrong) = Sync.ModsAgainst(f.Mods, f.Optional);
         // One or several, because "turn it off" about two mods reads as badly as "turn them off"
         // about one, and this is the line a player acts on. And everything in the way at once: a
         // player told of one thing, who does it and starts KSA again to be told of the next, has
@@ -1399,7 +1399,7 @@ internal static class Panel
                 Told("World"u8, !there.HasWorld ? "none yet (it will use yours)"
                               : there.System.Length > 0 ? Named(there.System) : "yes");
             }
-            Mods(there.Mods);
+            Mods(there.Mods, there.Optional);
             return;
         }
         // What the server said when it was asked, or what the list already knows of it: a server
@@ -1436,9 +1436,9 @@ internal static class Panel
     /// not is under it, said as what to do about it rather than as what it is: that stops a join
     /// just as surely as something missing, and a player reading this wants the next step.
     /// </summary>
-    private static void Mods(string world)
+    private static void Mods(string world, string optional)
     {
-        (string[] missing, string[] extra, string[] wrong) = ModList.Against(world, World.Mods);
+        (string[] missing, string[] extra, string[] wrong) = ModList.Against(world, World.Mods, optional);
         // A mod at another version is said as the comparison says it, with both versions: its name
         // is the first word of that.
         Dictionary<string, string> other = new(StringComparer.OrdinalIgnoreCase);
@@ -1927,6 +1927,7 @@ internal static class Panel
                 else if (!p.Loaded) Shown.Dim($"{p.Name} (joining)");
                 else ImGui.Text(p.Name);
             }
+            WarpRow();
             DiscordRow(c);
             if (Sync.RenamedCraft is { Count: > 0 } renamed)
             {
@@ -1952,6 +1953,36 @@ internal static class Panel
             }
         }
         if (BottomRight("DISCONNECT".AsSpan())) Sync.Disconnect();
+    }
+
+    /// <summary>
+    /// Which warps the game agrees to without asking. Asking stays the default: a warp is the whole
+    /// room's time, and agreeing to one is this player's to hand over, not the mod's to assume.
+    /// </summary>
+    private static void WarpRow()
+    {
+        ImGui.Separator();
+        Shown.Dim("Agree to warps:");
+        WarpChoice("Ask me", Sync.WarpAnswer.Ask, "Agree or say no to each warp yourself.");
+        ImGui.SameLine();
+        WarpChoice("When not flying", Sync.WarpAnswer.NotFlying,
+            "Agree for me while I'm in the vehicle editor or not flying a craft, and to any pause or slow-down. Ask me while I'm flying.");
+        ImGui.SameLine();
+        WarpChoice("Always", Sync.WarpAnswer.Always, "Agree for me to every warp anybody asks for.");
+    }
+
+    private static void WarpChoice(string label, Sync.WarpAnswer answer, string tip)
+    {
+        if (ImGui.RadioButton(label, Sync.AnswerWarps == answer) && Sync.AnswerWarps != answer)
+        {
+            Sync.AnswerWarps = answer;
+            Save();
+        }
+        if (ImGui.BeginItemTooltip())
+        {
+            ImGui.Text(tip);
+            ImGui.EndTooltip();
+        }
     }
 
     /// <summary>
@@ -2026,6 +2057,7 @@ internal static class Panel
         // to report: it means this player has been nowhere yet as far as anybody here knows.
         _recent = [.. (s.Recent ?? []).Where(a => a.Trim().Length > 0).Take(MostRecent)];
         Browser.Remembered = _recent;
+        Sync.AnswerWarps = Enum.TryParse(s.Warps, out Sync.WarpAnswer warps) ? warps : Sync.WarpAnswer.Ask;
     }
 
     /// <summary>Keeps what was typed, for the next session. Nothing to keep until the panel has read what there is.</summary>
@@ -2035,7 +2067,7 @@ internal static class Panel
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
-            File.WriteAllText(SettingsPath, JsonSerializer.Serialize(new Settings(NameText.ToString().Trim(), AddressText.ToString().Trim(), PasswordText.ToString(), Visible, _recent)));
+            File.WriteAllText(SettingsPath, JsonSerializer.Serialize(new Settings(NameText.ToString().Trim(), AddressText.ToString().Trim(), PasswordText.ToString(), Visible, _recent, Sync.AnswerWarps.ToString())));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {

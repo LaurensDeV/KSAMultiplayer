@@ -257,6 +257,11 @@ TOOLS = {
                     "mod works the speed out from the warp the server is running, not this world's.",
                     {"by": _num("1, -1 or 0")}, [],
                     lambda a: _dump(send("warpkey", **a))),
+    "ksa_key": ("Press and let go of a key through KSA's own key handler, as the keyboard does: "
+                "{\"key\":\"Z\"} for full throttle, \"Space\" to stage. \"down\" or \"up\" true sends only that half; "
+                "\"shift\" holds Shift.",
+                {"key": {"type": "string"}, "down": {"type": "boolean"}, "up": {"type": "boolean"}, "shift": {"type": "boolean"}}, ["key"],
+                lambda a: _dump(send("key", **a))),
     "ksa_stage": ("Fire a craft's next sequence, which is what the space bar does: the named craft, or the "
                   "flown one. The way to drop a stage while another game is watching.",
                   {"craft": {"type": "string"}}, [],

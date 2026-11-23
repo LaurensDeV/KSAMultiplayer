@@ -419,13 +419,14 @@ if (!Console.IsInputRedirected || Environment.GetEnvironmentVariable("KSAMP_STDI
     ("kick <name> [why]", "disconnect a player (they can rejoin); # and their number in players works as a name"),
     ("op <name>", "make a connected player an admin; they stay one when they rejoin, and on any machine if they logged in with Discord"),
     ("op discord:<id>", "make a Discord user an admin whenever they log in with Discord, whether or not they're connected"),
-    ("trust <name>", "make a connected player trusted: clear, remove, protect, rename, save, load and kick, but not delete, reload or roles"),
+    ("trust <name>", "make a connected player trusted: clear, debris, remove, protect, rename, save, load and kick, but not delete, reload or roles"),
     ("trust discord:<id>", "make a Discord user trusted whenever they log in with Discord"),
     ("deop <name>", "take away a player's role, admin or trusted, whether or not they're connected"),
     ("deop discord:<id>", "take away a Discord user's role"),
     ("admins", "list the operators, admins and trusted players"),
     ("logs [days]", "operators only: download the server's log of today, or of the last few days up to 14, with addresses taken out"),
     ("clear [name]", "remove every craft nobody is flying, except one a player here holds and has flown; clear Rocket_* removes only matching ones"),
+    ("debris [name]", "remove only debris nobody is flying: broken-off pieces and craft with nothing to control them, such as spent stages"),
     ("remove <craft>", "remove one craft from every game, whoever owns it, unless it's being flown or protected"),
     ("protect <craft>", "keep a craft safe from clear, remove and being abandoned, even when named in full"),
     ("unprotect <craft>", "take a craft off the protected list"),
@@ -554,6 +555,10 @@ void Run(string line, GameServer.Player? who, Action<string> Answer)
             // only the console answering the operator who typed it.
             Answer($"clearing craft matching '{(rest.Length > 0 ? rest : "*")}' from every game, except ones being flown"
                 + $"{(swept.Count > 0 ? $" ({swept.Count} known to the server)" : "")}");
+            break;
+        case "debris":
+            server.SweepDebris(rest);
+            Answer($"clearing debris matching '{(rest.Length > 0 ? rest : "*")}' from every game, except what is being flown or is protected");
             break;
         case "remove":
             Answer(server.RemoveCraft(rest, who));

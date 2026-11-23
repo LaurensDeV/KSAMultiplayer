@@ -241,7 +241,11 @@ for name in A B; do
     # And any other mod asked for, which its own tooling has put in this game's mods folder
     # beforehand: KSAMP_RIG_MODS="FastAndPurrious" for the cars. Both games get the same, as the
     # server would turn away one that had a mod the other had not.
-    IFS=',' read -ra extra <<< "${KSAMP_RIG_MODS:-}"
+    # KSAMP_RIG_MODS_B is mods for B alone, for a server that lets players differ by them
+    # (optional-mods in .two-games-data/ksamp-server.toml).
+    only="${KSAMP_RIG_MODS:-}"
+    [[ "$name" == "B" && -n "${KSAMP_RIG_MODS_B:-}" ]] && only="${only:+$only,}$KSAMP_RIG_MODS_B"
+    IFS=',' read -ra extra <<< "$only"
     for id in "${extra[@]}"; do
         [[ -n "$id" && -d "$dir/mods/$id" ]] && printf '\n[[mods]]\nid = "%s"\nenabled = true\n' "$id" >> "$dir/manifest.toml"
     done

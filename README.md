@@ -76,7 +76,9 @@ Once you're in:
   other's name, so dock from the visiting craft's port, not the station's.
 - **Time is shared.** Every world keeps the server's time, so changing speed is put to everyone
   first: a warp runs only if all agree, and only whoever asked can end it. Pause is a speed like any
-  other. The world is never warped past what the slowest machine in it is managing, and slows to
+  other. Under *Agree to warps* in the Multiplayer window you can have your game agree for you: *When
+  not flying* agrees while you're in the vehicle editor or not flying a craft, and to any pause or
+  slow-down; *Always* agrees to everything. *Ask me* is the default. The world is never warped past what the slowest machine in it is managing, and slows to
   that machine rather than leaving it behind. After joining, your game may run fast for a few
   seconds to catch up.
 - **Chat** from the window.
@@ -268,7 +270,8 @@ like `quit`.
 | `--data` | `KSAMP_DATA` | `./data` | where the world is kept |
 | `--world` | `KSAMP_WORLD` | | a save folder or zip to start from, replacing the kept one; not a setting in the file, since it is something to do once |
 | `--ksa-build` | `KSAMP_KSA_BUILD` | the build this server was built for | the KSA build players must run |
-| `--mods` | `KSAMP_MODS` | the world's | the mods players must have, comma separated, each held to a version after an `@` where one is given: `FastAndPurrious@0.1.13` for that release, `FastAndPurrious@0.1.13+8b152a3` for one build of it. The whole list, not a floor: a player running anything else is refused. Worth setting, because the world's own list follows whoever last handed a save over |
+| `--mods` | `KSAMP_MODS` | the world's | the mods players must have, comma separated, each held to a version after an `@` where one is given: `FastAndPurrious@0.1.13` for that release, `FastAndPurrious@0.1.13+8b152a3` for one build of it. The whole list, not a floor: a player running anything else is refused, except the optional mods below. Worth setting, because the world's own list follows whoever last handed a save over |
+| `--optional-mods` | `KSAMP_OPTIONAL_MODS` | none | mods a player may have enabled or not, comma separated, at any version: ones that change only that player's own game and write nothing another game cannot read, such as an editor without its limits on part scale. Never required, whoever saves the world, unless `--mods` names one too. A mod that adds parts or part modules does not belong here: a craft built with it does not load in a game without it |
 | `--snapshot-every` | `KSAMP_SNAPSHOT_EVERY` | `300` | seconds between fresh saves |
 | `--keep-time` | `KSAMP_KEEP_TIME` | off | let time run with nobody connected |
 | `--life-support` | `KSAMP_LIFE_SUPPORT` | `true` | whether kittens need food, water and air, for every player |
@@ -288,7 +291,7 @@ like `quit`.
 | `--discord-login` | `KSAMP_DISCORD_LOGIN` | `https://servers.ksamp.gg/v1/discord` | the service that vouches for who a player is on Discord, [asked only once there is a Discord admin](#admins-by-discord); empty to take no Discord logins |
 
 Commands typed into the server's console: `help`, `players`, `say <text>`, `kick <name> [why]` (or `kick #<id>` by the number `players` shows; a name may have spaces in it), `op <name>`, `trust <name>`, `deop <name>`, `admins`,
-`clear [name]`, `remove <craft>`, `protect <craft>`, `unprotect <craft>`, `protected`, `rename <craft> -> <new name>`, `reload` (or `reset`), `save [name]`,
+`clear [name]`, `debris [name]`, `remove <craft>`, `protect <craft>`, `unprotect <craft>`, `protected`, `rename <craft> -> <new name>`, `reload` (or `reset`), `save [name]`,
 `saves`, `load <name>`, `delete <name>`, `deleted`, `restore <name>`, `status`, `version`, `fresh`, `logs`, `set [key value]`, `settings`, `quit`.
 
 `life-support` and `radiation` are KSA's two rules, which a game on its own takes from its start
@@ -331,6 +334,13 @@ somebody claims it: the fragments a spent stage breaks into belong to nobody, an
 what there is to sweep. The world on disk still holds them, so a fresh save is asked for -- from a game
 that has already swept, so what lands on disk is clean. Nobody is moved: everybody is standing in a
 world they swept themselves, so clearing costs no loading screen and leaves the clock alone.
+
+`debris` is the same broom for debris alone, for when the world holds stations and rovers worth
+keeping: what KSA's own *Clear Debris* counts, pieces broken off a craft, and any craft with no
+command pod or probe core on it, which is what a spent stage is. A kitten, a craft somebody is
+flying and a protected craft are left; a name narrows it as it does `clear`. Trusted players and up
+can type it in a game as `/debris`. Each game tells debris from its own copy of the parts, so a craft
+is debris in every game or in none.
 
 `remove <craft>` takes one craft out of every game by its exact name, whoever owns it, and says so
 in the chat; it refuses a craft somebody is flying and one that is protected.

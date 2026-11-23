@@ -213,9 +213,15 @@ public sealed class Client : IDisposable
     /// </summary>
     public Queue<Sweep> Swept { get; } = new();
 
+    /// <summary>
+    /// Names the world has been swept of debris by: this game takes away whatever of that name it
+    /// holds that is debris, and says gone what of it is its own.
+    /// </summary>
+    public Queue<string> SweptDebris { get; } = new();
+
     // Sweeps heard and not yet handed on, each with the state of the protected list it was made
     // against: held until that state has come, or the craft it protects would go with the rest.
-    private readonly List<(string Like, uint Needs, double At, string[] Spared)> _sweeps = [];
+    private readonly List<(string Like, uint Needs, double At, bool Debris, string[] Spared)> _sweeps = [];
     private HashSet<string> _protected = [];
     private uint _protectedSerial;
 
@@ -224,7 +230,7 @@ public sealed class Client : IDisposable
     private const double SweepWaitsSeconds = 5.0;
 
     /// <summary>Whether a sweep has been heard that this game has not finished with: a save of the world now would still hold what is going.</summary>
-    public bool Sweeping => _sweeps.Count > 0 || Swept.Count > 0;
+    public bool Sweeping => _sweeps.Count > 0 || Swept.Count > 0 || SweptDebris.Count > 0;
 
     /// <summary>The craft this server will not clear unless asked for by name.</summary>
     public IReadOnlySet<string> Protected => _protected;
@@ -766,7 +772,7 @@ public sealed class Client : IDisposable
                 Gone.Enqueue(g.Key);
                 return;
             case Wire.Swept sw when Joined:
-                _sweeps.Add((sw.Like, sw.Protected, arrived, sw.Spared ?? []));
+                _sweeps.Add((sw.Like, sw.Protected, arrived, sw.Debris, sw.Spared ?? []));
                 return;
             case Wire.Chat c when Joined:
                 Chat.Enqueue(new ChatLine(c.From == 0, c.From == 0 ? "server" : NameOf(c.From), c.Text));
@@ -844,10 +850,17 @@ public sealed class Client : IDisposable
     // who has what and handed on for the game to take out of its world.
     private void Sweep(double now)
     {
-        foreach ((string like, uint needs, double at, string[] spared) in _sweeps.ToArray())
+        foreach ((string like, uint needs, double at, bool debris, string[] spared) in _sweeps.ToArray())
         {
             if (needs > _protectedSerial && now - at < SweepWaitsSeconds) continue;
             _sweeps.RemoveAll(s => s.Like == like && s.Needs == needs && s.At == at);
+            // Which craft are debris is the game's to tell, from their parts: who owns what is
+            // left to the gones it says of its own.
+            if (debris)
+            {
+                SweptDebris.Enqueue(like);
+                continue;
+            }
             HashSet<string> left = [.. spared];
             foreach (string key in _owners.Keys.Where(k => Wire.Matches(k, like) && !Spared(k) && !left.Contains(k)).ToArray())
             {

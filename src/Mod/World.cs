@@ -266,6 +266,14 @@ internal static class World
 
     public static bool IsAlive(Vehicle? v) => v is { IsDisposed: false };
 
+    /// <summary>
+    /// What a debris sweep takes: what KSA marks as debris, broken off a craft, and any craft with
+    /// no control part on it, which is what a spent stage is. Not a kitten, which has none. Read
+    /// from the parts and not from <see cref="Vehicle.IsControllable"/>, which a probe out of power
+    /// is not, though it is somebody's probe.
+    /// </summary>
+    public static bool IsDebris(Vehicle v) => v is not KittenEva && (v.IsDebris || v.Parts.Modules.Get<Control>().Length == 0);
+
     /// <summary>Every kitten aboard back to the roster, as <see cref="Vehicle.Recover"/> sends them, and nothing else that it does.</summary>
     public static void SendCrewHome(Vehicle v)
     {

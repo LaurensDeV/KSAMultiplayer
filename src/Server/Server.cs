@@ -26,6 +26,14 @@ public sealed record ServerOptions
     /// </summary>
     public string Mods { get; init; } = "";
 
+    /// <summary>
+    /// Mods a player may have enabled or not, separated by commas, at any version: ones that change
+    /// how this player's own game works and write nothing another game cannot read, such as an
+    /// editor without its limits on scaling. Never in what the world wants, whoever gives it, and
+    /// never a reason to turn a player away. A mod <see cref="Mods"/> names as well is required.
+    /// </summary>
+    public string OptionalMods { get; init; } = "";
+
     /// <summary>Seconds between asking a player for a fresh save of the world, so a player joining starts near now.</summary>
     public double SnapshotEverySeconds { get; init; } = 300.0;
 
@@ -577,7 +585,9 @@ public sealed class GameServer : IDisposable
     /// </remarks>
     public string[] RequiredMods => Options.Mods.Length > 0
         ? [.. Options.Mods.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)]
-        : [.. _worldMods.SelectMany(ModList.Ids)];
+        // A world saved before a mod was made optional still names it, and would otherwise hold
+        // every player to it until somebody without it saved the world, which nobody could join to do.
+        : [.. _worldMods.SelectMany(ModList.Ids).Except(ModList.Ids(OptionalMods), StringComparer.OrdinalIgnoreCase)];
 
     // ------------------------------------------------------------------ Discord
 
@@ -1198,10 +1208,11 @@ public sealed class GameServer : IDisposable
         Wire.Facts facts = new(Options.Name, _worldSystem, _world is not null, WorldMods,
                                (byte)Math.Min(_players.Count, 255), (byte)Math.Min(Options.MaxPlayers, 255),
                                Options.Password.Length > 0 ? Wire.WelcomeFlags.Password : Wire.WelcomeFlags.None, RequiredBuild,
-                               LinkId: Options.Id);
+                               LinkId: Options.Id, Optional: OptionalMods);
         // Only a name, a build and three hundred characters of mods, none of them in ASCII, come
         // to more than an ask. Said without the mods then, as a list too long is said clipped:
         // the handshake is what compares them.
+        if (Wire.Write(facts, _measure) > asked) facts = facts with { Optional = "" };
         if (Wire.Write(facts, _measure) > asked) facts = facts with { Mods = "" };
         _udp.Send(facts, from);
     }
@@ -1223,7 +1234,8 @@ public sealed class GameServer : IDisposable
             // carries them. The two that admit and refuse go to somebody who is past needing them.
             _udp.Send(new Wire.Welcome(0, "", Options.Name, _world is not null, Cookie(from, (long)(now / CookieSeconds)), _worldSystem, WorldMods,
                                        (byte)Math.Min(_players.Count, 255), (byte)Math.Min(Options.MaxPlayers, 255),
-                                       Options.Password.Length > 0 ? Wire.WelcomeFlags.Password : Wire.WelcomeFlags.None, RequiredBuild, Options.Id), from);
+                                       Options.Password.Length > 0 ? Wire.WelcomeFlags.Password : Wire.WelcomeFlags.None, RequiredBuild, Options.Id,
+                                       Optional: OptionalMods), from);
             return;
         }
         // What a hello says of its game is written in the log and said to other players.
@@ -1234,7 +1246,7 @@ public sealed class GameServer : IDisposable
             : PasswordRefusal(hello.Password, from.Address, now) ?? Refusal(hello);
         if (refused is not null)
         {
-            _udp.Send(new Wire.Welcome(0, refused, Options.Name, false, Mods: WorldMods), from);
+            _udp.Send(new Wire.Welcome(0, refused, Options.Name, false, Mods: WorldMods, Optional: OptionalMods), from);
             Log($"refused {hello.Name} from {from}: {refused}");
             return;
         }
@@ -1265,7 +1277,9 @@ public sealed class GameServer : IDisposable
         Player p = new(id, name, from, now)
         {
             KsaBuild = hello.KsaBuild,
-            Mods = hello.Mods.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            // What the world is said to want when this player saves it: a mod others may go without
+            // is not one the next player must have.
+            Mods = ModList.Without(hello.Mods, OptionalMods).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
             System = hello.System,
             Role = Admins.Check(Wire.Clip(hello.Token, Wire.TokenChars), name),
             Session = hello.Sessions ? Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(12)) : "",
@@ -1376,6 +1390,9 @@ public sealed class GameServer : IDisposable
     /// <summary>What this world wants of a game, as a hello says it: empty when it asks nothing.</summary>
     private string WorldMods => string.Join(",", RequiredMods);
 
+    /// <summary>The mods a player may go without, less any the operator requires as well.</summary>
+    private string OptionalMods => string.Join(",", ModList.Ids(Options.OptionalMods).Except(ModList.Ids(Options.Mods), StringComparer.OrdinalIgnoreCase));
+
     private string? Refusal(Wire.Hello hello)
     {
         string build = RequiredBuild;
@@ -1390,7 +1407,7 @@ public sealed class GameServer : IDisposable
             return $"this world is in {_worldSystem} and your game is in {hello.System}: start a game in {_worldSystem} to join";
         }
         string[] wanted = RequiredMods;
-        (string[] missing, string[] extra, string[] wrong) = ModList.Against(string.Join(',', wanted), hello.Mods);
+        (string[] missing, string[] extra, string[] wrong) = ModList.Against(string.Join(',', wanted), hello.Mods, OptionalMods);
         if (missing.Length > 0) return $"the server's world needs mods you don't have enabled: {string.Join(", ", missing)}";
         // And none the others lack. A mod that adds parts makes craft nobody else can put together,
         // and the first they hear of it is a craft arriving that their game refuses to build, which
@@ -1458,9 +1475,9 @@ public sealed class GameServer : IDisposable
         // Since the world this game was sent, which a save while it loaded leaves behind the one held now.
         double since = (p.SentAt > 0.0 ? p.SentUniverse : _world?.Universe ?? universe) - SaveMarginSeconds;
         // Swept first, before anything made since is built from its definition.
-        foreach ((string like, string[] spared, double at) in _sweeps)
+        foreach ((string like, string[] spared, double at, bool debris) in _sweeps)
         {
-            if (at >= since) _udp.Send(new Wire.Swept(like, _protectedSerial, spared.Length > 0 ? spared : null), p.At);
+            if (at >= since) _udp.Send(new Wire.Swept(like, _protectedSerial, debris, spared.Length > 0 ? spared : null), p.At);
         }
         foreach ((string key, Craft c) in _crafts)
         {
@@ -2744,7 +2761,7 @@ public sealed class GameServer : IDisposable
         if (found is not { } save) return $"there is no save called '{name}' (saves lists them)";
         name = Saves.Find(name) ?? name;
 
-        string[] needs = [.. save.Mods.SelectMany(ModList.Ids)];
+        string[] needs = [.. save.Mods.SelectMany(ModList.Ids).Except(ModList.Ids(OptionalMods), StringComparer.OrdinalIgnoreCase)];
         foreach (Player p in _players.Values)
         {
             if (save.System.Length > 0 && p.System.Length > 0 && p.System != save.System)
@@ -3061,7 +3078,7 @@ public sealed class GameServer : IDisposable
         // server has never heard of it and a list drawn up here would miss the whole of the debris.
         // Each game matches the name against its own world, and what the server knew of them is
         // dropped above so that nothing hands them back.
-        Broadcast(new Wire.Swept(like, _protectedSerial, spared.Length > 0 ? spared : null), p => p.Loaded);
+        Broadcast(new Wire.Swept(like, _protectedSerial, Spared: spared.Length > 0 ? spared : null), p => p.Loaded);
         Swept(like, spared, universe);
         OwnersChanged();
         Log($"the operator is sweeping the world by '{(like.Length > 0 ? like : "*")}'"
@@ -3087,13 +3104,30 @@ public sealed class GameServer : IDisposable
     /// came in with everything the clear had taken. The server can say gone only what it knew of,
     /// which is not most of the debris.
     /// </summary>
-    private readonly List<(string Like, string[] Spared, double Universe)> _sweeps = [];
+    private readonly List<(string Like, string[] Spared, double Universe, bool Debris)> _sweeps = [];
     private const int SweepsKept = 32;
 
-    private void Swept(string like, string[] spared, double universe)
+    private void Swept(string like, string[] spared, double universe, bool debris = false)
     {
-        _sweeps.Add((like, spared, universe));
+        _sweeps.Add((like, spared, universe, debris));
         if (_sweeps.Count > SweepsKept) _sweeps.RemoveAt(0);
+    }
+
+    /// <summary>
+    /// Debris swept out of the world: each game takes away what of it is debris in its own world --
+    /// what KSA calls debris, and any craft with nothing on it to control it -- bar what is flown or
+    /// protected, and says gone what of it is its own. Nothing is dropped here, since a name does
+    /// not say whether a craft is debris and the parts that do are in the games.
+    /// </summary>
+    public void SweepDebris(string like = "")
+    {
+        Broadcast(new Wire.Swept(like, _protectedSerial, Debris: true), p => p.Loaded);
+        Swept(like, [], UniverseClock.Now(_clock()), debris: true);
+        Log($"sweeping the world of debris by '{(like.Length > 0 ? like : "*")}'");
+        Broadcast(new Wire.Chat(0, "clearing out debris nobody is flying"), p => p.Loaded);
+        // The games say gone what is theirs as they sweep; the save is asked for a moment after,
+        // from a game that has swept, as it is after a clear.
+        AskSnapshot("the world was cleared of debris");
     }
 
     private static string Named(List<string> keys) =>

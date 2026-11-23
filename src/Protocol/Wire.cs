@@ -201,8 +201,10 @@ public static class Wire
     /// <para>32 is <see cref="Claim.Undocked"/>. <see cref="Closing"/> came later without moving
     /// it: a game that does not know the kind drops it and still gets the goodbye.</para>
     ///
-    /// <para>33 is <see cref="Swept.Spared"/>: a game that swept those craft as well would have taken
-    /// out of its world what every other game keeps.</para>
+    /// <para>33 is the two things a <see cref="Swept"/> may leave: <see cref="Swept.Debris"/>, a sweep
+    /// of debris alone, which a game of 32 would read as one of everything nobody is flying; and
+    /// <see cref="Swept.Spared"/>, which a game of 32 would sweep as well, taking out of its world
+    /// what every other game keeps.</para>
     /// </summary>
     public const ushort Version = 33;
 
@@ -221,6 +223,9 @@ public static class Wire
     /// at the end is not that: a reader stops at the last field it knows.</para>
     /// </summary>
     public const byte ProbeVersion = 1;
+
+    /// <summary>The most characters of a server's optional mods: a few, each changing one player's own game.</summary>
+    public const int OptionalChars = 255;
 
     /// <summary>
     /// How long an <see cref="Ask"/> is, padding included, and so the most a <see cref="Facts"/> is
@@ -405,9 +410,13 @@ public static class Wire
     /// (<see cref="KSAMultiplayer.Discord.Proof"/>), empty where this server takes no Discord logins. Only on a
     /// welcome that admits a player: one that carries a cookie goes to an address nothing has
     /// vouched for, and is kept as small as it can be.</param>
+    /// <param name="Optional">The mods a player may have enabled or not, comma separated, which
+    /// <paramref name="Mods"/> does not name. Read from the end of the datagram, after a
+    /// <paramref name="Session"/> written empty where there is none, so a game from before it reads
+    /// every other field as it did and takes these mods for ones the server does not run.</param>
     public sealed record Welcome(byte Id, string Refused, string ServerName, bool HasWorld, string Cookie = "", string System = "", string Mods = "",
                                  byte Players = 0, byte MaxPlayers = 0, WelcomeFlags Flags = WelcomeFlags.None, string KsaBuild = "",
-                                 string LinkId = "", string Discord = "", string Session = "") : Message(Kind.Welcome);
+                                 string LinkId = "", string Discord = "", string Session = "", string Optional = "") : Message(Kind.Welcome);
 
     /// <summary>
     /// What is this server? Asked by a list of servers, of an address it knows nothing else about,
@@ -429,8 +438,9 @@ public static class Wire
     /// As on a <see cref="Welcome"/>. The last field, and so absent from a server that was built
     /// before it, which a reader takes as not said.
     /// </param>
+    /// <param name="Optional">As on a <see cref="Welcome"/>, after <paramref name="LinkId"/>.</param>
     public sealed record Facts(string ServerName, string System, bool HasWorld, string Mods, byte Players, byte MaxPlayers,
-                               WelcomeFlags Flags, string KsaBuild, ushort Speaks = Version, string LinkId = "") : Message(Kind.Facts);
+                               WelcomeFlags Flags, string KsaBuild, ushort Speaks = Version, string LinkId = "", string Optional = "") : Message(Kind.Facts);
 
     /// <param name="Rtt">The player's round trip to the server, s, as that player last measured it; negative until it has.</param>
     /// <param name="Can">The speed that player's game is managing, as a multiple of real time:
@@ -652,11 +662,15 @@ public static class Wire
     /// transfer and this by a datagram, so a game sweeps only once it holds that state or a later
     /// one: swept first, a craft protected a moment before the sweep would go with the debris.
     /// </param>
+    /// <param name="Debris">Whether only debris goes: what KSA itself calls debris, broken off a
+    /// craft, and any craft with nothing on it to control it, such as a spent stage. Each game
+    /// tells from its own copy of the parts, which every game builds alike, and says gone the
+    /// ones it owns, since the server cannot tell debris from a craft by name.</param>
     /// <param name="Spared">
     /// Craft the sweep matches and leaves, by name: those a connected player holds and has flown,
     /// which are their craft and not debris. Null for none.
     /// </param>
-    public sealed record Swept(string Like, uint Protected = 0, string[]? Spared = null) : Message(Kind.Swept);
+    public sealed record Swept(string Like, uint Protected = 0, bool Debris = false, string[]? Spared = null) : Message(Kind.Swept);
 
     /// <summary>The most craft one <see cref="Swept"/> spares, which is what one datagram holds.</summary>
     public const int MostSparedInASweep = 48;
@@ -838,7 +852,8 @@ public static class Wire
                 w.Text(m.KsaBuild, 64);
                 w.Text(m.LinkId, IdChars);
                 w.Text(m.Discord, KSAMultiplayer.Discord.NonceChars);
-                if (m.Session.Length > 0) w.Text(m.Session, CookieChars);
+                if (m.Session.Length > 0 || m.Optional.Length > 0) w.Text(m.Session, CookieChars);
+                if (m.Optional.Length > 0) w.Text(m.Optional, OptionalChars);
                 break;
             case Ask a:
                 w.U8(a.Probe);
@@ -855,6 +870,7 @@ public static class Wire
                 w.U8((byte)f.Flags);
                 w.Text(f.KsaBuild, 64);
                 w.Text(f.LinkId, IdChars);
+                w.Text(f.Optional, OptionalChars);
                 break;
             case Roster r:
                 w.U8((byte)Math.Min(r.Players.Length, 64));
@@ -982,6 +998,7 @@ public static class Wire
             case Swept s2:
                 w.Text(s2.Like, KeyChars);
                 w.U32(s2.Protected);
+                w.U8((byte)(s2.Debris ? 1 : 0));
                 string[] spared = s2.Spared ?? [];
                 w.U8((byte)Math.Min(spared.Length, MostSparedInASweep));
                 foreach (string name in spared.Take(MostSparedInASweep)) w.Text(name, KeyChars);
@@ -1058,14 +1075,15 @@ public static class Wire
                     // which is what a datagram of another version already is to whoever asked.
                     if (r.U8() != ProbeVersion) return null;
                     return new Facts(r.Text(64), r.Text(NameChars), r.U8() != 0, r.LongText(ProbeModsChars), r.U8(), r.U8(), (WelcomeFlags)r.U8(), r.Text(64), version,
-                                     r.More ? r.Text(IdChars) : "");
+                                     r.More ? r.Text(IdChars) : "", r.More ? r.Text(OptionalChars) : "");
             }
             if (version != Version) return null;
             Message m = (Kind)data[6] switch
             {
                 Kind.Hello => new Hello(r.Text(NameChars), r.Text(64), r.LongText(4000), r.Text(NameChars), r.Text(64), r.Text(TokenChars), r.Text(CookieChars), r.More && r.U8() != 0),
                 Kind.Welcome => new Welcome(r.U8(), r.LongText(RefusedChars), r.Text(64), r.U8() != 0, r.Text(CookieChars), r.Text(NameChars), r.LongText(ProbeModsChars),
-                                            r.U8(), r.U8(), (WelcomeFlags)r.U8(), r.Text(64), r.Text(IdChars), r.Text(KSAMultiplayer.Discord.NonceChars), r.More ? r.Text(CookieChars) : ""),
+                                            r.U8(), r.U8(), (WelcomeFlags)r.U8(), r.Text(64), r.Text(IdChars), r.Text(KSAMultiplayer.Discord.NonceChars), r.More ? r.Text(CookieChars) : "",
+                                            r.More ? r.Text(OptionalChars) : ""),
                 Kind.Roster => ReadRoster(ref r),
                 Kind.Bye => new Bye(r.Text(200), r.More ? r.Text(CookieChars) : ""),
                 Kind.Alive => new Alive(),
@@ -1157,9 +1175,10 @@ public static class Wire
     {
         string like = r.Text(KeyChars);
         uint serial = r.U32();
+        bool debris = r.U8() != 0;
         string[] spared = new string[Math.Min((int)r.U8(), MostSparedInASweep)];
         for (int i = 0; i < spared.Length; i++) spared[i] = r.Text(KeyChars);
-        return new Swept(like, serial, spared.Length > 0 ? spared : null);
+        return new Swept(like, serial, debris, spared.Length > 0 ? spared : null);
     }
 
     private static Owners ReadOwners(ref Reader r)

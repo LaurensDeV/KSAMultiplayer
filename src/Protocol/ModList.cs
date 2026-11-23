@@ -47,14 +47,15 @@ public static class ModList
     /// What stands between a game with <paramref name="has"/> and a world wanting
     /// <paramref name="wanted"/>: the mods it lacks, the mods it has that the world has not, and
     /// those it has at another version than the world wants, each said as a player would read it.
-    /// A world that wants nothing takes any game.
+    /// A world that wants nothing takes any game. A mod in <paramref name="optional"/> that the world
+    /// does not want is nobody's business but the game's that has it.
     /// </summary>
-    public static (string[] Missing, string[] Extra, string[] Wrong) Against(string wanted, string has)
+    public static (string[] Missing, string[] Extra, string[] Wrong) Against(string wanted, string has, string optional = "")
     {
         Entry[] wants = Parse(wanted);
         if (wants.Length == 0) return ([], [], []);
         Dictionary<string, string> theirs = [];
-        foreach (Entry e in Parse(has)) theirs[e.Id] = e.Version;
+        foreach (Entry e in Parse(Without(has, optional, wanted))) theirs[e.Id] = e.Version;
         HashSet<string> world = [.. wants.Select(e => e.Id)];
         string[] missing = [.. wants.Where(e => !theirs.ContainsKey(e.Id)).Select(e => e.Id).Order()];
         string[] extra = [.. theirs.Keys.Where(id => !world.Contains(id)).Order()];
@@ -65,6 +66,20 @@ public static class ModList
                 .Order(),
         ];
         return (missing, extra, wrong);
+    }
+
+    /// <summary>
+    /// <paramref name="list"/> without the mods named in <paramref name="optional"/>, versions and
+    /// all, except those <paramref name="wanted"/> names: a mod an operator both requires and lets
+    /// players go without is required, since leaving it out of a world that holds its parts is what
+    /// stops that world loading.
+    /// </summary>
+    public static string Without(string list, string optional, string wanted = "")
+    {
+        if (optional.Length == 0) return list;
+        HashSet<string> spare = new(Ids(optional), StringComparer.OrdinalIgnoreCase);
+        spare.ExceptWith(Ids(wanted));
+        return string.Join(',', Parse(list).Where(e => !spare.Contains(e.Id)).Select(e => e.Version.Length > 0 ? $"{e.Id}@{e.Version}" : e.Id));
     }
 
     /// <summary>A version without the commit it was built from: the release a player picks to install.</summary>

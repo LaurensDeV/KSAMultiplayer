@@ -782,7 +782,7 @@ internal static class Sync
         // Said before a world is started rather than after it is refused. KSA reads its mods once,
         // at startup, so a player who learns here has a start screen to act from and one who learns
         // after the join has a restart ahead of them either way.
-        (string missing, string extra, string wrong) = ModsAgainst(p.Mods);
+        (string missing, string extra, string wrong) = ModsAgainst(p.Mods, p.Optional);
         // Into the window as well as the log. Said alone, this reached a player through the chat
         // they have not opened and a file they have no reason to read, so pressing CONNECT looked
         // like pressing nothing.
@@ -824,9 +824,9 @@ internal static class Sync
     /// <para>The same comparison the server makes in its own refusal, made here as well so it can be
     /// put to the player while it is still worth something. The server's is the one that decides.</para>
     /// </summary>
-    public static (string Missing, string Extra, string Wrong) ModsAgainst(string worldMods)
+    public static (string Missing, string Extra, string Wrong) ModsAgainst(string worldMods, string optional = "")
     {
-        (string[] missing, string[] extra, string[] wrong) = ModList.Against(worldMods, World.Mods);
+        (string[] missing, string[] extra, string[] wrong) = ModList.Against(worldMods, World.Mods, optional);
         return (string.Join(", ", missing), string.Join(", ", extra), string.Join(", ", wrong));
     }
 
@@ -1210,6 +1210,9 @@ internal static class Sync
         /// <summary>When the craft went, and what KSA put the camera on instead; zero and null until then.</summary>
         public double LostAt { get; init; }
         public object? HandedTo { get; init; }
+
+        /// <summary>The player flying it when it was watched, zero for a craft nobody flies.</summary>
+        public byte Pilot { get; init; }
     }
 
     private static Watching? _watch;
@@ -1225,8 +1228,14 @@ internal static class Sync
     /// copy going took the watcher's camera out to the whole Earth, and the copy built in its place
     /// a moment later was left unwatched. Put back on that copy, with the view this player had,
     /// unless they have looked at something else since.
+    ///
+    /// <para>And kept on the player flying it rather than on its name. KSA's split leaves the craft
+    /// and its name with the half holding the root part and makes the other half a new craft
+    /// (<c>Vehicle.Split</c>), so a rocket built from its engine up drops a booster that keeps the
+    /// name while its pilot flies on in a craft called something else: a camera kept on the name
+    /// rode the booster down.</para>
     /// </summary>
-    private static void KeepWatching(Dictionary<string, Vehicle> here, Vehicle? flown)
+    private static void KeepWatching(Client c, Dictionary<string, Vehicle> here, Vehicle? flown)
     {
         if (flown is not null)
         {
@@ -1255,12 +1264,86 @@ internal static class Sync
             }
             if (here.TryGetValue(w.Key, out Vehicle? again) && World.IsAlive(again) && !ToRemove.Contains(again) && World.Watch(again, w.View))
             {
-                _watch = new Watching(again, w.Key, w.View);
+                _watch = new Watching(again, w.Key, w.View) { Pilot = w.Pilot };
                 Log.Info($"back on {w.Key}, built again here, after {Wall() - w.LostAt:F1} s");
             }
+            else FollowPilot(c, here, w);
             return;
         }
-        _watch = World.Watched is { } v && World.IsAlive(v) && World.ViewOf(v) is { } view ? new Watching(v, KeyOf(v), view) : null;
+        if (_watch is { Pilot: > 0 } was && ReferenceEquals(World.Watched, was.Craft) && FollowPilot(c, here, was)) return;
+        if (World.Watched is not { } v || !World.IsAlive(v) || World.ViewOf(v) is not { } view)
+        {
+            _watch = null;
+            return;
+        }
+        string key = KeyOf(v);
+        // Kept while the pilot has moved on and what they fly now is not yet built here.
+        byte pilot = c.Players.FirstOrDefault(p => p.Id > 0 && p.Controlling == key).Id;
+        if (pilot == 0 && _watch is { } before && ReferenceEquals(before.Craft, v)) pilot = before.Pilot;
+        _watch = new Watching(v, key, view) { Pilot = pilot };
+    }
+
+    /// <summary>
+    /// The world swept by the server: every craft matching <paramref name="like"/> taken away, or
+    /// only the debris among them, bar what anybody is flying and what is protected.
+    /// </summary>
+    private static readonly HashSet<string> NoneSpared = [];
+
+    private static void SweepOut(Client c, Dictionary<string, Vehicle> here, Vehicle? flown, string like, bool debris, IReadOnlySet<string> spared)
+    {
+        int gone = 0;
+        foreach (Vehicle v in World.Vehicles())
+        {
+            string key = KeyOf(v);
+            if (!Wire.Matches(key, like) || ReferenceEquals(v, flown)) continue;
+            if (debris && !World.IsDebris(v)) continue;
+            // Nor what the operator has protected, even by its own name in full.
+            if (c.Spared(key)) continue;
+            // Nor anything anybody else is flying: a player's hull is not debris, and a sweep
+            // that took one out from under them would be worse than the debris.
+            if (c.Players.Any(p => p.Controlling == key)) continue;
+            // Nor a craft a player here holds and has flown, which the server names.
+            if (spared.Contains(key)) continue;
+            // The server drops a craft by name only for a clear, which names what goes; a debris
+            // sweep is the games' to tell, so what is this game's own it says is gone.
+            if (debris && c.OwnerOf(key) == c.Id) c.SayGone(key);
+            Owned.Remove(key);
+            Puppets.Remove(v);
+            Built.Remove(key);
+            MadeHere.Remove(v);
+            Renamed.Remove(v);
+            Engines.Remove(v);
+            Definitions.Remove(key);
+            Deferred.Remove(key);
+            Describes.Remove(key);
+            PlacedAt.Remove(key);
+            Seen.Remove(v);
+            if (_claimed == key) _claimed = "";
+            here.Remove(key);
+            Later(v);
+            gone++;
+        }
+        // Whatever was swept, and even if this game held none of it: what the craft left behind
+        // outlives them, and goes on being stepped and drawn with nothing left to have made it.
+        _toClearSmoke = true;
+        // One craft by name is an admin's remove or a clear that named it, and the server
+        // has already said who took what out of the world.
+        if (!Wire.IsPattern(like)) Log.Info($"{like} was taken out of the world: {(gone > 0 ? "it was here" : "this game didn't have it")}");
+        else Say(gone > 0
+            ? $"the world was cleared of {gone} {(debris ? "pieces of debris" : "craft")} nobody is flying"
+            : $"the world was cleared{(debris ? " of debris" : "")}, and this game had nothing matching to take away");
+    }
+
+    /// <summary>The camera moved to what the watched craft's pilot flies now, where that is another craft built here.</summary>
+    private static bool FollowPilot(Client c, Dictionary<string, Vehicle> here, Watching w)
+    {
+        if (w.Pilot == 0) return false;
+        string now = c.Players.FirstOrDefault(p => p.Id == w.Pilot).Controlling ?? "";
+        if (now.Length == 0 || now == w.Key) return false;
+        if (!here.TryGetValue(now, out Vehicle? next) || !World.IsAlive(next) || ToRemove.Contains(next) || !World.Watch(next, w.View)) return false;
+        _watch = new Watching(next, now, w.View) { Pilot = w.Pilot };
+        Log.Info($"following {c.NameOf(w.Pilot)} from {w.Key} onto {now}");
+        return true;
     }
 
     /// <summary>
@@ -1790,6 +1873,7 @@ internal static class Sync
                 case Stage.Playing:
                     Play(c);
                     TakeWhatIsWatched(c);
+                    AgreeForThePlayer(c);
                     break;
             }
             HoldTheClock(c);
@@ -2064,47 +2148,8 @@ internal static class Sync
         // being told what is no longer in it, so it goes whosever it is. The server sends a name
         // rather than a list because most of what is out there was claimed by nobody and it has
         // never heard of it: this world is the one that knows what is in it.
-        while (c.Swept.TryDequeue(out Sweep? sweep))
-        {
-            string like = sweep.Like;
-            int gone = 0;
-            foreach (Vehicle v in World.Vehicles())
-            {
-                string key = KeyOf(v);
-                if (!Wire.Matches(key, like) || ReferenceEquals(v, flown)) continue;
-                // Nor what the operator has protected, even by its own name in full.
-                if (c.Spared(key)) continue;
-                // Nor anything anybody else is flying: a player's hull is not debris, and a sweep
-                // that took one out from under them would be worse than the debris.
-                if (c.Players.Any(p => p.Controlling == key)) continue;
-                // Nor a craft a player here holds and has flown, which the server names.
-                if (sweep.Spared.Contains(key)) continue;
-                Owned.Remove(key);
-                Puppets.Remove(v);
-                Built.Remove(key);
-                MadeHere.Remove(v);
-                Renamed.Remove(v);
-                Engines.Remove(v);
-                Definitions.Remove(key);
-                Deferred.Remove(key);
-                Describes.Remove(key);
-                PlacedAt.Remove(key);
-                Seen.Remove(v);
-                if (_claimed == key) _claimed = "";
-                here.Remove(key);
-                Later(v);
-                gone++;
-            }
-            // Whatever was swept, and even if this game held none of it: what the craft left behind
-            // outlives them, and goes on being stepped and drawn with nothing left to have made it.
-            _toClearSmoke = true;
-            // One craft by name is an admin's remove or a clear that named it, and the server
-            // has already said who took what out of the world.
-            if (!Wire.IsPattern(like)) Log.Info($"{like} was taken out of the world: {(gone > 0 ? "it was here" : "this game didn't have it")}");
-            else Say(gone > 0
-                ? $"the world was cleared of {gone} craft nobody is flying"
-                : "the world was cleared, and this game had nothing matching to take away");
-        }
+        while (c.Swept.TryDequeue(out Sweep? sweep)) SweepOut(c, here, flown, sweep.Like, debris: false, sweep.Spared);
+        while (c.SweptDebris.TryDequeue(out string? like)) SweepOut(c, here, flown, like, debris: true, NoneSpared);
 
         // What other players' games say of their craft on a mod's behalf, for this game's copy of that mod.
         while (c.Extras.TryDequeue(out Wire.Extra? word))
@@ -2123,7 +2168,7 @@ internal static class Sync
             if (World.IsAlive(other) && World.GoTo(other)) flown = World.Controlled;
         }
         RideAlong(c, here, flown);
-        KeepWatching(here, flown);
+        KeepWatching(c, here, flown);
         TintTheEditing(c);
         SayNobodysGone(c, here);
         ClaimFlown(c, flown);
@@ -3216,6 +3261,40 @@ internal static class Sync
             portGiven = true;
         }
         return host.Length > 0 && !host.Contains(' ');
+    }
+
+    /// <summary>Which warps this game agrees to without asking its player, as they chose in the Multiplayer window.</summary>
+    public enum WarpAnswer { Ask, NotFlying, Always }
+
+    public static WarpAnswer AnswerWarps { get; set; } = WarpAnswer.Ask;
+
+    private static double _agreeNext;
+    private static (byte Who, float Speed) _agreedTo = (0, float.NaN);
+
+    /// <summary>
+    /// A warp agreed to for a player who said they need not be asked. Everyone must agree before a
+    /// warp runs, and one left unanswered runs out: a player deep in the vehicle editor, or only
+    /// watching, held up every warp until they noticed the question. Said each second until the
+    /// server has it, since a datagram can be lost, and told to the player once.
+    /// </summary>
+    private static void AgreeForThePlayer(Client c)
+    {
+        if (!c.WarpWantsAnswer || c.Warp is not { } w || Wall() < _agreeNext) return;
+        string? why = AnswerWarps switch
+        {
+            WarpAnswer.Always => "you agree to every warp",
+            WarpAnswer.NotFlying when World.InEditor => "you're in the vehicle editor",
+            WarpAnswer.NotFlying when World.Controlled is null => "you aren't flying anything",
+            // Slower or paused takes nothing from anybody, whatever they are doing.
+            WarpAnswer.NotFlying when w.Speed < 1f => "it slows the world down",
+            _ => null,
+        };
+        if (why is null) return;
+        _agreeNext = Wall() + 1.0;
+        c.VoteWarp(true);
+        if (_agreedTo == (w.Who, w.Speed)) return;
+        _agreedTo = (w.Who, w.Speed);
+        Say($"agreed for you to {c.NameOf(w.Who)}'s {(w.Speed < 0.01f ? "pause" : $"warp to {w.Speed:0.##}x")}: {why}");
     }
 
     public static void Say(string what)

@@ -89,6 +89,11 @@ public class WireTests
         Assert.Equal(new Wire.Op(false, ""), RoundTrip(new Wire.Op(false, "")));
         Assert.Equal(new Wire.Welcome(3, "", "Moon base", true), RoundTrip(new Wire.Welcome(3, "", "Moon base", true)));
         Assert.Equal(new Wire.Welcome(0, "", "Moon base", true, "c00kie", "SolLite"), RoundTrip(new Wire.Welcome(0, "", "Moon base", true, "c00kie", "SolLite")));
+        // Optional mods without a session's word behind them, and with one.
+        Assert.Equal(new Wire.Welcome(0, "", "Moon base", true, Mods: "Core", Optional: "Scaler"),
+                     RoundTrip(new Wire.Welcome(0, "", "Moon base", true, Mods: "Core", Optional: "Scaler")));
+        Assert.Equal(new Wire.Welcome(2, "", "Moon base", true, Session: "w0rd", Optional: "Scaler"),
+                     RoundTrip(new Wire.Welcome(2, "", "Moon base", true, Session: "w0rd", Optional: "Scaler")));
         Assert.Equal(new Wire.Welcome(0, "", "Moon base", true, "c00kie", "SolLite", LinkId: "moon-base"),
                      RoundTrip(new Wire.Welcome(0, "", "Moon base", true, "c00kie", "SolLite", LinkId: "moon-base")));
         Assert.Equal(new Wire.Facts("Moon base", "SolLite", true, "Core", 3, 16, Wire.WelcomeFlags.None, "B1", LinkId: "moon-base"),
@@ -105,7 +110,8 @@ public class WireTests
         Assert.Equal(Wire.WorldRules.All, ((Wire.Clock)RoundTrip(new Wire.Clock(1e6, 3.25, 1f))).Rules);
         Assert.Equal(new Wire.Clock(1e6, 3.25, 1f, Wire.WorldRules.Radiation), RoundTrip(new Wire.Clock(1e6, 3.25, 1f, Wire.WorldRules.Radiation)));
         Assert.Equal(new Wire.Swept("Stage *", 7), RoundTrip(new Wire.Swept("Stage *", 7)));
-        Assert.Equal(["Rocket", "Station 2"], RoundTrip(new Wire.Swept("", 7, ["Rocket", "Station 2"])).Spared!);
+        Assert.Equal(["Rocket", "Station 2"], RoundTrip(new Wire.Swept("", 7, Spared: ["Rocket", "Station 2"])).Spared!);
+        Assert.Equal(new Wire.Swept("", 7, Debris: true), RoundTrip(new Wire.Swept("", 7, Debris: true)));
         Assert.Equal(new Wire.Loaded(42), RoundTrip(new Wire.Loaded(42)));
         Assert.Equal(new Wire.Claim("Rocket", true, false), RoundTrip(new Wire.Claim("Rocket", true, false)));
         Assert.Equal(new Wire.Claim("Kitten", false, true), RoundTrip(new Wire.Claim("Kitten", false, true)));
@@ -180,8 +186,8 @@ public class WireTests
         // A field added after the ones a reader knows is not a new form of the answer.
         buffer[n] = 7;
         Assert.Equal(told, Wire.Read(buffer.AsSpan(0, n + 1), out _));
-        // Nor is one this reader knows and the server was built before: the id, which is the
-        // last thing written and here the one byte saying it is empty.
+        // Nor is one this reader knows and the server was built before: the optional mods, which
+        // are the last thing written and here the one byte saying they are none.
         Assert.Equal(told, Wire.Read(buffer.AsSpan(0, n - 1), out _));
 
         // A form of the answer this cannot read is a server that answered, and no more than that.

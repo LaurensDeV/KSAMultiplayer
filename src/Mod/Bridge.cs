@@ -238,6 +238,7 @@ internal sealed class Bridge
             "modspeed" => ModSpeed(command),
             "pickspeed" => PickSpeed(command),
             "warpkey" => WarpKey(command),
+            "key" => Key(command),
             "save" => SaveGame(command),
             "step" => BeginStep(command),
             "start" => BeginStart(command),
@@ -312,6 +313,9 @@ internal sealed class Bridge
         data["at_a_craft"] = World.AtACraft;
         data["craft"] = World.Controlled?.Id;
         data["watching"] = World.Watched?.Id;
+        data["observed"] = Sync.Observed?.Id;
+        data["gauges_of"] = GaugesOf();
+        data["throttle"] = World.Controlled is { } controlled ? Math.Round(controlled.GetManualThrottle(), 3) : null;
         data["map_view"] = World.InMapView;
         data["can"] = Math.Round(Sync.Sustains, 3);
         data["here"] = World.Focused;
@@ -382,6 +386,7 @@ internal sealed class Bridge
                     ["waiting"] = w.Waiting.Select(c.NameOf).ToList(),
                 }
                 : null;
+            data["warps"] = Sync.AnswerWarps.ToString();
         }
 
         return Done(data);
@@ -533,6 +538,16 @@ internal sealed class Bridge
             if (Sync.Client is not { Joined: true } c) return Failed("not connected");
             c.AskWarp(command.Number("warp", 1.0));
             return Done(new() { ["asked"] = command.Number("warp", 1.0) });
+        }
+
+        // The Multiplayer window's "Agree to warps" choice, which is otherwise three radio buttons.
+        if (command.Has("warps"))
+        {
+            string said = command.String("warps");
+            if (!Enum.TryParse(said, ignoreCase: true, out Sync.WarpAnswer answer)) return Failed($"warps is Ask, NotFlying or Always, not '{said}'");
+            Sync.AnswerWarps = answer;
+            Panel.Save();
+            return Done(new() { ["warps"] = answer.ToString() });
         }
 
         if (command.Has("vote"))
@@ -720,6 +735,33 @@ internal sealed class Bridge
 
     // A warp key, which is not the same as asking for a speed: the key says which way, and while
     // connected the mod works out the speed from the warp the server is running.
+    // A key pressed and let go as the keyboard does it, through KSA's own handler: what reaches a
+    // craft, a camera or a menu from there is what a player's key would reach.
+    private static Reply Key(BridgeCommand command)
+    {
+        if (!Enum.TryParse(command.String("key"), ignoreCase: true, out Brutal.GlfwApi.GlfwKey key)) return Failed($"no key '{command.String("key")}'");
+        if (Program.Instance is not { } program) return Failed("KSA is not up");
+        Brutal.GlfwApi.GlfwModifier mods = command.Flag("shift", false) ? Brutal.GlfwApi.GlfwModifier.Shift : 0;
+        if (!command.Flag("up", false)) program.OnKey(default!, key, 0, Brutal.GlfwApi.GlfwKeyAction.Press, mods);
+        if (!command.Flag("down", false)) program.OnKey(default!, key, 0, Brutal.GlfwApi.GlfwKeyAction.Release, mods);
+        return Done(new() { ["key"] = key.ToString() });
+    }
+
+    // Which craft the altitude gauge was last filled from: the controlled one, the watched one, or
+    // neither, told by packing each one's altitude as KSA packs the gauge's.
+    private static string? GaugesOf()
+    {
+        long shown = Program.AltitudeRoller.Target;
+        foreach ((string what, Vehicle? v) in new[] { ("watched", World.Watched as Vehicle), ("controlled", World.Controlled) })
+        {
+            if (v is null) continue;
+            DigitRoller probe = new(Program.AltitudeRoller.Digits, unitDigit: true);
+            probe.PackTarget(v.NavBallData.Altitude, 0, UnitMask.Millimeter | UnitMask.Centimeter | UnitMask.Meter | UnitMask.Kilometer | UnitMask.Gigameter | UnitMask.AU | UnitMask.LightYear);
+            if (probe.Target == shown) return $"{what} {v.Id}";
+        }
+        return null;
+    }
+
     private static Reply WarpKey(BridgeCommand command)
     {
         int by = Math.Sign((int)command.Number("by", 1.0));

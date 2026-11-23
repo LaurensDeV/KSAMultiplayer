@@ -221,6 +221,13 @@ stranger sent it.
   the server warps *its own clock*, which is the thing they all follow anyway. It gets to the speed
   agreed by climbing, half as much again every second from a step above normal, and comes down
   from it at once; the clock says its speed the moment it changes, and a game takes that as said.
+  A game may answer for its player, who chooses under *Agree to warps* (`Sync.AgreeForThePlayer`,
+  kept in `settings.json`): *Ask me*, the default; *When not flying*, which agrees while the vehicle
+  editor is open or no craft is controlled, and to anything slower than normal; or *Always*. It is
+  the same vote a player's button sends and the server cannot tell them apart, so nothing about
+  what a warp needs has changed: a player in the editor, or only watching, held up every warp
+  until they noticed it was asked. The game says in its log each warp it agreed to and why.
+  Built; not yet seen in a game.
 - **A name for every craft.** Craft Ids are KSA's own, so two games that make a craft the same way
   make one Id: two players who each send a kitten out of the same capsule both call it what KSA calls
   it. A game says, with each claim, whether it made the craft or found it in the world everyone
@@ -477,6 +484,25 @@ was built twice and then seven characters of each: forty of a commit, in the lin
 on, were read as noise and hid the two numbers that mattered. And it is said apart from a mod
 that is off (`Sync.ModsAgainst`), because "turn it on" about a mod that is on sends a player to
 a switch that is already where it should be.
+
+**Debris is swept by the games.** `debris` sends a `Swept` marked as debris alone, and each game
+takes from its world what matches and `World.IsDebris` holds: what KSA marks as debris
+(`PartFailure` sheds it so) and any craft whose parts carry no `Control` module, a spent stage --
+not `Vehicle.IsControllable`, which a probe out of power is not. The server drops nothing for it,
+since a name does not say whether a craft is debris; the owner's game says gone what it swept of its
+own, and the save asked for after is from a game that has swept. A game of `Wire.Version` 31 would
+take the sweep for one of everything nobody flies, hence 33 (with `Spared`). Built; not yet seen in a game.
+
+**A mod may be optional.** An operator's `optional-mods` names mods a player may run or not:
+the join check leaves them out of what a game has (`ModList.Without`), a world a player saves is not
+said to want them, a world saved before they were made optional stops wanting them, and a welcome
+and a `Facts` end with them (`Optional`, after every field a reader of before knows) so a game does
+not tell its player to turn one off. Meant for mods that change one player's game and nothing it
+writes that another cannot read: KSA holds part scale to its limits in the editor alone
+(`VehicleEditor.ScaleBoundsFor`), and a part's x, y and z scale load as saved, though mass and what
+a part's modules scale by follow the largest of the three (`ScaleFactors(double3)`), the same in
+every game. Whether that is fair is the operator's call, and why the list is theirs rather than a
+mod's word about itself. Not yet seen with such a mod in a game.
 
 **A game turned away for its mods is handed a link to them.** `ModLink` writes the world's list
 as Borea's `borea://modlist?mods=Id@1.2.3,...&name=...&id=...`, and the connect window puts a
@@ -1099,6 +1125,12 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   unless the player has looked at something else since, or nothing of that name comes back within
   ten seconds. Seen: after the stage the watcher was following the 21-part Rocket in the frame it
   was built, looking at it from where it had been.
+  That rocket kept its name through the stage because its root part was above the decoupler. KSA's
+  split leaves the name with the half holding the root (`Vehicle.Split`), so a rocket built from
+  its engine up drops a booster that keeps the name while its pilot flies on in a new craft, and a
+  camera kept on the name rode the booster down. The camera now follows the player who was flying
+  what was watched onto whatever they fly next, once it is built here (`Sync.FollowPilot`). Built;
+  not yet seen in a game.
 - **The vehicle editor with the world running, and a craft held for it.** A 2-part capsule lifted
   400 m and falling at 56.8 m/s had the editor opened on it: the game ran on at 1.00x with the
   editor up, its universe time kept with the server's, and the capsule stood 80.5 m above the pad

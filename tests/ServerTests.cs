@@ -816,6 +816,52 @@ public class ServerTests
     }
 
     [Fact]
+    public void AnOptionalModIsNeitherMissingNorExtra()
+    {
+        Assert.Empty(ModList.Against("Core,Cars", "Core,Cars,Scaler@2.0", "Scaler").Extra);
+        Assert.Empty(ModList.Against("Core,Cars", "Core,Cars", "Scaler").Missing);
+        // One the world wants is wanted, whatever else says it may be gone without.
+        Assert.Equal(["Scaler"], ModList.Against("Core,Scaler", "Core", "scaler").Missing);
+        Assert.Equal("Core,Cars@1.0", ModList.Without("Core,Scaler@2.0,Cars@1.0", "scaler"));
+    }
+
+    [Fact]
+    public void AWorldSavedByAPlayerWithAnOptionalModDoesNotNeedIt()
+    {
+        using Rig rig = new(new ServerOptions { OptionalMods = "Scaler" });
+        Client a = rig.Join("Alice", mods: "Core,Scaler@2.0");
+        rig.Until(() => a.Joined && a.SnapshotWanted is not null, what: "the server to ask Alice for a world");
+        a.SnapshotWanted = null;
+        a.Upload(new Blob(BlobKind.World, "", a.Id, 5000, Rig.FakeWorld()));
+        rig.Until(() => rig.Server.HasWorld, what: "the server to have her world");
+        Assert.Equal(["Core"], rig.Server.RequiredMods);
+
+        Client b = rig.Join("Bob", mods: "Core");
+        rig.Until(() => b.Joined, what: "Bob to be let in without the optional mod");
+        Client c = rig.Join("Carol", mods: "Core,Scaler@1.0");
+        rig.Until(() => c.Joined, what: "Carol to be let in with another version of it");
+
+        Client asking = new(rig.Now);
+        rig.Clients.Add(asking);
+        asking.Probe(new IPEndPoint(IPAddress.Loopback, rig.Server.Port));
+        rig.Until(() => asking.Probed is not null, what: "a list of servers to be told it");
+        Assert.Equal(("Core", "Scaler"), (asking.Probed!.Mods, asking.Probed.Optional));
+    }
+
+    [Fact]
+    public void AModAWorldWasSavedWithIsNotRequiredOnceItIsOptional()
+    {
+        using Rig rig = new();
+        Client a = rig.Join("Alice", mods: "Core,Scaler@2.0");
+        rig.Until(() => a.Joined && a.SnapshotWanted is not null, what: "the server to ask Alice for a world");
+        a.SnapshotWanted = null;
+        a.Upload(new Blob(BlobKind.World, "", a.Id, 5000, Rig.FakeWorld()));
+        rig.Until(() => rig.Server.HasWorld, what: "the server to have her world");
+        rig.Server.Reconfigure(rig.Server.Options with { OptionalMods = "Scaler" });
+        Assert.Equal(["Core"], rig.Server.RequiredMods);
+    }
+
+    [Fact]
     public void WhatAModSaysOfACraftIsPassedOnFromItsOwnerAndNobodyElse()
     {
         using Rig rig = new();
@@ -2171,6 +2217,31 @@ public class ServerTests
         // The name that went stays: it is what the half that comes away again is called.
         Assert.True(rig.Server.Protected.Has("Capsule"));
         Assert.True(b.Spared("Station"));
+    }
+
+    [Fact]
+    public void ADebrisSweepIsTheGamesToTellAndForgetsWhatTheOwnerSaysIsGone()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        a.Claim("Lander", controlling: true, made: true);
+        a.Claim("Stage 1", controlling: false, made: true);
+        a.SendState(Rig.State("Lander", 5000));
+        rig.Until(() => b.OwnerOf("Stage 1") == a.Id, what: "the owners table");
+
+        rig.Server.SweepDebris();
+        rig.Until(() => a.SweptDebris.Count == 1 && b.SweptDebris.Count == 1, what: "both games to be told");
+        // Not a sweep of everything, which a game would take as clearing every craft nobody flies.
+        Assert.Empty(a.Swept);
+        Assert.Empty(b.Swept);
+        // The server cannot tell debris by name, so it keeps what it knew until a game says gone.
+        Assert.Equal(a.Id, b.OwnerOf("Stage 1"));
+        Assert.Equal(a.Id, rig.Server.OwnerOf("Stage 1"));
+
+        a.SayGone("Stage 1");
+        rig.Until(() => rig.Server.OwnerOf("Stage 1") == 0 && b.OwnerOf("Stage 1") == 0, what: "the stage Alice swept to go from the server");
+        Assert.Equal(a.Id, rig.Server.OwnerOf("Lander"));
     }
 
     [Fact]
