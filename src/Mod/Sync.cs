@@ -910,7 +910,7 @@ internal static class Sync
     }
 
     // Into this game's log and the server's: whoever runs the server is who is asked why it happened.
-    private static void Noted(string what)
+    public static void Noted(string what)
     {
         Log.Info(what);
         _client?.Note(what);

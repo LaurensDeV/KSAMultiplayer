@@ -604,6 +604,57 @@ internal static class Hooks
     {
         _launching = true;
         _launched = __instance.ExistingVehicle is null && __instance.LaunchNewVehicle;
+        if (_launched) FreeTheLaunchName(__instance);
+    }
+
+    /// <summary>
+    /// The name a craft leaves the editor under, moved off one something else has taken since the
+    /// editor gave it out, or that the player typed.
+    ///
+    /// <para>KSA names a new craft when the editor opens and launches it under that name without
+    /// looking again; only its launch menu looks again. In a shared world other players' craft keep
+    /// arriving while the editor is open, and one under the same name makes the launch a duplicate
+    /// KSA's lookup refuses: never simulated, a rocket that will not leave the pad, and recovering
+    /// it takes the other craft's entry and the Sun's slot out of the lookup with it. The Universe
+    /// Manifest then shows nothing, and the next vehicle editor opened crashes the game.</para>
+    /// </summary>
+    private static void FreeTheLaunchName(VehicleEditor editor)
+    {
+        try
+        {
+            string was = editor.EditingSpace.Id;
+            if (string.IsNullOrEmpty(was) || !NameTaken(was)) return;
+            string now = FreeName(was);
+            editor.EditingSpace.Id = now;
+            // Each kitten seated is held to the craft by name, and would be left aboard the one
+            // that already had it.
+            int crew = editor.EditingSpace.Parts is { } parts ? World.MoveCrew(parts, was, now) : 0;
+            Sync.Noted($"launched as {now}: {was} was taken while the editor was open{(crew > 0 ? $", and its crew of {crew} went with it" : "")}");
+        }
+        catch (Exception e)
+        {
+            Complain("giving a launch a name nothing else has", e);
+        }
+    }
+
+    // Here or in another player's world: the server would rename the second, but by then KSA has
+    // refused it here.
+    private static bool NameTaken(string name) => World.Taken(name) || Sync.SomebodyOwns(name);
+
+    private static string FreeName(string was)
+    {
+        if (was.StartsWith("NewRocket_", StringComparison.Ordinal))
+        {
+            for (int n = 1; n <= 999; n++)
+            {
+                if (!NameTaken($"NewRocket_{n}")) return $"NewRocket_{n}";
+            }
+        }
+        for (int n = 2; n <= 999; n++)
+        {
+            if (!NameTaken($"{was} ({n})")) return $"{was} ({n})";
+        }
+        return $"{was} ({Guid.NewGuid():N})";
     }
 
     // The other way a craft is launched: the menu for one already built, which places it the same
@@ -655,15 +706,13 @@ internal static class Hooks
     }
 
     /// <summary>
-    /// The name KSA gives a craft launched from the editor, stepped past names other games have
-    /// taken as well as this one's.
+    /// The name KSA gives a craft in the editor, stepped past names other games have taken as well
+    /// as this one's.
     ///
     /// <para>KSA steps N while <c>Universe.CurrentSystem</c> holds <c>NewRocket_N</c> -- this world
-    /// only, and worked out when the editor opens rather than when the craft is launched. So two
-    /// players building at once both get <c>NewRocket_1</c>, and a player whose editor was open
-    /// across somebody else's launch gets a name that player already owns. The server does rename a
-    /// craft a game says it made, but by then KSA's own lookup may have refused the duplicate and
-    /// left the craft out of the world entirely, which nothing can repair.</para>
+    /// only -- so two players building at once would both get <c>NewRocket_1</c>. This runs when the
+    /// editor opens, not at the launch: <see cref="FreeTheLaunchName"/> looks again then, for a name
+    /// taken while the editor was open.</para>
     /// </summary>
     private static void AfterNewVehicleId(ref string __result)
     {
@@ -673,7 +722,7 @@ internal static class Hooks
             for (int n = 1; n <= 999; n++)
             {
                 string name = $"NewRocket_{n}";
-                if (World.Taken(name) || Sync.SomebodyOwns(name)) continue;
+                if (NameTaken(name)) continue;
                 __result = name;
                 return;
             }
@@ -769,6 +818,7 @@ internal static class Hooks
             // KSA builds the planets' render data once and never comes back to it.
             Pads.LayOut();
             Sync.Settle();
+            World.WatchTheSun();
         }
         catch (Exception e)
         {

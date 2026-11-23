@@ -295,6 +295,14 @@ the server sends it once -- and the save folder is emptied before a save and rea
 was written. Otherwise the handover save left there from last time is zipped and handed on as the
 world now, and a game counts its thirty frames over a world it never loaded and says it is in the
 shared one.
+A craft launched from the vehicle editor is named again as the editor closes, where something
+here or another player's craft has taken its name since the editor opened: KSA names it then and
+launches it without looking again. A duplicate is refused by KSA's lookup and never simulated, and
+taking it away removes the other craft's entry and the Sun's slot, after which the Universe
+Manifest is empty and the next vehicle editor crashes the game. Its seated kittens are moved to the
+new name with it. `World.Destroy` also leaves alone any craft the lookup does not hold under its own
+name, and a lost Sun is logged, told to the server and shown to the player once.
+
 4. **Playing**, each frame:
    - **The flown craft is claimed**, when it changes and every two seconds, unless another player
      holds it: then this player is watching it, is told so once, and claims nothing. A game that
@@ -1261,6 +1269,10 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   roster following the name -- the server's half of the first three is in its tests.
 
 ## What has not been tried
+
+- **A launch renamed as the editor closes.** Not reproduced in a game: the clash that took the Sun
+  is inferred from KSA's code and the 2026-11-22 session's logs. Nor has a crew moved with the
+  name, nor the warning a lost Sun gives, been seen.
 
 - **The countdown to a server stopping.** `Closing`, the refused joins, the last save and the
   goodbye's reason are driven over loopback in the tests; nobody has watched the countdown drawn

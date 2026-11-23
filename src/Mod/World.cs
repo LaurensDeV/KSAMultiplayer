@@ -900,12 +900,65 @@ internal static class World
     {
         try
         {
-            if (IsAlive(v) && !ReferenceEquals(v, Controlled)) KSA.Universe.DestroyVehicle(v);
+            if (!IsAlive(v) || ReferenceEquals(v, Controlled)) return;
+            // KSA takes a craft out of its lookup by the hash of its name, then fills the slot the
+            // craft says it has with the last one. A craft the lookup refused as a duplicate says
+            // slot 0, which is the Sun: taken away, it takes the other craft's entry and the Sun.
+            if (KSA.Universe.CurrentSystem is { } system && !ReferenceEquals(system.All.Get(v.Id), v))
+            {
+                if (_notOurs.Add(v.Id)) Sync.Noted($"left {v.Id} where it is: this world's lookup holds something else under that name, and taking it away would take the Sun out of the world");
+                return;
+            }
+            KSA.Universe.DestroyVehicle(v);
         }
         catch (Exception e)
         {
             Log.Warn($"could not take {v.Id} away: {e.GetBaseException().Message}");
         }
+    }
+
+    // Said once a name, since a craft that cannot be taken away is asked to be again.
+    private static readonly HashSet<string> _notOurs = [];
+
+    /// <summary>
+    /// Each kitten seated in parts not yet launched, held to the craft by its old name, moved to its new one.
+    /// </summary>
+    /// <returns>How many were moved.</returns>
+    public static int MoveCrew(PartTree parts, string was, string now)
+    {
+        int moved = 0;
+        foreach (IVASeat seat in parts.Modules.Get<IVASeat>())
+        {
+            if (seat.AssignedKittenHash == KeyHash.Zero) continue;
+            if (KSA.Universe.KittenRoster.Find(seat.AssignedKittenHash) is not { } kitten || kitten.AssignedVehicleId != was) continue;
+            kitten.TransferToVehicle(now);
+            moved++;
+        }
+        return moved;
+    }
+
+    // The system last seen with a Sun, and whether its losing it has been said.
+    private static CelestialSystem? _sunSeenIn;
+    private static bool _sunLostSaid;
+
+    /// <summary>
+    /// Says once, loudly, when this world's lookup has lost its Sun. Nothing in KSA survives that
+    /// for long: the Universe Manifest draws nothing, and the vehicle editor dereferences the Sun
+    /// as it opens and takes the game down. Said here, the next time it happens explains itself.
+    /// </summary>
+    public static void WatchTheSun()
+    {
+        if (KSA.Universe.CurrentSystem is not { } system) return;
+        if (system.GetWorldSun() is not null)
+        {
+            if (!ReferenceEquals(_sunSeenIn, system)) (_sunSeenIn, _sunLostSaid) = (system, false);
+            return;
+        }
+        if (_sunLostSaid || !ReferenceEquals(_sunSeenIn, system)) return;
+        _sunLostSaid = true;
+        Log.Warn("this world has lost its Sun from KSA's lookup: the Universe Manifest will be empty and opening the vehicle editor will crash KSA");
+        Sync.Client?.Note("this world lost its Sun from KSA's lookup");
+        TimedAlert.CreateWarning("This world has lost track of its Sun: restart KSA before opening the vehicle editor, or it will crash.");
     }
 
     // ------------------------------------------------------------------ states
