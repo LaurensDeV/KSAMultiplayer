@@ -999,12 +999,14 @@ internal static class Hooks
         }
     }
 
-    private static bool BeforeDestroy(Vehicle vehicle)
+    private static bool BeforeDestroy(Vehicle vehicle, VehicleDestructionEvent destructionEvent)
     {
         try
         {
             Sync.WreckedUnspared(vehicle, "destroyed");
-            return !Sync.Spared(vehicle);
+            if (!Sync.Spared(vehicle)) return true;
+            Sync.SparedFrom(vehicle, $"being wrecked ({destructionEvent.Cause}, {destructionEvent.PeakGLoad:0.0} g)");
+            return false;
         }
         catch (Exception e)
         {
@@ -1033,12 +1035,14 @@ internal static class Hooks
     /// have it refused again, which is what the prefix above does all the while a puppet is being
     /// held against the ground.</para>
     /// </summary>
-    private static bool BeforePartFailure(Vehicle vehicle)
+    private static bool BeforePartFailure(PartFailureEvent __instance, Vehicle vehicle)
     {
         try
         {
             Sync.WreckedUnspared(vehicle, "failing parts");
-            return !Sync.Spared(vehicle);
+            if (!Sync.Spared(vehicle)) return true;
+            Sync.SparedFrom(vehicle, __instance.DestroyWholeVehicle ? "coming apart whole" : $"{__instance.FailedParts.Count} parts failing");
+            return false;
         }
         catch (Exception e)
         {

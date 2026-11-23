@@ -617,6 +617,16 @@ crashed is no puppet for the frame it is told in, and the crash this world's own
 for it went through in that frame: its pieces were shed here under the names its owner's pieces
 have, and stood in for them.
 
+So is a craft that was another player's moments ago, for thirty seconds after it stops being a
+puppet -- every craft of a player who leaves stops at once -- unless this player is flying it.
+Whatever this world's physics had been trying to do to it was refused while it was theirs, and went
+off the instant it was not: on 2026-11-23 a protected station was wrecked in one game nine seconds
+after its owner left, into KSA's twelve pieces, and that game, holding it for being near, said it
+gone. Each refusal is written down once a minute a craft, with the cause and the G-load, which is
+what would have said something was wrecking it all along. And the server does not take the word
+of a game that took a protected craft over less than a minute ago that it is gone: it stays in
+every other world and on the list, and is nobody's.
+
 Docking is the same rule. KSA docks two craft in the world whose physics saw their ports touch, by
 taking the lighter into the heavier, or from a port's own menu when two are within 2 m; both end in
 `DockingPort.Dock`, and a prefix there refuses it where either is another player's, as one on

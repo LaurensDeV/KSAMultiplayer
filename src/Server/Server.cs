@@ -324,6 +324,9 @@ public sealed class GameServer : IDisposable
         /// <summary>The last player to fly it: held by them as well, it is their craft and not their debris.</summary>
         public byte FlownBy;
 
+        /// <summary>When it last changed hands, on the server's clock; negative infinity for a craft that never has.</summary>
+        public double TakenAt = double.NegativeInfinity;
+
         /// <summary>Who last said how it is built, and the universe time their game wrote that down at.</summary>
         public byte WrittenBy;
         public double Written;
@@ -402,6 +405,9 @@ public sealed class GameServer : IDisposable
     // vehicle editor open holds the ask unanswered, and the world sent at the end of the wait was
     // minutes old: seven joins started 90 to 455 s behind in one evening.
     private const double AskNextAfterSeconds = 5.0;
+
+    // How long after a protected craft changes hands its new holder's word that it is gone is not taken.
+    private const double ProtectedTakenSeconds = 60.0;
 
     // How long a craft let go of for a watcher is kept for them, against anybody else's game.
     private const double FreedForSeconds = 5.0;
@@ -1072,6 +1078,17 @@ public sealed class GameServer : IDisposable
                 if (claim.Controlling) Flying(player, granted);
                 if (!had) OwnersChanged();
                 return;
+            // A protected craft its game took over moments ago is not gone for everybody on that
+            // game's word: what this world's physics had for it while it was somebody else's goes
+            // off as it changes hands, and a station was wrecked in one game nine seconds after its
+            // owner left, said gone everywhere, and saved out of the world. Left where it is in
+            // every other world, and nobody's.
+            case Wire.Gone gone when player.Loaded && OwnerOf(gone.Key) == player.Id
+                                     && Protected.Has(gone.Key) && _clock() - _crafts[gone.Key].TakenAt < ProtectedTakenSeconds:
+                _crafts[gone.Key].Owner = 0;
+                OwnersChanged();
+                Log($"{player.Name}'s game says {gone.Key} is gone, {_clock() - _crafts[gone.Key].TakenAt:0} s after taking it: it is protected, so it stays in every other world");
+                return;
             case Wire.Gone gone when player.Loaded && OwnerOf(gone.Key) == player.Id:
                 _crafts.Remove(gone.Key);
                 player.Crafts--;
@@ -1617,7 +1634,8 @@ public sealed class GameServer : IDisposable
     {
         // A craft its game makes is its own whenever it is made; it asks again for anything else.
         if (!made && OwnerOf(key) != p.Id && TooFarBehind(p)) return null;
-        if (!_crafts.TryGetValue(key, out Craft? craft))
+        bool fresh = !_crafts.TryGetValue(key, out Craft? craft);
+        if (craft is null)
         {
             // A name that has gone is not claimed back, or a game that has not heard yet would
             // bring the craft back by speaking of it. But a craft a game has just made is another
@@ -1687,7 +1705,8 @@ public sealed class GameServer : IDisposable
         p.Crafts++;
         if (_players.TryGetValue(craft.Owner, out Player? was) && was.Controlling == key) Flying(was, "");
         (craft.Owner, craft.AttendedAt, craft.Near, craft.NearAt, craft.Said) = (p.Id, _clock(), near, _clock(), null);
-        (craft.FreedFor, craft.FreedSaid) = (0, false);
+        // Only a craft that was here before changes hands: one just made is its maker's.
+        (craft.FreedFor, craft.FreedSaid, craft.TakenAt) = (0, false, fresh ? double.NegativeInfinity : _clock());
         _gone.Remove(key);
         OwnersChanged();
         return key;

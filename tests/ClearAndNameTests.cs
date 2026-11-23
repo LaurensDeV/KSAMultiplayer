@@ -120,4 +120,45 @@ public class ClearAndNameTests
         stalled.Heard(2070.0, 2070.0);
         Assert.Equal(0.0, stalled.Share);
     }
+
+    /// <summary>
+    /// A protected station whose owner has left is held by the game near it, and goes off in that
+    /// game's physics at once. That game's word is not taken: the station stays in every other world
+    /// and on the list. A minute on, the game holding it is its owner like any other.
+    /// </summary>
+    [Fact]
+    public void AProtectedCraftJustTakenOverIsNotGoneOnItsNewHoldersWord()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        Client c = JoinAndLoad(rig, "Carol");
+        a.Claim("Station", controlling: false, made: false);
+        rig.Until(() => rig.Server.OwnerOf("Station") == a.Id, what: "Alice to hold the station");
+        Assert.Contains("Station is now protected", rig.Server.Protect("Station"));
+
+        a.Dispose();
+        rig.Until(() => rig.Server.OwnerOf("Station") == 0, seconds: 15, what: "Alice's station to be nobody's");
+        b.Claim("Station", controlling: false, made: false, near: true);
+        rig.Until(() => rig.Server.OwnerOf("Station") == b.Id, what: "Bob to hold the station for being near");
+
+        b.SayGone("Station");
+        rig.Until(() => rig.Server.Said.Any(s => s.Contains("it is protected, so it stays in every other world")), what: "the refusal");
+        rig.For(1.0);
+        Assert.True(rig.Server.Protected.Has("Station"));
+        Assert.DoesNotContain("Station", c.Gone);
+
+        // Held outright for a minute, it is Bob's like any craft, and his word stands.
+        b.Claim("Station", controlling: true, made: false);
+        rig.Until(() => rig.Server.OwnerOf("Station") == b.Id, what: "Bob to hold the station again");
+        // A second at a time, so that nobody goes quiet.
+        for (int i = 0; i < 61; i++)
+        {
+            rig.Skip(1.0, real: 0.0);
+            rig.For(0.01);
+        }
+        b.SayGone("Station");
+        rig.Until(() => c.Gone.Contains("Station"), what: "Carol to hear it is gone");
+        Assert.False(rig.Server.Protected.Has("Station"));
+    }
 }

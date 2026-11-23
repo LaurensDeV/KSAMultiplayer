@@ -556,8 +556,42 @@ internal static class Sync
     /// this world's own physics had ready for it went through in that frame: its pieces were shed
     /// here under the names its owner's pieces have, were nobody's, and stood in for them -- one
     /// fell through the ground at 65 m/s for two minutes while its owner had it lying on a pad.
+    ///
+    /// <para>Or one that was another player's moments ago and is nobody's now, as every craft of a
+    /// player who has left is: anything this world's physics had been trying to do to it was refused
+    /// while it was theirs, and went through the instant it was not. A protected station was wrecked
+    /// in one game nine seconds after its owner left, and that game, holding it for being near, said
+    /// it gone everywhere. Not one this player is flying, which is theirs to crash.</para>
     /// </summary>
-    public static bool Spared(Vehicle v) => Puppets.ContainsKey(v) || ToRemove.Contains(v);
+    public static bool Spared(Vehicle v) =>
+        Puppets.ContainsKey(v) || ToRemove.Contains(v)
+        || (Orphaned.TryGetValue(v, out double since) && Wall() - since < OrphanSparedSeconds && !ReferenceEquals(v, World.Controlled));
+
+    // Craft that stopped being another player's, and when.
+    private static readonly Dictionary<Vehicle, double> Orphaned = [];
+    private const double OrphanSparedSeconds = 30.0;
+
+    /// <summary>
+    /// Said when the guard above refuses what this world's physics would do to a craft, once a
+    /// minute a craft: refused in silence, a station had something wrecking it every few seconds for
+    /// as long as it was another player's, and nothing said so until it was nobody's and went.
+    /// </summary>
+    public static void SparedFrom(Vehicle v, string what)
+    {
+        string key = KeyOf(v);
+        double now = Wall();
+        if (SparedSaid.TryGetValue(key, out double said) && now - said < SparedSaidEverySeconds) return;
+        SparedSaid[key] = now;
+        bool touching = false;
+        try { touching = v.Situation.HasAnyContact(); } catch (Exception) { }
+        string whose = Puppets.ContainsKey(v) ? "another player's" : ToRemove.Contains(v) ? "on its way out" : "nobody's since moments ago";
+        Log.Info($"spared {key}, {whose}, from {what} in this world, {(touching ? "touching something" : "touching nothing")}");
+    }
+
+    private static readonly Dictionary<string, double> SparedSaid = [];
+    private const double SparedSaidEverySeconds = 60.0;
+
+    /// <summary>
 
     /// <summary>
     /// Said once a craft when a copy built here is wrecked before it is anybody's puppet, which is
@@ -566,7 +600,8 @@ internal static class Sync
     /// </summary>
     public static void WreckedUnspared(Vehicle v, string how)
     {
-        if (Spared(v) || Built.FirstOrDefault(b => ReferenceEquals(b.Value, v)).Key is not { } key || !WreckSaid.Add(key)) return;
+        // Nor one this game has taken since, which is its own to wreck.
+        if (Spared(v) || Built.FirstOrDefault(b => ReferenceEquals(b.Value, v)).Key is not { } key || Owned.ContainsKey(key) || !WreckSaid.Add(key)) return;
         double g = double.NaN;
         bool touching = false;
         try
@@ -2937,7 +2972,12 @@ internal static class Sync
                 if (track.Newest is { } moving && (moving.Flags & (Wire.StateFlags.Rails | Wire.StateFlags.Landed)) == 0) SayWhatThePullDid(key, v, now);
             }
         }
-        foreach (Vehicle v in Puppets.Keys.Where(p => !wanted.Contains(p)).ToArray()) Puppets.Remove(v);
+        foreach (Vehicle v in Puppets.Keys.Where(p => !wanted.Contains(p)).ToArray())
+        {
+            Puppets.Remove(v);
+            if (World.IsAlive(v)) Orphaned[v] = now;
+        }
+        foreach (Vehicle v in Orphaned.Where(o => !World.IsAlive(o.Key) || now - o.Value >= OrphanSparedSeconds).Select(o => o.Key).ToArray()) Orphaned.Remove(v);
         foreach (Vehicle v in Engines.Keys.Where(p => !Puppets.ContainsKey(p)).ToArray()) Engines.Remove(v);
         UnderWay.RemoveWhere(k => !Puppets.ContainsValue(k));
         foreach (string k in OffRailsSince.Keys.Where(k => !Puppets.ContainsValue(k)).ToArray()) OffRailsSince.Remove(k);
