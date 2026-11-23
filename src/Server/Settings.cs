@@ -52,7 +52,15 @@ public static class Settings
         new("discord-operators", Kind.Text, "", "Discord user ids, separated by commas, who are operators here whenever they log in with Discord: admins who may also download the server's log; listed in discord-admins too, they are operators", true),
         new("discord-trusted", Kind.Text, "", "Discord user ids, separated by commas, who are trusted here whenever they log in with Discord: they may clear, remove, protect, rename, save, load and kick, but not delete saves, save over them, reload or give roles", true),
         new("discord-login", Kind.Text, Discord.Service, "the service whose certificates say who a player is on Discord, asked only once 'op discord:<id>' has made a Discord user an admin; empty to take no Discord logins", true),
+        new("web", Kind.Flag, "false", "serve the web viewer, which shows this server's world to anybody who can reach it", false),
+        new("web-port", Kind.Whole, "0", "TCP port for the web viewer; 0 for the same number as port, which is UDP and so is not taken", false),
+        new("web-bind", Kind.Text, "127.0.0.1", "address the web viewer listens on; loopback by default, so a reverse proxy is the way out; empty for every address", false),
+        new("web-admin-password", Kind.Text, "", "password for admin commands on the web viewer; empty turns web admin off", true),
+        new("web-trust-proxy", Kind.Text, "", "addresses of reverse proxies whose X-Forwarded headers the web viewer believes, separated by commas", false),
     ];
+
+    /// <summary>The settings whose values are never said: not in the log, not in a listing.</summary>
+    public static bool Secret(string key) => key is "password" or "web-admin-password";
 
     public const string FileName = "ksamp-server.toml";
 
@@ -137,6 +145,17 @@ public static class Settings
                 : ids;
         }
 
+        // Zero in the options is no viewer, which is what the rest of the server asks.
+        int WebPort()
+        {
+            int p = Whole("web-port");
+            if (p is < 0 or > 65535) throw new FormatException($"web-port {p} is not a port");
+            return !Flag("web") ? 0 : p == 0 ? Whole("port") : p;
+        }
+
+        string WebAddress(string key, string v) =>
+            v.Trim() is not { Length: > 0 } a ? "" : IPAddress.TryParse(a, out _) ? a : throw new FormatException($"{key} has '{a}', which is not an address");
+
         int port = Whole("port");
         if (port is < 0 or > 65535) throw new FormatException($"port {port} is not a port");
         ServerOptions options = new()
@@ -168,6 +187,11 @@ public static class Settings
             DiscordAdmins = DiscordIds("discord-admins"),
             DiscordTrusted = DiscordIds("discord-trusted"),
             DiscordOperators = DiscordIds("discord-operators"),
+            WebPort = WebPort(),
+            WebBind = WebAddress("web-bind", Text("web-bind")),
+            WebAdminPassword = Text("web-admin-password"),
+            WebTrustProxy = string.Join(',', Text("web-trust-proxy").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(a => WebAddress("web-trust-proxy", a))),
         };
         IPAddress? bind = Text("bind").Trim() is { Length: > 0 } b
             ? IPAddress.TryParse(b, out IPAddress? at) ? at : throw new FormatException($"bind is '{b}', which is not an address")

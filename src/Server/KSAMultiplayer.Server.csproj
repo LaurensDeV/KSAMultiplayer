@@ -21,6 +21,16 @@
     <ProjectReference Include="..\Protocol\KSAMultiplayer.Protocol.csproj" />
   </ItemGroup>
 
+  <!--
+    The web viewer (src/Server/Web), off unless web is set: Kestrel inside this process, and
+    the page compiled in as resources so the server is still one file.
+  -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <InternalsVisibleTo Include="KSAMultiplayer.Tests" />
+    <EmbeddedResource Include="Web\Page\*" LogicalName="web/%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <!-- The KSA build this server holds players to, from Directory.Build.props: read back in Program.cs. -->
   <ItemGroup>
     <AssemblyMetadata Include="KsaBuild" Value="$(KsaBuild)" />

@@ -26,5 +26,8 @@ RUN useradd --system --home /data ksamp && chown ksamp /data
 USER ksamp
 # 50100 is where a server set up before 28500 was the default still listens.
 EXPOSE 28500/udp 50100/udp
+# The web viewer, for -e KSAMP_WEB=true -e KSAMP_WEB_BIND= and -p 28500:28500/tcp: the game port's
+# number, over TCP. Off unless both are given: it shows the whole world to anybody who can reach it.
+EXPOSE 28500/tcp
 VOLUME /data
 ENTRYPOINT ["dotnet", "/app/ksamp-server.dll", "--config", "/data/ksamp-server.toml", "--data", "/data"]

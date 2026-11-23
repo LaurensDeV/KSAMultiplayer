@@ -356,6 +356,9 @@ public sealed class Client : IDisposable
     /// <summary>Set when the server asks for a save of this world; cleared by whoever answers it.</summary>
     public string? SnapshotWanted { get; set; }
 
+    /// <summary>Set when the server asks this game to describe its system; cleared by whoever answers it.</summary>
+    public bool DescribeWanted { get; set; }
+
     public Udp Socket => _udp;
 
     /// <summary>The server's universe time now and how fast it runs, once it has said and the clocks are measured.</summary>
@@ -832,6 +835,9 @@ public sealed class Client : IDisposable
                 return;
             case Wire.Closing cl when Joined && cl.Session == _session && float.IsFinite(cl.Seconds):
                 (ClosingAt, ClosingWhy) = (arrived + Math.Clamp(cl.Seconds, 0f, 3600f), cl.Why);
+                return;
+            case Wire.Describe when Joined:
+                DescribeWanted = true;
                 return;
             case Wire.Bye b when _session.Length == 0 || b.Session == _session:
                 Leave(b.Why.Length > 0 ? $"the server closed the connection: {b.Why}" : "the server closed the connection");
