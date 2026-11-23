@@ -198,7 +198,8 @@ public static class Wire
     /// <para>31 is the operator: <see cref="Role.Operator"/> in an <see cref="Op"/>, and the server's
     /// log sent to one who asks for it as a <see cref="BlobKind.Log"/>.</para>
     ///
-    /// <para>32 is <see cref="Claim.Undocked"/>.</para>
+    /// <para>32 is <see cref="Claim.Undocked"/>. <see cref="Closing"/> came later without moving
+    /// it: a game that does not know the kind drops it and still gets the goodbye.</para>
     /// </summary>
     public const ushort Version = 32;
 
@@ -350,6 +351,7 @@ public static class Wire
         Name = 32,
         DiscordProof = 33,
         DiscordUser = 34,
+        Closing = 35,
     }
 
     /// <summary>Where a warp has got to: nobody has asked, somebody has and is waiting, or it is running.</summary>
@@ -719,6 +721,16 @@ public static class Wire
     public sealed record Note(string Text) : Message(Kind.Note);
 
     /// <summary>
+    /// The server is about to stop, and how long it has left: said again every second until it
+    /// does, so a game shows the time running out and a player can land before the world goes.
+    /// A game that does not know the kind drops it, so a server may say it to games older than
+    /// itself; they get the <see cref="Bye"/> all the same.
+    /// </summary>
+    /// <param name="Why">What the stop is for, said by whoever stopped it.</param>
+    /// <param name="Session">The session's word from its <see cref="Welcome"/>, as on a <see cref="Bye"/>: anybody can write the server's address on a datagram.</param>
+    public sealed record Closing(float Seconds, string Why, string Session = "") : Message(Kind.Closing);
+
+    /// <summary>
     /// A craft given another name: asked of the server by a game, with nobody in
     /// <paramref name="By"/>, and said by the server to every game once it has done it, with who
     /// asked. Every record of the craft follows the name, and every game renames its copy.
@@ -972,6 +984,11 @@ public static class Wire
             case Note n2:
                 w.LongText(n2.Text, NoteChars);
                 break;
+            case Closing cl:
+                w.F32(cl.Seconds);
+                w.Text(cl.Why, 200);
+                w.Text(cl.Session, CookieChars);
+                break;
             case Name nm:
                 w.Text(nm.Was, KeyChars);
                 w.Text(nm.Now, KeyChars);
@@ -1061,6 +1078,7 @@ public static class Wire
                 Kind.Chat => new Chat(r.U8(), r.Text(ChatChars)),
                 Kind.Command => new Command(r.Text(ChatChars), r.More ? r.Text(CookieChars) : ""),
                 Kind.Note => new Note(r.LongText(NoteChars)),
+                Kind.Closing => new Closing(r.F32(), r.Text(200), r.Text(CookieChars)),
                 Kind.Name => new Name(r.Text(KeyChars), r.Text(KeyChars), r.U8(), r.U32()),
                 Kind.Op => ReadOp(ref r),
                 Kind.DiscordProof => new DiscordProof(r.LongText(KSAMultiplayer.Discord.CertChars), r.Text(255), r.Text(KSAMultiplayer.Discord.SignatureChars)),

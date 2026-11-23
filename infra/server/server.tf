@@ -79,8 +79,13 @@ resource "docker_container" "server" {
   # either, and a bound means a server that misbehaves cannot take the rest of the machine with it.
   memory = var.memory_mb
 
-  # Long enough for SIGTERM to be answered: the server says goodbye to every player before it closes.
-  stop_timeout = 20
+  # Long enough for SIGTERM to be answered: the server counts the players down for stop-notice
+  # seconds (15), waits up to 5 s for a last save, says goodbye, then leaves the directories (up to
+  # 4 s). `stop_timeout` is what `docker stop` gives it; `destroy_grace_seconds` is what a release
+  # replacing the container gives it, and without it that was none: "failed to exit within 0s of
+  # signal 15 - using the force", the last two minutes of play lost, and nobody told why.
+  stop_timeout          = 40
+  destroy_grace_seconds = 40
 
   # The host's journal, not the container's own file. Docker throws a json-file log away with the
   # container that wrote it, and a release replaces this container every time: every line since the
@@ -184,7 +189,9 @@ resource "docker_container" "other_world" {
 
   memory = coalesce(each.value.memory_mb, var.memory_mb)
 
-  stop_timeout = 20
+  # As the first server's, for the same countdown and last save.
+  stop_timeout          = 40
+  destroy_grace_seconds = 40
 
   # The host's journal, for the reason the first server's is: a release replaces these containers too.
   log_driver = "journald"

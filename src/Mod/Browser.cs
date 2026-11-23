@@ -243,9 +243,7 @@ internal static class Browser
     }
 
     /// <summary>What to do about a server that speaks another protocol version than this mod, which is whichever of the two is older being brought up to date.</summary>
-    public static string Versions(ushort theirs) => theirs > Wire.Version
-        ? $"speaks protocol {theirs} and this mod speaks {Wire.Version}: install the newest KSA Multiplayer to join"
-        : $"speaks protocol {theirs} and this mod speaks {Wire.Version}: the server has not been updated to this release yet";
+    public static string Versions(ushort theirs) => Client.Versions(theirs);
 
     public static string Why(Row r)
     {

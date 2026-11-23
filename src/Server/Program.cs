@@ -367,16 +367,24 @@ if (tracePath is not null)
 // The time of day, which is the one clock this process and a game on the same machine both read.
 double Wall() => (DateTime.UtcNow - DateTime.UnixEpoch).TotalSeconds;
 
+// A stop is asked for, then counted down on the players' screens and the world saved before the
+// loop ends; asked for again, it ends at once. A redeploy that cut players off mid-flight lost
+// two minutes of play and told nobody why.
 CancellationTokenSource stop = new();
+string? stopWhy = null;
+void AskStop(string why)
+{
+    if (Interlocked.CompareExchange(ref stopWhy, why, null) is not null) stop.Cancel();
+}
 Console.CancelKeyPress += (_, e) =>
 {
     e.Cancel = true;
-    stop.Cancel();
+    AskStop("the server is being stopped");
 };
 using PosixSignalRegistration term = PosixSignalRegistration.Create(PosixSignal.SIGTERM, c =>
 {
     c.Cancel = true;
-    stop.Cancel();
+    AskStop("the server is restarting");
 });
 
 System.Collections.Concurrent.ConcurrentQueue<string> commands = new();
@@ -639,7 +647,7 @@ void Run(string line, GameServer.Player? who, Action<string> Answer)
             {
                 Answer($"  {"settings".PadRight(18)} read the settings file again");
                 Answer($"  {"set <key> <value>".PadRight(18)} change a setting and keep it in the file; set alone lists them");
-                Answer($"  {"quit".PadRight(18)} stop the server");
+                Answer($"  {"quit [why]".PadRight(18)} stop the server, after counting the players down; again to stop at once");
             }
             else Answer("  quit, settings and set can only be run from the server console");
             break;
@@ -663,7 +671,7 @@ void Run(string line, GameServer.Player? who, Action<string> Answer)
             // The console's alone: a server nobody can start again is not something to hand to an admin
             // who meant to leave the world rather than end it.
             if (who is not null) Answer("quit can only be run from the server console");
-            else stop.Cancel();
+            else AskStop(rest.Length > 0 ? rest : "the operator stopped the server");
             break;
         default:
             Answer($"no command '{parts[0]}'; try help");
@@ -737,6 +745,11 @@ void Set(string rest)
 
 // Ticked often enough that a state is passed on within a frame of its arriving.
 const int TickMs = 5;
+// Long enough for a game to write and send a world of a few hundred KB; a host stopping this process gives it only so long.
+const double LastSaveWithinSeconds = 5.0;
+// When the countdown ends, and then the universe time a last save has to reach and how long it is waited for.
+double stopAt = double.NaN, saveUntil = double.NaN;
+double? lastSave = null;
 while (!stop.IsCancellationRequested)
 {
     try
@@ -750,6 +763,27 @@ while (!stop.IsCancellationRequested)
         announcer.Tick();
         while (server.Said.TryDequeue(out string? s)) Say(s);
         while (announcer.Said.TryDequeue(out string? s)) Say(s);
+        if (Volatile.Read(ref stopWhy) is { } why && double.IsNaN(stopAt))
+        {
+            double notice = server.AnyonePlaying ? server.Options.StopNoticeSeconds : 0.0;
+            if (notice > 0.0) server.Close(notice, why);
+            else Say($"stopping: {why}");
+            stopAt = Wall() + notice;
+        }
+        if (Wall() >= stopAt)
+        {
+            if (double.IsNaN(saveUntil))
+            {
+                lastSave = server.AskLastSave();
+                saveUntil = Wall() + LastSaveWithinSeconds;
+            }
+            if (lastSave is not { } universe || server.SavedSince(universe)) break;
+            if (Wall() > saveUntil)
+            {
+                Say("stopping without a last save: nobody gave one in time");
+                break;
+            }
+        }
     }
     catch (Exception e)
     {
@@ -760,9 +794,11 @@ while (!stop.IsCancellationRequested)
 }
 
 Say("shutting down");
+// The goodbye before the directories: withdrawing takes seconds, and a host stopping this
+// process does not wait long.
+server.Dispose();
 announcer.Dispose();
 while (announcer.Said.TryDequeue(out string? last)) Say(last);
-server.Dispose();
 return 0;
 
 static class Timers

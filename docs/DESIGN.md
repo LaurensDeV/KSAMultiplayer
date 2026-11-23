@@ -81,6 +81,14 @@ stranger sent it.
   of it from a server it cannot trust, writes it under `KSAMultiplayer/server-logs` in KSA's documents folder
   and opens it with the shell (`ServerLogs`). `infra/server` gives every world the list from the
   `KSAMP_DISCORD_OPERATORS` repository variable.
+- **The last save before stopping.** A stop asked for (SIGTERM, Ctrl+C, `quit [why]`) with players
+  in the world is counted down on their screens for `--stop-notice` seconds (15) by a `Closing`,
+  said every second with the session's word; joins are refused meanwhile. Then the player in longest
+  is asked for a save and it is waited for up to 5 s, the goodbye carries the reason, and the
+  directories are withdrawn from last, since that can take 4 s. A second stop ends it at once. A
+  release replacing the container gave it no time at all, and the two minutes since the last save
+  went with it. A game that does not know `Closing` drops it and gets the goodbye all the same, so
+  the kind came without a new protocol version.
 - **Worlds under names.** `saves/` in `--data`, a zip and a `.json` each (`SaveShelf`): what an admin
   keeps to come back to and loads over the world for everybody. Keeping one asks the admin's own
   game for a fresh save and files it when it comes, or files the world as held after twenty seconds
@@ -239,7 +247,10 @@ A datagram says where it is from and nothing shows it, and a game that is in say
   in its hello that it says the word back, and one from before does not and is held to none, so
   the two share a server. A game holds the server's goodbye to the same word.
 - **A game of another version is answered with seven bytes**, off which it reads the server's
-  version; the sentence it shows is its own.
+  version; the sentence it shows is its own. A game already in a world never acts on one, since
+  anybody can write the server's address on a datagram, but it remembers it: when the server it
+  was in comes back updated, the silence that ends the session is put down to that, and the
+  player is told to install the newest mod rather than that nothing came for ten seconds.
 - **A wrong password counts against its address**: five in a minute and the address is refused for
   the rest of it, with the right one too. Compared as hashes. It still crosses the network as typed.
 - **A world asked for is looked at before it is kept**: a zip, of names a save has, unpacking to
@@ -1250,6 +1261,10 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   roster following the name -- the server's half of the first three is in its tests.
 
 ## What has not been tried
+
+- **The countdown to a server stopping.** `Closing`, the refused joins, the last save and the
+  goodbye's reason are driven over loopback in the tests; nobody has watched the countdown drawn
+  in a game, nor seen a release's 40 s of grace answered by a deploy on the VPS.
 
 - **A Discord login on a port the system picks.** The listener and the service's redirect are
   driven in the tests; no browser has come back to a game on one.

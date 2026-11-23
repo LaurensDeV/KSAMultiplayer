@@ -300,6 +300,25 @@ public sealed class Client : IDisposable
     }
     public Queue<string> Said { get; } = new();
 
+    /// <summary>
+    /// When the server said it stops, on this end's clock, or NaN while it has said nothing of the
+    /// kind. Kept past the leaving, so whatever shows the time running out can also show it ran out.
+    /// </summary>
+    public double ClosingAt { get; private set; } = double.NaN;
+
+    /// <summary>What the server said its stop is for, with <see cref="ClosingAt"/>.</summary>
+    public string ClosingWhy { get; private set; } = "";
+
+    // A protocol version other than this one, heard from the server's address while joined: never
+    // acted on then, since anybody can write that address on a datagram, but it is why a server
+    // that went quiet went quiet when it came back updated, and the player is told so.
+    private ushort _foreignVersion;
+
+    /// <summary>What to do about a server that speaks another protocol version than this mod: bring whichever of the two is older up to date.</summary>
+    public static string Versions(ushort theirs) => theirs > Wire.Version
+        ? $"speaks protocol {theirs} and this mod speaks {Wire.Version}: install the newest KSA Multiplayer to join"
+        : $"speaks protocol {theirs} and this mod speaks {Wire.Version}: the server has not been updated to this release yet";
+
     /// <summary>What a game logged in with Discord signs at this join, or empty where this server takes no Discord logins.</summary>
     public string DiscordNonce { get; private set; } = "";
 
@@ -365,6 +384,7 @@ public sealed class Client : IDisposable
         (DiscordNonce, Discord, _discordAsk) = ("", null, null);
         _hello = new Wire.Hello(Wire.Clip(name, Wire.NameChars), ksaBuild, mods, system, password, Wire.Clip(token, Wire.TokenChars), Sessions: true);
         _session = "";
+        (ClosingAt, ClosingWhy, _foreignVersion) = (double.NaN, "", 0);
         (_helloNext, _joinUntil, _heardAt) = (0.0, _clock() + JoinWithinSeconds, _clock());
         (_bestRtt, _lastRtt, ServerOffset, _serverClock, _serverRate) = (double.PositiveInfinity, double.NaN, 0.0, null, 0.0);
         _saidGone.Clear();
@@ -526,7 +546,11 @@ public sealed class Client : IDisposable
             if (!d.From.Equals(_server)) continue;
             if (Wire.Read(d.Data, out ushort version) is not { } m)
             {
-                if (version != 0 && version != Wire.Version && !Joined) Leave($"the server uses protocol version {version} and your mod uses {Wire.Version}: one of them needs updating");
+                if (version != 0 && version != Wire.Version)
+                {
+                    if (!Joined) Leave($"the server {Versions(version)}");
+                    else _foreignVersion = version;
+                }
                 continue;
             }
             Handle(m, d.Arrived);
@@ -579,7 +603,12 @@ public sealed class Client : IDisposable
             }
         }
         _link.Pump(now, Send);
-        if (now - _heardAt > SilentSeconds) Leave("lost connection: nothing from the server for ten seconds");
+        if (now - _heardAt > SilentSeconds)
+        {
+            Leave(_foreignVersion != 0 ? $"lost connection: the server was updated, and now {Versions(_foreignVersion)}"
+                  : double.IsFinite(ClosingAt) ? $"lost connection: the server stopped{(ClosingWhy.Length > 0 ? $" ({ClosingWhy})" : "")} without saying goodbye"
+                  : "lost connection: nothing from the server for ten seconds");
+        }
     }
 
     private void Leave(string why)
@@ -768,6 +797,9 @@ public sealed class Client : IDisposable
                 return;
             // With the session's word, where the server gave one: a goodbye is one datagram, and
             // anybody can write the server's address on one.
+            case Wire.Closing cl when Joined && cl.Session == _session && float.IsFinite(cl.Seconds):
+                (ClosingAt, ClosingWhy) = (arrived + Math.Clamp(cl.Seconds, 0f, 3600f), cl.Why);
+                return;
             case Wire.Bye b when _session.Length == 0 || b.Session == _session:
                 Leave(b.Why.Length > 0 ? $"the server closed the connection: {b.Why}" : "the server closed the connection");
                 return;

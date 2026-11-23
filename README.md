@@ -275,6 +275,7 @@ like `quit`.
 | `--radiation` | `KSAMP_RADIATION` | `true` | whether kittens take a dose from radiation, for every player |
 | `--clear-pads` | `KSAMP_CLEAR_PADS` | `true` | clear away debris left on a launchpad for five minutes, and a craft only when its site is full |
 | `--warp-answer` | `KSAMP_WARP_ANSWER` | `30` | seconds everyone has to answer a warp |
+| `--stop-notice` | `KSAMP_STOP_NOTICE` | `15` | seconds the players are shown a countdown before the server stops; `0` for none |
 | `--lapse-within` | `KSAMP_LAPSE_WITHIN` | `10` | seconds a craft stays its owner's once another player is watching it and they are neither in it nor looking at it |
 | `--speed` | `KSAMP_SPEED` | `1` | how fast universe time runs |
 | `--empty-world` | `KSAMP_EMPTY_WORLD` | | start with an empty world of this system (`SolLite` or `Sol`) instead of waiting for a player; also what `fresh` puts in place |
@@ -306,7 +307,11 @@ standing next to their rocket keeps it. The chat says what was cleared and why.
 every craft gone, universe time started over, and everybody handed the new world where they stand.
 The world it throws away is kept first, as a `before fresh` save in SERVER SAVES, so `load` brings
 it back. An admin can type it in chat as `/fresh`; a trusted player cannot.
-It shuts down cleanly on Ctrl+C and on SIGTERM.
+It shuts down cleanly on Ctrl+C, on SIGTERM and on `quit [why]`: with players in the world, it
+counts them down on screen for `stop-notice` seconds, refuses new joins, asks for a last save and
+waits up to 5 s for it, says goodbye with the reason, and only then leaves the directories. A second
+Ctrl+C or SIGTERM stops it at once. Whatever stops the process has to give it that long: the
+containers here are given 40 s (`infra/server/server.tf`).
 
 `version` says what the server is, the protocol it speaks and the KSA build it holds players to --
 the protocol being the number that decides who can join, and the one to ask for when somebody is

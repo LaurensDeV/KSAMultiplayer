@@ -130,6 +130,7 @@ internal static class Panel
     {
         if (!_loaded) Load();
         DisconnectedFlash();
+        ClosingCountdown();
         if (_joinOnLoad)
         {
             _joinOnLoad = false;
@@ -367,6 +368,42 @@ internal static class Panel
         draw.AddText(font, px, at + new float2(3f, 3f), new ImColor8(0, 0, 0, (byte)(200 * alpha)), text);
         draw.AddText(font, px, at, new ImColor8(235, 40, 40, (byte)(255 * alpha)), text);
     }
+
+    // The server stopping, counted down in the red of "Disconnected", which follows it: in the
+    // upper part of the screen, since it stays up for seconds over whatever the player is flying.
+    private static void ClosingCountdown()
+    {
+        if (Sync.Client is not { Joined: true } c || !double.IsFinite(c.ClosingAt))
+        {
+            _closingSaid = double.NaN;
+            return;
+        }
+        if (double.IsNaN(_closingSaid))
+        {
+            Log.Info($"the server says it stops in {c.ClosingAt - Sync.Wall():F0} s: {c.ClosingWhy}");
+            _closingSaid = c.ClosingAt;
+        }
+        int left = (int)Math.Ceiling(Math.Max(0.0, c.ClosingAt - Sync.Wall()));
+        string big = $"Server stops in {left}";
+        string small = c.ClosingWhy.Length > 0 ? $"{c.ClosingWhy}; the world is saved first" : "the world is saved first";
+        ImGuiViewportPtr view = ImGui.GetMainViewport();
+        ImDrawListPtr draw = ImGui.GetForegroundDrawList();
+        ImFontPtr font = ImGui.GetFont();
+        float bigPx = ImGui.GetFontSize() * ClosingScale, smallPx = ImGui.GetFontSize() * ClosingWhyScale;
+        float2 bigSize = ImGui.CalcTextSize(big) * ClosingScale, smallSize = ImGui.CalcTextSize(small) * ClosingWhyScale;
+        float top = view.Pos.Y + (view.Size.Y * 0.2f);
+        float2 bigAt = new(view.Pos.X + ((view.Size.X - bigSize.X) * 0.5f), top);
+        float2 smallAt = new(view.Pos.X + ((view.Size.X - smallSize.X) * 0.5f), top + bigSize.Y + 4f);
+        draw.AddText(font, bigPx, bigAt + new float2(3f, 3f), new ImColor8(0, 0, 0, 200), big);
+        draw.AddText(font, bigPx, bigAt, new ImColor8(235, 40, 40, 255), big);
+        draw.AddText(font, smallPx, smallAt + new float2(2f, 2f), new ImColor8(0, 0, 0, 200), small);
+        draw.AddText(font, smallPx, smallAt, new ImColor8(255, 255, 255, 235), small);
+    }
+
+    // Set once a stop is logged, so a countdown said again each second is logged once.
+    private static double _closingSaid = double.NaN;
+
+    private const float ClosingScale = 3f, ClosingWhyScale = 1.5f;
 
     public static void DrawTags()
     {

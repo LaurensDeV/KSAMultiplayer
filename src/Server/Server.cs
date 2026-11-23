@@ -29,6 +29,12 @@ public sealed record ServerOptions
     /// <summary>Seconds between asking a player for a fresh save of the world, so a player joining starts near now.</summary>
     public double SnapshotEverySeconds { get; init; } = 300.0;
 
+    /// <summary>
+    /// Seconds the players are counted down before the server stops. A redeploy gave them a
+    /// "lost connection" in the middle of a flight, and two minutes of play went with it.
+    /// </summary>
+    public double StopNoticeSeconds { get; init; } = 15.0;
+
     /// <summary>Whether universe time runs with nobody playing; held by default, so a save handed out is never far behind.</summary>
     public bool KeepTime { get; init; }
 
@@ -830,6 +836,11 @@ public sealed class GameServer : IDisposable
         Lapse(now);
         SayGoneAgain(now);
         SayRenameAgain(now);
+        if (double.IsFinite(_closingAt) && now >= _closingNext)
+        {
+            foreach (Player p in _players.Values) _udp.Send(new Wire.Closing((float)Math.Max(0.0, _closingAt - now), _closingWhy, p.Session), p.At);
+            _closingNext = now + 1.0;
+        }
         // Said again for a while after one has ended, as it is while one runs. The end of a warp
         // was said once, and a game that missed it went on showing a warp at 8x for as long as
         // nobody started another, with its keys stepping from a speed the world was not at.
@@ -1176,7 +1187,9 @@ public sealed class GameServer : IDisposable
         }
         // What a hello says of its game is written in the log and said to other players.
         hello = hello with { Name = Wire.PlayerName(hello.Name), KsaBuild = Wire.Clip(hello.KsaBuild, 64), System = Wire.Clip(hello.System, Wire.NameChars) };
-        string? refused = _players.Count >= Options.MaxPlayers ? $"the server is full: {Options.MaxPlayers} players"
+        // A join into a world about to stop is a load of minutes thrown away seconds later.
+        string? refused = double.IsFinite(_closingAt) ? $"the server is stopping ({_closingWhy}): try again in a minute"
+            : _players.Count >= Options.MaxPlayers ? $"the server is full: {Options.MaxPlayers} players"
             : PasswordRefusal(hello.Password, from.Address, now) ?? Refusal(hello);
         if (refused is not null)
         {
@@ -2475,6 +2488,34 @@ public sealed class GameServer : IDisposable
     /// <summary>Asks for a fresh save of the world now, from the console.</summary>
     public void SnapshotNow() => AskSnapshot("the operator asked for a save");
 
+    /// <summary>Whether anybody is in the world, and so anybody to count down for or to save it.</summary>
+    public bool AnyonePlaying => _players.Values.Any(p => p.Loaded);
+
+    /// <summary>
+    /// Counts every player down to the server stopping, on their screens, from now. Said again
+    /// each second, since a datagram can be lost, until <see cref="Dispose"/>.
+    /// </summary>
+    public void Close(double seconds, string why)
+    {
+        double now = _clock();
+        (_closingAt, _closingWhy, _closingNext) = (now + seconds, why, now);
+        Log($"stopping in {seconds:F0} s: {why}");
+        Announce($"The server stops in {seconds:F0} seconds: {why}. The world is saved first.");
+    }
+
+    /// <summary>
+    /// Asks the player in the world longest for a last save before stopping.
+    /// </summary>
+    /// <returns>The universe time a save has to reach to be that one, or null with nobody to ask.</returns>
+    public double? AskLastSave() => AskSnapshot("the server is stopping") ? _snapshotAskedAt : null;
+
+    /// <summary>Whether the world held is at least as late as a universe time, give or take the second a save is allowed.</summary>
+    public bool SavedSince(double universe) => _world is { } w && w.Universe >= universe - 1.0;
+
+    private double _closingAt = double.NaN, _closingNext;
+    private bool _disposed;
+    private string _closingWhy = "";
+
     // Saves asked for by name that are waiting on a fresh save of the world to be one of, and the
     // player each is waiting on.
     private readonly List<(string Name, byte By, string ByName, double At, byte From)> _keeping = [];
@@ -3007,7 +3048,10 @@ public sealed class GameServer : IDisposable
     /// <summary>Says goodbye to everyone and closes the socket.</summary>
     public void Dispose()
     {
-        foreach (Player p in _players.Values) _udp.Send(new Wire.Bye("the server is shutting down", p.Session), p.At);
+        if (_disposed) return;
+        _disposed = true;
+        string why = _closingWhy.Length > 0 ? _closingWhy : "the server is shutting down";
+        foreach (Player p in _players.Values) _udp.Send(new Wire.Bye(Wire.Clip(why, 200), p.Session), p.At);
         _udp.Dispose();
     }
 }
