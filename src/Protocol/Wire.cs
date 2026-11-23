@@ -213,8 +213,13 @@ public static class Wire
     /// <para>35 is <see cref="Player.Watching"/> on every row of a <see cref="Roster"/>, which a game
     /// of 34 would read as the start of the next row; <see cref="Give"/>; and
     /// <see cref="State.Thrusters"/>.</para>
+    ///
+    /// <para>36 is what a mod says once: a transfer of a kind of its own (<see cref="BlobKind.ModEvent"/>)
+    /// and <see cref="EventLost"/> for one that did not arrive. A game of 35 says such a transfer has
+    /// come and then drops it for a kind it does not know, so nobody is told and that game's copy of
+    /// the mod differs from every other from then on.</para>
     /// </summary>
-    public const ushort Version = 35;
+    public const ushort Version = 36;
 
     /// <summary>
     /// The version of <see cref="Ask"/> and <see cref="Facts"/> alone, in the first byte of each.
@@ -370,6 +375,7 @@ public static class Wire
         Closing = 35,
         LogsWanted = 36,
         Give = 37,
+        EventLost = 38,
     }
 
     /// <summary>Where a warp has got to: nobody has asked, somebody has and is waiting, or it is running.</summary>
@@ -652,6 +658,40 @@ public static class Wire
     /// is listening. Relayed as a state is: from the craft's owner, to everybody else.</para>
     /// </summary>
     public sealed record Extra(byte Owner, string Key, string Channel, byte[] Data) : Message(Kind.Extra);
+
+    /// <summary>Why something a mod said once did not reach somebody.</summary>
+    public enum EventLoss : byte
+    {
+        /// <summary>Too much was already waiting for their game.</summary>
+        Full = 1,
+
+        /// <summary>Two minutes of sending it with no word that it came. It may have.</summary>
+        GaveUp = 2,
+
+        /// <summary>It was for whoever said it, for nobody, or for a player not in the world.</summary>
+        Nobody = 3,
+
+        /// <summary>They left with it still waiting, or on its way: it may have reached them.</summary>
+        Left = 4,
+
+        /// <summary>Its game said more a second than a server passes on.</summary>
+        Rate = 5,
+
+        /// <summary>It never left the game that said it. Never on the wire.</summary>
+        Unsent = 6,
+    }
+
+    /// <summary>
+    /// One thing a mod said once (<see cref="ModEvents"/>) that did not reach a player, told to the game
+    /// that said it. Said until said back, since one lost would be a loss nobody was told of: from a
+    /// game it is only <paramref name="Serial"/>, the last it took, and the session's word.
+    /// </summary>
+    /// <param name="Serial">The server's count of these to this game, from 1, said in that order. 0 in one a game made for itself, which no server sent.</param>
+    /// <param name="Id">The event, by its sender's own number.</param>
+    /// <param name="To">Who did not get it, or 0 for nobody at all.</param>
+    /// <param name="ToName">Their name as it was: by the time this is read the number may be nobody's, or somebody else's.</param>
+    /// <param name="Session">The session's word, as on a <see cref="Closing"/>.</param>
+    public sealed record EventLost(uint Serial, uint Id, byte To, string ToName, string Channel, EventLoss Why, string Session = "") : Message(Kind.EventLost);
 
     /// <summary>
     /// Two craft that have docked in one game: <paramref name="Consumed"/> was taken into
@@ -1027,6 +1067,15 @@ public static class Wire
             case Gone g:
                 w.Text(g.Key, KeyChars);
                 break;
+            case EventLost l:
+                w.U32(l.Serial);
+                w.U32(l.Id);
+                w.U8(l.To);
+                w.U8((byte)l.Why);
+                w.Text(l.ToName, NameChars);
+                w.Text(l.Channel, ChannelChars);
+                w.Text(l.Session, CookieChars);
+                break;
             case Extra x:
                 w.U8(x.Owner);
                 w.Text(x.Key, KeyChars);
@@ -1159,6 +1208,9 @@ public static class Wire
                 Kind.Gone => new Gone(r.Text(KeyChars)),
                 Kind.Dock => new Dock(r.Text(KeyChars), r.Text(KeyChars), r.U8()),
                 Kind.Extra => new Extra(r.U8(), r.Text(KeyChars), r.Text(ChannelChars), r.Take(Math.Min((int)r.U8(), ExtraBytes)).ToArray()),
+                // In the wire's order, which is not the record's: arguments are read in the order written.
+                Kind.EventLost => new EventLost(r.U32(), r.U32(), r.U8(), Why: (EventLoss)r.U8(), ToName: r.Text(NameChars),
+                                                Channel: r.Text(ChannelChars), Session: r.Text(CookieChars)),
                 Kind.Swept => ReadSwept(ref r),
                 Kind.Chat => new Chat(r.U8(), r.Text(ChatChars)),
                 Kind.Command => new Command(r.Text(ChatChars), r.More ? r.Text(CookieChars) : ""),

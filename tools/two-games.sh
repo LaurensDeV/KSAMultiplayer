@@ -7,6 +7,7 @@
 #     ./tools/two-games.sh --dir A    # print a profile's folder
 #     ./tools/two-games.sh --stop     # close both games and the server
 #     ./tools/two-games.sh --server   # put this tree's server under the two games already running
+#     ./tools/two-games.sh --event    # say something once from A as a guest mod would, and watch B hear it
 #     ./tools/two-games.sh --priority # ask Windows again not to throttle the game behind
 #
 # KSAMP_LAG_MS=25 puts a relay of the server's own between the games and the server, holding every
@@ -185,6 +186,87 @@ join_both() {
     call B mp "{\"connect\":\"127.0.0.1:$JOIN_PORT\",\"name\":\"Bravo\"}"
     echo "both joining; the server log is $HERE/.two-games-server.log (pid $SERVER_PID)"
 }
+
+# What a guest mod says once (docs/MOD-API.md), end to end with no guest mod installed: A's bridge
+# publishes on craftsync.event, and what B's mods were told on craftsync.event.remote shows in B's
+# status. The answer to saying it is only that it was queued, so every check here waits for what
+# it expects to turn up rather than sleeping and hoping.
+if [[ "${1:-}" == "--event" ]]; then
+    if (( $(tasklist.exe 2>/dev/null | grep -ci starmap || true) < 2 )); then
+        echo "error: the two games are not both running; ./tools/two-games.sh --test brings them up" >&2
+        exit 1
+    fi
+    # One value out of a status, or out of the newest guest_events row that matches name=...
+    field() { python3 -c 'import json,sys
+d=json.load(sys.stdin); d=d.get("data",d)
+for k in sys.argv[1].split("."):
+    d=d.get(k) if isinstance(d,dict) else None
+print("" if d is None else json.dumps(d))' "$1"; }
+    heard() { python3 -c 'import json,sys
+d=json.load(sys.stdin); d=d.get("data",d)
+want=dict(a.split("=",1) for a in sys.argv[1:])
+rows=[r for r in d.get("guest_events") or [] if all(str(r.get(k))==v for k,v in want.items())]
+print(json.dumps(rows[-1]) if rows else "")' "$@"; }
+    # Waits for a row to turn up in a game's status: name, seconds, then what the row must say.
+    await_row() {
+        local name=$1 seconds=$2 row
+        shift 2
+        for _ in $(seq 1 $((seconds * 2))); do
+            row="$(call "$name" status '{}' | heard "$@")"
+            if [[ -n "$row" ]]; then echo "$row"; return 0; fi
+            sleep 0.5
+        done
+        return 1
+    }
+
+    echo "waiting for both games to be in the world..."
+    for _ in $(seq 1 12); do
+        a="$(call A status '{}')"; b="$(call B status '{}')"
+        [[ "$(echo "$a" | field stage)" == '"Playing"' && "$(echo "$b" | field stage)" == '"Playing"' ]] && break
+        sleep 5
+    done
+    A_ID="$(echo "$a" | field player_id)"
+    if [[ -z "$A_ID" || "$(echo "$b" | field stage)" != '"Playing"' ]]; then
+        echo "error: the two games are not both playing in one world" >&2
+        exit 1
+    fi
+    WORD="one-$(date +%s)"
+
+    said="$(call A event "{\"channel\":\"test:ping/v1\",\"text\":\"$WORD\"}")"
+    if [[ "$(echo "$said" | field queued)" != "true" ]]; then
+        echo "error: A's game did not take the event: $said" >&2
+        exit 1
+    fi
+    began=$(date +%s.%N)
+    if row="$(await_row B 10 name=remote text="$WORD" from="$A_ID")"; then
+        echo "B heard it after $(python3 -c "import sys,time; print(round(time.time()-float(sys.argv[1]),1))" "$began") s: $row"
+    else
+        echo "error: B's mods were never told of what A said" >&2
+        exit 1
+    fi
+
+    # And the three things that must not happen, or must be said.
+    if [[ -n "$(call A status '{}' | heard name=remote text="$WORD")" ]]; then
+        echo "error: A was told of what it said itself" >&2
+        exit 1
+    fi
+    echo "A was not told of its own"
+    call A event "{\"channel\":\"test:ping/v1\",\"text\":\"to-myself\",\"to\":$A_ID}" >/dev/null
+    if row="$(await_row A 10 name=lost why=nobody)"; then
+        echo "one for nobody in the world was said lost: $row"
+    else
+        echo "error: A was never told that an event for itself reached nobody" >&2
+        exit 1
+    fi
+    big="$(call A event '{"channel":"test:ping/v1","bytes":5000}')"
+    if [[ "$(echo "$big" | field queued)" == "false" ]]; then
+        echo "one too big was refused: $(echo "$big" | field why)"
+    else
+        echo "error: an event of 5000 bytes was taken: $big" >&2
+        exit 1
+    fi
+    exit 0
+fi
 
 # A server is seconds to build and the two games are minutes to bring up, so a change to the server
 # alone is put under the games as they stand: they leave, a fresh server comes up with no world, and

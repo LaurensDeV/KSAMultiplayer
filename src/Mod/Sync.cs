@@ -2262,6 +2262,8 @@ internal static class Sync
         {
             if (here.TryGetValue(word.Key, out Vehicle? of) && Puppets.ContainsKey(of)) Guests.Arrived(of, word.Channel, word.Data);
         }
+        // And what they said once, with what this game's mods have to say once.
+        Guests.Events(c, here);
         TakeOwnDockings(c);
         TakeDockings(c, here, flown);
         NotePortContact(flown);

@@ -91,12 +91,24 @@ KSA_USER_DIR=<profile> python3 tools/ksa-mcp/server.py cli <command> '<json>'
 ```
 
 `status` `craft` `mp` `goto` `watch` `eva` `stage` `setorbit` `engine` `attitude` `land` `dock` `approach` `move` `put`
-`design` `fail` `motion` `save` `load` `start` `step` `capture` `pause` `resume` `speed` `modspeed` `pickspeed` `warpkey` `key` `log`.
+`design` `fail` `motion` `save` `load` `start` `step` `capture` `pause` `resume` `speed` `modspeed` `pickspeed` `warpkey` `key` `log` `event`.
 
 `mp` carries the rest as flags: `connect` `disconnect` `name` `password` `chat` `editor` `blank`
 `launch` `pads` `warp` `vote` `warps` `board` `window` `give` `spectate`; `warps` is the "Agree to warps" choice (`Ask`,
 `NotFlying` or `Always`, kept as the window keeps it), `window` false shuts the Multiplayer window, and
 `status` says whether it is open. `give` and `spectate` take a player's name and do what the Give control and Spectate buttons on their row do, which no run can click; `status` gives each player's `watching` and whether they are `spectating_me`. With no flag it answers as `status` does.
+
+**`event`** publishes on `craftsync.event` as a guest mod would, so what a mod says once
+(`docs/MOD-API.md`) can be followed with no guest mod installed: `{"channel":"test:ping/v1","text":"one"}`,
+with `to` (a player's id) or `to_name` for one player, `craft` for a craft it is about, and `bytes`
+in place of `text` for that many zero bytes. It answers `queued` and `id`, or `why`. What arrived
+is in the **other** game's `status` as `guest_events`, the last 32 things that game's mods were
+told, each with `name` (`remote` or `lost`), `text`, `bytes` and the rest of what the mod was
+handed; what did not arrive is in the sender's. `./tools/two-games.sh --event` does that between
+the two games already running: one event across, none back to its sender, one to nobody said
+lost, and one too big refused. An event batch arriving shows in
+`arriving` for a moment, as any transfer does, so a test that waits on `arriving` to tell a world
+has finished loading should not have events flowing.
 
 Three worth knowing about because they are new and change what is reachable:
 

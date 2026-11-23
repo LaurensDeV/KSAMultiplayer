@@ -3,7 +3,7 @@ using System.Text;
 
 namespace KSAMultiplayer;
 
-/// <summary>What a transfer carries: a whole world, one craft's definition, or a list the server keeps and a game needs whole.</summary>
+/// <summary>What a transfer carries: a whole world, one craft's definition, a list the server keeps and a game needs whole, or what mods say once.</summary>
 public enum BlobKind : byte
 {
     /// <summary>A save folder, zipped: what a player joining is put in.</summary>
@@ -20,13 +20,16 @@ public enum BlobKind : byte
 
     /// <summary>The server's log, gzipped text, for the operator who asked: see <see cref="LogText"/>.</summary>
     Log = 5,
+
+    /// <summary>What mods say once and in order, several to a transfer: see <see cref="ModEvents"/>. 7 is kept for what a mod has the server keep.</summary>
+    ModEvent = 6,
 }
 
 /// <summary>
 /// Something too big for a datagram, with what it is said in front of it so a receiver knows what it
 /// has once every piece has come.
 /// </summary>
-/// <param name="Key">A craft's Id; nothing for a world.</param>
+/// <param name="Key">A craft's Id; nothing for a world, a list or mods' events.</param>
 /// <param name="Owner">The player the craft is flown by, as the server says it.</param>
 /// <param name="Universe">The universe time it was taken at.</param>
 public sealed record Blob(BlobKind Kind, string Key, byte Owner, double Universe, byte[] Data)
@@ -62,7 +65,7 @@ public sealed record Blob(BlobKind Kind, string Key, byte Owner, double Universe
         {
             using BinaryReader r = new(new MemoryStream(bytes));
             BlobKind kind = (BlobKind)r.ReadByte();
-            if (kind is not (BlobKind.World or BlobKind.Vehicle or BlobKind.Saves or BlobKind.Protected or BlobKind.Log)) return null;
+            if (kind is not (BlobKind.World or BlobKind.Vehicle or BlobKind.Saves or BlobKind.Protected or BlobKind.Log or BlobKind.ModEvent)) return null;
             string key = Encoding.UTF8.GetString(r.ReadBytes(r.ReadByte()));
             byte owner = r.ReadByte();
             double universe = r.ReadDouble();
@@ -267,6 +270,9 @@ public sealed class Link
     private readonly Dictionary<uint, Incoming> _in = [];
     private readonly Queue<uint> _finished = new();
     private readonly HashSet<uint> _finishedSet = [];
+
+    // Those given up on, for whoever asks what became of one: as many as are remembered of those that came.
+    private readonly Queue<uint> _gaveUp = new();
     private uint _next;
 
     /// <summary>How many transfers are going out or coming in.</summary>
@@ -274,6 +280,17 @@ public sealed class Link
 
     /// <summary>The share of the newest transfer coming in that has come, while one is.</summary>
     public double? Arriving => _in.Values.Where(i => !i.Complete).OrderByDescending(i => i.Count).FirstOrDefault() is { } c ? (double)c.Have / c.Count : null;
+
+    /// <summary>
+    /// What became of something <see cref="Send"/> started: null while it is going, true once the
+    /// other end has said it has all of it, false once it was given up on. True for a number never
+    /// given out, so 0 is nothing going. Having all of it is not having taken it: the other end may
+    /// still drop what it reads.
+    /// </summary>
+    public bool? Came(uint id) => _out.ContainsKey(id) ? null : !_gaveUp.Contains(id);
+
+    /// <summary>The number of the transfer whose last piece <see cref="Handle"/> last had: what came later than what.</summary>
+    public uint Last { get; private set; }
 
     /// <summary>Starts sending something; its pieces go out from <see cref="Pump"/>.</summary>
     public uint Send(byte[] data, double now)
@@ -291,6 +308,8 @@ public sealed class Link
             if (now - o.ActiveAt > GiveUpSeconds)
             {
                 _out.Remove(o.Id);
+                _gaveUp.Enqueue(o.Id);
+                if (_gaveUp.Count > 256) _gaveUp.Dequeue();
                 continue;
             }
             foreach (Wire.Chunk c in o.Next(now)) say(c);
@@ -335,6 +354,7 @@ public sealed class Link
                 incoming.Add(chunk, now);
                 if (!incoming.Complete) return null;
                 _in.Remove(chunk.Transfer);
+                Last = chunk.Transfer;
                 Finished(chunk.Transfer);
                 say(new Wire.Got(chunk.Transfer));
                 return incoming.Assemble();

@@ -223,6 +223,7 @@ internal sealed class Bridge
             "design" => Design(command),
             "fail" => Fail(command),
             "mp" => Multiplayer(command),
+            "event" => Event(command),
             "goto" => GoTo(command),
             "watch" => Watch(command),
             "delete" => Delete(command),
@@ -301,6 +302,10 @@ internal sealed class Bridge
             ["stage"] = Sync.Now.ToString(),
             ["said"] = Sync.Said.ToList(),
             ["chat"] = Sync.Chat.Select(l => (object?)l.Text).ToList(),
+            // The last things this game's mods were told of what mods say once: what arrived from
+            // another game, and what of this game's did not arrive. No mod in a test rig listens
+            // for them, so this is the only place one crossing can be seen.
+            ["guest_events"] = Guests.HeardNow(),
         };
 
         // Everything past here wants a world: a viewport to measure, a camera to ask, a universe to
@@ -500,6 +505,33 @@ internal sealed class Bridge
     }
 
     // ---- the session -----------------------------------------------------------------------
+
+    // What another mod would publish, published: the bus, this mod's listener, the wire and the
+    // other game's status are then the whole path of something a mod says once. The answer says
+    // only whether it was taken; whether it arrived is in the other game's status.
+    private static Reply Event(BridgeCommand command)
+    {
+        Dictionary<string, object?> said = new() { ["channel"] = command.String("channel") };
+        said["data"] = command.Has("bytes")
+            ? new byte[(int)Math.Clamp(command.Number("bytes", 0.0), 0.0, 65536.0)]
+            : System.Text.Encoding.UTF8.GetBytes(command.String("text"));
+        if (command.String("craft") is { Length: > 0 } id)
+        {
+            if (World.Vehicles().FirstOrDefault(v => v.Id == id || Sync.KeyOf(v) == id) is not { } craft) return Failed($"no craft '{id}' here");
+            said["craft"] = craft;
+        }
+        if (command.Has("to")) said["to"] = (int)command.Number("to", 0.0);
+        else if (command.String("to_name") is { Length: > 0 } name) said["to"] = name;
+
+        Guests.Say(said);
+        return Done(new()
+        {
+            ["queued"] = said.GetValueOrDefault("queued"),
+            ["id"] = said.GetValueOrDefault("id"),
+            ["why"] = said.GetValueOrDefault("why"),
+            ["bus"] = said.GetValueOrDefault("bus"),
+        });
+    }
 
     // Joining a server and leaving it, which the panel's own buttons do: what makes a second game a
     // second player without a hand on it.

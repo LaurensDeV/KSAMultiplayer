@@ -10,7 +10,7 @@ whole of `src/Mod/Guests.cs`, and KSACars is the mod it was built with -- a car 
 is drawn in the other within 2 cm, steering as its driver steers, at the same revs and in the same
 gear, with neither mod referring to the other.
 
-The two mods agree on five names on StarMap's event bus (`IEventBus`, injected into a mod's
+The two mods agree on eight names on StarMap's event bus (`IEventBus`, injected into a mod's
 constructor) and on nothing else. A bus event is matched by its name and by the type it carries,
 and a type of a mod's own is another type in every other mod, so every message is a
 `Dictionary<string, object?>` of plain values and KSA's own types:
@@ -22,6 +22,9 @@ and a type of a mod's own is another type in every other mod, so every message i
 | `craftsync.authority` | to mods | `craft` (a `Vehicle`) and `remote`. A remote craft is put where another game has it at every physics step: a mod must not move it, and may go on animating it |
 | `craftsync.state` | a mod | `craft`, `channel`, `data`: at most 128 bytes about a craft this game's player has, newest wins. Sent to every other game with the craft's own state, and no longer once it has not been said for a second |
 | `craftsync.state.remote` | to mods | the same three, as another game's copy of the mod said them of a craft that is remote here |
+| `craftsync.event` | a mod | `channel`, `data`, and `craft` and `to` if wanted: something said once, which arrives or is said lost. Answered in the same dictionary. Protocol 36; see below |
+| `craftsync.event.remote` | to mods | what another game's mod said once, and which player's game said it |
+| `craftsync.event.lost` | to mods | one of this game's that is not known to have arrived, and why |
 
 `channel` is the mod's own name for what it is saying and carries its version
 (`ksacars:drive/v1`); neither this mod nor the server reads `data`. On the wire it is `Wire.Extra`,
@@ -37,14 +40,84 @@ contract. Two mods prefix `Vehicle.PrepareWorker` in no order either can count o
 steps a remote car for its wheels and springs and then takes back what the step did to where the
 car is and how it moves.
 
-Not built: an event said once and in order (a toggle), a word to everybody that is about no craft
-(a race about to start), anything kept for a player who joins later (a circuit), and a way for a
-mod to ask who has a craft. The plan below has all four.
+### What a mod says once
+
+A crash, a boarding, a race about to start, a message from one player to another. `craftsync.state`
+is the newest of something and may be dropped; this is each of them, in the order they were said,
+and where one does not arrive its sender is told. **None of it has been run with a guest mod listening**: the server's half is tested over loopback,
+and the mod's half has been seen between two games through the developer bridge, which publishes
+and reads the bus as a guest would.
+
+A mod publishes `craftsync.event` with:
+
+| key | type | |
+| --- | --- | --- |
+| `channel` | `string` | The mod's own name for it and its version, 1 to 48 characters |
+| `data` | `byte[]` | At most 4096 bytes, which nothing here reads. Copied before the call returns |
+| `craft` | `Vehicle` | Optional: the craft it is about. It need not be this player's |
+| `to` | `int` or `string` | Optional: the one player it is for, by id or by name. Without it, everybody else in the world |
+
+and is answered in the same dictionary before the call returns, on whatever thread it published
+from: `queued`, and with it `id`, a number of this game's for this event; or `queued` false and
+`why`, a sentence for a log (no shared world, a field of the wrong type or size, or too much
+already waiting to be sent). `queued` is that it was taken, not that it arrived.
+
+It arrives in every other game that is in the world, or in the one named, as
+`craftsync.event.remote`:
+
+| key | type | |
+| --- | --- | --- |
+| `channel`, `data` | | As they were said |
+| `from` | `int` | The id of the player whose game said it, which the server wrote and the sender cannot |
+| `fromName` | `string` | That player's name |
+| `key` | `string` | The name the session knows the craft by, if it was about one |
+| `craft` | `Vehicle` | That craft, where this game has it. Absent for a craft that is not here, with `key` still set |
+| `owner` | `int` | The id of the player who has the craft, where anybody does |
+
+One player's events arrive in the order that player's game said them. Two players' arrive in no
+order to each other, and not at once: a round trip at best, and under load as long as the queue. A
+game's own events are never handed back to it.
+
+**Anybody can say anything about any craft.** The server reads no event, so it cannot refuse one
+about a craft its sender does not have. A mod that minds compares `from` with `owner` and drops
+what does not match.
+
+What is not known to have arrived comes back to the game that said it as `craftsync.event.lost`,
+with `id` and `channel` as they were queued, `to` and `toName` for the player it did not reach
+(0 and empty where it reached nobody at all), and `why`:
+
+| `why` | |
+| --- | --- |
+| `full` | 256 kB were already waiting for that player, whose connection is not keeping up |
+| `gave up` | It was sent for two minutes and never acknowledged |
+| `left` | That player left the world with it still waiting, or on its way |
+| `nobody` | It was for a player who is not in the world, or for this game itself |
+| `rate` | This game said more than the server passes on: 16 kB a second, after 32 kB at once |
+| `unsent` | This game's own queue to the server was full |
+
+An event for everybody is lost or not for each player apart, so one event can be said lost several
+times with different `to`. `gave up` and `left` mean not known to have arrived: the last piece of a
+transfer can arrive and its acknowledgement not. Nothing is said lost when the world is loaded
+again or the game leaves it: what was waiting on either side is dropped, and `craftsync.session`
+is the notice.
+
+A handler for either of the two is called on KSA's main thread once a frame, **while the physics
+worker may be running**. It must not add, remove, split or stage a vehicle, and must not throw.
+What it publishes on `craftsync.event` from inside itself goes out on the next frame.
+
+On the wire it is a batch of events in one `BlobKind.ModEvent` transfer over `Link`, 8 kB at most
+and one in flight each way per player, so that a busy mod cannot take the transfers a world or a
+craft needs; and `Wire.EventLost`, repeated until its sender has acknowledged it. The server keeps
+a queue per destination, and charges what a game says against that game alone.
+
+Not built: anything kept for a player who joins later (a circuit), a value nobody owns (a lift
+between two players), and a way for a mod to ask who has a craft. The plan below has all three.
 
 ## The plan this came from
 
-**Nothing below here is built**, and what is built above is smaller than it: no handshake that
-hands over a table of functions, and names that do not say whose they are. Written against
+**Nothing below here is built as it is written**, and what is built above is smaller than it: no
+handshake that hands over a table of functions, and names that do not say whose they are. Where
+this and the section above disagree about events, the section above is what the code does. Written against
 StarMap 0.5.0 and protocol 18, so check anything concrete here against the code before relying on
 it.
 
@@ -477,7 +550,7 @@ whole and never looks inside what it carries.
 This rides a new `BlobKind.ModEvent`. Its `Key` is empty and its `Data` is a batch of events each
 naming its own channel, because the batching below means one transfer carries several channels.
 `Blob.Decode`'s kind whitelist is the line that opens it — and its envelope `Universe` must be sane
-or the blob is dropped, so the mod must stamp a real universe time.
+or the blob is dropped, which zero is.
 
 **Authority is not free here, unlike for riders.** An event's craft key is inside the opaque
 payload, so nothing in the protocol stops client A sending "craft X, which B owns, lost a wing".
@@ -496,8 +569,8 @@ So, two rules on this mod that a guest never sees:
 - **One event transfer in flight per peer**, the next going when the last is acked or has given up.
   This needs something `Link` does not have: `Send` returns an id and nothing can ask about it, and
   `Busy` is link-wide and non-zero through every world and craft transfer, so gating on `Busy` would
-  block events for most of a session. A per-transfer completion signal is a protocol-layer change
-  this plan has to budget.
+  block events for most of a session. The per-transfer completion signal is `Link.Came`: null
+  while a transfer is on its way, then whether it was acknowledged or given up on.
 - **The server batches across senders, per destination.** Its links are per destination, so relaying
   the way craft definitions are relayed would put one transfer per *source* onto one destination
   link — fifteen busy guests, four slots. It needs a bounded pending queue per player, and the caps
@@ -508,7 +581,8 @@ That is the right trade for something that must not be lost, and a guest that wa
 afford to lose it wants a rider. A guest that wants both should send both — the rider for the look of
 it and the event for the truth of it.
 
-Caps: 4 kB an event, 16 kB a blob, and a per-player byte rate at the server.
+Caps: 4 kB an event, 8 kB a blob, 16 kB a second from a player at the server, and 256 kB waiting
+for one.
 
 ### World record — the server keeps it, a joiner is told
 
@@ -723,6 +797,8 @@ having its write turned into a request on everyone else's behalf.
 ## What a guest callback may do
 
 Every delivered callback runs on KSA's main thread, so a guest needs no locking against this mod.
+What is built delivers `craftsync.event.remote` and `craftsync.event.lost` from the frame, not from
+the window described below, so the first rule holds for them with no exception.
 The handshake's `take` is the exception: it runs wherever the guest published, which is why asking
 off-thread is forbidden above. Three rules are not negotiable:
 
@@ -919,7 +995,8 @@ world is worth having underneath a racing mod.
    of StarMap's loader and a game that will not start.
 5. **Riders**, the `State` tail, the read-side caps, the two accessors and the latest-value cache.
 6. **Events**, `BlobKind.ModEvent`, the batch, the per-destination queue, the `Link` completion
-   signal, the server relay and the rate limit.
+   signal, the server relay and the rate limit. Built in protocol 36 as bus names of their own, with
+   no handle and no `open`, and not yet used by a guest mod.
 7. **World records**, `BlobKind.ModWorld`, the two writer modes, the batched join replay, the third
    file on disk, and the idempotence rule.
 8. **World riders**, `Kind.Shared` with its sequence, the host rule and its record backing.
@@ -935,8 +1012,9 @@ world is worth having underneath a racing mod.
 11. **Then**: skipping a craft whose parts this game lacks; `soft` as a hint an operator can read;
    and only after those have been flown, the gaps above that want new shapes.
 
-Steps 5 to 8 are each a protocol change and should be **one** version bump rather than four, because
-nothing in this protocol lets a server tolerate a kind it was not built for.
+Steps 5 to 8 are each a protocol change, because nothing in this protocol lets a server tolerate a
+kind it was not built for. Riders were protocol 25 and events are 36; 7 and 8 are worth one bump
+between them.
 
 Step 2 is the one that could grow: a craft rebuilt every five seconds destroys whatever a guest hung
 on it, so following a change of shape without tearing the hull down — the ladder problem — is on the
@@ -965,4 +1043,4 @@ round-trips a state.
   harvest a guest's callback. Mods already share a process and patch the same game.
 - **It cannot stop a guest lying.** `mine` is advice. A guest that sends a rider for a craft it does
   not own is dropped by the server; a guest that sends an *event* about one is not, which is why a
-  receiver must check `fromPlayer` itself.
+  receiver must check `from` against `owner` itself.

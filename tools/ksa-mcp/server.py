@@ -211,6 +211,15 @@ TOOLS = {
     "ksa_craft": ("Every craft in this world: its Id, body, situation, parts, whether it has physics, and "
                   "whether this game owns it or holds it as another player's puppet.", {}, [],
                   lambda a: _dump(send("craft"))),
+    "ksa_event": ("Publish what a guest mod says once, on craftsync.event, from this game: channel, and text "
+                  "(or bytes, for that many zero bytes), to everybody else in the world or to one player "
+                  "(to, a player id, or to_name), and craft if it is about one. The answer only says "
+                  "whether it was queued; what arrives shows in the OTHER game's ksa_status as "
+                  "guest_events, and what did not arrive in this one's.",
+                  {"channel": {"type": "string"}, "text": {"type": "string"}, "craft": {"type": "string"},
+                   "to_name": {"type": "string"}, "bytes": _num("send this many zero bytes instead of text"),
+                   "to": _num("the id of the one player it is for")}, ["channel"],
+                  lambda a: _dump(send("event", **a))),
     "ksa_mp": ("Join a server (connect, as host:port or a host for a server on its default port, with name and password), "
                "leave it (disconnect=true), or type a line into the chat (chat), which goes to the "
                "server as a command when it starts with a / and to everyone otherwise. With no "

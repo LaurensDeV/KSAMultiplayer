@@ -143,6 +143,9 @@ public sealed class MultiplayerMod
         Log.Warn($"{FaultLimit} faults: KSA Multiplayer is switched off for the rest of the session");
         Tell($"{FaultLimit} faults: KSA Multiplayer switched itself off");
         try { Sync.Disconnect(); } catch (Exception) { }
+        // Nothing runs the session from here on, so nothing else would tell the mods it is over,
+        // and they would go on being answered that what they say is taken.
+        try { Guests.InSession(false); } catch (Exception) { }
     }
 
     private static void Tell(string what)

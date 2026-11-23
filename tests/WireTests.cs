@@ -255,6 +255,19 @@ public class WireTests
         Assert.Equal(b.Universe, back.Universe);
         Assert.Equal(b.Data, back.Data);
         Assert.Null(Blob.Decode([0, 1, 2]));
+        // A kind is read only once it is one this build knows: 7 is kept for later and is nothing yet.
+        Assert.Null(Blob.Decode((b with { Kind = (BlobKind)7 }).Encode()));
+        Assert.Equal(BlobKind.ModEvent, Blob.Decode((b with { Kind = BlobKind.ModEvent, Key = "", Universe = 0.0 }).Encode())!.Kind);
+    }
+
+    [Fact]
+    public void AnEventLostIsADatagramBothWays()
+    {
+        Wire.EventLost told = new(7, 42, 3, "Bob", "cars:crash/v1", Wire.EventLoss.Full, "word");
+        Assert.Equal(told, RoundTrip(told));
+        // And as a game says it back: the last it took and the session's word, and nothing else.
+        Wire.EventLost back = new(7, 0, 0, "", "", 0, "word");
+        Assert.Equal(back, RoundTrip(back));
     }
 
     [Fact]
