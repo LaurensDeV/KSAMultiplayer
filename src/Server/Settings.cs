@@ -52,7 +52,8 @@ public static class Settings
         new("discord-operators", Kind.Text, "", "Discord user ids, separated by commas, who are operators here whenever they log in with Discord: admins who may also download the server's log; listed in discord-admins too, they are operators", true),
         new("discord-trusted", Kind.Text, "", "Discord user ids, separated by commas, who are trusted here whenever they log in with Discord: they may clear, remove, protect, rename, save, load and kick, but not delete saves, save over them, reload or give roles", true),
         new("discord-login", Kind.Text, Discord.Service, "the service whose certificates say who a player is on Discord, asked only once 'op discord:<id>' has made a Discord user an admin; empty to take no Discord logins", true),
-        new("web-port", Kind.Whole, "0", "TCP port for the web viewer, which shows this server's world to anybody who can reach it; 0 for none", false),
+        new("web", Kind.Flag, "false", "serve the web viewer, which shows this server's world to anybody who can reach it", false),
+        new("web-port", Kind.Whole, "0", "TCP port for the web viewer; 0 for the same number as port, which is UDP and so is not taken", false),
         new("web-bind", Kind.Text, "127.0.0.1", "address the web viewer listens on; loopback by default, so a reverse proxy is the way out; empty for every address", false),
         new("web-admin-password", Kind.Text, "", "password for admin commands on the web viewer; empty turns web admin off", true),
         new("web-trust-proxy", Kind.Text, "", "addresses of reverse proxies whose X-Forwarded headers the web viewer believes, separated by commas", false),
@@ -144,10 +145,12 @@ public static class Settings
                 : ids;
         }
 
+        // Zero in the options is no viewer, which is what the rest of the server asks.
         int WebPort()
         {
             int p = Whole("web-port");
-            return p is >= 0 and <= 65535 ? p : throw new FormatException($"web-port {p} is not a port");
+            if (p is < 0 or > 65535) throw new FormatException($"web-port {p} is not a port");
+            return !Flag("web") ? 0 : p == 0 ? Whole("port") : p;
         }
 
         string WebAddress(string key, string v) =>

@@ -757,7 +757,7 @@ own folder: a name that climbs out of it is refused.
 ## The web viewer
 
 `src/Server/Web` is a page and a few routes served by Kestrel inside the server process, on a TCP
-port of its own, and off unless `web-port` is set. The plan it was built from, with what KSA's
+port, the same number as the game's UDP port unless `web-port` says another, and off unless `web` is set. The plan it was built from, with what KSA's
 system model turned out to be, is `docs/WEB-VIEWER.md`.
 
 **One writer.** `GameServer` is not thread-safe and the web never touches it. Every 0.2 s the tick
@@ -1437,7 +1437,7 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   description put in the data folder by hand. What has not been seen is `World.DescribeSystem`
   answering in a game (the `InitialRotation` field is read by reflection), the bodies it sends
   lining up with KSA's own `GetPositionEcl`, or a real craft's `PositionCci` landing on its orbit
-  in the 2D and 3D views.
+  in the map.
 
 - **Players' logs to the test server, on `ksamp.gg` itself.** Seen with two games pointed at the
   rig's server by `KSAMP_LOGS_TO`: each sent its last three sessions as it joined, the server kept

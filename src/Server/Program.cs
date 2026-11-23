@@ -368,7 +368,7 @@ if (options.WebPort > 0)
     Say($"web viewer on http://{web.At}/, open to anybody who can reach it"
         + (options.WebAdminPassword.Length > 0 ? ", with admin behind its password" : ", with no admin (web-admin-password is empty)"));
 }
-else Say("web viewer off; set web-port to turn it on");
+else Say("web viewer off; set web to turn it on");
 
 // Shared for reading, because whatever reads it does so while this is still writing.
 ClockTrace? trace = null;

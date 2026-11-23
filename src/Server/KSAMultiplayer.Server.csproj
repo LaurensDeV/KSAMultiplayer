@@ -22,7 +22,7 @@
   </ItemGroup>
 
   <!--
-    The web viewer (src/Server/Web), off unless web-port is set: Kestrel inside this process, and
+    The web viewer (src/Server/Web), off unless web is set: Kestrel inside this process, and
     the page compiled in as resources so the server is still one file.
   -->
   <ItemGroup>

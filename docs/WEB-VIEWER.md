@@ -1,7 +1,7 @@
 # Web viewer — implementation plan
 
 A page served by `ksamp-server` itself, showing what is happening in the server's world: status, players,
-chat, a 2D map of each body, a 3D view of the whole system, and admin controls behind a password.
+chat, a 3D map of the whole system, and admin controls behind a password.
 Meant to go upstream as an opt-in feature any operator can turn on.
 
 **Built, on the branch `feat-web-viewer`; not yet run with a game in the world.** All six phases are
@@ -20,7 +20,7 @@ needs a game is in `docs/DESIGN.md` under "What has not been tried".
   thread waits on a socket.
 - **Bodies are asked for with a new message, `Describe`** (open question 3), rather than a welcome
   flag: a welcome is said once, and a world that changes system mid-session has to be asked again.
-  `Wire.Version` is 36. Only a server whose viewer is on ever asks, so with `web-port` 0 nothing
+  `Wire.Version` is 36. Only a server whose viewer is on ever asks, so with `web` off nothing
   on the wire changes.
 - **The description carries what the game computed,** not the elements as authored: each orbit's
   periapsis, eccentricity, time at periapsis, period, μ and the quaternion into its parent's
@@ -72,7 +72,7 @@ needs a game is in `docs/DESIGN.md` under "What has not been tried".
 | --- | --- |
 | Where it runs | Inside `ksamp-server`, on its own TCP port. No extra hosting. |
 | Who it is for | Every operator: opt-in, off by default, upstream PR. |
-| What it shows | Status, roster and chat; a 2D map per body; a 3D whole-system view; admin commands. |
+| What it shows | Status, roster and chat; a 3D map of the whole system; admin commands. |
 | Privacy | Not a per-player concern. The operator turning the viewer on makes everything on it public. |
 | Admin auth | A separate web password (`web-admin-password`), **not** the in-game admin tokens. |
 | Planet positions | Reported by a game in the world (the server must never reference KSA), cached by the server. |
@@ -129,14 +129,15 @@ agree to the shape first.
 - **New files:** `src/Server/Web/WebHost.cs` (start/stop, routes), `src/Server/Web/ServerView.cs`
   (snapshot records + builder run on the tick thread), `src/Server/Web/ViewFeed.cs` (WebSocket fan-out,
   per-client throttling), `src/Server/Web/WebAdmin.cs` (password, sessions, rate limit),
-  `src/Server/Web/Page/*` (embedded `index.html`, `viewer.js`, `map2d.js`, `map3d.js`, and a vendored
+  `src/Server/Web/Page/*` (embedded `index.html`, `viewer.js`, `orbits.js`, `map3d.js`, and a vendored
   `three.module.min.js`, which is MIT: keep its licence header, and load nothing from a CDN).
 
 ### Settings to add (`Settings.All`)
 
 | Key | Kind | Default | Live | Says |
 | --- | --- | --- | --- | --- |
-| `web-port` | Whole | `0` | no | TCP port for the web viewer; 0 for none |
+| `web` | Flag | `false` | no | serve the web viewer |
+| `web-port` | Whole | `0` | no | TCP port for the web viewer; 0 for the same number as `port` |
 | `web-bind` | Text | `127.0.0.1` | no | address the viewer listens on; loopback by default so a reverse proxy is the way out, empty for every address |
 | `web-admin-password` | Text | `""` | yes | password for admin commands on the viewer; empty turns web admin off |
 | `web-trust-proxy` | Text | `""` | no | addresses of reverse proxies whose `X-Forwarded-*` headers are believed, comma-separated |
@@ -217,7 +218,7 @@ Do not copy KSA textures, meshes or code anywhere. Draw bodies as coloured spher
   and warp state.
 - Tests (`tests/WebTests.cs`): a real Kestrel on port 0 over loopback, as the other tests use real UDP.
   Cover the view before and after a loopback client joins and loads, chat arriving over the socket,
-  that the view never carries tokens or passwords, and that the viewer is off when `web-port` is 0.
+  that the view never carries tokens or passwords, and that the viewer is off when `web` is off.
 
 ### Phase 2: admin
 
@@ -230,6 +231,9 @@ Do not copy KSA textures, meshes or code anywhere. Draw bodies as coloured spher
   queue and its reply coming back, and the password never in the log.
 
 ### Phase 3: craft feed and the 2D map per body
+
+There is no 2D map in what is built: the 3D map shows everything this one would, and one map is
+one thing to keep right. The orbit maths below is `orbits.js`, which the 3D map draws from.
 
 - Crafts in `ServerView` and the socket deltas with per-client throttling.
 - Client-side motion between frames: on `rails`, propagate a Kepler orbit from `posCci`/`velCci` at
@@ -268,7 +272,6 @@ Do not copy KSA textures, meshes or code anywhere. Draw bodies as coloured spher
   billboards with CSS2D labels. Focus by clicking or from a list, with smooth zoom from system to body
   to craft.
 - Toggles: orbits, labels, debris (non-`controlled`), and a "follow player" camera.
-- Keep the 2D map as the default on small screens.
 
 ### Phase 6: tie-ins and docs
 
@@ -282,7 +285,7 @@ Do not copy KSA textures, meshes or code anywhere. Draw bodies as coloured spher
 
 ## Acceptance
 
-- With `web-port` 0 the server behaves exactly as before: same tests and same log lines, apart from
+- With `web` off the server behaves exactly as before: same tests and same log lines, apart from
   the "viewer off" line.
 - `./tools/test.sh` passes at every phase, and the new tests use real sockets over loopback.
 - Load on the tick thread stays within budget: building the view and fanning out events adds at most

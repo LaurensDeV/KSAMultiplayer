@@ -21,7 +21,7 @@ public sealed record WebCommand(string Line, string From)
 
 /// <summary>
 /// The web viewer: a page and the few routes behind it, served from inside the server process on
-/// a TCP port of its own. Off unless <c>web-port</c> is set.
+/// a TCP port, the game port's number unless <c>web-port</c> says another. Off unless <c>web</c> is set.
 ///
 /// <para>Nothing here touches <see cref="GameServer"/>. The tick thread builds a view a few times a
 /// second and hands it over in <see cref="Tick"/>, events come through <see cref="GameServer.Viewed"/>,
@@ -58,7 +58,7 @@ public sealed class WebHost : IAsyncDisposable
     }
 
     /// <summary>The viewer, listening. Throws <see cref="IOException"/> when the port cannot be had.</summary>
-    /// <param name="port">0 picks a free one, which is what a test wants; <c>web-port</c> 0 is never started at all.</param>
+    /// <param name="port">0 picks a free one, which is what a test wants; a server with <c>web</c> off never starts one at all.</param>
     public static async Task<WebHost> StartAsync(ServerOptions options, int port, Func<double> wall)
     {
         IPAddress bind = options.WebBind.Length > 0 ? IPAddress.Parse(options.WebBind) : IPAddress.Any;
