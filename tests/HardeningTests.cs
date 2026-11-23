@@ -274,6 +274,44 @@ public class HardeningTests
     }
 
     [Fact]
+    public void ALinkSaysWhatBecameOfWhatItSent()
+    {
+        // What an event batch waits on before the next goes. Busy cannot say it: that is every
+        // transfer on the link, and a world on its way would hold events for as long as it took.
+        Link sender = new(), receiver = new();
+        Assert.True(sender.Came(0));
+
+        uint came = sender.Send(new byte[Link.ChunkBytes * 2], 0);
+        Assert.Null(sender.Came(came));
+        Assert.Equal(0u, receiver.Last);
+        List<Wire.Message> said = [];
+        sender.Pump(0, said.Add);
+        byte[]? whole = null;
+        foreach (Wire.Message m in said.ToArray())
+        {
+            Assert.Null(whole);
+            whole = receiver.Handle(m, 0, said.Add);
+        }
+        Assert.NotNull(whole);
+        Assert.Equal(came, receiver.Last);
+        Assert.Null(sender.Came(came));
+        sender.Handle(said.OfType<Wire.Got>().Single(), 0, _ => { });
+        Assert.True(sender.Came(came));
+
+        // Two minutes with nothing heard is given up on, and stays so: nothing tells acked from
+        // given up but this, since both are only the transfer being gone.
+        uint lost = sender.Send(new byte[10], 0), later = sender.Send(new byte[10], 200);
+        sender.Pump(0, _ => { });
+        sender.Pump(121, _ => { });
+        Assert.False(sender.Came(lost));
+        Assert.Null(sender.Came(later));
+        Assert.True(sender.Came(came));
+        sender.Pump(1000, _ => { });
+        Assert.False(sender.Came(lost));
+        Assert.False(sender.Came(later));
+    }
+
+    [Fact]
     public void ATransferStillBeingAskedForIsNotGivenUpOn()
     {
         // Given up on for having started two minutes ago, a world of 50 MB could never arrive.

@@ -8,7 +8,7 @@ namespace KSAMultiplayer;
 /// can run a server and several of these on one machine.
 ///
 /// <para>What the game has to act on is queued: worlds and craft that have arrived, craft that are
-/// gone, chat, and the server asking for a save. It is drained once a frame by whoever runs the game.</para>
+/// gone, chat, what mods said once, and the server asking for a save. It is drained once a frame by whoever runs the game.</para>
 /// </summary>
 public sealed class Client : IDisposable
 {
@@ -202,6 +202,84 @@ public sealed class Client : IDisposable
     // No more of them than this are kept waiting for the game to take them up: each is only worth
     // its newest, and a game that is loading takes none.
     private const int MostExtrasWaiting = 512;
+
+    /// <summary>
+    /// What other games' mods said once, oldest first, as the server passed them on. Never dropped
+    /// from the front as <see cref="Extras"/> are: a gap here is a loss nobody is told of.
+    /// </summary>
+    public Queue<ModEvent> Events { get; } = new();
+
+    /// <summary>
+    /// Events of this game's that did not reach somebody. One with <see cref="Wire.EventLost.Serial"/>
+    /// 0 never got as far as a server saying so: this game's own link gave up on it, or whoever it
+    /// was for left before it was sent.
+    /// </summary>
+    public Queue<Wire.EventLost> EventsLost { get; } = new();
+
+    /// <summary>Bytes of this game's events not yet on their way.</summary>
+    public int EventsWaiting { get; private set; }
+
+    private readonly Queue<ModEvent> _eventsOut = new();
+    private ModEvent[] _eventsGoing = [];
+    private uint _eventGoing, _lostHeard, _worldTransfer;
+
+    // One batch at once and no more, under the server's rate. One is on its way at a time, so what
+    // lands there in any stretch is at most a batch in flight, this, and what fills meanwhile:
+    // 16 kB and 15 kB a second against its 32 kB and 16 kB a second, whatever the line does to the
+    // timing. Counted as the server counts it (ModEvents.Cost), or the two would disagree.
+    private double _eventAllowance = ModEvents.BatchBytes, _eventAllowanceAt;
+
+    // From saying this game is in the world until a world comes: what is said outside that is said in no world.
+    private bool _inWorld;
+
+    /// <summary>
+    /// Queues something a mod says once, for every other player or for one. False, with nothing
+    /// queued, for one that is not an event (<see cref="ModEvents.Fits"/>), outside the world, or
+    /// with too much already waiting.
+    /// </summary>
+    /// <param name="id">The sender's own number for it, which a loss is told by.</param>
+    public bool SendEvent(uint id, string channel, byte[] data, string craft = "", byte to = 0)
+    {
+        ModEvent e = new(0, "", to, id, channel, craft, data);
+        if (!Joined || !_inWorld || !ModEvents.Fits(e) || EventsWaiting + ModEvents.Size(e) > ModEvents.WaitingBytes) return false;
+        _eventsOut.Enqueue(e);
+        EventsWaiting += ModEvents.Size(e);
+        return true;
+    }
+
+    /// <summary>The name a player has on the roster, or nothing: not <see cref="NameOf"/>, which makes one up for nobody.</summary>
+    public string OnRoster(byte id) => id == 0 ? "" : Players.FirstOrDefault(p => p.Id == id).Name ?? "";
+
+    private void SendEvents(double now)
+    {
+        _eventAllowance = Math.Min(ModEvents.BatchBytes, _eventAllowance + ((now - _eventAllowanceAt) * ModEvents.PaceBytesASecond));
+        _eventAllowanceAt = now;
+        if (_link.Came(_eventGoing) is not { } came) return;
+        if (!came)
+        {
+            foreach (ModEvent e in _eventsGoing) EventsLost.Enqueue(new Wire.EventLost(0, e.Id, e.To, OnRoster(e.To), e.Channel, Wire.EventLoss.GaveUp));
+        }
+        (_eventsGoing, _eventGoing) = ([], 0);
+        // The server takes events only from a game it counts in the world. This game says it is in
+        // before the server has heard so, and the roster can still say so from before a reload:
+        // neither alone is enough.
+        if (_eventsOut.Count == 0 || !_inWorld || !Players.Any(p => p.Id == Id && p.Loaded)) return;
+
+        // From the front for as long as both the allowance and a batch hold them. The first always
+        // comes to fit: the allowance fills to a batch, and no event costs that much.
+        int take = 0, cost = 1, size = 1;
+        foreach (ModEvent e in _eventsOut)
+        {
+            if (cost + ModEvents.Cost(e) > _eventAllowance || size + ModEvents.Size(e) > ModEvents.BatchBytes) break;
+            (cost, size, take) = (cost + ModEvents.Cost(e), size + ModEvents.Size(e), take + 1);
+        }
+        if (take == 0) return;
+        _eventsGoing = [.. Enumerable.Range(0, take).Select(_ => _eventsOut.Dequeue())];
+        EventsWaiting -= _eventsGoing.Sum(e => ModEvents.Size(e));
+        _eventAllowance -= cost;
+        byte[] batch = ModEvents.Encode(_eventsGoing, ModEvents.BatchBytes, out _);
+        _eventGoing = _link.Send(new Blob(BlobKind.ModEvent, "", 0, 0.0, batch).Encode(), now);
+    }
 
     /// <summary>Says what a mod says of a craft of this player's. See <see cref="Wire.Extra"/>.</summary>
     public void SendExtra(string key, string channel, byte[] data)
@@ -397,6 +475,11 @@ public sealed class Client : IDisposable
         _hello = new Wire.Hello(Wire.Clip(name, Wire.NameChars), ksaBuild, mods, system, password, Wire.Clip(token, Wire.TokenChars), Sessions: true);
         _session = "";
         (ClosingAt, ClosingWhy, _foreignVersion) = (double.NaN, "", 0);
+        _eventsOut.Clear();
+        Events.Clear();
+        EventsLost.Clear();
+        (EventsWaiting, _eventsGoing, _eventGoing, _lostHeard, _worldTransfer) = (0, [], 0, 0, 0);
+        (_eventAllowance, _eventAllowanceAt, _inWorld) = (ModEvents.BatchBytes, 0.0, false);
         (_helloNext, _joinUntil, _heardAt) = (0.0, _clock() + JoinWithinSeconds, _clock());
         (_bestRtt, _lastRtt, ServerOffset, _serverClock, _serverRate) = (double.PositiveInfinity, double.NaN, 0.0, null, 0.0);
         _saidGone.Clear();
@@ -497,6 +580,7 @@ public sealed class Client : IDisposable
     public void SayLoaded(double universe)
     {
         if (!Joined) return;
+        _inWorld = true;
         (_loadedSaid, _loadedNext) = (universe, _clock() + LoadedEverySeconds);
         Send(new Wire.Loaded(universe));
     }
@@ -625,6 +709,7 @@ public sealed class Client : IDisposable
                 _loadedNext = now + LoadedEverySeconds;
             }
         }
+        SendEvents(now);
         _link.Pump(now, Send);
         if (now - _heardAt > SilentSeconds)
         {
@@ -677,6 +762,20 @@ public sealed class Client : IDisposable
             case Wire.Roster r when Joined:
                 foreach (Wire.Player p in r.Players.Where(p => p.Id != Id && Players.All(q => q.Id != p.Id))) Said.Enqueue($"{p.Name} is here");
                 foreach (Wire.Player p in Players.Where(p => p.Id != Id && r.Players.All(q => q.Id != p.Id))) Said.Enqueue($"{p.Name} has left");
+                // What was waiting here for a player who has gone is not for whoever is handed
+                // their number next, which may be by the time it is sent.
+                foreach (Wire.Player was in Players.Where(p => p.Id != Id && !r.Players.Any(q => q.Id == p.Id && q.Name == p.Name)))
+                {
+                    if (_eventsOut.All(e => e.To != was.Id)) continue;
+                    ModEvent[] kept = [.. _eventsOut.Where(e => e.To != was.Id)];
+                    foreach (ModEvent e in _eventsOut.Where(e => e.To == was.Id))
+                    {
+                        EventsWaiting -= ModEvents.Size(e);
+                        EventsLost.Enqueue(new Wire.EventLost(0, e.Id, e.To, was.Name, e.Channel, Wire.EventLoss.Left));
+                    }
+                    _eventsOut.Clear();
+                    foreach (ModEvent e in kept) _eventsOut.Enqueue(e);
+                }
                 Players = r.Players;
                 return;
             case Wire.Owners o when Joined:
@@ -760,6 +859,15 @@ public sealed class Client : IDisposable
                 if (_nearComing.Remove(nm.Was)) _nearComing.Add(nm.Now);
                 if (_tracks.Remove(nm.Was, out Track? track)) _tracks[nm.Now] = track;
                 Named.Enqueue((nm.Was, nm.Now, nm.By));
+                return;
+            // Said until said back, and taken in the server's order: one heard twice is one event lost once.
+            case Wire.EventLost lost when Joined && lost.Session == _session:
+                if (lost.Serial == _lostHeard + 1)
+                {
+                    _lostHeard++;
+                    EventsLost.Enqueue(lost);
+                }
+                Send(new Wire.EventLost(_lostHeard, 0, 0, "", "", 0, _session));
                 return;
             case Wire.Extra x when Joined && x.Owner != Id && x.Key.Length > 0 && x.Channel.Length > 0:
                 if (Extras.Count >= MostExtrasWaiting) Extras.Dequeue();
@@ -865,8 +973,30 @@ public sealed class Client : IDisposable
                         }
                         return;
                     }
-                    // A world on its way in is a world this game is not in yet, whatever it said of the last.
-                    if (blob.Kind == BlobKind.World) _loadedSaid = null;
+                    // Never into Blobs: both of the game's readers of that queue let fall what they do not know.
+                    if (blob.Kind == BlobKind.ModEvent)
+                    {
+                        // Said in a world this game is not in: before it said it was in this one, or
+                        // sent before the world was. The server's numbers to a game only rise.
+                        if (!_inWorld || _link.Last < _worldTransfer) return;
+                        foreach (ModEvent e in ModEvents.Decode(blob.Data) ?? [])
+                        {
+                            if (e.From != 0 && e.From != Id) Events.Enqueue(e);
+                        }
+                        return;
+                    }
+                    // A world on its way in is a world this game is not in yet, whatever it said of
+                    // the last, and what was said in the last stays there. What is already on its
+                    // way cannot be called back, so the next batch still waits for it to end.
+                    if (blob.Kind == BlobKind.World)
+                    {
+                        _loadedSaid = null;
+                        _inWorld = false;
+                        _worldTransfer = Math.Max(_worldTransfer, _link.Last);
+                        _eventsOut.Clear();
+                        (EventsWaiting, _eventsGoing) = (0, []);
+                        Events.Clear();
+                    }
                     Blobs.Enqueue(blob);
                 }
                 return;
