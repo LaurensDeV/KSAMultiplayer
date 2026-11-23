@@ -506,6 +506,20 @@ a part's modules scale by follow the largest of the three (`ScaleFactors(double3
 every game. Whether that is fair is the operator's call, and why the list is theirs rather than a
 mod's word about itself. Not yet seen with such a mod in a game.
 
+**Players' logs go to the developer's test server and nowhere else.** As a game joins it sends its
+mod logs of the sessions before this one, the newest three not sent before
+(`src/Mod/PlayerLogs.cs`), each cleaned of addresses and of the user's name in its paths
+(`LogText.Scrubbed`), as a `BlobKind.Log` the server has always been able to read. Which server is
+the game's decision, not the server's: only when the address it joined is what `ksamp.gg` resolves
+to, on port 50100, so another operator cannot have players' logs by saying anything, and the
+setting a server has, `collect-logs`, only decides whether that server keeps what it is sent --
+on, in `infra/server/server.tf`, for that one container. There is no switch to stop it in the
+game; the chat says when it has happened. A previous session is what is worth having: a crash or
+a mod that switched itself off is written there, and a player cannot be asked for it once two
+more launches have written over it. The server cleans each again, keeps at most five a session
+under `player-logs/<day>/`, and takes away days older than two weeks. `KSAMP_LOGS_TO=host:port` in
+a game's own environment points it elsewhere, for trying it with two games on one machine.
+
 **A game turned away for its mods is handed a link to them.** `ModLink` writes the world's list
 as Borea's `borea://modlist?mods=Id@1.2.3,...&name=...&id=...`, and the connect window puts a
 button for it where `CONNECT` would be greyed. Borea knows nothing of this mod and this mod knows
@@ -1338,6 +1352,11 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   roster following the name -- the server's half of the first three is in its tests.
 
 ## What has not been tried
+
+- **Players' logs to the test server, on `ksamp.gg` itself.** Seen with two games pointed at the
+  rig's server by `KSAMP_LOGS_TO`: each sent its last three sessions as it joined, the server kept
+  all six, cleaned, and a rejoin sent none again. Not yet seen: a deploy with `collect-logs` on,
+  and a game deciding by `ksamp.gg`'s own address.
 
 - **The 2026-11-22 review's work, in two games on 2026-11-23.** Seen with the rig, on loopback and
   a Windows server: a launch renamed as its editor closed, both editors having opened on

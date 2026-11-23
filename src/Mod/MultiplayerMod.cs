@@ -35,7 +35,8 @@ public sealed class MultiplayerMod
     [StarMapImmediateLoad]
     public void OnImmediateLoad(Mod mod)
     {
-        Log.Info($"KSA Multiplayer {typeof(MultiplayerMod).Assembly.GetName().Version} loading (mod id {mod.Id}), protocol {Wire.Version}, KSA {World.KsaBuild}");
+        // Three parts, which no log cleaning takes for an address as it would 0.32.0.0.
+        Log.Info($"KSA Multiplayer {typeof(MultiplayerMod).Assembly.GetName().Version?.ToString(3)} loading (mod id {mod.Id}), protocol {Wire.Version}, KSA {World.KsaBuild}");
         // So a directory's log says which build asked it for a list.
         Listings.Agent = $"KSAMultiplayer/{typeof(MultiplayerMod).Assembly.GetName().Version?.ToString(3) ?? "unknown"}";
         // Here and not with the rest: KSA's configuration at start comes before StarMap's AllModsLoaded.

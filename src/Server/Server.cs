@@ -74,6 +74,12 @@ public sealed record ServerOptions
     /// </summary>
     public double WatchToTake { get; init; } = 3.0;
 
+    /// <summary>
+    /// Whether players' games may hand this server their logs, which it keeps for two weeks. On for
+    /// the developer's test server alone: the games send to nothing else whatever this says.
+    /// </summary>
+    public bool CollectLogs { get; init; }
+
     /// <summary>The most craft one player holds at once: each is kept here, and told to every game.</summary>
     public int MaxCraftPerPlayer { get; init; } = 2048;
 
@@ -262,6 +268,9 @@ public sealed class GameServer : IDisposable
 
         /// <summary>The player's round trip, s, as that player measured it; negative until it has one.</summary>
         public float Rtt { get; set; } = -1f;
+
+        /// <summary>How many of their game's logs have been kept this session.</summary>
+        public int LogsKept { get; set; }
 
         /// <summary>The share of this player's pings lost on the way over the last minute; NaN until there is enough to say.</summary>
         public double Loss => Pings.Share;
@@ -483,6 +492,7 @@ public sealed class GameServer : IDisposable
         _protectedSerial = Protected.Names.Count > 0 ? 1u : 0u;
         Admins = admins ?? new Admins(store?.Folder ?? "");
         Audit = new AuditLog(store?.Folder ?? "");
+        PlayerLogs = new PlayerLogs(store?.Folder ?? "");
         Saves = saves ?? new SaveShelf(store is null ? "" : Path.Combine(store.Folder, "saves"));
         UniverseClock.SetSpeed(options.Speed, clock());
         _udp = new Udp(options.Port, clock, "KSAMultiplayer server", bind);
@@ -541,6 +551,9 @@ public sealed class GameServer : IDisposable
 
     /// <summary>Who did what that changes the world, a save or a role: kept beside the world.</summary>
     public AuditLog Audit { get; }
+
+    /// <summary>The logs players' games have handed over, where <see cref="ServerOptions.CollectLogs"/> is on.</summary>
+    public PlayerLogs PlayerLogs { get; }
 
     /// <summary>The worlds kept under names, which an admin saves to and loads from.</summary>
     public SaveShelf Saves { get; }
@@ -1520,6 +1533,21 @@ public sealed class GameServer : IDisposable
                 Log($"{p.Name} saved the world: {Blob.Size(blob.Data.Length)} at universe time {blob.Universe:F0} s");
                 KeepWaiting(fresh: true, from: p.Id);
                 if (p.Seeding) OnLoaded(p, blob.Universe);
+                return;
+            // A game's own log of a session, which it sends only to the developer's test server.
+            // Not kept on any other: a game that sent one anyway is somebody's own build.
+            case BlobKind.Log when blob.Key.Length > 0:
+                if (!Options.CollectLogs || p.LogsKept >= PlayerLogs.MostPerSession) return;
+                if (LogText.Unpack(blob.Data) is not { } text)
+                {
+                    Log($"{p.Name}'s game sent a log that is not one, {Blob.Size(blob.Data.Length)}: not kept");
+                    return;
+                }
+                p.LogsKept++;
+                if (PlayerLogs.Keep(p.Name, blob.Key, text, DateTime.UtcNow) is not null)
+                {
+                    Log($"kept {p.Name}'s game log of {Wire.Clip(blob.Key, Wire.KeyChars)}, {Blob.Size(blob.Data.Length)}");
+                }
                 return;
             case BlobKind.Vehicle when p.Loaded && blob.Key.Length > 0:
                 // A definition under a name this player was refused is dropped; the claim that goes with

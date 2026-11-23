@@ -74,6 +74,9 @@ public sealed class Client : IDisposable
     // order is dropped rather than mixed with the one before it.
     private int _ownersWant = -1;
     private IPEndPoint? _server;
+
+    /// <summary>Where this game is connected, or last was.</summary>
+    public IPEndPoint? Server => _server;
     private Wire.Hello? _hello;
     private string _session = "";
     private double _helloNext, _joinUntil, _pingNext, _heardAt;

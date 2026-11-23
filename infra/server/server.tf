@@ -63,6 +63,9 @@ resource "docker_container" "server" {
       "KSAMP_PORT=50100",
       "KSAMP_MAX_PLAYERS=${var.max_players}",
       "KSAMP_SNAPSHOT_EVERY=${var.snapshot_every_seconds}",
+      # This is the test server players' games send their logs to (src/Mod/PlayerLogs.cs), and the
+      # only one: kept in this world's volume under player-logs/, for two weeks.
+      "KSAMP_COLLECT_LOGS=true",
     ],
     # Here and not in the file on the machine, where they were typed once at a console: the name
     # a server is listed under is part of what this machine is, and a file nobody can read from

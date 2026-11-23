@@ -878,6 +878,7 @@ internal static class Sync
         (_claimed, _address, _watching, Behind, Now) = ("", "", "", null, Stage.Off);
         (_eyed, Observed) = ("", null);
         NearSaid.Clear();
+        PlayerLogs.Reset();
         WreckSaid.Clear();
         _worldCame = false;
         (_askedSpeed, _askWarpNext) = (1.0, 0.0);
@@ -1783,6 +1784,7 @@ internal static class Sync
         _frameAt = now;
         MeasureWhatThisMachineDoes(now);
         while (NotesWaiting.TryDequeue(out string? note)) _client?.Note(note);
+        if (_client is { } logs && Now == Stage.Playing) PlayerLogs.Update(logs);
         SayTheWarp();
         Vehicle? eyed = World.Watched is { } seen && World.IsAlive(seen) ? seen : null;
         string eyedKey = eyed is null ? "" : KeyOf(eyed);

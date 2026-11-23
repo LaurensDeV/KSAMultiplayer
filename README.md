@@ -82,6 +82,9 @@ Once you're in:
   that machine rather than leaving it behind. After joining, your game may run fast for a few
   seconds to catch up.
 - **Chat** from the window.
+- **On the developer's test server at `ksamp.gg`**, and on no other, your game sends the server its
+  mod logs of your last few sessions when you join, with addresses and your user name taken out,
+  so what went wrong can be found. The chat says when it has.
 - **Rename a craft.** Type `/rename New name` in the chat to rename the craft you're flying, if it's
   yours. It's renamed in every game, crew and all. A protected craft can only be renamed by an admin,
   who can rename any craft with `/rename Old name -> New name`.
@@ -282,6 +285,7 @@ like `quit`.
 | `--lapse-within` | `KSAMP_LAPSE_WITHIN` | `10` | seconds a craft stays its owner's once another player flying nothing has watched it for 3 s and they are neither in it nor looking at it |
 | `--speed` | `KSAMP_SPEED` | `1` | how fast universe time runs |
 | `--empty-world` | `KSAMP_EMPTY_WORLD` | | start with an empty world of this system (`SolLite` or `Sol`) instead of waiting for a player; also what `fresh` puts in place |
+| `--collect-logs` | `KSAMP_COLLECT_LOGS` | off | keep the mod's logs players' games send, under `player-logs/` in the data folder, for two weeks. Games send them only to the developer's test server at `ksamp.gg`, so on any other server this does nothing |
 | `--advertise` | `KSAMP_ADVERTISE` | off | list this server publicly so players can find it, which publishes its address |
 | `--advertise-as` | `KSAMP_ADVERTISE_AS` | the address seen | the hostname to be listed under |
 | `--directories` | `KSAMP_DIRECTORIES` | the shared list | where to announce, separated by commas; the shared list in `directories.txt` otherwise, read hourly while advertising |

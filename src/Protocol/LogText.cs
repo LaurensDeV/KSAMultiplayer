@@ -21,13 +21,26 @@ public static class LogText
     public const int MostBytes = 32 * 1024 * 1024;
 
     // An endpoint as IPEndPoint prints one: 1.2.3.4:5, [::1]:5, or either without the port. The
-    // lookbehind and lookahead keep a dotted KSA build such as 2026.11.16.5901 from reading as one.
+    // lookbehind and lookahead keep a dotted KSA build such as 2026.11.16.5901 from reading as one;
+    // a full stop after one, as in "looking up 1.2.3.4...", is not more of it.
     private static readonly Regex Address = new(
-        @"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?(?![\w.])|\[[0-9A-Fa-f:.%]+\](?::\d{1,5})?",
+        @"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?(?!\w|\.\d)|\[[0-9A-Fa-f:.%]+\](?::\d{1,5})?",
         RegexOptions.CultureInvariant);
 
     /// <summary>The text with every address in it said as "(address)".</summary>
     public static string Unaddressed(string text) => Address.Replace(text, "(address)");
+
+    // A user's folder, which carries their name: C:\Users\name, /Users/name, /home/name, and the
+    // same under WSL's /mnt/c. Their own name, often their real one, and nothing a log needs.
+    private static readonly Regex UserFolder = new(
+        @"(?i)(?<=[\\/](?:Users|home)[\\/])[^\\/\r\n:*?""<>|]+",
+        RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// A game's log fit to leave the machine it was written on: every address taken out, as for
+    /// <see cref="Unaddressed"/>, and the user's name in every folder path.
+    /// </summary>
+    public static string Scrubbed(string text) => UserFolder.Replace(Unaddressed(text), "(user)");
 
     public static byte[] Pack(string text)
     {
