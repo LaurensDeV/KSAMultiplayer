@@ -364,6 +364,24 @@ internal static class Sync
     private static string _notLoading = "", _notSaving = "";
     private static double _frameAt, _loadingSince, _claimNext;
     private static string _claimed = "", _address = "", _watching = "";
+
+    // The craft the camera is on, and since when, by this game's clock.
+    private static string _eyed = "";
+    private static double _eyedSince;
+    private const double WatchToTakeSeconds = 3.0;
+
+    /// <summary>
+    /// Another player's craft the camera is on while this game controls one of its own. Keys and
+    /// gauges go to the controlled craft whatever the camera is on, so a player watching somebody
+    /// else read their own speed as the other's, and could throttle or stage a rocket off screen.
+    /// Written each frame on the main thread, read in physics.
+    /// </summary>
+    public static Vehicle? Observed { get; private set; }
+
+    // Near holds asked for, and when each was last written down: asked again every second until
+    // the server answers, which is no reason to say it every second.
+    private static readonly Dictionary<string, double> NearSaid = [];
+    private const double NearSaidEverySeconds = 60.0;
     private static double _askedSpeed = 1.0, _askWarpNext;
     private static int _settle;
 
@@ -529,6 +547,9 @@ internal static class Sync
 
         string key = KeyOf(v);
         if (c.HeldBy(key) != 0 || Owned.ContainsKey(key) || MadeHere.Contains(v)) return;
+        // Not one the camera is passing over: flicking through the vessel list took every craft in
+        // it that nobody had, each one moving the player into it.
+        if (key != _eyed || Wall() - _eyedSince < WatchToTakeSeconds) return;
         // Nor one on its way out. A craft its owner has said is gone is nobody's for the frame it
         // takes to leave this world, and a game watching it took it in that frame and flew it:
         // watching a capsule dock, it was given the capsule that had just become part of a rocket,
@@ -538,6 +559,7 @@ internal static class Sync
         // No longer anybody's puppet, or the hook that keeps players off each other's craft would
         // refuse this player their own.
         Puppets.Remove(v);
+        Log.Info($"taking {key}: nobody has it, this player is flying nothing, and has watched it for {Wall() - _eyedSince:0} s");
         Own(c, v, define: false, made: false);
         if (World.GoTo(v)) Say($"{key} is free now, so it's yours");
     }
@@ -800,6 +822,8 @@ internal static class Sync
         ForgetTheEditor();
         (_worldToLoad, _notLoading, _notSaving) = (null, "", "");
         (_claimed, _address, _watching, Behind, Now) = ("", "", "", null, Stage.Off);
+        (_eyed, Observed) = ("", null);
+        NearSaid.Clear();
         _worldCame = false;
         (_askedSpeed, _askWarpNext) = (1.0, 0.0);
         if (HeldSpeed is not null)
@@ -1594,10 +1618,14 @@ internal static class Sync
         FrameSeconds = _frameAt > 0 ? Math.Min(now - _frameAt, 1.0) : 0.0;
         _frameAt = now;
         MeasureWhatThisMachineDoes(now);
+        Vehicle? eyed = World.Watched is { } seen && World.IsAlive(seen) ? seen : null;
+        string eyedKey = eyed is null ? "" : KeyOf(eyed);
+        if (eyedKey != _eyed) (_eyed, _eyedSince) = (eyedKey, now);
+        Observed = Now == Stage.Playing && eyed is not null && World.Controlled is { } mine && !ReferenceEquals(eyed, mine) && IsTheirs(eyed) ? eyed : null;
         if (_client is { } told)
         {
             (told.Can, told.Here) = (_sustains, World.Focused);
-            told.Watching = World.Watched is { } seen && World.IsAlive(seen) ? KeyOf(seen) : "";
+            told.Watching = eyedKey;
         }
         // What the other mods are told of, every frame and whatever this game is doing: in a shared
         // world or out of one, and which craft somebody else is driving.
@@ -2154,6 +2182,7 @@ internal static class Sync
         if (key == _claimed && Wall() < _claimNext) return;
         // Anything the loaded world did not have is one this game made, and may need a name of its own.
         bool made = flown is not null && !Seen.Contains(flown);
+        if (key != _claimed) Log.Info($"claiming {key}: this player is flying it" + (made ? ", and this game made it" : ""));
         c.Claim(key, controlling: true, made: made);
         (_claimed, _claimNext) = (key, Wall() + ClaimEverySeconds);
         if (flown is not null && Seen.Add(flown))
@@ -2448,6 +2477,7 @@ internal static class Sync
             if (owner != 0 && owner != c.Id && !DockedHere.ContainsKey(key))
             {
                 // Taken by another player, who is flying it now.
+                Log.Info($"{key} is {c.NameOf(owner)}'s now");
                 Owned.Remove(key);
                 HandedOn(m);
                 continue;
@@ -2457,6 +2487,7 @@ internal static class Sync
             // hand it to each other for ever. The same rule as the server's, so they agree on it.
             if (owner == 0 && !ReferenceEquals(v, flown) && KeyOf(v) != (World.Watched is { } at ? KeyOf(at) : "") && !DockedHere.ContainsKey(key))
             {
+                if (m.Granted) Log.Info($"{key} is nobody's now: let go of by the server");
                 Owned.Remove(key);
                 HandedOn(m);
                 continue;
@@ -2580,6 +2611,11 @@ internal static class Sync
         {
             if (ReferenceEquals(v, flown) || Owned.ContainsKey(key) || Puppets.ContainsKey(v) || ToRemove.Contains(v)) continue;
             if (c.OwnerOf(key) != 0 || DockedAway.ContainsKey(key) || !Near(v, flown)) continue;
+            if (!NearSaid.TryGetValue(key, out double said) || now - said > NearSaidEverySeconds)
+            {
+                NearSaid[key] = now;
+                Log.Info($"holding {key}: nobody has it, and it is near " + (flown is null ? "the craft this player is watching" : KeyOf(flown)));
+            }
             c.Claim(key, controlling: false, made: false, near: true);
         }
     }

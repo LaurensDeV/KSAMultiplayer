@@ -59,6 +59,13 @@ public sealed record ServerOptions
     /// </summary>
     public double LapseWithin { get; init; } = 10.0;
 
+    /// <summary>
+    /// How long a player must have watched a craft before it is let go of for them. Flicking the
+    /// camera through the vessel list is looking, not wanting: one player's minute of it freed
+    /// thirty craft, and those were handed round for twenty minutes after.
+    /// </summary>
+    public double WatchToTake { get; init; } = 3.0;
+
     /// <summary>The most craft one player holds at once: each is kept here, and told to every game.</summary>
     public int MaxCraftPerPlayer { get; init; } = 2048;
 
@@ -198,6 +205,7 @@ public sealed class GameServer : IDisposable
 
         /// <summary>The craft their camera is on, which need not be the one they are flying.</summary>
         public string Watching { get; set; } = "";
+        public double WatchingSince { get; set; }
 
         /// <summary>Waiting for a world to be sent: there is none yet, or a fresh one has been asked for.</summary>
         public bool WaitingForWorld { get; set; }
@@ -282,6 +290,15 @@ public sealed class GameServer : IDisposable
         public bool Near;
         public double NearAt;
 
+        /// <summary>
+        /// Who it was let go of for, and when. Kept for them a moment: let go of, it was in reach of
+        /// its last owner's physics, whose game held it again for being near before the watcher's
+        /// had heard, and it went back where it came from.
+        /// </summary>
+        public byte FreedFor;
+        public double FreedAt;
+        public bool FreedSaid;
+
         /// <summary>Who last said how it is built, and the universe time their game wrote that down at.</summary>
         public byte WrittenBy;
         public double Written;
@@ -350,6 +367,19 @@ public sealed class GameServer : IDisposable
 
     // How long a player joining waits for a fresh save before it is sent the one there is.
     private const double FreshWithinSeconds = 15.0;
+
+    // How far a save may be behind the ask and still be the fresh one a joiner waits for. The game
+    // giving it is often a second or two behind the server's time, and a test of one second sent
+    // every joiner the save it was asked for only after the full wait.
+    private const double FreshBehindSeconds = 5.0;
+
+    // How long one game is waited on for a save before the next is asked as well. A game with the
+    // vehicle editor open holds the ask unanswered, and the world sent at the end of the wait was
+    // minutes old: seven joins started 90 to 455 s behind in one evening.
+    private const double AskNextAfterSeconds = 5.0;
+
+    // How long a craft let go of for a watcher is kept for them, against anybody else's game.
+    private const double FreedForSeconds = 5.0;
 
     // How long a world may have been on its way into a game before it is too old to play in, where
     // there is a newer. A slow machine's first load takes a minute or two; this is the editor.
@@ -806,12 +836,13 @@ public sealed class GameServer : IDisposable
         if (!anyone) HoldTimeAtTheWorld(now);
 
         AskAgainForTheWorld(now);
+        AskSomebodyElse(now);
         KeepLate(now);
 
         // Players waiting on a fresh save are sent the one there is once it comes, or after a while without.
         if (_world is not null)
         {
-            foreach (Player p in _players.Values.Where(p => p.WaitingForWorld && (_world.Universe >= _snapshotAskedAt - 1.0 || now - p.WaitingSince > FreshWithinSeconds)).ToArray())
+            foreach (Player p in _players.Values.Where(p => p.WaitingForWorld && (_world.Universe >= _snapshotAskedAt - FreshBehindSeconds || now - p.WaitingSince > FreshWithinSeconds)).ToArray())
             {
                 SendWorld(p);
             }
@@ -947,6 +978,7 @@ public sealed class GameServer : IDisposable
                 (player.Late, player.LateAt, player.LateUniverse) = (late, heard, universe);
                 player.Can = float.IsFinite(ping.Can) && ping.Can > 0f ? ping.Can : 0.0;
                 player.Here = ping.Here;
+                if (ping.Watching != player.Watching) player.WatchingSince = _clock();
                 player.Watching = ping.Watching;
                 _udp.Send(new Wire.Pong(ping.Sent, _clock()), from);
                 return;
@@ -1572,10 +1604,23 @@ public sealed class GameServer : IDisposable
             Log($"{holder.Name} already has a craft called {key}, so {p.Name}'s is {fresh} here");
             return fresh;
         }
+        // Let go of for somebody a moment ago, and asked for by anyone else without meaning to fly
+        // it: kept for them. Flying it outright is still anybody's to do.
+        if (!taking && !made && craft.FreedFor != 0 && craft.FreedFor != p.Id && _clock() - craft.FreedAt < FreedForSeconds
+            && _players.TryGetValue(craft.FreedFor, out Player? waited))
+        {
+            if (!craft.FreedSaid)
+            {
+                craft.FreedSaid = true;
+                Log($"{p.Name}'s game asked for {key}, which is kept for {waited.Name} for {FreedForSeconds:0} s");
+            }
+            return null;
+        }
         if (!RoomFor(p)) return null;
         p.Crafts++;
         if (_players.TryGetValue(craft.Owner, out Player? was) && was.Controlling == key) Flying(was, "");
         (craft.Owner, craft.AttendedAt, craft.Near, craft.NearAt, craft.Said) = (p.Id, _clock(), near, _clock(), null);
+        (craft.FreedFor, craft.FreedSaid) = (0, false);
         _gone.Remove(key);
         OwnersChanged();
         return key;
@@ -2007,6 +2052,7 @@ public sealed class GameServer : IDisposable
     // server's to keep: a world is written only for a player this was called for.
     private void AskWorldOf(Player p, string why)
     {
+        _worldAskedLast = _clock();
         (p.WorldAsked, p.WorldAskedAt, p.WorldAskedWhy) = (true, _clock(), why);
         _udp.Send(new Wire.Snapshot(why), p.At);
     }
@@ -2034,6 +2080,28 @@ public sealed class GameServer : IDisposable
 
     // Long enough for a game to have written a save and begun sending it, which is what stops the asking.
     private const double AskAgainSeconds = 3.0;
+
+    private double _worldAskedLast = double.NegativeInfinity;
+
+    /// <summary>
+    /// The next game in asked for a save, while a player waits on one and the game asked has sent
+    /// nothing. Each game is asked once a round; an answer from any of them is taken.
+    /// </summary>
+    private void AskSomebodyElse(double now)
+    {
+        if (now - _worldAskedLast < AskNextAfterSeconds || !_players.Values.Any(q => q.WaitingForWorld)) return;
+        if (_players.Values.Any(q => q.WorldAsked && q.Link.Arriving is not null)) return;
+        List<Player> held = [.. _players.Values.Where(q => q.WorldAsked && q.Loaded && !q.Seeding)];
+        if (held.Count == 0) return;
+        if (_players.Values.Where(q => q.Loaded && !q.WorldAsked).OrderBy(q => q.LoadedAt).FirstOrDefault() is not { } next)
+        {
+            // Nobody left to ask: the wait runs out and the save there is goes.
+            _worldAskedLast = now;
+            return;
+        }
+        Log($"{string.Join(", ", held.Select(h => h.Name))} sent no save in {AskNextAfterSeconds:0} s, so {next.Name} is asked too");
+        AskWorldOf(next, held[0].WorldAskedWhy);
+    }
 
     /// <summary>
     /// A game that will not hand its world over, because what it holds would not load anywhere.
@@ -2279,11 +2347,15 @@ public sealed class GameServer : IDisposable
             // looking at, and letting those go handed them round hundreds of times an hour, each
             // time moving the camera of whoever happened to be watching one.
             // Nor one only a game far behind is waiting on, which could not have it anyway.
-            if (_players.Values.FirstOrDefault(q => q.Id != owner.Id && q.Loaded && q.Watching == key && BehindBy(q) <= TakeBehindSeconds) is not { } waiting) continue;
+            // Nor for a player flying something else, whose game would not take it: freed for them,
+            // it went to whoever was near it instead, or back to the owner. And only for one who has
+            // been looking at it a while.
+            if (_players.Values.FirstOrDefault(q => q.Id != owner.Id && q.Loaded && q.Watching == key && q.Controlling.Length == 0
+                                                    && now - q.WatchingSince >= Options.WatchToTake && BehindBy(q) <= TakeBehindSeconds) is not { } waiting) continue;
 
-            craft.Owner = 0;
+            (craft.Owner, craft.FreedFor, craft.FreedAt) = (0, waiting.Id, now);
             any = true;
-            Log($"{key} is {waiting.Name}'s to take: {owner.Name} has not been near it for {Options.LapseWithin:0} s");
+            Log($"{key} is {waiting.Name}'s to take: {owner.Name} has not been near it for {Options.LapseWithin:0} s, and {waiting.Name} has watched it for {now - waiting.WatchingSince:0} s");
         }
         if (any) OwnersChanged();
     }

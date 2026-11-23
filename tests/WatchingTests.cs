@@ -1,0 +1,147 @@
+using KSAMultiplayer.Server;
+using Xunit;
+
+namespace KSAMultiplayer.Tests;
+
+/// <summary>
+/// A craft its owner walked away from goes to a player who has been watching it and is flying
+/// nothing, and to nobody else. And a player joining is not held up by a game that will not save.
+/// </summary>
+public class WatchingTests
+{
+    private static Client Seed(Rig rig, string name = "Alice", double universe = 5000)
+    {
+        Client a = rig.Join(name);
+        rig.Until(() => a.Joined && a.SnapshotWanted is not null, what: "the server to ask for a world");
+        a.SnapshotWanted = null;
+        a.Upload(new Blob(BlobKind.World, "", a.Id, universe, Rig.FakeWorld()));
+        rig.Until(() => rig.Server.HasWorld && rig.Server.Players.First(p => p.Id == a.Id).Loaded, what: "the world to arrive");
+        return a;
+    }
+
+    private static Client JoinAndLoad(Rig rig, string name)
+    {
+        Client b = rig.Join(name);
+        rig.Until(() => b.Blobs.Any(x => x.Kind == BlobKind.World), seconds: 20, what: $"{name} to get the world");
+        b.SayLoaded(b.Blobs.First(x => x.Kind == BlobKind.World).Universe);
+        rig.Until(() => rig.Server.Players.First(p => p.Id == b.Id).Loaded, what: $"{name} to load");
+        return b;
+    }
+
+    // Alice holds a rocket and flies a lander.
+    private static (Client Alice, Client Bob) AliceWalkedAwayFromTheRocket(Rig rig)
+    {
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        a.Claim("Rocket", controlling: true, made: false);
+        a.Claim("Lander", controlling: true, made: false);
+        rig.Until(() => rig.Server.OwnerOf("Rocket") == a.Id && rig.Server.OwnerOf("Lander") == a.Id, what: "Alice to hold both");
+        return (a, b);
+    }
+
+    [Fact]
+    public void ACraftTheCameraPassesOverIsNotLetGoOf()
+    {
+        using Rig rig = new(new ServerOptions { LapseWithin = 1.0 });
+        (Client a, Client b) = AliceWalkedAwayFromTheRocket(rig);
+
+        // A second on it and then on to the next, as flicking through the vessel list is.
+        for (int i = 0; i < 4; i++)
+        {
+            b.Watching = i % 2 == 0 ? "Rocket" : "Lander";
+            rig.For(1.5);
+        }
+        Assert.Equal(a.Id, rig.Server.OwnerOf("Rocket"));
+
+        b.Watching = "Rocket";
+        rig.Until(() => rig.Server.OwnerOf("Rocket") == 0, seconds: 10.0, what: "the rocket to be let go of");
+        Assert.Contains(rig.Server.Said, s => s.Contains("Bob has watched it for"));
+    }
+
+    [Fact]
+    public void ACraftIsNotLetGoOfForAPlayerFlyingSomethingElse()
+    {
+        using Rig rig = new(new ServerOptions { LapseWithin = 1.0, WatchToTake = 0.5 });
+        (Client a, Client b) = AliceWalkedAwayFromTheRocket(rig);
+        b.Claim("Probe", controlling: true, made: true);
+        rig.Until(() => rig.Server.OwnerOf("Probe") == b.Id, what: "Bob to fly his probe");
+
+        b.Watching = "Rocket";
+        rig.For(4.0);
+        Assert.Equal(a.Id, rig.Server.OwnerOf("Rocket"));
+    }
+
+    /// <summary>
+    /// Let go of, the craft is in its last owner's physics, and their game holds it for being near
+    /// before the watcher's has heard. Kept for the watcher, it does not go back.
+    /// </summary>
+    [Fact]
+    public void ACraftLetGoOfForAWatcherIsKeptForThem()
+    {
+        using Rig rig = new(new ServerOptions { LapseWithin = 1.0, WatchToTake = 0.5 });
+        (Client a, Client b) = AliceWalkedAwayFromTheRocket(rig);
+        Client c = JoinAndLoad(rig, "Carol");
+
+        b.Watching = "Rocket";
+        rig.Until(() => rig.Server.OwnerOf("Rocket") == 0, seconds: 10.0, what: "the rocket to be let go of");
+        a.Claim("Rocket", controlling: false, made: false, near: true);
+        c.Claim("Rocket", controlling: false, made: false);
+        rig.For(1.0);
+        Assert.Equal(0, rig.Server.OwnerOf("Rocket"));
+        Assert.Contains(rig.Server.Said, s => s.Contains("which is kept for Bob"));
+
+        b.Claim("Rocket", controlling: false, made: false);
+        rig.Until(() => rig.Server.OwnerOf("Rocket") == b.Id, what: "Bob to take the rocket");
+    }
+
+    // The world is left to grow old, a second at a time so that nobody goes quiet.
+    private static void Age(Rig rig, int seconds)
+    {
+        for (int i = 0; i < seconds; i++)
+        {
+            rig.Skip(1.0, real: 0.0);
+            rig.For(0.01);
+        }
+    }
+
+    /// <summary>
+    /// The game in longest has the editor open and holds the ask without answering. The next is
+    /// asked, and the player joining gets its save rather than the old one after the wait.
+    /// </summary>
+    [Fact]
+    public void AJoinerIsNotHeldUpByAGameThatWillNotSave()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        Age(rig, 40);
+        a.SnapshotWanted = b.SnapshotWanted = null;
+
+        Client c = rig.Join("Carol");
+        rig.Until(() => a.SnapshotWanted is not null, what: "Alice to be asked for a save");
+        rig.Until(() => b.SnapshotWanted is not null, seconds: 9.0, what: "Bob to be asked as well");
+        Assert.Contains(rig.Server.Said, s => s.Contains("Alice sent no save in 5 s, so Bob is asked too"));
+        b.Upload(new Blob(BlobKind.World, "", b.Id, 5100, Rig.FakeWorld(43)));
+        rig.Until(() => c.Blobs.Any(x => x.Kind == BlobKind.World), seconds: 5.0, what: "Carol to get the world");
+        Assert.Equal(5100, c.Blobs.First(x => x.Kind == BlobKind.World).Universe);
+    }
+
+    /// <summary>
+    /// A save a couple of seconds behind the ask is the fresh one: the game giving it is often that
+    /// far behind the server, and was taken only once the wait for a fresh one had run out.
+    /// </summary>
+    [Fact]
+    public void ASaveAFewSecondsBehindTheAskIsFresh()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Age(rig, 40);
+        Client c = rig.Join("Carol");
+        rig.Until(() => a.SnapshotWanted is not null, what: "Alice to be asked for a save");
+        double? asked = rig.Server.AskLastSave();
+        Assert.NotNull(asked);
+        a.Upload(new Blob(BlobKind.World, "", a.Id, asked!.Value - 3.0, Rig.FakeWorld(44)));
+        rig.Until(() => c.Blobs.Any(x => x.Kind == BlobKind.World), seconds: 5.0, what: "Carol to get the world");
+        Assert.Equal(asked.Value - 3.0, c.Blobs.First(x => x.Kind == BlobKind.World).Universe);
+    }
+}

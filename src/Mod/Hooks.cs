@@ -298,6 +298,17 @@ internal static class Hooks
                   "KSA's welcome is shown over the multiplayer window when the game starts");
             Patch(AccessTools.PropertySetter(typeof(Program), nameof(Program.ControlledVehicle)), nameof(BeforeControl),
                   "another player's craft can be taken over here");
+            // Both, since a kitten's keys never reach the craft's.
+            Patch(AccessTools.Method(typeof(Vehicle), nameof(Vehicle.OnKey)), nameof(BeforeVehicleKey),
+                  "keys pressed while watching another player's craft fly this player's own, off screen");
+            Patch(AccessTools.Method(typeof(KittenEva), nameof(KittenEva.OnKey)), nameof(BeforeVehicleKey),
+                  "keys pressed while watching another player's craft walk this player's kitten, off screen");
+            Patch(AccessTools.Method(typeof(Program), "UpdateGauges"), nameof(BeforeGauges),
+                  "the gauges show this player's own craft while they watch another player's");
+            Patch(AccessTools.Method(typeof(NavBallRenderer), nameof(NavBallRenderer.GetNavBallTransform), [typeof(Vehicle)]), nameof(BeforeNavBall),
+                  "the navball shows this player's own craft while they watch another player's");
+            Patch(AccessTools.Method(typeof(NavBallRenderer), nameof(NavBallRenderer.GetNavBallMarkers), [typeof(Vehicle)]), nameof(BeforeNavBall),
+                  "the navball's markers show this player's own craft while they watch another player's");
             Patch(AccessTools.Method(typeof(KittenEva), nameof(KittenEva.BoardVehicle), [typeof(Vehicle), typeof(EVADoor)]), nameof(BeforeBoard),
                   "a kitten can climb into another player's craft");
             // The hatch's own button, so a craft that is somebody else's does not offer a way out of
@@ -907,6 +918,9 @@ internal static class Hooks
         {
             World.PointAsAsked(__instance);
             Sync.Physics(__instance, simStep.DeltaTime);
+            // A key held as the camera moved away: its release goes nowhere now, and the engine
+            // would stay at it. KSA clears the same when its own control is switched off.
+            if (Unseen(__instance)) __instance.ClearHeldPlayerInput();
         }
         catch (Exception e)
         {
@@ -1214,9 +1228,32 @@ internal static class Hooks
         {
             _refused = value;
             string whose = Sync.OwnerOf(value!) is { Length: > 0 } name ? $"{name}'s" : "another player's";
-            Sync.Say($"{value!.Id} is {whose}, so you're watching it rather than flying it");
+            Sync.Say($"{value!.Id} is {whose}, so you're watching it rather than flying it: the gauges are its, and your keys do nothing until you go back to your own");
         }
         return false;
+    }
+
+    // While the camera is on another player's craft, see Sync.Observed. Not handled, so the keys
+    // KSA's camera and menus take still reach them.
+    private static bool BeforeVehicleKey(Vehicle __instance, ref bool __result)
+    {
+        if (!Unseen(__instance)) return true;
+        __result = false;
+        return false;
+    }
+
+    private static bool Unseen(Vehicle v) => Sync.Observed is not null && ReferenceEquals(v, Program.ControlledVehicle);
+
+    // KSA fills the gauges from the craft it controls and nothing else; puppets' navball data is
+    // brought up to date each frame like any craft's.
+    private static void BeforeGauges(ref Vehicle vehicle)
+    {
+        if (Sync.Observed is { } seen && ReferenceEquals(vehicle, Program.ControlledVehicle)) vehicle = seen;
+    }
+
+    private static void BeforeNavBall(ref Vehicle vehicle)
+    {
+        if (Sync.Observed is { } seen && ReferenceEquals(vehicle, Program.ControlledVehicle)) vehicle = seen;
     }
 
     // The hatch's own EVA button never calls PerformEvaForSeat: it queues the spawn straight off, so

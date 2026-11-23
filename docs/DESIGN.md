@@ -58,7 +58,10 @@ stranger sent it.
 - **The world.** The latest save, zipped, kept on disk in `--data`. It comes from an operator
   (`--world`), from the first player to join an empty server, or as a fresh save asked of the player
   who has been in longest: every `--snapshot-every` seconds, and whenever a player joins a world more
-  than 30 s old, the joiner waiting up to 15 s for it. Only ever from the player it was asked of: one
+  than 30 s old, the joiner waiting up to 15 s for it. A save up to 5 s behind the ask counts as that
+  fresh one, since the game giving it is often a second or two behind the server. A game that has
+  sent nothing 5 s after being asked, as one with the vehicle editor open does, is not waited on
+  alone: the next in longest is asked too, and whichever save comes first is taken. Only ever from the player it was asked of: one
   arriving unasked is left where it came from, since the world is written to disk with its sender's
   build and mods and everybody else is then held to those, so a single client could otherwise lock
   every other player out of the server and out of each restart of it.
@@ -510,7 +513,7 @@ craft again, to say what it undocked from; after a restart it names the undockin
 player flying was another player's before the docking, this game flies the other half instead. The
 player who rode along is left watching their own craft again as soon as it stands in their world,
 and it is theirs by the rule every craft follows: its owner has not been near it for ten seconds
-and somebody is watching it.
+and somebody flying nothing has been watching it for three.
 
 Another player's craft cannot be taken here at all: prefixes on the setter of
 `Program.ControlledVehicle`, on `KittenEva.BoardVehicle` and on `EVADoor.PerformEvaForSeat` leave
@@ -518,6 +521,16 @@ control where it is, turn a kitten away before it climbs in, and refuse to empty
 player can still point at someone else's craft and press keys; nothing they did would reach anyone,
 but it would happen in their own world, and a kitten pulled out of someone else's capsule would
 become a craft of their own.
+
+Refused control leaves this game controlling the craft it had, and KSA sends keys and fills the
+gauges from that craft whatever the camera is on: a player watching somebody else read their own
+speed as the other's, and could throttle or stage their own rocket off screen. So while the camera
+is on another player's craft (`Sync.Observed`), prefixes on `Vehicle.OnKey` and `KittenEva.OnKey`
+leave the controlled craft's keys unhandled, the one on `PrepareWorker` clears what was held as the
+camera moved away, as KSA does when its own control is switched off, and prefixes on
+`Program.UpdateGauges` and `NavBallRenderer`'s two per-craft methods hand them the watched craft
+instead. The player still flies their own craft as far as everybody else is concerned, so it is not
+let go of meanwhile; the mission clock is still theirs.
 
 A puppet is spared when a crash in this world would wreck it -- a prefix on
 `Universe.DestroyVehicleFromEvent` refuses the destroy along with the explosion and the twelve pieces
@@ -1270,6 +1283,13 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
 
 ## What has not been tried
 
+- **Watching another player's craft.** Its gauges and navball shown, and keys kept off the
+  player's own craft: patched from KSA's code, and not looked at in a game. Nor has a craft taken
+  by three seconds of watching, or kept for its watcher, been seen in one.
+
+- **A joiner's save asked of the next game in.** Driven over loopback; not yet seen with a game
+  holding the ask in its editor.
+
 - **A launch renamed as the editor closes.** Not reproduced in a game: the clash that took the Sun
   is inferred from KSA's code and the 2026-11-22 session's logs. Nor has a crew moved with the
   name, nor the warning a lost Sun gives, been seen.
@@ -1739,7 +1759,13 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   being near it so stepping out to watch something is not walking away from it. Only a craft somebody
   else is waiting on changes hands: a world is mostly parked craft nobody is looking at, and letting
   those go lapsed ownership 873 times in 70 minutes, each one moving the camera of whoever was
-  watching a craft when it came free.
+  watching a craft when it came free. Waiting means flying nothing, which is the only game that
+  takes a watched craft, and having watched it for three seconds, so the camera passing over it is
+  not waiting: one player flicking through the vessel list freed thirty craft in a minute, and of
+  330 craft let go of in an evening 220 went to nobody. Let go of, a craft is kept for that player
+  for five seconds against any other game's ask that is not to fly it, since it is still in its last
+  owner's physics and their game held it again for being near before the watcher's had heard. The
+  game takes a craft nobody has by the same three seconds of watching.
 - **A game far behind is handed nothing.** More than 30 s behind the server's time, by its last
   ping or, until it has sent one since loading, by the universe time it said it loaded at, a game
   keeps the craft it has and the ones it makes, and `Grant` refuses it anything else; a craft only

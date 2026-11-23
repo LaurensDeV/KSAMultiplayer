@@ -49,7 +49,7 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
    the start, that is the new game KSA opens on. A game set to start in sandbox, at no craft, waits
    until there is one to hand over.
 5. Hold **Tab** for who is playing and what their ping is. **Enter** opens a chat line, **Enter** sends
-   it; a line behind a `/` goes to the server as a command instead, and is said to nobody. Another player's craft carries their name, and is theirs: you can watch it, not fly it.
+   it; a line behind a `/` goes to the server as a command instead, and is said to nobody. Another player's craft carries their name, and is theirs: you can watch it, not fly it. While you watch it the gauges are its, and your keys do nothing until you go back to your own craft. One its owner has left for ten seconds is yours if you have watched it for three while flying nothing.
 
 Once you're in:
 
@@ -276,7 +276,7 @@ like `quit`.
 | `--clear-pads` | `KSAMP_CLEAR_PADS` | `true` | clear away debris left on a launchpad for five minutes, and a craft only when its site is full |
 | `--warp-answer` | `KSAMP_WARP_ANSWER` | `30` | seconds everyone has to answer a warp |
 | `--stop-notice` | `KSAMP_STOP_NOTICE` | `15` | seconds the players are shown a countdown before the server stops; `0` for none |
-| `--lapse-within` | `KSAMP_LAPSE_WITHIN` | `10` | seconds a craft stays its owner's once another player is watching it and they are neither in it nor looking at it |
+| `--lapse-within` | `KSAMP_LAPSE_WITHIN` | `10` | seconds a craft stays its owner's once another player flying nothing has watched it for 3 s and they are neither in it nor looking at it |
 | `--speed` | `KSAMP_SPEED` | `1` | how fast universe time runs |
 | `--empty-world` | `KSAMP_EMPTY_WORLD` | | start with an empty world of this system (`SolLite` or `Sol`) instead of waiting for a player; also what `fresh` puts in place |
 | `--advertise` | `KSAMP_ADVERTISE` | off | list this server publicly so players can find it, which publishes its address |
