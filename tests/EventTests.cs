@@ -701,11 +701,12 @@ public class EventRelayTests
 
         Assert.True(alice.SendEvent(5, Channel, [5]));
         rig.Until(() => rig.Server.Players.First(p => p.Id == welcome.Id).EventGoing != 0, what: "the event to be on its way to it");
-        // Two minutes and more, five seconds at a time, the deaf game saying it is alive each time.
-        for (int i = 0; i < 30 && alice.EventsLost.Count == 0; i++)
+        // Two minutes and more, the deaf game saying it is alive each time. Two seconds at a time:
+        // the server lets a game go after ten of silence, and a loaded machine delivers one late.
+        for (int i = 0; i < 75 && alice.EventsLost.Count == 0; i++)
         {
             Say(new Wire.Alive());
-            rig.Skip(5.0, real: 0.05);
+            rig.Skip(2.0, real: 0.05);
             rig.Tick();
         }
         rig.Until(() => alice.EventsLost.Count == 1, what: "Alice to be told it was given up on");
