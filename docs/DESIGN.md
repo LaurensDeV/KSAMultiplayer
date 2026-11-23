@@ -227,7 +227,8 @@ stranger sent it.
   the same vote a player's button sends and the server cannot tell them apart, so nothing about
   what a warp needs has changed: a player in the editor, or only watching, held up every warp
   until they noticed it was asked. The game says in its log each warp it agreed to and why.
-  Built; not yet seen in a game.
+  Seen in two games: *Always* agreed in the second it was asked; *When not flying* left an ask
+  alone while its player flew, and agreed once they flew nothing.
 - **A name for every craft.** Craft Ids are KSA's own, so two games that make a craft the same way
   make one Id: two players who each send a kitten out of the same capsule both call it what KSA calls
   it. A game says, with each claim, whether it made the craft or found it in the world everyone
@@ -491,7 +492,8 @@ takes from its world what matches and `World.IsDebris` holds: what KSA marks as 
 not `Vehicle.IsControllable`, which a probe out of power is not. The server drops nothing for it,
 since a name does not say whether a craft is debris; the owner's game says gone what it swept of its
 own, and the save asked for after is from a game that has swept. A game of `Wire.Version` 31 would
-take the sweep for one of everything nobody flies, hence 33 (with `Spared`). Built; not yet seen in a game.
+take the sweep for one of everything nobody flies, hence 33 (with `Spared`). Seen in two games: four pieces shed by a rocket went from both worlds,
+and the rocket, its kittens and every other craft stayed.
 
 **A mod may be optional.** An operator's `optional-mods` names mods a player may run or not:
 the join check leaves them out of what a game has (`ModList.Without`), a world a player saves is not
@@ -1337,28 +1339,25 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
 
 ## What has not been tried
 
-- **The 2026-11-22 review's sections 5 to 8, in a game.** The re-describe skipped on taking a
-  craft back, debris described once, the body out of a craft's shape, corrections measured against
-  the orbit they put a craft on, copies under thrust put on their owner's orbit, pieces held while
-  their hull is rebuilt, copies spared from their first step, and the mod's ten kept logs and its
-  faults told to the server: built and reasoned from KSA's code, not run in a game. The server's
-  side -- the rename, the clear's spared craft and its replay to a loading game, and the ping loss
-  in `players` -- is driven over loopback.
-
-- **Watching another player's craft.** Its gauges and navball shown, and keys kept off the
-  player's own craft: patched from KSA's code, and not looked at in a game. Nor has a craft taken
-  by three seconds of watching, or kept for its watcher, been seen in one.
-
-- **A joiner's save asked of the next game in.** Driven over loopback; not yet seen with a game
-  holding the ask in its editor.
-
-- **A launch renamed as the editor closes.** Not reproduced in a game: the clash that took the Sun
-  is inferred from KSA's code and the 2026-11-22 session's logs. Nor has a crew moved with the
-  name, nor the warning a lost Sun gives, been seen.
-
-- **The countdown to a server stopping.** `Closing`, the refused joins, the last save and the
-  goodbye's reason are driven over loopback in the tests; nobody has watched the countdown drawn
-  in a game, nor seen a release's 40 s of grace answered by a deploy on the VPS.
+- **The 2026-11-22 review's work, in two games on 2026-11-23.** Seen with the rig, on loopback and
+  a Windows server: a launch renamed as its editor closed, both editors having opened on
+  `NewRocket_2`, the same three craft in both worlds after; a craft let go of only after its owner
+  had been away 10 s and a watcher flying nothing had watched it 3 s, and sixteen looks of about
+  1.5 s each through two craft letting go of nothing; the gauges filled from the watched craft and
+  both halves of a key kept from the controlled one, with the same key reaching it once the camera
+  was back on it; four pieces of debris described once each; `debris` taking the four and nothing
+  else, and `clear` naming and sparing the four craft their players held and had flown; the 15 s
+  countdown said in both games, the last save, and the goodbye's reason; both games told the
+  server they lost was updated, by one put in its place that spoke 34; `fresh` refused over its
+  own empty world 24 s later; `players` with ping and loss; a coasting copy put on its orbit
+  three times all afternoon, at 0.3 to 0.4 m, and none at 0.0; a burn and a meeting 40 m apart
+  drawn within 2 cm; a breakup with every claim of `breakup.sh` holding; and the mod's previous
+  log kept under the time it began. **Not seen:** the countdown drawn on screen (a capture hides
+  the interface), a crew moved with a renamed launch (the design had none), a lost Sun's warning,
+  a craft kept for its watcher against another game's ask, a joiner's save asked of a third game,
+  a copy under thrust on rails here, a game behind the clock correcting a copy, a copy wrecked
+  before it was a puppet, a release's 40 s of grace answered by a deploy on the VPS, the camera
+  following a pilot onto what they fly next, and optional mods.
 
 - **A Discord login on a port the system picks.** The listener and the service's redirect are
   driven in the tests; no browser has come back to a game on one.

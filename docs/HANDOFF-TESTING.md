@@ -188,6 +188,15 @@ in physics, and a world holding those warps at 1.6x and runs the game that did n
 fifth of a second behind. A dock uses up the only two ports the save has. Relaunch before a warp
 trace, and before reading any number as the mod's rather than the debris's.
 
+**A `set` on the rig's server outlives the rig.** `two-games.sh` empties the server's data on every
+start, but its settings are `ksamp-server.toml` beside the profiles, and `set` writes there: one
+`set empty-world SolLite` made every later rig start from an empty world with no craft in it. Put
+back what you set.
+
+**The rig's server reads no console.** It runs in the background with nothing on its input. Start
+it yourself with the input from a pipe, and `KSAMP_STDIN=1` passed through `WSLENV`, since the
+server reads redirected input only when told to.
+
 **Relaunching over running games used to fail without saying so**, and may again in some other
 script: `tasklist.exe | grep -q` under `pipefail` reads a running game as none. `--stop` first.
 

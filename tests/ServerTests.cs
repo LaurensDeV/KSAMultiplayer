@@ -205,6 +205,9 @@ public class ServerTests
 
         // As a restart loads it from the disk.
         rig.Server.SetWorld(new Blob(BlobKind.World, "", 0, 0.0, StockWorld.Zip("SolLite")!), "", [], "SolLite", timeKnown: false);
+        // Asked again later than the two seconds a zip's times are kept to, as it was in a game:
+        // compared byte for byte, the zip made then and the one made now differed in their dates.
+        Thread.Sleep(2100);
         string again = rig.Server.Fresh("again");
         Assert.Contains("already a new empty one", again);
         Assert.Single(rig.Server.Saves.List());

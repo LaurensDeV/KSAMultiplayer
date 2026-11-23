@@ -1242,10 +1242,15 @@ internal static class Hooks
     // KSA's camera and menus take still reach them.
     private static bool BeforeVehicleKey(Vehicle __instance, ref bool __result)
     {
+        KeysToCraft++;
         if (!Unseen(__instance)) return true;
+        KeysKeptBack++;
         __result = false;
         return false;
     }
+
+    /// <summary>Keys that reached a craft's own handler, and of them those kept from the controlled craft while another player's is watched: for the bridge.</summary>
+    public static int KeysToCraft, KeysKeptBack;
 
     private static bool Unseen(Vehicle v) => Sync.Observed is not null && ReferenceEquals(v, Program.ControlledVehicle);
 

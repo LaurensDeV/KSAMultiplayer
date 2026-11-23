@@ -3005,7 +3005,7 @@ public sealed class GameServer : IDisposable
         // An empty world nobody has played in has nothing to start over from, and starting over
         // anyway kept it as a "before fresh" save that pushed a world played in towards the five
         // that are kept: a restart between two of them had forgotten the first was kept.
-        if (_world is not null && _crafts.Count == 0 && _world.Data.AsSpan().SequenceEqual(zip))
+        if (_world is not null && _crafts.Count == 0 && Blob.SameFiles(_world.Data, zip))
         {
             return $"the world is already a new empty one in {Options.EmptyWorld}, so there is nothing to start over";
         }

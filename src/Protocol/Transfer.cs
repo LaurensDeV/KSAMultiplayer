@@ -124,6 +124,25 @@ public sealed record Blob(BlobKind Kind, string Key, byte Owner, double Universe
         return into.ToArray();
     }
 
+    /// <summary>
+    /// Whether two zips hold the same files. Not the same bytes: a zip stamps each file with when
+    /// it was packed, so the stock empty world packed twice a few seconds apart differed.
+    /// </summary>
+    public static bool SameFiles(byte[] one, byte[] other)
+    {
+        try
+        {
+            List<(string Name, byte[] Data)> a = Unzip(one), b = Unzip(other);
+            return a.Count == b.Count
+                   && a.OrderBy(f => f.Name, StringComparer.Ordinal).Zip(b.OrderBy(f => f.Name, StringComparer.Ordinal))
+                       .All(p => p.First.Name == p.Second.Name && p.First.Data.AsSpan().SequenceEqual(p.Second.Data));
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
+    }
+
     /// <summary>The files a zip holds. A name that would land outside the folder it is unpacked into is refused: the zip comes from another machine.</summary>
     public static List<(string Name, byte[] Data)> Unzip(byte[] packed)
     {

@@ -742,9 +742,17 @@ internal sealed class Bridge
         if (!Enum.TryParse(command.String("key"), ignoreCase: true, out Brutal.GlfwApi.GlfwKey key)) return Failed($"no key '{command.String("key")}'");
         if (Program.Instance is not { } program) return Failed("KSA is not up");
         Brutal.GlfwApi.GlfwModifier mods = command.Flag("shift", false) ? Brutal.GlfwApi.GlfwModifier.Shift : 0;
+        int reached = Hooks.KeysToCraft, kept = Hooks.KeysKeptBack;
         if (!command.Flag("up", false)) program.OnKey(default!, key, 0, Brutal.GlfwApi.GlfwKeyAction.Press, mods);
         if (!command.Flag("down", false)) program.OnKey(default!, key, 0, Brutal.GlfwApi.GlfwKeyAction.Release, mods);
-        return Done(new() { ["key"] = key.ToString() });
+        return Done(new()
+        {
+            ["key"] = key.ToString(),
+            ["to_craft"] = Hooks.KeysToCraft - reached,
+            ["kept_back"] = Hooks.KeysKeptBack - kept,
+            ["capture_keyboard"] = Brutal.ImGuiApi.ImGui.GetIO().WantCaptureKeyboard,
+            ["active"] = Program.IsControlledVehicleActive,
+        });
     }
 
     // Which craft the altitude gauge was last filled from: the controlled one, the watched one, or
