@@ -517,7 +517,12 @@ on, in `infra/server/server.tf`, for that one container. There is no switch to s
 game; the chat says when it has happened. A previous session is what is worth having: a crash or
 a mod that switched itself off is written there, and a player cannot be asked for it once two
 more launches have written over it. The server cleans each again, keeps at most five a session
-under `player-logs/<day>/`, and takes away days older than two weeks. `KSAMP_LOGS_TO=host:port` in
+under `player-logs/<day>/`, and takes away days older than two weeks. Each is filed as
+`discord-<id>.player-<n>.<session>.<time>.log.gz`, or `no-discord.` for a player not logged in
+with Discord: by the account the server has checked and their number on it, never by name, which
+a player types, another can type too, and would land in a path. The name heads the text instead,
+on one line with the number and the Discord account. The number is this join's, so a player not
+logged in with Discord is told apart within a session and not across them. `KSAMP_LOGS_TO=host:port` in
 a game's own environment points it elsewhere, for trying it with two games on one machine.
 
 **A game turned away for its mods is handed a link to them.** `ModLink` writes the world's list

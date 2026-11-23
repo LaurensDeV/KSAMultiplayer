@@ -34,9 +34,11 @@ public class PlayerLogTests
         Client a = Seed(rig);
         a.Upload(Sent(a));
         rig.Until(() => rig.Server.PlayerLogs.Kept.Count == 1, what: "the log to be kept");
-        (string player, string session, string text) = rig.Server.PlayerLogs.Kept[0];
-        Assert.Equal("Alice", player);
-        Assert.Equal("KSAMultiplayer.261123-152935", session);
+        (string file, string text) = rig.Server.PlayerLogs.Kept[0];
+        // By the player's number and their Discord account, which Alice has none of; never by name.
+        Assert.StartsWith($"no-discord.player-{a.Id}.KSAMultiplayer_261123-152935.", file);
+        Assert.DoesNotContain("Alice", file);
+        Assert.StartsWith($"player {a.Id}, playing as Alice, not logged in with Discord", text);
         Assert.DoesNotContain("203.0.113.7", text);
         Assert.DoesNotContain("198.51.100.4", text);
         Assert.DoesNotContain("devoo", text);
@@ -75,13 +77,15 @@ public class PlayerLogTests
         {
             PlayerLogs logs = new(folder);
             DateTime now = new(2026, 11, 23, 15, 0, 0, DateTimeKind.Utc);
-            string? old = logs.Keep("Bob", "KSAMultiplayer.261101-100000", "old", now.AddDays(-20));
+            string? old = logs.Keep("Bob", 2, "", "", "KSAMultiplayer.261101-100000", "old", now.AddDays(-20));
             Assert.True(File.Exists(old));
-            string? kept = logs.Keep("Alice/../..", "KSAMultiplayer.261123-152935", Written, now);
+            string? kept = logs.Keep("Alice/../..\nforged line", 1, "254041610990387200", "laurens", "../../KSAMultiplayer.261123-152935", Written, now);
             Assert.True(File.Exists(kept));
-            Assert.StartsWith(Path.Combine(folder, "player-logs", "2026-11-23"), kept);
+            Assert.StartsWith(Path.Combine(folder, "player-logs", "2026-11-23", "discord-254041610990387200.player-1."), kept);
+            Assert.StartsWith("player 1, playing as Alice/../.. forged line, logged in with Discord as laurens (254041610990387200)", LogText.Unpack(File.ReadAllBytes(kept!)));
             Assert.False(File.Exists(old));
             Assert.DoesNotContain("devoo", LogText.Unpack(File.ReadAllBytes(kept!)));
+            Assert.Single(Directory.GetFiles(Path.Combine(folder, "player-logs", "2026-11-23")));
         }
         finally
         {

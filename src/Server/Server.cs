@@ -1544,7 +1544,7 @@ public sealed class GameServer : IDisposable
                     return;
                 }
                 p.LogsKept++;
-                if (PlayerLogs.Keep(p.Name, blob.Key, text, DateTime.UtcNow) is not null)
+                if (PlayerLogs.Keep(p.Name, p.Id, p.DiscordId, p.DiscordName, blob.Key, text, DateTime.UtcNow) is not null)
                 {
                     Log($"kept {p.Name}'s game log of {Wire.Clip(blob.Key, Wire.KeyChars)}, {Blob.Size(blob.Data.Length)}");
                 }
