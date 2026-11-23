@@ -514,7 +514,7 @@ the session being written now is told by its process id and left out, every file
 session going together, since one that ended badly leaves an `.abnormal-exit` summary of its last
 lines beside the full log. `playerlogs [name]` at the server's console, and only there -- a game
 that types it is told there is no such command -- asks every game, or one, for its logs
-now (`Wire.LogsWanted`, a kind a game of before drops), this session's as it stands among them,
+now (`Wire.LogsWanted`, for which the protocol is 34, so no game on the server can leave it unanswered), this session's as it stands among them,
 for something going wrong while people are still in it; each ask lets a game send a full set again
 (`src/Mod/PlayerLogs.cs`), each cleaned of addresses and of the user's name in its paths
 (`LogText.Scrubbed`), as a `BlobKind.Log` the server has always been able to read. Which server is

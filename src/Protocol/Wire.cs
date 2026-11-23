@@ -199,15 +199,18 @@ public static class Wire
     /// log sent to one who asks for it as a <see cref="BlobKind.Log"/>.</para>
     ///
     /// <para>32 is <see cref="Claim.Undocked"/>. <see cref="Closing"/> came later without moving
-    /// it: a game that does not know the kind drops it and still gets the goodbye. Nor did
-    /// <see cref="LogsWanted"/> move 33, for the same reason.</para>
+    /// it: a game that does not know the kind drops it and still gets the goodbye.</para>
     ///
     /// <para>33 is the two things a <see cref="Swept"/> may leave: <see cref="Swept.Debris"/>, a sweep
     /// of debris alone, which a game of 32 would read as one of everything nobody is flying; and
     /// <see cref="Swept.Spared"/>, which a game of 32 would sweep as well, taking out of its world
     /// what every other game keeps.</para>
+    ///
+    /// <para>34 is <see cref="LogsWanted"/>. A game of 33 would drop it and still play, and the test
+    /// server asks every game in it for its logs; one that never answers is one nobody can diagnose,
+    /// so the version moves and it is told to update instead.</para>
     /// </summary>
-    public const ushort Version = 33;
+    public const ushort Version = 34;
 
     /// <summary>
     /// The version of <see cref="Ask"/> and <see cref="Facts"/> alone, in the first byte of each.
@@ -758,8 +761,7 @@ public static class Wire
 
     /// <summary>
     /// The server asking a game for its logs, this session's as it stands among them. A game sends
-    /// them only to the developer's test server, by the address it joined, whatever server asks;
-    /// one that does not know the kind drops it.
+    /// them only to the developer's test server, by the address it joined, whatever server asks.
     /// </summary>
     /// <param name="Why">What they are wanted for, said by whoever asked.</param>
     /// <param name="Session">The session's word, as on a <see cref="Closing"/>.</param>
