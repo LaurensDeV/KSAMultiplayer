@@ -414,6 +414,7 @@ internal static class Panel
 
     public static void DrawTags()
     {
+        DrawYou();
         List<(float2 At, string Who, string Craft, double Range, bool Flying, bool Editing)> tags = Sync.Nametags();
         if (tags.Count == 0)
         {
@@ -462,6 +463,27 @@ internal static class Panel
         }
         TagReport = $"{drawn} of {tags.Count} drawn, {tags.Count(t => t.Flying)} flown, at {px:F0}px";
     }
+
+    /// <summary>
+    /// "You" over the craft this player flies: no box, no name of the craft and no distance, and
+    /// fainter than a parked craft's mark, so it says which one is yours without reading as another
+    /// player's tag.
+    /// </summary>
+    private static void DrawYou()
+    {
+        if (Sync.YouAt() is not { } at) return;
+        ImDrawListPtr draw = ImGui.GetBackgroundDrawList(ImGui.GetMainViewport());
+        ImFontPtr font = ImGui.GetFont();
+        float px = ImGui.GetFontSize() * 0.9f;
+        float2 box = ImGui.CalcTextSize(You) * 0.9f;
+        float2 put = new(at.X - (box.X / 2f), at.Y - box.Y - 4f);
+        draw.AddText(font, px, new float2(put.X + 1f, put.Y + 1f), YouShadow, You);
+        draw.AddText(font, px, put, YouMark, You);
+    }
+
+    private const string You = "You";
+    private static readonly ImColor8 YouMark = new(190, 205, 225, 95);
+    private static readonly ImColor8 YouShadow = new(0, 0, 0, 110);
 
     private const int MostMarks = 6;
 
@@ -559,7 +581,9 @@ internal static class Panel
     private static void Scoreboard()
     {
         if (Sync.Client is not { Joined: true } c) return;
-        if (World.InMapView || ImGui.IsAnyItemActive()) return;
+        // Not while a line is being typed, but through a click on the board's own buttons: a button
+        // held down is an active item too, and the board went away under the mouse before it let go.
+        if (World.InMapView || ImGui.GetIO().WantTextInput) return;
         if (!World.KeyDown(GlfwKey.Tab) && Sync.Wall() >= BoardUntil) return;
 
         ImGuiViewportPtr screen = ImGui.GetMainViewport();
@@ -573,7 +597,7 @@ internal static class Panel
         const ImGuiWindowFlags board = ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoTitleBar
                                        | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove
                                        | ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.NoFocusOnAppearing
-                                       | ImGuiWindowFlags.NoNav | ImGuiWindowFlags.NoInputs;
+                                       | ImGuiWindowFlags.NoNav;
         if (ImGui.Begin("###KSAMultiplayerPlayers", board))
         {
             // A table, so a column is as wide as the widest thing in it and two of them can never
@@ -582,14 +606,21 @@ internal static class Panel
             //
             // At least so wide, in letters of the window's own font, with the room shared out between
             // the columns: three columns each as narrow as what is in them read as one run-on line.
-            float wide = ImGui.GetFontSize() * 36f;
+            // The buttons' column is wider still by its buttons, so the three keep that room.
+            float buttons = MathF.Max(ImGui.CalcTextSize(GiveLabel).X, ImGui.CalcTextSize(SpectateLabel).X) + (ImGui.GetStyle().FramePadding.X * 2f);
+            // Never wider than the game itself, less the window's own edges: on a small screen that
+            // much was more than the whole window. The names then share what there is.
+            float room = screen.WorkSize.X - (ImGui.GetStyle().WindowPadding.X * 2f) - 16f;
+            float wide = MathF.Max(buttons * 2f, MathF.Min((ImGui.GetFontSize() * 36f) + buttons + 20f, room));
             ImGui.PushStyleVar(ImGuiStyleVar.CellPadding, new float2(10f, 5f));
-            if (ImGui.BeginTable("###KSAMultiplayerBoardRows", 3, ImGuiTableFlags.SizingStretchProp | ImGuiTableFlags.PadOuterX | ImGuiTableFlags.RowBg,
+            if (ImGui.BeginTable("###KSAMultiplayerBoardRows", 4, ImGuiTableFlags.SizingStretchProp | ImGuiTableFlags.PadOuterX | ImGuiTableFlags.RowBg,
                                  new float2(wide, 0f)))
             {
                 ImGui.TableSetupColumn($"{(c.ServerName.Length > 0 ? c.ServerName : "Multiplayer")}###who", ImGuiTableColumnFlags.None, 0.45f, 0);
                 ImGui.TableSetupColumn("Ping###ping"u8, ImGuiTableColumnFlags.None, 0.15f, 1);
                 ImGui.TableSetupColumn("Flying###flying"u8, ImGuiTableColumnFlags.None, 0.4f, 2);
+                // As wide as its widest button and no wider: a share of the board cut "Give control" short.
+                ImGui.TableSetupColumn("###act"u8, ImGuiTableColumnFlags.WidthFixed, buttons, 3);
                 ImGui.TableHeadersRow();
                 bool anyDiscord = c.Players.Any(q => q.Discord);
                 foreach (Wire.Player p in c.Players.OrderBy(p => p.Id))
@@ -598,6 +629,7 @@ internal static class Panel
                     ImGui.TableNextColumn();
                     DiscordMark(anyDiscord, p.Discord);
                     ImGui.Text(p.Id == c.Id ? $"{p.Name} (you)" : p.Name);
+                    SpectatingYou(p);
                     ImGui.TableNextColumn();
                     // Every game measures its own and tells the server, so this is each player's own line.
                     Shown.Dim(p.Rtt >= 0f ? $"{p.Rtt * 1000f:F0} ms" : "--");
@@ -605,6 +637,8 @@ internal static class Panel
                     Shown.Dim(!p.Loaded ? "joining"
                                        : Sync.InTheEditor(p) ? (p.Controlling.Length > 0 ? $"{p.Controlling}, in the vehicle editor" : "in the vehicle editor")
                                        : p.Controlling.Length > 0 ? p.Controlling : "--");
+                    ImGui.TableNextColumn();
+                    PlayerButton(p, "board");
                 }
                 ImGui.EndTable();
             }
@@ -1658,6 +1692,47 @@ internal static class Panel
     /// checked, and the room for one before every other name while anybody has one, so the names
     /// stay in a column. Nothing at all where nobody has.
     /// </summary>
+    /// <summary>Said on a player's row, after the name, while their camera is on the craft this player flies.</summary>
+    private static void SpectatingYou(Wire.Player p)
+    {
+        if (!Sync.SpectatingMe(p)) return;
+        ImGui.SameLine();
+        Shown.Dim("spectating you");
+    }
+
+    /// <summary>
+    /// What a player's row offers: their craft to give them when they are spectating this player's,
+    /// or theirs to spectate when they fly one. Nothing on this player's own row, nor for somebody
+    /// joining, flying nothing, or in the editor, where there is nothing to see.
+    /// </summary>
+    private static string? PlayerButtonLabel(Wire.Player p) =>
+        Sync.Client is not { } c || p.Id == c.Id || !p.Loaded ? null
+        : Sync.SpectatingMe(p) ? GiveLabel
+        : p.Controlling.Length > 0 && !Sync.InTheEditor(p) ? SpectateLabel
+        : null;
+
+    private const string GiveLabel = "Give control", SpectateLabel = "Spectate";
+
+    private static void PlayerButton(Wire.Player p, string where)
+    {
+        if (PlayerButtonLabel(p) is not { } label) return;
+        bool give = label == GiveLabel;
+        // Already looking at them: a button that does nothing would read as broken.
+        bool already = !give && Sync.Spectating(p);
+        if (already) ImGui.BeginDisabled();
+        bool clicked = ImGui.Button($"{label}##{where}{p.Id}", null);
+        if (already) ImGui.EndDisabled();
+        if (ImGui.BeginItemTooltip())
+        {
+            ImGui.Text(give ? $"Hand the craft you're flying to {p.Name}, who is watching it. You'll go on watching it."
+                       : already ? $"You're watching {p.Controlling}" : $"Watch {p.Controlling}, which {p.Name} is flying, without taking it over");
+            ImGui.EndTooltip();
+        }
+        if (!clicked) return;
+        if (give) Sync.GiveControl(p);
+        else Sync.Spectate(p.Name);
+    }
+
     private static void DiscordMark(bool anyone, bool verified)
     {
         if (!anyone) return;
@@ -1926,6 +2001,15 @@ internal static class Panel
                 if (p.Id == c.Id) ImGui.Text($"{p.Name} (you)");
                 else if (!p.Loaded) Shown.Dim($"{p.Name} (joining)");
                 else ImGui.Text(p.Name);
+                SpectatingYou(p);
+                // At the right of the row, as the ping is on the line above.
+                if (PlayerButtonLabel(p) is { } label)
+                {
+                    ImGui.SameLine();
+                    float wide = ImGui.CalcTextSize(label).X + (ImGui.GetStyle().FramePadding.X * 2f);
+                    ImGui.SetCursorPosX(ImGui.GetCursorPosX() + MathF.Max(0f, ImGui.GetContentRegionAvail().X - wide));
+                    PlayerButton(p, "panel");
+                }
             }
             WarpRow();
             DiscordRow(c);

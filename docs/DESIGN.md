@@ -206,6 +206,25 @@ stranger sent it.
 - **Every player's ping.** A game measures its own round trip to the server and says it with each
   `Ping`; the server passes them all on in the roster, so each game can show what everyone's line is
   like. Held Tab shows that list in game.
+- **Another player's RCS.** A state says which of the craft's RCS thrusters are firing, a bit
+  each in the order its nozzles come in, which every game building it from one definition shares;
+  the others light those and no others, as they light its engines. An RCS thruster is a rocket
+  nozzle too, one a `ThrusterController` fires: lighting every nozzle for a craft said to be
+  burning puffed every thruster it has in every direction at once, and a pilot nudging sideways on
+  RCS alone was said to be burning, which lit their main engines everywhere else. Tried in two
+  games: Bravo fired Rocket's thrusters up, Alpha drew the same nine, engines dark, and both went
+  out together; Bravo's main engines drew in Alpha with no thruster lit.
+- **Who is spectating whom, and giving a craft to them.** The craft a game's camera is on goes to
+  the server with each `Ping` already; the roster passes it on, sooner than its own round when it
+  changes, so every game can say on a player's row that they are spectating you: their camera on
+  the craft you fly while they fly something else or nothing. **Give control** on that row sends a
+  `Give`. The server hands the craft over only from its pilot, to a player still looking at it and
+  not too far behind, and tells that player's game, which writes it down as its own at once and
+  takes the controls; the giver's game learns from the owners that it is somebody else's, and lets
+  go of it with the camera left on it, as for any craft another player flies.
+  Spectating lets go of the craft this player was flying: a spectator flies nothing. Left at
+  the controls, their craft went on taking keys nobody could see it answer, and the room was told
+  they were flying it.
 - **A save before a player is gone.** What a player did since the last save is in no world the
   server has once they leave, so whoever is still in it is asked for a fresh one. Nothing can be
   asked of the last player to leave: that much is lost, and the clock waits at the world rather than
@@ -1706,6 +1725,13 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   own physics has not, so the rule that hands that case back to KSA is read off the source alone.
 - **An engine lit by a flight computer rather than by a hand.** What is sent is the nozzles' own duty
   cycle, which is what a node burn leaves behind, but no node burn has been watched from another game.
+- **Spectating and giving between more than two players, or off loopback.** In two games on one
+  machine the rows were drawn and Give control was clicked by hand, handing a kitten and a rocket
+  over; through the bridge, Bravo in Gemini7 spectated Alpha in Rocket, let go of Gemini7, and
+  stayed on Rocket through three stagings, the camera put back each time. The "You" over the flown
+  craft and the Tab list held to a narrow window have been seen. A kitten given to a game still
+  2.9 s behind the world stood still in the giver's until it was put 28 m on, which is why such a
+  game is now refused; any craft flown in a player's first seconds after joining does the same.
 - **Spectating, and finishing a name with Tab.** Both are the game's own, answered without the
   server hearing of them, and both are driven only by hand so far: no run has watched a camera land
   on another player's craft, nor a half-typed name fill itself in.

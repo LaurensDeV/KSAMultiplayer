@@ -209,8 +209,12 @@ public static class Wire
     /// <para>34 is <see cref="LogsWanted"/>. A game of 33 would drop it and still play, and the test
     /// server asks every game in it for its logs; one that never answers is one nobody can diagnose,
     /// so the version moves and it is told to update instead.</para>
+    ///
+    /// <para>35 is <see cref="Player.Watching"/> on every row of a <see cref="Roster"/>, which a game
+    /// of 34 would read as the start of the next row; <see cref="Give"/>; and
+    /// <see cref="State.Thrusters"/>.</para>
     /// </summary>
-    public const ushort Version = 34;
+    public const ushort Version = 35;
 
     /// <summary>
     /// The version of <see cref="Ask"/> and <see cref="Facts"/> alone, in the first byte of each.
@@ -365,6 +369,7 @@ public static class Wire
         DiscordUser = 34,
         Closing = 35,
         LogsWanted = 36,
+        Give = 37,
     }
 
     /// <summary>Where a warp has got to: nobody has asked, somebody has and is waiting, or it is running.</summary>
@@ -452,7 +457,9 @@ public static class Wire
     /// what the room's own speed is held to, and whose name is on it.</param>
     /// <param name="Discord">Whether the server has checked a Discord login for this player. Not
     /// who they are on Discord, which is theirs to tell the room or not.</param>
-    public readonly record struct Player(byte Id, string Name, bool Loaded, string Controlling, float Rtt, float Can, bool Discord = false);
+    /// <param name="Watching">The craft that player's camera is on, as their game says on a <see cref="Ping"/>:
+    /// how a player sees who is spectating them, and whom they can give their craft to.</param>
+    public readonly record struct Player(byte Id, string Name, bool Loaded, string Controlling, float Rtt, float Can, bool Discord = false, string Watching = "");
 
     public sealed record Roster(Player[] Players) : Message(Kind.Roster);
 
@@ -574,9 +581,19 @@ public static class Wire
     /// is, and a craft that sheds a stage or docks has its centre somewhere else from that moment:
     /// a copy still in the old shape that is put where the new one stands is put metres out.
     /// </param>
+    /// <param name="Thrusters">
+    /// Which of its RCS thrusters are firing, a bit each in the order the craft's own nozzles come
+    /// in, which every game building it from one definition shares; empty when none is. Up to
+    /// <see cref="MostThrusterBytes"/> bytes, so a craft with more thrusters than that shows only
+    /// its first ones firing.
+    /// </param>
     public sealed record State(byte Owner, string Key, uint Sequence, double Universe, string Body,
                                Vec3 PositionCcf, Vec3 VelocityCcf, Vec3 PositionCci, Vec3 VelocityCci,
-                               Quat Body2Ccf, Vec3 Spin, float Throttle, StateFlags Flags, ushort Parts = 0) : Message(Kind.State);
+                               Quat Body2Ccf, Vec3 Spin, float Throttle, StateFlags Flags, ushort Parts = 0,
+                               byte[]? Thrusters = null) : Message(Kind.State);
+
+    /// <summary>The most bytes of thrusters a <see cref="State"/> says, which is 256 thrusters.</summary>
+    public const int MostThrusterBytes = 32;
 
     /// <param name="Controlling">Whether the player is flying it now, which nobody may take it from; otherwise only kept, as debris it dropped.</param>
     /// <param name="Made">
@@ -768,6 +785,16 @@ public static class Wire
     public sealed record LogsWanted(string Why, string Session = "") : Message(Kind.LogsWanted);
 
     /// <summary>
+    /// A craft handed by the player flying it to a player spectating it. From a game, asking the
+    /// server to; from the server, telling the player it went to that it is theirs now, so their
+    /// game takes the controls rather than waiting to notice.
+    /// </summary>
+    /// <param name="Key">The craft.</param>
+    /// <param name="Player">From a game, whom it is for; from the server, who gave it.</param>
+    /// <param name="Session">The session's word, as on a <see cref="Command"/>: anybody can write the address of a player on a datagram.</param>
+    public sealed record Give(string Key, byte Player, string Session = "") : Message(Kind.Give);
+
+    /// <summary>
     /// A craft given another name: asked of the server by a game, with nobody in
     /// <paramref name="By"/>, and said by the server to every game once it has done it, with who
     /// asked. Every record of the craft follows the name, and every game renames its copy.
@@ -895,6 +922,7 @@ public static class Wire
                     w.Text(p.Controlling, KeyChars);
                     w.F32(p.Rtt);
                     w.F32(p.Can);
+                    w.Text(p.Watching, KeyChars);
                 }
                 break;
             case Bye b:
@@ -957,6 +985,9 @@ public static class Wire
                 w.F32(s.Throttle);
                 w.U8((byte)s.Flags);
                 w.U16(s.Parts);
+                ReadOnlySpan<byte> firing = s.Thrusters is { } t ? t.AsSpan(0, Math.Min(t.Length, MostThrusterBytes)) : [];
+                w.U8((byte)firing.Length);
+                w.Bytes(firing);
                 break;
             case Claim c:
                 w.Text(c.Key, KeyChars);
@@ -1036,6 +1067,11 @@ public static class Wire
                 w.Text(lw.Why, 200);
                 w.Text(lw.Session, CookieChars);
                 break;
+            case Give g:
+                w.Text(g.Key, KeyChars);
+                w.U8(g.Player);
+                w.Text(g.Session, CookieChars);
+                break;
             case Name nm:
                 w.Text(nm.Was, KeyChars);
                 w.Text(nm.Now, KeyChars);
@@ -1112,7 +1148,8 @@ public static class Wire
                 Kind.Got => new Got(r.U32()),
                 Kind.Loaded => new Loaded(r.F64()),
                 Kind.State => new State(r.U8(), r.Text(KeyChars), r.U32(), r.F64(), r.Text(64), r.V3d(), r.V3f(), r.V3d(), r.V3f(),
-                                        new Quat(r.F32(), r.F32(), r.F32(), r.F32()).Normalized(), r.V3f(), r.F32(), (StateFlags)r.U8(), r.U16()),
+                                        new Quat(r.F32(), r.F32(), r.F32(), r.F32()).Normalized(), r.V3f(), r.F32(), (StateFlags)r.U8(), r.U16(),
+                                        ReadThrusters(ref r)),
                 Kind.Claim => new Claim(r.Text(KeyChars), r.U8() != 0, r.U8() != 0, r.U8() != 0, r.U8() != 0),
                 Kind.Rename => new Rename(r.Text(KeyChars), r.Text(KeyChars)),
                 Kind.WarpAsk => new WarpAsk(r.F32()),
@@ -1128,6 +1165,7 @@ public static class Wire
                 Kind.Note => new Note(r.LongText(NoteChars)),
                 Kind.Closing => new Closing(r.F32(), r.Text(200), r.Text(CookieChars)),
                 Kind.LogsWanted => new LogsWanted(r.Text(200), r.Text(CookieChars)),
+                Kind.Give => new Give(r.Text(KeyChars), r.U8(), r.Text(CookieChars)),
                 Kind.Name => new Name(r.Text(KeyChars), r.Text(KeyChars), r.U8(), r.U32()),
                 Kind.Op => ReadOp(ref r),
                 Kind.DiscordProof => new DiscordProof(r.LongText(KSAMultiplayer.Discord.CertChars), r.Text(255), r.Text(KSAMultiplayer.Discord.SignatureChars)),
@@ -1168,6 +1206,12 @@ public static class Wire
         return new Op(admin, token, role);
     }
 
+    private static byte[]? ReadThrusters(ref Reader r)
+    {
+        int n = Math.Min((int)r.U8(), MostThrusterBytes);
+        return n == 0 ? null : r.Take(n).ToArray();
+    }
+
     private static Roster ReadRoster(ref Reader r)
     {
         Player[] players = new Player[r.U8()];
@@ -1176,7 +1220,7 @@ public static class Wire
             byte id = r.U8();
             string name = r.Text(NameChars);
             byte flags = r.U8();
-            players[i] = new Player(id, name, (flags & 1) != 0, r.Text(KeyChars), r.F32(), r.F32(), (flags & 2) != 0);
+            players[i] = new Player(id, name, (flags & 1) != 0, r.Text(KeyChars), r.F32(), r.F32(), (flags & 2) != 0, r.Text(KeyChars));
         }
         return new Roster(players);
     }

@@ -406,6 +406,7 @@ public sealed class Client : IDisposable
         _owners.Clear();
         _near.Clear();
         _namesTaken.Clear();
+        Given.Clear();
         (_ownersComing, _nearComing, _ownersWant) = ([], [], -1);
         _tracks.Clear();
         Players = [];
@@ -530,6 +531,16 @@ public sealed class Client : IDisposable
         string t = Wire.Clip(line, Wire.ChatChars).Trim();
         if (Joined && t.Length > 0) Send(new Wire.Command(t, _session));
     }
+
+    /// <summary>Asks the server to hand a craft this player flies to a player spectating it; it answers with a <see cref="Wire.Give"/> to them, or says to this one why not.</summary>
+    public void Give(string key, byte to)
+    {
+        string k = Wire.Clip(key, Wire.KeyChars);
+        if (Joined && k.Length > 0 && to != 0 && to != Id) Send(new Wire.Give(k, to, _session));
+    }
+
+    /// <summary>Craft given to this player by the player who was flying them, with who that was, until the game has taken them.</summary>
+    public Queue<(string Key, byte From)> Given { get; } = new();
 
     /// <summary>Asks the server to give a craft another name in every game; it answers with a <see cref="Wire.Name"/> or says why not.</summary>
     public void AskName(string was, string now)
@@ -811,6 +822,13 @@ public sealed class Client : IDisposable
             // anybody can write the server's address on one.
             case Wire.LogsWanted lw when Joined && lw.Session == _session:
                 LogsAsked = lw.Why;
+                return;
+            // Written down as this player's at once: the owners the server sends next can be a moment
+            // behind, and a game flying a craft the table still gives the giver lets go of it again.
+            case Wire.Give g when Joined && g.Session == _session && g.Key.Length > 0:
+                _owners[g.Key] = Id;
+                _near.Remove(g.Key);
+                Given.Enqueue((g.Key, g.Player));
                 return;
             case Wire.Closing cl when Joined && cl.Session == _session && float.IsFinite(cl.Seconds):
                 (ClosingAt, ClosingWhy) = (arrived + Math.Clamp(cl.Seconds, 0f, 3600f), cl.Why);

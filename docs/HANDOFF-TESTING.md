@@ -94,9 +94,9 @@ KSA_USER_DIR=<profile> python3 tools/ksa-mcp/server.py cli <command> '<json>'
 `design` `fail` `motion` `save` `load` `start` `step` `capture` `pause` `resume` `speed` `modspeed` `pickspeed` `warpkey` `key` `log`.
 
 `mp` carries the rest as flags: `connect` `disconnect` `name` `password` `chat` `editor` `blank`
-`launch` `pads` `warp` `vote` `warps` `board` `window`; `warps` is the "Agree to warps" choice (`Ask`,
+`launch` `pads` `warp` `vote` `warps` `board` `window` `give` `spectate`; `warps` is the "Agree to warps" choice (`Ask`,
 `NotFlying` or `Always`, kept as the window keeps it), `window` false shuts the Multiplayer window, and
-`status` says whether it is open. With no flag it answers as `status` does.
+`status` says whether it is open. `give` and `spectate` take a player's name and do what the Give control and Spectate buttons on their row do, which no run can click; `status` gives each player's `watching` and whether they are `spectating_me`. With no flag it answers as `status` does.
 
 Three worth knowing about because they are new and change what is reachable:
 

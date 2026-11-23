@@ -1035,7 +1035,8 @@ internal static class World
 
         Wire.State s = new(0, key, 0, Universe, parent.Id, V(positionCcf), V(velocityCcf), V(positionCci), V(velocityCci),
                            new Quat(body2Ccf.X, body2Ccf.Y, body2Ccf.Z, body2Ccf.W), V(spin),
-                           float.IsFinite(throttle) ? Math.Clamp(throttle, 0f, 1f) : 0f, flags, (ushort)Math.Min(v.Parts.Count, ushort.MaxValue));
+                           float.IsFinite(throttle) ? Math.Clamp(throttle, 0f, 1f) : 0f, flags, (ushort)Math.Min(v.Parts.Count, ushort.MaxValue),
+                           ThrustersOf(v));
         return s.PositionCcf.IsFinite && s.PositionCci.IsFinite && s.Body2Ccf.IsFinite ? s : null;
     }
 
@@ -1932,9 +1933,51 @@ internal static class World
     {
         if (v.Parts?.RocketNozzles is not { } nozzles) return 0f;
         ReadOnlySpan<RocketNozzleState> states = nozzles.States;
+        Span<RocketNozzle> modules = nozzles.Modules;
         float most = 0f;
-        for (int i = 0; i < states.Length; i++) most = Math.Max(most, Math.Max(states[i].DutyCycle, states[i].ThrustFraction));
+        // The engines alone: an RCS thruster puffing is not the engine burning, and said to be, the
+        // others lit the main engines of a craft its pilot was only nudging sideways.
+        for (int i = 0; i < states.Length && i < modules.Length; i++)
+        {
+            if (!IsThruster(modules[i])) most = Math.Max(most, Math.Max(states[i].DutyCycle, states[i].ThrustFraction));
+        }
         return most;
+    }
+
+    // An RCS thruster is a rocket nozzle like an engine's, fired by a ThrusterController rather than
+    // by the throttle.
+    private static bool IsThruster(RocketNozzle nozzle) => nozzle.Rocket?.Controller is ThrusterController;
+
+    /// <summary>
+    /// Which of this craft's RCS thrusters are firing, a bit each in the order its nozzles come in,
+    /// or null when none is. Read from the last physics step, which is the only place KSA works it out.
+    /// </summary>
+    public static byte[]? ThrustersOf(Vehicle v)
+    {
+        try
+        {
+            if (v.Parts?.RocketNozzles is not { } nozzles) return null;
+            ReadOnlySpan<RocketNozzleState> states = nozzles.States;
+            Span<RocketNozzle> modules = nozzles.Modules;
+            Span<byte> bits = stackalloc byte[Wire.MostThrusterBytes];
+            int n = 0, last = -1;
+            for (int i = 0; i < states.Length && i < modules.Length; i++)
+            {
+                if (!IsThruster(modules[i])) continue;
+                if (n >= Wire.MostThrusterBytes * 8) break;
+                if (states[i].DutyCycle > 0f || states[i].ThrustFraction > 0f)
+                {
+                    bits[n / 8] |= (byte)(1 << (n % 8));
+                    last = n;
+                }
+                n++;
+            }
+            return last < 0 ? null : bits[..((last / 8) + 1)].ToArray();
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     /// <summary>
@@ -1961,13 +2004,23 @@ internal static class World
     // written below is gone again by the next step, so a craft that has stopped burning needs
     // writing dark once; and a craft KSA is burning for real is left to its own numbers.
     private static readonly HashSet<Vehicle> _shown = [];
+
+    // Craft whose thrusters were last drawn from here, which KSA never fires for a craft nobody here flies.
+    private static readonly HashSet<Vehicle> _puffed = [];
     private static bool _saidNoPlume;
 
     /// <summary>Forgets which craft were drawn burning, when this game is its own again.</summary>
-    public static void ForgetEngines() => _shown.Clear();
+    public static void ForgetEngines()
+    {
+        _shown.Clear();
+        _puffed.Clear();
+    }
 
     /// <summary>Whether this craft's engines were last drawn from the mod rather than out of KSA's own step.</summary>
     public static bool IsShown(Vehicle v) => _shown.Contains(v);
+
+    /// <summary>Whether this craft's RCS thrusters were last drawn firing from the mod.</summary>
+    public static bool IsPuffed(Vehicle v) => _puffed.Contains(v);
 
     /// <summary>The duty cycle this craft's engines would be drawn from now: what every engine visual reads.</summary>
     public static double DutyOf(Vehicle v)
@@ -2004,30 +2057,48 @@ internal static class World
     /// propellant are counted from the thrust fraction. What is written is read by this frame's
     /// renderers and overwritten by the next step from numbers this never touched.</para>
     /// </summary>
-    public static void ShowEngine(Vehicle v, bool on, float throttle)
+    public static void ShowEngine(Vehicle v, bool on, float throttle, byte[]? thrusters = null)
     {
-        if (!on && !_shown.Contains(v)) return;
+        bool puffing = thrusters is { Length: > 0 }, shown = _shown.Contains(v), puffed = _puffed.Contains(v);
+        if (!on && !puffing && !shown && !puffed) return;
         try
         {
             if (v.Parts is not { RocketNozzles: { } nozzles, RocketCores: { } cores }) return;
-            if (on && !_shown.Contains(v) && Drawn(nozzles)) return;
+            // KSA burning the engines itself, in a craft it is stepping: its numbers for those, and
+            // the thrusters, which it never fires for a craft nobody here is flying, from these.
+            bool kept = on && !shown && Drawn(nozzles);
             float ambient = v.PhysicsEnvironment.AtmosphericPressure;
             // Enough of a throttle to be something: a core at nothing has no conditions and makes no
             // plume, and a craft said to be burning at nothing is a craft whose throttle was not read.
             float open = float.IsFinite(throttle) ? Math.Clamp(throttle, 0.05f, 1f) : 1f;
             Span<RocketNozzle> modules = nozzles.Modules;
+            // The engines alone: an RCS thruster is a rocket nozzle too, one a ThrusterController
+            // fires, and lighting every nozzle had a burning rocket puffing every thruster it has in
+            // every direction at once. Those of the stage that is lit, unless this copy has none
+            // lit, when its staging is not what its owner's is and every engine is the better guess.
+            bool anyActive = false;
+            for (int i = 0; i < modules.Length; i++) anyActive |= modules[i].Rocket?.Controller is EngineController { IsActive: true };
+            int thruster = 0;
             for (int i = 0; i < modules.Length; i++)
             {
                 RocketNozzle nozzle = modules[i];
+                bool isThruster = IsThruster(nozzle);
+                int bit = isThruster ? thruster++ : -1;
                 if (nozzle.Rocket?.Core is not { } core) continue;
+                bool lit;
+                if (isThruster) lit = thrusters is { } t && bit / 8 < t.Length && (t[bit / 8] & (1 << (bit % 8))) != 0;
+                else if (kept) continue;
+                else lit = on && nozzle.Rocket.Controller is EngineController e && (e.IsActive || !anyActive);
+                if (!lit && !(isThruster ? puffed : shown)) continue;
                 ModuleStateful<RocketNozzle, RocketNozzleState, EmptyStruct, RocketNozzleFxState>.StateList.ModuleAndAllMutableStatesRef noz =
                     nozzles.GetModuleAndAllMutableStatesForInitialization(nozzle);
-                if (!on)
+                if (!lit)
                 {
                     (noz.State.DutyCycle, noz.State.AverageThrustFraction) = (0f, 0f);
                     continue;
                 }
-                RocketCoreConditions conditions = core.ComputeConditions(open);
+                // A thruster is all or nothing: the throttle is the engines'.
+                RocketCoreConditions conditions = core.ComputeConditions(isThruster ? 1f : open);
                 ModuleStateful<RocketCore, RocketCoreState, RocketCoreGlobalState, EmptyStruct>.StateList.ModuleAndAllMutableStatesRef hot =
                     cores.GetModuleAndAllMutableStatesForInitialization(core);
                 hot.State.Conditions = conditions;
@@ -2036,10 +2107,12 @@ internal static class World
                 noz.State.ExhaustVelocity = made.ActualExhaustVelocity;
                 // The whole of the step, and how hard: the other statistic the step would have left,
                 // which is what the engine's own sound is pitched by within earshot.
-                (noz.State.DutyCycle, noz.State.AverageThrustFraction) = (1f, open);
+                (noz.State.DutyCycle, noz.State.AverageThrustFraction) = (1f, isThruster ? 1f : open);
             }
-            if (on) _shown.Add(v);
-            else _shown.Remove(v);
+            if (on && !kept) _shown.Add(v);
+            else if (!on) _shown.Remove(v);
+            if (puffing) _puffed.Add(v);
+            else _puffed.Remove(v);
         }
         catch (Exception e)
         {
@@ -2054,7 +2127,8 @@ internal static class World
     private static bool Drawn(ModuleStateful<RocketNozzle, RocketNozzleState, EmptyStruct, RocketNozzleFxState>.StateList nozzles)
     {
         ReadOnlySpan<RocketNozzleState> states = nozzles.States;
-        for (int i = 0; i < states.Length; i++) if (states[i].DutyCycle > 0f) return true;
+        Span<RocketNozzle> modules = nozzles.Modules;
+        for (int i = 0; i < states.Length && i < modules.Length; i++) if (states[i].DutyCycle > 0f && !IsThruster(modules[i])) return true;
         return false;
     }
 

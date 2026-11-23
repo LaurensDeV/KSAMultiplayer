@@ -222,7 +222,7 @@ internal static class Sync
     // What each puppet's owner last said its engines were doing. Kept because the frame hook and the
     // frame KSA draws are not the same moment: the plume is drawn from the render, after this mod has
     // run and from state a physics step would have left behind, so it is written there and read here.
-    private static readonly Dictionary<Vehicle, (bool On, float Throttle)> Engines = [];
+    private static readonly Dictionary<Vehicle, (bool On, float Throttle, byte[]? Thrusters)> Engines = [];
     // Another player's craft built here, by what the shared world calls it. World.Vehicles() does not
     // list a craft the moment it is made, so asking the world whether a craft is here answers no for
     // a frame or two after it was built, and the answer is taken as leave to build it again. This is
@@ -1287,7 +1287,12 @@ internal static class Sync
     /// </summary>
     private static void KeepWatching(Client c, Dictionary<string, Vehicle> here, Vehicle? flown)
     {
-        if (flown is not null)
+        // Back in their own craft, the player is watching nothing. Not merely for having one: a
+        // spectator usually sits in their own craft with the camera on somebody else's, and the
+        // camera lost at every stage was put back for nobody but a player flying nothing. Nor once
+        // the watched copy has gone, when KSA may have handed the camera to the flown craft itself.
+        if (flown is not null && (World.Watched is not { } seen || ReferenceEquals(seen, flown))
+            && (_watch is null || World.IsAlive(_watch.Craft)))
         {
             _watch = null;
             return;
@@ -1562,8 +1567,36 @@ internal static class Sync
         c.AskName(was, now);
     }
 
+    /// <summary>
+    /// Whether a player's camera is on the craft this player flies, while they fly something else
+    /// or nothing: spectating, as the lists show it, and whom this player can give it to.
+    /// </summary>
+    public static bool SpectatingMe(Wire.Player p) =>
+        _client is { } c && p.Id != c.Id && p.Loaded && p.Watching.Length > 0 && p.Watching != p.Controlling
+        && Flown is { } mine && p.Watching == KeyOf(mine) && Owned.ContainsKey(p.Watching);
+
+    /// <summary>Whether this player's camera is on what that player flies.</summary>
+    public static bool Spectating(Wire.Player p) =>
+        p.Controlling.Length > 0 && World.Watched is { } seen && World.IsAlive(seen) && KeyOf(seen) == p.Controlling
+        && !(Flown is { } mine && ReferenceEquals(mine, seen));
+
+    /// <summary>Hands the craft this player flies to a player spectating it, if the server agrees.</summary>
+    public static void GiveControl(Wire.Player to)
+    {
+        if (_client is not { Joined: true } c) return;
+        if (Flown is not { } mine || !Owned.ContainsKey(KeyOf(mine)))
+        {
+            Told("you can only give the craft you're flying");
+            return;
+        }
+        string key = KeyOf(mine);
+        Log.Info($"giving {key} to {to.Name}");
+        Told($"giving {key} to {to.Name}");
+        c.Give(key, to.Id);
+    }
+
     /// <summary>Puts the camera on what a player is flying, without taking it over.</summary>
-    private static void Spectate(string name)
+    public static void Spectate(string name)
     {
         if (_client is not { Joined: true } c) return;
         if (name.Length == 0)
@@ -1588,9 +1621,13 @@ internal static class Sync
             Told($"{who.Name} is flying {who.Controlling}, which hasn't loaded in your game yet");
             return;
         }
+        // A spectator flies nothing: left at the controls of their own craft, it went on answering
+        // keys nobody could see it answer, and the room was told they were flying it.
+        string left = "";
+        if (World.Controlled is { } mine && !ReferenceEquals(mine, seen) && World.LetGo(mine)) left = $"; you've let go of {KeyOf(mine)}";
         Told(World.Watch(seen)
-            ? $"watching {who.Name}, flying {who.Controlling}"
-            : $"could not put the camera on {who.Controlling}");
+            ? $"watching {who.Name}, flying {who.Controlling}{left}"
+            : $"could not put the camera on {who.Controlling}{left}");
     }
 
     /// <summary>Whether this server runs everything this game asks of it.</summary>
@@ -2202,6 +2239,23 @@ internal static class Sync
         // never heard of it: this world is the one that knows what is in it.
         while (c.Swept.TryDequeue(out Sweep? sweep)) SweepOut(c, here, flown, sweep.Like, debris: false, sweep.Spared);
         while (c.SweptDebris.TryDequeue(out string? like)) SweepOut(c, here, flown, like, debris: true, NoneSpared);
+        // Handed over by its pilot, who has been told the server agreed: the controls are taken here
+        // rather than left for the camera to notice, since the player asked for nothing and is
+        // only looking at it.
+        while (c.Given.TryDequeue(out (string Key, byte From) given))
+        {
+            if (here.TryGetValue(given.Key, out Vehicle? gift) && World.IsAlive(gift) && !ToRemove.Contains(gift))
+            {
+                Puppets.Remove(gift);
+                _toGoTo = gift;
+                Log.Info($"given {given.Key} by {c.NameOf(given.From)}");
+                Say($"{c.NameOf(given.From)} gave you control of {given.Key}");
+            }
+            else
+            {
+                Say($"{c.NameOf(given.From)} gave you {given.Key}, which isn't in your game");
+            }
+        }
 
         // What other players' games say of their craft on a mod's behalf, for this game's copy of that mod.
         while (c.Extras.TryDequeue(out Wire.Extra? word))
@@ -2901,7 +2955,7 @@ internal static class Sync
             // The input, which lights the engine for real in a craft this game is stepping, and the
             // word for the renderer, which is all there is for one it is not.
             World.SetEngine(v, lit, s.Throttle);
-            Engines[v] = (lit, s.Throttle);
+            Engines[v] = (lit, s.Throttle, s.Thrusters);
             // Or when this game has it going round another body than its owner says: that is the one
             // case the pull cannot answer, and it does not fix itself. A craft standing on a pad is
             // inside the Earth's physics radius, where KSA's own SOI check gives up on its first
@@ -3066,6 +3120,16 @@ internal static class Sync
     private const double NametagWithinM = 2_000_000.0, ClaimWithinM = 20_000.0;
 
     /// <summary>
+    /// Where on the screen the craft this player flies is, for a quiet "You" over it: with somebody
+    /// else's name over theirs and the camera free to be on either, which one is your own was not
+    /// always plain. Only in a shared world, and not in the map, where KSA marks the flown craft itself.
+    /// </summary>
+    public static float2? YouAt() =>
+        Now == Stage.Playing && !World.InMapView && World.Controlled is { } mine && World.IsAlive(mine) && !Puppets.ContainsKey(mine)
+            ? World.ScreenOf(mine)
+            : null;
+
+    /// <summary>
     /// Where each other player's craft is on the screen and whose it is, for the panel to draw over
     /// the world. Only craft another player owns: this player knows which one is theirs.
     /// </summary>
@@ -3119,8 +3183,8 @@ internal static class Sync
     /// </summary>
     public static void ShowEngines(Vehicle v)
     {
-        (bool on, float throttle) = Engines.TryGetValue(v, out (bool On, float Throttle) said) ? said : (false, 0f);
-        World.ShowEngine(v, on, throttle);
+        (bool on, float throttle, byte[]? thrusters) = Engines.TryGetValue(v, out (bool On, float Throttle, byte[]? Thrusters) said) ? said : (false, 0f, null);
+        World.ShowEngine(v, on, throttle, thrusters);
     }
 
     /// <summary>A puppet pulled to its owner's state, or this player's craft held for the editor, from the physics window.</summary>

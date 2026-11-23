@@ -48,18 +48,23 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
    yet, yours becomes the server's world instead, and nothing is replaced: joined straight from
    the start, that is the new game KSA opens on. A game set to start in sandbox, at no craft, waits
    until there is one to hand over.
-5. Hold **Tab** for who is playing and what their ping is. **Enter** opens a chat line, **Enter** sends
+5. Hold **Tab** for who is playing, what their ping is, and who is spectating you; **Spectate** on
+   a player's row (or `/spectate <name>`) puts your camera on what they fly and lets go of your own
+   craft, which stays yours for ten seconds as any craft you leave does, and **Give control** on the row of somebody
+   spectating you hands them the craft you are flying, which you go on watching. **Enter** opens a chat line, **Enter** sends
    it; a line behind a `/` goes to the server as a command instead, and is said to nobody. Another player's craft carries their name, and is theirs: you can watch it, not fly it. While you watch it the gauges are its, and your keys do nothing until you go back to your own craft. One its owner has left for ten seconds is yours if you have watched it for three while flying nothing.
 
 Once you're in:
 
 - **The server's name at the top right of the menu bar** opens and shuts the Multiplayer window: who
   is here, your ping, and **SERVERS**, the list from the start screen, to move to another server
-  with **JOIN**. Hold **Tab** for who is flying what.
+  with **JOIN**. Each player's row says whether they are spectating you, with **Spectate** or
+  **Give control** as on the Tab list. Hold **Tab** for who is flying what.
 - **Fly anything nobody else is flying.** Take control of a craft and it's yours while you are in it
   or looking at it, and for ten seconds after. A craft someone else is flying moves where their
   game says: ask for it and the camera goes there anyway, so you ride along and watch rather than
-  fly. Their name is over the craft they're in; their other craft carry a faint `Alice's Lander`.
+  fly. Their name is over the craft they're in; their other craft carry a faint `Alice's Lander`, and
+  the one you are flying a fainter `You`.
   In the map, each player's name is over the craft they're in, however far away.
 - **Launch as usual.** A craft you launch, a stage you drop and a kitten you send on EVA show up for
   everyone else.

@@ -356,6 +356,8 @@ internal sealed class Bridge
                 ["name"] = p.Name,
                 ["loaded"] = p.Loaded,
                 ["flying"] = p.Controlling,
+                ["watching"] = p.Watching,
+                ["spectating_me"] = Sync.SpectatingMe(p),
                 ["can"] = Math.Round(p.Can, 3),
             }).ToList();
             // Who the server says flies what, against what this game is doing about it: the one
@@ -427,6 +429,8 @@ internal sealed class Bridge
                 // KSA's own or the mod's: the whole of whether another player is seen to burn.
                 ["engine_duty"] = Math.Round(World.DutyOf(v), 3),
                 ["engine_drawn_here"] = World.IsShown(v),
+                ["thrusters_drawn_here"] = World.IsPuffed(v),
+                ["thrusters_firing"] = World.ThrustersOf(v) is { } firing ? Convert.ToHexString(firing) : null,
             });
         }
         return Done(new() { ["craft"] = all });
@@ -638,6 +642,22 @@ internal sealed class Bridge
         {
             Panel.BoardUntil = Sync.Wall() + Math.Clamp(command.Number("board", 3.0), 0.0, 60.0);
             return Done(new() { ["board_for_s"] = Math.Round(Panel.BoardUntil - Sync.Wall(), 1) });
+        }
+
+        // What the Give control and Spectate buttons on a player's row do, by that player's name:
+        // a click is the one thing a run cannot make.
+        string giveTo = command.String("give"), spectate = command.String("spectate");
+        if (giveTo.Length > 0 || spectate.Length > 0)
+        {
+            if (Sync.Client is not { } joined) return Failed("not connected");
+            string named = giveTo.Length > 0 ? giveTo : spectate;
+            if (joined.Players.FirstOrDefault(p => string.Equals(p.Name, named, StringComparison.OrdinalIgnoreCase)) is not { Id: > 0 } row)
+            {
+                return Failed($"nobody called '{named}'");
+            }
+            if (giveTo.Length > 0) Sync.GiveControl(row);
+            else Sync.Spectate(row.Name);
+            return Done(new() { ["player"] = row.Name, ["spectating_me"] = Sync.SpectatingMe(row) });
         }
 
         // Through the same door as the keyboard, / and all, so what a run drives is what a player does.

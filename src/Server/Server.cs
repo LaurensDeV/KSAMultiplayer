@@ -387,6 +387,7 @@ public sealed class GameServer : IDisposable
 
     /// <summary>Where an answer is written to learn how long it is, before it is sent.</summary>
     private readonly byte[] _measure = new byte[Wire.BufferBytes];
+    private const double RosterSoonSeconds = 0.5;
     private const double RosterEverySeconds = 2.0, OwnersEverySeconds = 5.0, ClockEverySeconds = 0.2;
 
     // A count that climbs while nobody is launching anything is a world filling with craft that
@@ -420,6 +421,9 @@ public sealed class GameServer : IDisposable
     // One that is further is flying the past: as owner, its world is the one every other game is
     // pulled to, and a station given to a game 5,500 s behind came apart in it 45 s later.
     private const double TakeBehindSeconds = 30.0;
+
+    // How far behind a game may be and still be given a craft by its pilot.
+    private const double GiveBehindSeconds = 1.0;
 
     // A world this old in universe time is saved afresh before it is handed to a player joining.
     private const double StaleSeconds = 30.0;
@@ -1016,7 +1020,13 @@ public sealed class GameServer : IDisposable
                 (player.Late, player.LateAt, player.LateUniverse) = (late, heard, universe);
                 player.Can = float.IsFinite(ping.Can) && ping.Can > 0f ? ping.Can : 0.0;
                 player.Here = ping.Here;
-                if (ping.Watching != player.Watching) player.WatchingSince = _clock();
+                if (ping.Watching != player.Watching)
+                {
+                    player.WatchingSince = _clock();
+                    // Soon rather than on the roster's own round: who is spectating whom is shown
+                    // in every game, and a button for giving a craft hangs on it.
+                    _rosterNext = Math.Min(_rosterNext, _clock() + RosterSoonSeconds);
+                }
                 player.Watching = ping.Watching;
                 _udp.Send(new Wire.Pong(ping.Sent, _clock()), from);
                 return;
@@ -1155,6 +1165,9 @@ public sealed class GameServer : IDisposable
                 return;
             case Wire.Name name when player.Loaded:
                 if (RenameCraft(name.Was, name.Now, player) is { } refused) Tell(player, refused);
+                return;
+            case Wire.Give give when player.Loaded && give.Session == player.Session:
+                if (GiveCraft(player, give.Key, give.Player) is { } notGiven) Tell(player, notGiven);
                 return;
             case Wire.DiscordProof discordProof:
                 OnDiscordProof(player, discordProof, arrived);
@@ -2676,6 +2689,39 @@ public sealed class GameServer : IDisposable
     /// and sent only to the developer's test server: the games decide that.
     /// </summary>
     /// <returns>What came of asking, for whoever asked.</returns>
+    /// <summary>
+    /// A craft handed by the player flying it to one spectating it: theirs at once, and their game
+    /// told so it takes the controls. Only to somebody looking at it, so nobody is put in a craft
+    /// they never asked to see; and only from its pilot, so nobody gives away what is not theirs.
+    /// </summary>
+    /// <returns>Why not, or null when it was given.</returns>
+    public string? GiveCraft(Player from, string key, byte to)
+    {
+        if (!_crafts.TryGetValue(key, out Craft? craft) || craft.Owner != from.Id || craft.Near || from.Controlling != key)
+        {
+            return $"you can only give the craft you're flying";
+        }
+        if (!_players.TryGetValue(to, out Player? taker) || taker == from || !taker.Loaded) return "that player isn't here any more";
+        if (taker.Watching != key) return $"{taker.Name} isn't spectating {key} any more";
+        // Closer than any take: a game still catching up with the world after joining is flying the
+        // past, and a kitten given to one 3 s behind stood still in the giver's world while it walked.
+        if (BehindBy(taker) is var behind && behind > GiveBehindSeconds)
+        {
+            return $"{taker.Name}'s game is still catching up with the world ({behind:F1} s behind): give {key} in a moment";
+        }
+        if (!RoomFor(taker)) return $"{taker.Name} already has as many craft as this server allows";
+        double now = _clock();
+        taker.Crafts++;
+        Flying(from, "");
+        (craft.Owner, craft.AttendedAt, craft.Near, craft.NearAt, craft.Said) = (taker.Id, now, false, now, null);
+        (craft.FreedFor, craft.FreedSaid, craft.TakenAt) = (0, false, now);
+        Flying(taker, key);
+        OwnersChanged();
+        _udp.Send(new Wire.Give(key, from.Id, taker.Session), taker.At);
+        Log($"{from.Name} gave {key} to {taker.Name}, who was spectating it");
+        return null;
+    }
+
     public string AskLogs(string who, string why)
     {
         if (!Options.CollectLogs) return "this server keeps no players' logs: collect-logs is off";
@@ -3226,12 +3272,12 @@ public sealed class GameServer : IDisposable
 
     private Wire.Roster Roster()
     {
-        Wire.Roster roster = new([.. _players.Values.OrderBy(p => p.Id).Select(p => new Wire.Player(p.Id, p.Name, p.Loaded, p.Controlling, p.Rtt, (float)p.Can, p.DiscordId.Length > 0))]);
+        Wire.Roster roster = new([.. _players.Values.OrderBy(p => p.Id).Select(p => new Wire.Player(p.Id, p.Name, p.Loaded, p.Controlling, p.Rtt, (float)p.Can, p.DiscordId.Length > 0, p.Watching))]);
         // A craft's name is up to 255 bytes, and thirty players flying such are more than a datagram:
         // the roster then went to nobody. Said with the names of craft cut short, it still says who is here.
         for (int chars = 32; chars >= 0 && !Fits(roster); chars -= 16)
         {
-            roster = new([.. roster.Players.Select(p => p with { Controlling = Wire.Clip(p.Controlling, chars) })]);
+            roster = new([.. roster.Players.Select(p => p with { Controlling = Wire.Clip(p.Controlling, chars), Watching = Wire.Clip(p.Watching, chars) })]);
         }
         return roster;
     }

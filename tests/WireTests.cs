@@ -77,6 +77,22 @@ public class WireTests
         return Assert.IsType<T>(read);
     }
 
+    /// <summary>Which thrusters fire, and who is spectating what, come back as they went; nothing firing is nothing said.</summary>
+    [Fact]
+    public void ThrustersAndWatchingComeBackAsTheyWent()
+    {
+        Wire.State firing = new(1, "Rocket", 7, 100.0, "Earth", new Vec3(1, 2, 3), Vec3.Zero, new Vec3(1, 2, 3), Vec3.Zero,
+                                Quat.Identity, Vec3.Zero, 0.5f, Wire.StateFlags.EngineOn, 21, [0b1010_0001, 0, 0b1000_0000]);
+        Assert.Equal(firing.Thrusters, RoundTrip(firing).Thrusters);
+        Assert.Null(RoundTrip(firing with { Thrusters = [] }).Thrusters);
+        Assert.Equal(Wire.MostThrusterBytes, RoundTrip(firing with { Thrusters = new byte[100] }).Thrusters?.Length);
+
+        Wire.Roster roster = new([new Wire.Player(1, "Alice", true, "Rocket", 0.02f, 1f, Watching: "Rocket"),
+                                  new Wire.Player(2, "Bob", true, "", 0.03f, 1f, true, "Rocket")]);
+        Assert.Equal(roster.Players, RoundTrip(roster).Players);
+        Assert.Equal(new Wire.Give("Rocket", 2, "s3ss10n"), RoundTrip(new Wire.Give("Rocket", 2, "s3ss10n")));
+    }
+
     [Fact]
     public void EveryMessageComesBackAsItWent()
     {
