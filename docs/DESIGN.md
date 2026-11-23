@@ -573,8 +573,29 @@ the car mod's memory and in nothing KSA saves. `Guests` listens on StarMap's eve
 mod says of a craft this player has and sends it with the craft's state (`Wire.Extra`, opaque
 bytes under the mod's own channel name), hands what arrives to this game's copy of that mod, and
 tells mods which craft are held here for another game, so that a mod with physics of its own
-leaves those alone. Neither mod refers to the other; `docs/MOD-API.md` has the five names they
+leaves those alone. Neither mod refers to the other; `docs/MOD-API.md` has the eight names they
 share.
+
+**What another mod says once arrives, or its sender is told it did not.** A crash or a message
+from one player to another is not the newest of anything, so it does not ride with a state: a mod's
+events go as a batch in one `Link` transfer (`BlobKind.ModEvent`, 8 kB at most), one in flight each
+way per player, so a busy mod never holds the transfers a world or a craft needs. `Link.Came` is
+how either end knows a batch is done with. The server reads none of it. It writes who said each
+one, since a game cannot be trusted to; charges what a game says against 16 kB a second of that
+game's own, as it would weigh passed on; and keeps a queue for each player it is going to, 256 kB
+at most, so a player whose connection has stalled costs the others nothing. What overflows, what
+was for a player who has left and what a link gave up on after two minutes is said back to its
+sender (`Wire.EventLost`, numbered and repeated until acknowledged), and reaches the mod as
+`craftsync.event.lost`. A world loaded again drops what was waiting on both sides and says nothing
+lost, since every mod is told the session ended.
+
+What that leaves open, and is accepted. A datagram from a forged address can say an event in a
+player's name, as it can a state. A batch on its way up as a world is loaded again may be passed
+on into the new one. "Left" and "gave up" are not known to have arrived rather than known not to
+have: a transfer's last piece can arrive and its acknowledgement be lost. An event said in the
+frame a new world arrives is answered as queued and dropped. And a mod is handed an event on the
+frame with the physics worker running, where changing which vehicles exist would throw out of
+the physics step.
 
 **A docking is done in one world and told to the rest.** KSA docks two craft where its contact
 solver or its port menu says so, in whichever game sees it first, and takes one into the other. That
@@ -1394,6 +1415,17 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   roster following the name -- the server's half of the first three is in its tests.
 
 ## What has not been tried
+
+- **What a mod says once (protocol 36), with a guest mod listening.** The codec, `Link.Came`, the
+  server's relay, its rate, its queues and every loss are tested over loopback
+  (`tests/EventTests.cs`). Seen between two games on 2026-11-24, on loopback and a Windows server,
+  through the bridge and with no guest mod (`./tools/two-games.sh --event`): one event heard in the
+  other game half a second after it was said, with the sender's id and name, and not in its own;
+  six said at once heard in order; one about a craft, for one player by name, arriving with the
+  craft, its key and its owner; one for the game that said it and one for a name nobody has, each
+  said lost as `nobody`; and one of 5000 bytes refused. **Not seen:** a mod's own handler called, a
+  publisher on a thread of KSA's, any loss but `nobody`, a queue across a reload or a player
+  leaving, and anything off loopback.
 
 - **Players' logs to the test server, on `ksamp.gg` itself.** Seen with two games pointed at the
   rig's server by `KSAMP_LOGS_TO`: each sent its last three sessions as it joined, the server kept
