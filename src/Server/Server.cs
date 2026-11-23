@@ -286,6 +286,28 @@ public sealed class GameServer : IDisposable
         /// <summary>Chat lines and commands it may still say, each filling again as time passes, and as of when.</summary>
         public double Chats = ChatsAtOnce, ChatsAt = now, Commands = CommandsAtOnce, CommandsAt = now;
 
+        /// <summary>What mods have said that is waiting to go to this game, oldest first, and what it weighs.</summary>
+        public List<ModEvent> Events { get; } = [];
+        public int EventBytes { get; set; }
+
+        /// <summary>
+        /// The batch on its way to this game and the transfer it is. One at a time: a link takes
+        /// four things at once, and a world or a craft may be any of them.
+        /// </summary>
+        public List<ModEvent> EventsGoing { get; } = [];
+        public uint EventGoing { get; set; }
+
+        /// <summary>Bytes of mods' events this game may still say, filling as time passes, and as of when.</summary>
+        public double EventAllowance = ModEvents.BurstBytes, EventAllowanceAt = now;
+
+        /// <summary>
+        /// Events of this game's that did not reach somebody, said to it until it says them back;
+        /// how many have been counted; and when to say them next.
+        /// </summary>
+        public Queue<Wire.EventLost> Lost { get; } = new();
+        public uint LostSaid { get; set; }
+        public double LostNext { get; set; }
+
         /// <summary>How many craft it held when they were last counted, with those given since, and when that was.</summary>
         public int Crafts { get; set; }
         public double CraftsAt { get; set; } = double.NegativeInfinity;
@@ -358,6 +380,11 @@ public sealed class GameServer : IDisposable
     // the log. A game deleting many craft at once asks for each in its own command, and a rocket
     // that has fallen over is fifty pieces.
     private const double ChatsAtOnce = 10.0, ChatsASecond = 2.0, CommandsAtOnce = 250.0, CommandsASecond = 5.0;
+
+    // A game that has stopped listening is not owed a list without end of what it lost. As many a
+    // round as a stalled player's queue overflowing can make of them: at eight, a busy sender was
+    // owed more than it could be told and the rest were dropped untold.
+    private const int MostLostWaiting = 1024, LostAtOnce = 64;
 
     // Who holds what is told again no sooner than this after the last telling, and a hundredth of a
     // second later for every page of it: told at the next tick, a table of a thousand craft was sent
@@ -959,6 +986,7 @@ public sealed class GameServer : IDisposable
                 _udp.Send(telling, p.At);
                 p.TellNext = now + TellAgainSeconds;
             }
+            SayEvents(p, now);
             // Room for a world is kept only for a player asked for one.
             p.Link.MostPieces = p.WorldAsked ? ushort.MaxValue : Link.VehiclePieces;
             p.Link.Pump(now, m => _udp.Send(m, p.At));
@@ -1197,6 +1225,16 @@ public sealed class GameServer : IDisposable
                 }
                 Log($"{player.Name}, {Permissions.Said(player.Role)}, asks for '{line}'");
                 Asked.Enqueue((player, line));
+                return;
+            // What it lost, said back as far as it has taken them. With the session's word: a
+            // player is otherwise known by an address anybody can write.
+            case Wire.EventLost taken when taken.Session == player.Session:
+                while (player.Lost.TryPeek(out Wire.EventLost? told) && told.Serial <= taken.Serial)
+                {
+                    player.Lost.Dequeue();
+                    // The next of them go at the end of this tick, not half a second on.
+                    player.LostNext = 0.0;
+                }
                 return;
             // Only what this game was told, said back: it has heard, and a token it was handed is
             // written down. Anything else in an Op from a game is nothing the server ever said.
@@ -1629,7 +1667,124 @@ public sealed class GameServer : IDisposable
                 _gone.Remove(blob.Key);
                 foreach (Player other in _players.Values.Where(q => q.Loaded && q != p)) other.Link.Send(craft.Definition, _clock());
                 return;
+            // From a game in the world only. One that is not has had the world sent to it again,
+            // and what it said was said in the last.
+            case BlobKind.ModEvent when p.Loaded:
+                OnEvents(p, blob);
+                return;
         }
+    }
+
+    /// <summary>
+    /// What a mod says once, for every other game in the world or for one. Held for each until its
+    /// link is free, and never read here.
+    ///
+    /// <para>Not passed on as a craft's definition is, a transfer to each game for each that
+    /// arrives: a link takes four things at once, and fifteen games saying something is fifteen
+    /// transfers on every one of them.</para>
+    /// </summary>
+    private void OnEvents(Player p, Blob blob)
+    {
+        double now = _clock();
+        p.EventAllowance = Math.Min(ModEvents.BurstBytes, p.EventAllowance + ((now - p.EventAllowanceAt) * ModEvents.BytesASecond));
+        p.EventAllowanceAt = now;
+        // Nothing of it could be told back, so it is not worth reading: a game sending these as fast
+        // as its line carries them would otherwise have each one read to no end.
+        if (blob.Data.Length > p.EventAllowance && p.Lost.Count >= MostLostWaiting)
+        {
+            Limit(p, "more of mods' events a second than is passed on");
+            return;
+        }
+        // Not counted against it and not told back: there is no number in it to believe.
+        if (blob.Data.Length > ModEvents.BatchBytes || ModEvents.Decode(blob.Data) is not { } said)
+        {
+            Limit(p, "a batch of mods' events that is not one");
+            return;
+        }
+        string NameOf(byte id) => _players.GetValueOrDefault(id)?.Name ?? "";
+        // As they are passed on and not as they came: see ModEvents.Cost.
+        int cost = 1 + said.Sum(e => ModEvents.Cost(e));
+        if (cost > p.EventAllowance)
+        {
+            Limit(p, "more of mods' events a second than is passed on");
+            foreach (ModEvent e in said) Lose(e with { From = p.Id }, e.To, NameOf(e.To), Wire.EventLoss.Rate);
+            return;
+        }
+        p.EventAllowance -= cost;
+
+        // The name as a roster carries it. One made to differ from another's is longer than a
+        // name may be, and a game drops a whole batch for one event that is not one.
+        string name = p.Name.Length > Wire.NameChars ? p.Name[..Wire.NameChars] : p.Name;
+        foreach (ModEvent heard in said)
+        {
+            // Whoever it says it is from, it is from whoever sent it.
+            ModEvent e = heard with { From = p.Id, FromName = name };
+            int size = ModEvents.Size(e);
+            Player[] to;
+            if (e.To == 0) to = [.. _players.Values.Where(q => q.Loaded && q != p)];
+            else if (_players.GetValueOrDefault(e.To) is { Loaded: true } one && one != p) to = [one];
+            else
+            {
+                // Itself, nobody, or a game still loading: all of them are nobody in the world.
+                Limit(p, "a mod's event for a player who is not in the world");
+                Lose(e, e.To, NameOf(e.To), Wire.EventLoss.Nobody);
+                continue;
+            }
+            foreach (Player q in to)
+            {
+                // The newest is what goes, and what is held stays: a gap, and never one out of order.
+                if (q.EventBytes + size > ModEvents.WaitingBytes)
+                {
+                    Limit(p, "mods' events for a game that is not taking them");
+                    Lose(e, q.Id, q.Name, Wire.EventLoss.Full);
+                    continue;
+                }
+                q.Events.Add(e);
+                q.EventBytes += size;
+            }
+        }
+    }
+
+    // Tells whoever said it that it did not get there; nothing, if they have gone.
+    private void Lose(ModEvent e, byte to, string toName, Wire.EventLoss why)
+    {
+        if (!_players.TryGetValue(e.From, out Player? by)) return;
+        if (by.Lost.Count >= MostLostWaiting)
+        {
+            Limit(by, "more lost events of mods than its game can be told of");
+            return;
+        }
+        // Counted only once it is kept, so a game never waits on a number that was dropped.
+        by.Lost.Enqueue(new Wire.EventLost(++by.LostSaid, e.Id, to, toName.Length > Wire.NameChars ? toName[..Wire.NameChars] : toName, e.Channel, why, by.Session));
+    }
+
+    /// <summary>
+    /// What a game has not heard of its lost events, and one batch at a time of everybody's for it.
+    ///
+    /// <para>From the end of the tick and not as each batch arrives, which is what puts everything
+    /// heard this tick for one game into one transfer.</para>
+    /// </summary>
+    private void SayEvents(Player p, double now)
+    {
+        if (p.Lost.Count > 0 && now >= p.LostNext)
+        {
+            foreach (Wire.EventLost l in p.Lost.Take(LostAtOnce)) _udp.Send(l, p.At);
+            p.LostNext = now + TellAgainSeconds;
+        }
+        if (p.Link.Came(p.EventGoing) is not { } came) return;
+        if (!came && p.EventsGoing.Count > 0)
+        {
+            Log($"{p.Name}'s game took nothing for two minutes: {p.EventsGoing.Count} of mods' events for it are dropped, and whoever said them is told");
+            foreach (ModEvent e in p.EventsGoing) Lose(e, p.Id, p.Name, Wire.EventLoss.GaveUp);
+        }
+        p.EventsGoing.Clear();
+        p.EventGoing = 0;
+        if (!p.Loaded || p.Events.Count == 0) return;
+        byte[] batch = ModEvents.Encode(p.Events, ModEvents.BatchBytes, out int taken);
+        p.EventsGoing.AddRange(p.Events.Take(taken));
+        p.Events.RemoveRange(0, taken);
+        p.EventBytes -= p.EventsGoing.Sum(e => ModEvents.Size(e));
+        p.EventGoing = p.Link.Send(new Blob(BlobKind.ModEvent, "", 0, 0.0, batch).Encode(), now);
     }
 
     // Whether a player may fly a craft. The first to take one that nobody has keeps it until they
@@ -2508,6 +2663,15 @@ public sealed class GameServer : IDisposable
     {
         if (!_players.Remove(p.Id)) return;
         _udp.Send(new Wire.Bye(why == "has left" ? "" : why, p.Session), p.At);
+        // What was waiting for them is said lost to whoever said it, but not a batch they had
+        // already said came. What they said that has not gone out goes with them: the next to join
+        // is given their number, and would be taken for its sender.
+        foreach (ModEvent e in (p.Link.Came(p.EventGoing) == true ? [] : p.EventsGoing).Concat(p.Events)) Lose(e, p.Id, p.Name, Wire.EventLoss.Left);
+        foreach (Player q in _players.Values)
+        {
+            q.EventsGoing.RemoveAll(e => e.From == p.Id);
+            if (q.Events.RemoveAll(e => e.From == p.Id) > 0) q.EventBytes = q.Events.Sum(e => ModEvents.Size(e));
+        }
         bool released = false;
         foreach (Craft c in _crafts.Values.Where(c => c.Owner == p.Id))
         {
@@ -3089,6 +3253,12 @@ public sealed class GameServer : IDisposable
         foreach (Player p in back)
         {
             p.Loaded = false;
+            // What was said in the world they are leaving is not said in the one they are sent,
+            // and nobody is told: every game is loading, and none could act on it. A batch already
+            // on its way cannot be called back, so the next still waits for it to end.
+            p.Events.Clear();
+            p.EventsGoing.Clear();
+            p.EventBytes = 0;
             SendWorld(p);
         }
         if (back.Length > 0)

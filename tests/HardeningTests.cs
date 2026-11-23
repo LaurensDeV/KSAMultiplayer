@@ -30,13 +30,13 @@ public class HardeningTests
         return b;
     }
 
-    private static byte[] Datagram(Wire.Message m)
+    internal static byte[] Datagram(Wire.Message m)
     {
         byte[] buffer = new byte[Wire.BufferBytes];
         return buffer[..Wire.Write(m, buffer)];
     }
 
-    private static List<byte[]> Heard(Rig rig, UdpClient socket, double seconds)
+    internal static List<byte[]> Heard(Rig rig, UdpClient socket, double seconds)
     {
         List<byte[]> heard = [];
         double until = rig.Now() + seconds;
