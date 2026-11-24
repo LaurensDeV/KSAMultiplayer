@@ -2067,8 +2067,16 @@ internal static class Panel
                 ImGui.EndTooltip();
             }
         }
+        // Not straight after a connect. DISCONNECT is drawn where CONNECT was, so a double-click on
+        // CONNECT pressed it with its second click: on ksamp.gg a player left a join 80 ms after
+        // starting it, the server let the join in all the same, and he was in the room twice.
+        ImGui.BeginDisabled(Sync.Wall() - Sync.ConnectedAt < DisconnectAfterConnectSeconds);
         if (BottomRight("DISCONNECT".AsSpan())) Sync.Disconnect();
+        ImGui.EndDisabled();
     }
+
+    // Longer than any double-click, and short enough that a player who meant to leave never waits on it.
+    private const double DisconnectAfterConnectSeconds = 1.0;
 
     /// <summary>
     /// Which warps the game agrees to without asking. Asking stays the default: a warp is the whole

@@ -221,7 +221,11 @@ stranger sent it.
   changes, so every game can say on a player's row that they are spectating you: their camera on
   the craft you fly while they fly something else or nothing. **Give control** on that row sends a
   `Give`. The server hands the craft over only from its pilot, to a player still looking at it and
-  not too far behind, and tells that player's game, which writes it down as its own at once and
+  not more than a second behind. A give to a game still catching up waits up to a minute for it and
+  is made the moment it is level, with its pilot told so; it is dropped, and its pilot told why, if
+  the pilot stops flying the craft or the taker looks away or leaves first. Told instead to give
+  it in a moment, a player on `ksamp.gg` pressed the button fifty-five times in twenty seconds.
+  Once given, the server tells that player's game, which writes it down as its own at once and
   takes the controls; the giver's game learns from the owners that it is somebody else's, and lets
   go of it with the camera left on it, as for any craft another player flies.
   Spectating lets go of the craft this player was flying: a spectator flies nothing. Left at
@@ -385,7 +389,10 @@ name, and a lost Sun is logged, told to the server and shown to the player once.
      animates its legs at, and by as much as half the speed its owner says while it is being
      walked: its legs are moving already, and held to the standing correction its copy fell 0.18 m
      further behind every second of a walk. A copy is put where it is told at its first step
-     after being built, before it is drawn, having been built where it stood when it was described. That takes only on a craft something is pushing. One that
+     after being built, before it is drawn, having been built where it stood when it was described;
+     put there from its owner's newest word even when that word is seconds old, because built from a
+     game behind the clock KSA carries a piece along an orbit to this world's time, through the
+     ground if it was falling. That takes only on a craft something is pushing. One that
      is coasting is stepped along its own orbit by KSA whatever is written into it, which is right to
      the millimetre while that orbit is its owner's; where it is not, the craft is given its owner's
      orbit through KSA's own mover, in the frame's quiet window, and at once when its owner stops
@@ -408,6 +415,16 @@ name, and a lost Sun is logged, told to the server and shown to the player once.
      Not seen: the sideways rocket itself in the rig, to set against.
      `Track` says where each is at this world's own universe time, since every world keeps the same
      one: carried on from its newest state by the speed it had and the way that speed was changing.
+     Where it can say nothing of now -- a second and more past its newest word, or a world behind
+     every word it keeps, as one catching up after a load is -- the pull only turns the craft and
+     leaves its place and its speed to KSA. Writing in the speed of another time stopped gravity
+     bending its path: on `ksamp.gg` a copy of a craft in orbit, watched by a game catching up from
+     minutes behind, flew straight down into the ocean and was 1,229 km off its orbit when it was
+     put back on it. A craft its owner has asleep on the ground is the exception, being at the same
+     place in its body's fixed frame at every time, so it is pulled there however old the word; and
+     no craft is put on an orbit that has it under the ground by now. A game 11 s behind said its
+     rocket was dropping the last metre onto its pad, that carried on as an orbit put the copy 642 m
+     under the pad, and held from there it stayed under it until its pilot launched.
      Not a little in the past, which is smooth and at orbital speed is a kilometre away from every
      craft this game steps for itself; `errors.md`, 2026-11-10. The one a player is in carries their name, within 2,000 km and in front
      of the camera; the rest of what they own carries a faint `Alice's Lander` within 20 km, which
@@ -446,9 +463,17 @@ name, and a lost Sun is logged, told to the server and shown to the player once.
      body's fixed frame on every physics step and stopped against the surface with KSA's own
      `StopRelativeToSurface`, so it turns with the ground under it, with its engine cut. It is let
      go of on the first step after the editor closes, moving, turning and burning as it was when it
-     was held, so the editor is a pause for that craft alone and never a way out of a crash. Held
+     was held, so the editor is a pause for that craft alone and never a way out of a crash.
+     That is the editor opened on the craft. Opened on a new vehicle, the craft is left as any craft
+     is when its pilot looks elsewhere -- theirs for ten seconds, then anybody's, never tinted or said
+     to be in the editor -- unless it is in the air and held, when it stays theirs as above. On
+     `ksamp.gg` a player went to a new vehicle to keep out of a warp's way, and the craft another
+     player had just given them was drawn in every game as theirs, in the editor, the whole time. Held
      or standing, its states carry `Editing` while its pilot is in the editor, and every other game tints it with KSA's own purple picking tint and
-     writes **IN THE VEHICLE EDITOR** under its pilot's name; the scoreboard says so as well. Held,
+     writes **IN THE VEHICLE EDITOR** under its pilot's name; the scoreboard says so as well. The
+     tint comes off as the craft stops being that player's, too: KSA never clears a tint it did not
+     put on, and a craft taken over when its pilot left from the editor stayed purple for the player
+     flying it. Held,
      it is still solid: anything flown into it stops against it, so nobody can take its place
      before it is let go of. **Being at no craft is not an exception.** A game whose camera is on a
      planet, or whose kitten has died, flies and watches nothing and still draws everybody else's
@@ -856,8 +881,9 @@ had never left. The stall is one-sided: datagrams coming the other way are stamp
 thread and found waiting afterwards, so a game never gave up on a server, only a server on a game.
 A thread of the client's own now sends `Alive` -- empty, carrying nothing a stalled frame loop could
 not vouch for -- once two seconds have passed with the frame loop silent. It speaks for a stall of
-up to a minute and then stops, so a process that has hung does not hold a seat and a rocket in the
-world for as long as it exists; past that the server's own silence takes over, which is what used to
+up to ten minutes and then stops, so a process that has hung does not hold a seat and a rocket in the
+world for as long as it exists. A minute was too short: on `ksamp.gg` a game in the vehicle editor
+stood still for two minutes at a time and was put out of the world three times in a day; past that the server's own silence takes over, which is what used to
 happen the moment a frame ran long. `Udp.Send` takes a lock for this, since two threads shared one
 scratch buffer.
 
@@ -865,7 +891,23 @@ scratch buffer.
 fresh port each time it connects and a session is held under its address. A session that has not been
 heard from for three seconds is let go of when a game joins under its name, which is what makes a
 reconnect get its own name and its own craft back rather than becoming "name 2" and watching its own
-rocket for ten seconds -- or two minutes, when the drop was mid-load.
+rocket for ten seconds -- or two minutes, when the drop was mid-load. A session from the same
+address that has sent nothing at all since it was let in, for a second, is let go of the same way:
+a game answers its welcome within a frame or two, so one that never has gave up on the join while
+its hello was on the way. On `ksamp.gg` a player who pressed connect twice in a tenth of a second
+was in the room as himself, never loading, and as "name 2", which was him. Driven over loopback;
+not seen in a game. The press itself is answered in the window: DISCONNECT is drawn where CONNECT
+was, so the second click of a double-click on CONNECT left the join it had just started, and it
+stays greyed for a second after a connect.
+
+**A game whose frame loop stands still says so afterwards**, in its log and the server's: how long,
+whether its window was in front, and how many times the keepalive spoke meanwhile. Minimising KSA
+in a borderless or full-screen window with vsync on stops its frame loop outright -- presenting
+throws `ErrorOutOfDateKHR` and `GlfwWindow.WaitForWindow` waits in `glfwWaitEvents` until the window
+has a size again -- and a player on `ksamp.gg` was let go of about twenty seconds into one of those,
+inside what the keepalive covers. With the rig, a game minimised that way for forty seconds stayed
+in the world, its keepalive speaking once every two seconds; what stopped it on that player's
+machine is not known, and the next such line will say whether it spoke.
 
 **An admin's game is told which worlds are kept without asking.** The list goes to every admin
 when they join or are opped and whenever it changes, as a `Blob` of a third kind (`BlobKind.Saves`,
@@ -932,6 +974,22 @@ pilot's name, and a protected one. Refusals are gathered and answered once a fra
 Debris asks for every piece in the system at once; the server saves the world three seconds after a
 `remove` rather than on each, for the same reason. Recover on another player's craft is refused the
 same way: it sends the crew home before it asks for the craft to go.
+
+**Clear Debris finds the debris the manifest lists while KSA's debug "Override Is Controllable" is
+on, which KSA `2026.11.16.5901` does not. This is a workaround for a bug in KSA and comes out when
+KSA fixes it.** The manifest calls a craft debris by its own `IsDebris` flag, and
+Clear Debris counts what it takes by `PartFailure.IsExpendable`, which passes over any craft with a
+control module, and KSA's debug "Override Is Controllable" (in a craft's debug window) makes every
+craft have one: with it ticked, a player on `ksamp.gg` had a manifest listing a page of debris
+under a greyed-out button saying there was none. The manifest's two calls to its count, in the
+menu bar and in the button's confirmation, are swapped by a transpiler for the mod's
+(`World.CollectDebris`), which is KSA's own while the override is off and the same rule read from
+the craft's real control modules while it is on. The override itself is never set aside, not even
+for a moment: the physics worker reads it while the menu is drawn. Seen with the rig on
+2026-11-24: a rocket crashed whole left twelve pieces, which KSA's own count made twelve with the
+override off and none with it on; the mod's made twelve both ways, and the manifest's own Clear
+Debris run with the override on took all twelve out of both games. `manifest {"override":…}` and
+`manifest {"clear_debris":true}` on the bridge tick it and press it.
 
 The manifest's rows carry a padlock (`ManifestLocks`), put in by a transpiler on the row's drawing
 just ahead of `ImGui.SetNextItemAllowOverlap`, which comes right before the row's name: a craft's
@@ -1407,6 +1465,28 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
 
 ## What has not been tried
 
+What is waiting on a session with several players on the live server is listed, as things to look
+for, in `docs/LIVE-CHECKS.md`.
+
+- **A copy left to coast while there is no word of now, and the editor's tint taken off a craft
+  taken over.** Both from one session on `ksamp.gg` on 2026-11-24: a game that joined behind,
+  watching a craft in orbit whose pilot was in the vehicle editor, drew it falling into the ocean
+  for 20 s, and once that pilot left and the craft was taken over it stayed purple. Later in the
+  same session a rocket whose pilot's game was 4 to 11 s behind stood under its pad until it
+  launched, and pieces of his rockets were built inside the sea at up to 11,000 g. Seen with the
+  rig on 2026-11-24, one game held 6 to 7 s behind by suspending its process: its craft in a
+  393 km orbit, watched in physics by the other game while the owner caught up, read the same
+  altitude in both games to half a metre at equal universe times, with no put-on needed; a
+  rocket crashed whole on its pad by the game 6.5 s behind was built in the other as twelve
+  pieces lying on the pad, none spared from any force; a craft on its pad held its 2.44 m; and a
+  craft moved 6,965 km by its owner was put on its new orbit. The editor opened on a new vehicle
+  left the craft its pilot was in, shown flying nothing and untagged, and a watcher flying
+  nothing took it; opened on the craft, it stayed theirs and tagged for as long as it was open.
+  Not seen: the purple tint coming off a craft taken over, a craft held in the air through a new
+  vehicle, and anything of it with three or more players. Suspending a game's whole process
+  also stops its keepalive, so past ten seconds the server lets it go whatever the keepalive's
+  own limit is.
+
 - **Players' logs to the test server, on `ksamp.gg` itself.** Seen with two games pointed at the
   rig's server by `KSAMP_LOGS_TO`: each sent its last three sessions as it joined, the server kept
   all six, cleaned, and a rejoin sent none again. KSA's own logs went with them, a crashed session's
@@ -1526,8 +1606,8 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   for.** The pads are clear of scrub in every picture taken since, but nobody has stood at the
   fifth site, and there is no before to compare against.
 - **The keepalive under a real stall.** Driven over loopback by stopping a client's `Update` and
-  putting the clock forward: sixteen seconds of a frozen frame loop keeps its place, eighty lets it
-  go. What has not been watched is KSA itself hitching -- a rebuild, a scene load -- and the session
+  putting the clock forward: two minutes of a frozen frame loop keeps its place, ten and a third
+  minutes let it go. What has not been watched is KSA itself hitching -- a rebuild, a scene load -- and the session
   surviving it, which is the thing it was written for.
 - **Another mod writing what this one writes.** The prefixes on both `SetSimulationSpeed` and on
   `Vehicle.PrepareWorker` are given `Priority.Last`, so they are the word that stands when another
@@ -1813,6 +1893,8 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
   step at a time -- but never again to a speed a machine has been found not to fly, or the world
   climbs into the same ceiling and falls out of it once a second for as long as the warp lasts.
   The ceiling is that one machine's, and lifts when that machine says it can fly past it or leaves.
+  The line the server writes when the world falls names the player whose game it fell for, which
+  is the game whose own log says why.
   A climb is never a fall: a machine saying it flies a little less than the world is running at
   holds the world where it is and sets no ceiling.
   The server also watches each game's lateness from one ping to the next, as a share of what the

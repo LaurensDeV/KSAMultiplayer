@@ -68,7 +68,10 @@ internal static class Sync
     // What the pull last did to each copy, from physics, and when that was said from the frame.
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string What, double At)> PullDid = new();
     private static readonly Dictionary<string, (double At, string Said)> PullSaidAt = [];
-    private const double PullSaidEverySeconds = 10.0;
+    // And a change no oftener than this: through a warp a copy flips between held and drawn on at
+    // every frame, and said at every flip it was 223 lines in one second and four lines in five of
+    // a session's log.
+    private const double PullSaidEverySeconds = 10.0, PullChangeSaidEverySeconds = 1.0;
 
     // A puppet whose owner has said nothing for this long of universe time is let go of and left where it is.
     // How long a craft may go unheard before it is let go of. Counted in the world's own seconds,
@@ -458,6 +461,9 @@ internal static class Sync
 
     public static double Wall() => Clock.Elapsed.TotalSeconds;
 
+    /// <summary>The speed last asked of the server, for a test to read back.</summary>
+    public static double AskedSpeed => _askedSpeed;
+
     /// <summary>
     /// A warp key, taken by which way it points rather than by the speed the game worked out from
     /// it. The game steps from the speed this world is running at, and while connected that is the
@@ -467,9 +473,6 @@ internal static class Sync
     /// <param name="direction">Up, down, or zero for the key that asks for normal speed.</param>
     /// <returns>Whether the mod took the key; false leaves it to the game, which is right when
     /// this world is nobody else's.</returns>
-    /// <summary>The speed last asked of the server, for a test to read back.</summary>
-    public static double AskedSpeed => _askedSpeed;
-
     public static bool StepSpeed(int direction)
     {
         if (_client is not { Joined: true } c || Now != Stage.Playing) return false;
@@ -519,10 +522,10 @@ internal static class Sync
         c.AskWarp(speed);
     }
 
-    /// <summary>What the panel shows under the server's name.</summary>
     /// <summary>What <see cref="Status"/> says when there is nothing to say: in the world, and keeping its time.</summary>
     public const string AllWell = "playing";
 
+    /// <summary>What the panel shows under the server's name.</summary>
     public static string Status => Now switch
     {
         Stage.Off => "not connected",
@@ -594,7 +597,6 @@ internal static class Sync
     private static readonly Dictionary<string, double> SparedSaid = [];
     private const double SparedSaidEverySeconds = 60.0;
 
-    /// <summary>
 
     /// <summary>
     /// Said once a craft when a copy built here is wrecked before it is anybody's puppet, which is
@@ -621,13 +623,6 @@ internal static class Sync
 
     private static readonly HashSet<string> WreckSaid = [];
 
-    /// <summary>
-    /// A craft taken for this game before its crew is sent out, when nobody holds it. Two games
-    /// looking at the same unclaimed capsule could each send the same kitten out of it, because a
-    /// craft nobody owns is nobody's to refuse: the claim makes it somebody's, and the other game's
-    /// hatch is shut within the tick.
-    /// </summary>
-    /// <returns>Whether this game may send the crew out: its own craft, or one just taken.</returns>
     /// <summary>
     /// A craft somebody has walked away from, taken by whoever is watching it and flying nothing.
     /// An observer is watching because they want to be in it; once it is nobody's there is nothing
@@ -656,6 +651,13 @@ internal static class Sync
         if (World.GoTo(v)) Say($"{key} is free now, so it's yours");
     }
 
+    /// <summary>
+    /// A craft taken for this game before its crew is sent out, when nobody holds it. Two games
+    /// looking at the same unclaimed capsule could each send the same kitten out of it, because a
+    /// craft nobody owns is nobody's to refuse: the claim makes it somebody's, and the other game's
+    /// hatch is shut within the tick.
+    /// </summary>
+    /// <returns>Whether this game may send the crew out: its own craft, or one just taken.</returns>
     public static bool TakeBeforeEva(Vehicle v)
     {
         if (_client is not { Joined: true } c) return true;
@@ -694,6 +696,7 @@ internal static class Sync
         }
         (_asking, _address, LastServer) = ((name, password), address, address);
         _finding = Find(host, port, portGiven);
+        ConnectedAt = Wall();
         Now = Stage.Joining;
         Say($"looking up {host}...");
     }
@@ -874,6 +877,35 @@ internal static class Sync
         (_ahead, _aheadFinding) = (null, null);
     }
 
+    // The keepalive's count when the frame loop last ran, so a stall can say how often it spoke.
+    private static int _alivesAtFrame;
+
+    // A frame loop that stood still this long is worth a line: a window minimised, a hitch.
+    private const double StallSaidSeconds = 5.0;
+
+    /// <summary>
+    /// After the frame loop has stood still, how long, and whether the keepalive spoke for it
+    /// meanwhile. A player whose game was minimised was let go of by the server well inside what
+    /// the keepalive covers, and the logs said nothing of whether the keepalive had run.
+    /// </summary>
+    private static void SayTheStall(double now)
+    {
+        if (_client is not { Joined: true } c)
+        {
+            _alivesAtFrame = 0;
+            return;
+        }
+        int spoke = c.AlivesSent;
+        if (_frameAt > 0 && now - _frameAt > StallSaidSeconds)
+        {
+            Noted($"the game stood still for {now - _frameAt:0.0} s{(World.Focused ? "" : ", not in front")}, and the keepalive spoke {spoke - _alivesAtFrame} times for it");
+        }
+        _alivesAtFrame = spoke;
+    }
+
+    /// <summary>When this game last began to join a server, on <see cref="Wall"/>.</summary>
+    public static double ConnectedAt { get; private set; } = double.NegativeInfinity;
+
     /// <param name="quietly">For leaving one server to join another, which is not something to tell anybody about.</param>
     public static void Disconnect(bool quietly = false)
     {
@@ -1034,18 +1066,16 @@ internal static class Sync
         _client?.Note(what);
     }
 
-    // KSA's debug "Override Is Controllable" makes every craft count as having a control module, and
-    // so makes Clear Debris find nothing: a player saw a manifest full of debris and a button saying
-    // there was none. Said once a session it is on, in this log and the server's.
+    // KSA's debug "Override Is Controllable" makes every craft count as having a control module.
+    // Clear Debris looks past it (Hooks.DebrisDespiteTheOverride), but KSA's own clearing of debris
+    // round a craft does not. Said once a session it is on, in this log and the server's.
     private static bool _overrideSaid;
-    private static readonly System.Reflection.FieldInfo? ControlOverride =
-        typeof(Vehicle).GetField("_overrideIsControllable", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
 
     private static void SayTheControlOverride()
     {
-        if (_overrideSaid || ControlOverride?.GetValue(null) is not true) return;
+        if (_overrideSaid || !World.ControlOverride) return;
         _overrideSaid = true;
-        Noted("KSA's \"Override Is Controllable\" is on: every craft counts as controllable, so Clear Debris finds no debris");
+        Noted("KSA's \"Override Is Controllable\" is on: every craft counts as controllable, so KSA clears no debris by itself; Clear Debris still finds it");
     }
 
     // Each warp question and what became of it, as this game saw them: whether it was asked, and
@@ -1870,6 +1900,7 @@ internal static class Sync
     {
         double now = Wall();
         FrameSeconds = _frameAt > 0 ? Math.Min(now - _frameAt, 1.0) : 0.0;
+        SayTheStall(now);
         _frameAt = now;
         MeasureWhatThisMachineDoes(now);
         while (NotesWaiting.TryDequeue(out string? note)) _client?.Note(note);
@@ -3072,15 +3103,17 @@ internal static class Sync
     }
 
     // While its owner pushes it: whether the pull reached it, and whether it is on rails here. A copy
-    // that drifted kilometres under thrust could have been either. Said when that changes, and every
-    // ten seconds otherwise: once a second for each of ten copies was a hundred lines a minute.
+    // that drifted kilometres under thrust could have been either. Said when that changes, at most
+    // once a second, and every ten seconds otherwise: once a second for each of ten copies was a
+    // hundred lines a minute.
     private static void SayWhatThePullDid(string key, Vehicle v, double now)
     {
         string here = World.UnderWay(v) ? "in physics" : "on rails";
         (string what, double at) = PullDid.TryGetValue(key, out (string What, double At) last) ? last : ("never pulled", now);
         // Stale by more than a second is the pull not reaching it, which is a change worth a line.
         string said = $"{here}, {what}{(now - at > 1.0 ? ", not lately" : "")}";
-        if (PullSaidAt.TryGetValue(key, out (double At, string Said) before) && before.Said == said && now - before.At < PullSaidEverySeconds) return;
+        if (PullSaidAt.TryGetValue(key, out (double At, string Said) before)
+            && now - before.At < (before.Said == said ? PullSaidEverySeconds : PullChangeSaidEverySeconds)) return;
         PullSaidAt[key] = (now, said);
         Log.Info($"{key} is under way in its owner's game, and here is {here}: the pull {what} {now - at:0.0} s ago");
     }
@@ -3264,13 +3297,25 @@ internal static class Sync
             (_flownLastFrame, _flownIntoEditor) = (World.Controlled, null);
             return;
         }
-        if (_flownLastFrame is not { } v) return;
+        // Not until the editor is built, which says whether it is on a new vehicle.
+        if (_flownLastFrame is not { } v || !World.EditorBuilt) return;
         _flownLastFrame = null;
         if (!World.IsAlive(v)) return;
+        World.Hold? hold = World.HoldOf(v);
+        // A new vehicle is not this one, and its pilot has stepped out of it: left as any craft is
+        // when its pilot looks elsewhere, theirs for a few seconds and then anybody's. On ksamp.gg a
+        // player went to a new vehicle to keep out of the way of a warp, and the craft another player
+        // had just given them was drawn in every game as theirs, purple and in the editor, for as
+        // long as they were in it. Not one in the air, which the hold is all that keeps from falling.
+        if (World.EditingNew && hold is null)
+        {
+            Log.Info($"left {KeyOf(v)}: the vehicle editor is open on a new vehicle");
+            return;
+        }
         _flownIntoEditor = v;
         // Already letting one go, and in again before the step that would have: that one goes first.
         if (_editorHold is not null) return;
-        if (World.HoldOf(v) is not { } at) return;
+        if (hold is not { } at) return;
         _editorHold = new EditorHold(v, at);
         // Its engine out while it is held: the hold undoes the thrust, and the burn would empty the tanks.
         World.SetEngine(v, false, 0f);
@@ -3299,7 +3344,14 @@ internal static class Sync
             if (editing) Tinted.Add(v);
             else Tinted.Remove(v);
         }
-        Tinted.RemoveWhere(v => !Puppets.ContainsKey(v));
+        // Untinted as it stops being a puppet, and not only forgotten: KSA never clears a tint it did
+        // not put on, so a craft taken over when its pilot left from the editor stayed purple in the
+        // hands of the player now flying it.
+        foreach (Vehicle v in Tinted.Where(v => !Puppets.ContainsKey(v)).ToArray())
+        {
+            if (World.IsAlive(v)) World.Tint(v, false);
+            Tinted.Remove(v);
+        }
     }
 
     /// <summary>Everything held for the editor given up: the hold let go of at the next step, and every tint taken off.</summary>

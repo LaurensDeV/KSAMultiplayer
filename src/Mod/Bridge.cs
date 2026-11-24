@@ -718,11 +718,33 @@ internal sealed class Bridge
         return Done(new() { ["craft"] = v.Id, ["owner"] = Sync.OwnerOf(v), ["protected"] = Sync.IsProtected(v), ["admin"] = Sync.Admin });
     }
 
-    // KSA's universe manifest, open or shut, for a capture of its padlocks.
+    // KSA's universe manifest, open or shut, for a capture of its padlocks. With "override", KSA's
+    // debug "Override Is Controllable" ticked or not, as a craft's debug window ticks it; with
+    // "clear_debris", the manifest's own Clear Debris as its confirmation runs it. The debris
+    // counted is said both ways: by this mod's count and by KSA's, which the override empties.
     private static Reply ShowManifest(BridgeCommand command)
     {
-        if (UniverseManifest.IsOpen != command.Flag("open", true)) UniverseManifest.Toggle();
-        return Done(new() { ["open"] = UniverseManifest.IsOpen });
+        if (command.Has("override") && !World.SetControlOverride(command.Flag("override", false))) return Failed("KSA's Override Is Controllable can't be reached");
+        List<Vehicle> ours = [], ksas = [];
+        World.CollectDebris(ours);
+        if (KSA.Universe.CurrentSystem is { } system) PartFailure.CollectSystemDebris(system, ksas);
+        bool cleared = false;
+        if (command.Flag("clear_debris", false))
+        {
+            if (HarmonyLib.AccessTools.Inner(typeof(UniverseManifest), "Window") is not { } window
+                || HarmonyLib.AccessTools.Method(window, "ClearDebris") is not { } clear) return Failed("KSA has moved the manifest's Clear Debris");
+            clear.Invoke(null, null);
+            cleared = true;
+        }
+        else if (!command.Has("override") && UniverseManifest.IsOpen != command.Flag("open", true)) UniverseManifest.Toggle();
+        return Done(new()
+        {
+            ["open"] = UniverseManifest.IsOpen,
+            ["override"] = World.ControlOverride,
+            ["debris"] = ours.Select(v => (object?)v.Id).ToList(),
+            ["ksa_debris"] = ksas.Count,
+            ["cleared"] = cleared,
+        });
     }
 
     // The map opened or shut, for a run that has to see what is drawn over it.

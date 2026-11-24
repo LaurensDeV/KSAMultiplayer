@@ -260,6 +260,8 @@ internal static class Hooks
             Patch(AccessTools.Method(typeof(Vehicle), nameof(Vehicle.Recover)), nameof(BeforeRecover),
                   "recovering a protected craft sends its crew home and leaves the craft standing empty");
             PadlockTheManifest();
+            // A workaround for a bug in KSA: see DebrisDespiteTheOverride.
+            DebrisDespiteTheOverride();
             Patch(AccessTools.Method(typeof(Program), nameof(Program.RefreshVehiclesInFrame)), nameof(BeforeRefreshVehicles),
                   "another player's craft is built while KSA is stepping the world, which fails its physics");
             Patch(AccessTools.Method(typeof(Universe), nameof(Universe.DeserializeSave)), nameof(BeforeDeserializeSave),
@@ -458,6 +460,73 @@ internal static class Hooks
         {
             Complain("keeping ground clutter off the extra launchpads", e);
         }
+    }
+
+    // A workaround for a bug in KSA 2026.11.16.5901, to come out when KSA fixes it: the manifest
+    // calls a craft debris by its own flag, and Clear Debris by PartFailure.IsExpendable, which
+    // also asks for no control module, so the two disagree.
+    // KSA's debug "Override Is Controllable" makes every craft count as having a control module,
+    // and Clear Debris takes only craft without one: ticked, the manifest listed a page of debris
+    // under a greyed-out button saying there was none. The menu bar's count for the button and the
+    // count the button's confirmation clears by are both made by this mod's instead, which is
+    // KSA's own while the override is off. The call is swapped where it is made, since the count
+    // is six lines and as likely to be inlined into both as Celestial.GetLocation was into the
+    // editor; and the override is not set aside around them, since the physics worker reads it
+    // while the menu is drawn.
+    private static void DebrisDespiteTheOverride()
+    {
+        const string otherwise = "Clear Debris finds no debris while KSA's \"Override Is Controllable\" is on";
+        if (AccessTools.Inner(typeof(UniverseManifest), "Window") is not { } window
+            || AccessTools.Method(window, "DrawMenuBar") is not { } menu
+            || AccessTools.Method(window, "ClearDebris") is not { } clear
+            || AccessTools.Method(window, "CollectDebris") is not { } collect
+            || AccessTools.Field(window, "Debris")?.GetValue(null) is not List<Vehicle> list)
+        {
+            Log.Warn($"KSA has moved the universe manifest's Clear Debris: {otherwise}");
+            return;
+        }
+        (_manifestDebris, _manifestCollect) = (list, collect);
+        HarmonyMethod swap = new(typeof(Hooks).GetMethod(nameof(SwapTheDebrisCount), BindingFlags.NonPublic | BindingFlags.Static)!);
+        foreach (MethodInfo target in new[] { menu, clear })
+        {
+            try
+            {
+                _harmony!.Patch(target, transpiler: swap);
+            }
+            catch (Exception e)
+            {
+                Log.Error($"could not patch the universe manifest's {target.Name}: {otherwise}", e);
+            }
+        }
+    }
+
+    private static List<Vehicle>? _manifestDebris;
+    private static MethodInfo? _manifestCollect;
+
+    private static IEnumerable<CodeInstruction> SwapTheDebrisCount(IEnumerable<CodeInstruction> code)
+    {
+        MethodInfo ours = AccessTools.Method(typeof(Hooks), nameof(CountTheDebris));
+        foreach (CodeInstruction i in code)
+        {
+            if (_manifestCollect is not null && i.Calls(_manifestCollect)) i.operand = ours;
+            yield return i;
+        }
+    }
+
+    // In the manifest's own list, which is what its Clear Debris goes on to take away.
+    private static int CountTheDebris()
+    {
+        if (_manifestDebris is not { } into) return 0;
+        into.Clear();
+        try
+        {
+            World.CollectDebris(into);
+        }
+        catch (Exception e)
+        {
+            Complain("counting the debris", e);
+        }
+        return into.Count;
     }
 
     // A prefix on the manifest's row would come before the row is begun, and a postfix after every

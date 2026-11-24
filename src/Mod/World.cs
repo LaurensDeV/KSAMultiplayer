@@ -272,6 +272,53 @@ internal static class World
     /// from the parts and not from <see cref="Vehicle.IsControllable"/>, which a probe out of power
     /// is not, though it is somebody's probe.
     /// </summary>
+    private static readonly global::System.Reflection.FieldInfo? ControlOverrideField =
+        typeof(Vehicle).GetField("_overrideIsControllable", global::System.Reflection.BindingFlags.NonPublic | global::System.Reflection.BindingFlags.Static);
+
+    /// <summary>Whether KSA's debug "Override Is Controllable" is on, which makes every craft count as having a control module.</summary>
+    public static bool ControlOverride => ControlOverrideField?.GetValue(null) is true;
+
+    /// <summary>KSA's debug "Override Is Controllable" ticked or not, for a run to tick it as a player does. False where it cannot be reached.</summary>
+    public static bool SetControlOverride(bool on)
+    {
+        if (ControlOverrideField is null) return false;
+        ControlOverrideField.SetValue(null, on);
+        return true;
+    }
+
+    /// <summary>
+    /// The debris KSA's Clear Debris takes, into a list: KSA's own count, or while its debug
+    /// "Override Is Controllable" is on, the same rule read from the craft's real control modules
+    /// (<c>PartFailure.IsExpendable</c>), which the override hides.
+    /// </summary>
+    public static void CollectDebris(List<Vehicle> into)
+    {
+        if (KSA.Universe.CurrentSystem is not { } system) return;
+        if (!ControlOverride)
+        {
+            PartFailure.CollectSystemDebris(system, into);
+            return;
+        }
+        Vehicle? flown = Controlled;
+        ReadOnlySpan<Astronomical> all = system.All.AsSpan();
+        for (int i = 0; i < all.Length; i++)
+        {
+            if (all[i] is not Vehicle { IsDisposed: false, IsDebris: true } v || v is KittenEva || ReferenceEquals(v, flown)) continue;
+            if (v.Parts.Controls.NumModules > 0 || Crewed(v)) continue;
+            into.Add(v);
+        }
+    }
+
+    private static bool Crewed(Vehicle v)
+    {
+        ReadOnlySpan<IVASeat> crew = v.Crew;
+        for (int i = 0; i < crew.Length; i++)
+        {
+            if (crew[i].AssignedKittenHash != KeyHash.Zero) return true;
+        }
+        return false;
+    }
+
     public static bool IsDebris(Vehicle v) => v is not KittenEva && (v.IsDebris || v.Parts.Modules.Get<Control>().Length == 0);
 
     /// <summary>Every kitten aboard back to the roster, as <see cref="Vehicle.Recover"/> sends them, and nothing else that it does.</summary>
@@ -357,18 +404,6 @@ internal static class World
         return lost;
     }
 
-    /// <summary>
-    /// Why this world can be neither saved nor loaded at the moment, or empty when it can be.
-    ///
-    /// <para>KSA refuses both while the vehicle editor is open: every save and load it has begins by
-    /// asking, and the answer is a line in its own log and a return. Both calls are void, so a mod
-    /// that did not ask the same question hands on whatever save was last written as the world now,
-    /// or counts its frames over a world it never loaded and says it is in the shared one.</para>
-    /// </summary>
-    /// <summary>
-    /// Whether a craft is being stepped through physics and is not one KSA has put on rails: a
-    /// craft something is pushing, or that is still moving from having been.
-    /// </summary>
     /// <summary>Whether a craft is within this game's physics: near enough to what is flown or watched to be stepped and struck.</summary>
     public static bool InBubble(Vehicle v)
     {
@@ -376,6 +411,10 @@ internal static class World
         catch (Exception) { return false; }
     }
 
+    /// <summary>
+    /// Whether a craft is being stepped through physics and is not one KSA has put on rails: a
+    /// craft something is pushing, or that is still moving from having been.
+    /// </summary>
     public static bool UnderWay(Vehicle v)
     {
         try { return v.HasPhysicsBubble && !v.Situation.IsOnRails(); }
@@ -385,6 +424,20 @@ internal static class World
     /// <summary>Whether the vehicle editor is open, which is where KSA stops the world.</summary>
     public static bool InEditor => Program.IsEditorOpen;
 
+    /// <summary>Whether the vehicle editor has been built, which is a frame after it is said to be open.</summary>
+    public static bool EditorBuilt => Program.Editor is not null;
+
+    /// <summary>Whether the vehicle editor is open on a new vehicle rather than on the craft that was being flown.</summary>
+    public static bool EditingNew => Program.Editor is { ExistingVehicle: null };
+
+    /// <summary>
+    /// Why this world can be neither saved nor loaded at the moment, or empty when it can be.
+    ///
+    /// <para>KSA refuses both while the vehicle editor is open: every save and load it has begins by
+    /// asking, and the answer is a line in its own log and a return. Both calls are void, so a mod
+    /// that did not ask the same question hands on whatever save was last written as the world now,
+    /// or counts its frames over a world it never loaded and says it is in the shared one.</para>
+    /// </summary>
     public static string Refuses() => Program.IsEditorOpen ? "the vehicle editor is open, and KSA can't save or load while it is" : "";
 
     /// <summary>
@@ -1041,10 +1094,6 @@ internal static class World
     }
 
     /// <summary>
-    /// A craft with no physics here put where its owner says, by its orbit or, on the ground, by
-    /// setting it down there. Seldom: each is a craft rebuilt. True if it was moved.
-    /// </summary>
-    /// <summary>
     /// A craft just built here set down where its owner has it lying, before it is first drawn.
     /// What it is built from says where it was when that was written, which for a piece of
     /// wreckage built late is in the air where it broke off. True if it was moved.
@@ -1075,6 +1124,10 @@ internal static class World
         }
     }
 
+    /// <summary>
+    /// A craft with no physics here put where its owner says, by its orbit or, on the ground, by
+    /// setting it down there. Seldom: each is a craft rebuilt. True if it was moved.
+    /// </summary>
     public static bool PlaceAnalytic(Vehicle v, Wire.State s, double nearEnoughM)
     {
         if (v.HasPhysicsBubble) return false;
@@ -1225,7 +1278,11 @@ internal static class World
         // because Track stamps the time it actually drew at.
         // Or told of a time that is not now at all: this world is further behind its states than
         // any of them is kept, and the oldest is where the craft will be, not where it is.
-        bool held = Math.Abs(Universe - s.Universe) > 1e-6;
+        // Except a craft its owner has asleep on the ground, which stands at the same place in its
+        // body's fixed frame at every time: a game seconds behind the clock says nothing else of
+        // now, and held for it, a rocket put under the pad stayed there until its pilot launched.
+        bool asleep = (s.Flags & (Wire.StateFlags.Rails | Wire.StateFlags.Landed)) == (Wire.StateFlags.Rails | Wire.StateFlags.Landed);
+        bool held = !asleep && Math.Abs(Universe - s.Universe) > 1e-6;
         // Told where a craft of another shape is. A craft's place is its centre, and one that has
         // docked, staged or lost a part has its centre elsewhere: the copy here is the old shape
         // until it is built again, and put where the new one stands it was put nine metres along
@@ -1238,14 +1295,33 @@ internal static class World
                          && (s.Flags & Wire.StateFlags.Rails) != 0 && (s.Flags & Wire.StateFlags.Landed) == 0;
         // However far: a piece that waited for its hull to be built without it is built seconds
         // after it was described, where it was then.
-        bool born = first && !held && !misshapen && Vec(off) > 0.05;
-        bool snap = !held && !misshapen && (Vec(off) > SnapM || born);
+        // And put there from a word of the past too, when its owner's game is behind: built from
+        // that game's description, KSA carries it along an orbit to this world's time, and an
+        // orbit knows nothing of the ground. Pieces of a rocket coming apart low over the sea,
+        // described by a game seconds behind, were built under the water at up to 11,000 g. Where
+        // its owner last had it is above the ground in its owner's world. Not from a word of the
+        // future, which is a world behind its states: that copy is still owed its first place.
+        bool born = first && (!held || s.Universe < Universe) && !misshapen && Vec(off) > 0.05;
+        bool snap = !misshapen && ((!held && Vec(off) > SnapM) || born);
         if (snap) states.Kinematic.PositionPhys += off.Transform(ccf2Body).Transform(body2Phys);
         doubleQuat wantedBody2Ccf = new(s.Body2Ccf.X, s.Body2Ccf.Y, s.Body2Ccf.Z, s.Body2Ccf.W);
         states.Kinematic.Body2Phys = body2Phys * (ccf2Body * wantedBody2Ccf);
 
+        // Left coasting means its velocity is left alone as well. A held state's velocity is the
+        // craft's at another time, and in orbit the direction it points turns by a degree every
+        // fifteen seconds: written in at every step, it stops gravity bending the path. A world
+        // still catching up after a load was minutes behind every word, so the copy of a craft in
+        // orbit flew straight on along a line pointing down into the ocean, 1,229 km off its orbit
+        // when it was put back on it, and right after another load it was put back 5 km off every
+        // half second for thirty seconds.
+        if (held && !born)
+        {
+            states.Kinematic.AngularVelocityPhys = D(s.Spin).Transform(states.Kinematic.Body2Phys);
+            return new Pulled(V(positionCcf), V(velocityCcf), Vec(off), Snap: false, Held: true, Rest: false);
+        }
+
         PhysicsStates.GetStatesCcf(in states.Origin, in states.Kinematic, out _, out double3 nowVelocity, out doubleQuat nowBody2Ccf);
-        double3 draw = snap || held ? double3.Zero : off / Math.Max(PullSeconds, dt);
+        double3 draw = snap ? double3.Zero : off / Math.Max(PullSeconds, dt);
         if (misshapen && Vec(draw) > MisshapenPullMetresPerSecond) draw = draw.Normalized() * MisshapenPullMetresPerSecond;
         // Held to a walk, not to a distance: what matters to a kitten's legs is how fast this says
         // it is going, and the distance was already answered by the snap above.
@@ -1263,8 +1339,8 @@ internal static class World
         // its body sleeps, and it keeps it awake for as long as it is off rails. So doing this
         // unconditionally latched every landed craft off rails on its first frame, and the standing
         // still path above could never be reached again.
-        if (!held && Vec(off) >= rest && v.Situation.IsOnRails()) v.TakeOffRails();
-        return new Pulled(V(positionCcf), V(velocityCcf), Vec(off), snap && !born, held, Rest: false);
+        if (Vec(off) >= rest && v.Situation.IsOnRails()) v.TakeOffRails();
+        return new Pulled(V(positionCcf), V(velocityCcf), Vec(off), snap && !born, Held: false, Rest: false);
     }
 
     /// <summary>What one pull found and did.</summary>
@@ -1388,21 +1464,6 @@ internal static class World
     }
 
     /// <summary>
-    /// Another player's craft moved to the body they say it is going round, by handing it to KSA's
-    /// own mover. True if it is there now.
-    ///
-    /// <para>Nothing else can follow a change of body. <see cref="Pull"/> has no coherent frame to
-    /// write in and stands aside; <see cref="PlaceAnalytic"/> writes a flight plan without rebasing
-    /// the craft's physics origin, so a bubble either reverts it on the next step or reads the old
-    /// body's coordinates against the new one and puts the craft underground. <c>Vehicle.Teleport</c>
-    /// is what KSA uses for the same job: it takes the craft out of its bubble first, rebases the
-    /// origin onto the new body, and leaves it an orphan for the solver to pick up round the right
-    /// one in the same frame.</para>
-    ///
-    /// <para>Asked for from the frame's quiet window, because it moves the craft between two
-    /// celestials' lists of children.</para>
-    /// </summary>
-    /// <summary>
     /// The orbit its owner's word puts a craft on, as of another universe time. KSA stands a craft
     /// at the place its new orbit was made from until the next step carries it on, and a word is a
     /// twentieth of a second old at the least: handed the orbit as said, the craft was drawn for
@@ -1435,15 +1496,41 @@ internal static class World
         }
     }
 
+    private static bool UnderTheGround(Celestial body, double3 positionCci)
+    {
+        double far = Vec(positionCci);
+        if (far <= 0.0) return true;
+        return far < body.MeanRadius + body.GetTerrainHeightFromDirCci(positionCci / far);
+    }
+
     // A game behind the clock is told no state of now, and was corrected for nothing while it
     // caught up: one put on nothing for 33 s after a warp, and then found a craft 4,542 km off.
     private const double CarryOrbitWithinSeconds = 600.0;
 
+    /// <summary>
+    /// Another player's craft moved to the body they say it is going round, by handing it to KSA's
+    /// own mover. True if it is there now.
+    ///
+    /// <para>Nothing else can follow a change of body. <see cref="Pull"/> has no coherent frame to
+    /// write in and stands aside; <see cref="PlaceAnalytic"/> writes a flight plan without rebasing
+    /// the craft's physics origin, so a bubble either reverts it on the next step or reads the old
+    /// body's coordinates against the new one and puts the craft underground. <c>Vehicle.Teleport</c>
+    /// is what KSA uses for the same job: it takes the craft out of its bubble first, rebases the
+    /// origin onto the new body, and leaves it an orphan for the solver to pick up round the right
+    /// one in the same frame.</para>
+    ///
+    /// <para>Asked for from the frame's quiet window, because it moves the craft between two
+    /// celestials' lists of children.</para>
+    /// </summary>
     public static bool Rebase(Vehicle v, Wire.State s)
     {
         try
         {
             if (OrbitAt(s, Universe) is not ({ } body, var now)) return false;
+            // An orbit knows nothing of the ground. A word from a game seconds behind, of a rocket
+            // dropping the last metre onto its pad, carried eleven seconds on put the copy 642 m
+            // under it; what such a craft does next is the next word's to say.
+            if (UnderTheGround(body, now.PositionCci)) return false;
             Orbit orbit = Orbit.CreateFromStateCci(body, new UniverseTime(Universe), now.PositionCci, now.VelocityCci, v.OrbitColor);
             // Refused rather than thrown when the trajectory cannot be worked out, so this is asked
             // again rather than taken as done.
@@ -2186,7 +2273,6 @@ internal static class World
         }
     }
 
-    /// <summary>Where a craft is on the screen, or null when it is behind the camera or off to the side.</summary>
     /// <summary>How big the window is, for telling a tag drawn off the edge from one never drawn.</summary>
     public static float2? ScreenSize
     {
@@ -2208,10 +2294,6 @@ internal static class World
     /// absolute screen coordinates. <c>EclToScreen</c> answers in the viewport's own, which are the
     /// window's only when the viewport starts at the corner of it, and a draw list wants the screen's.
     /// Null when the point is behind the camera or off the edge.
-    /// </summary>
-    /// <summary>
-    /// Where to write a craft's name on the screen: a point above the hull rather than through it.
-    /// Null when there is no camera or the point will not project.
     /// </summary>
     public static float2? ScreenOf(Vehicle v)
     {
