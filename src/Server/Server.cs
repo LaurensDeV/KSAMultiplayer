@@ -68,6 +68,12 @@ public sealed record ServerOptions
     public double LapseWithin { get; init; } = 10.0;
 
     /// <summary>
+    /// How long a player's craft are kept for them after they leave, 0 for not at all. A game that
+    /// drops comes back within seconds, and its craft let go of at once went to whoever was watching.
+    /// </summary>
+    public double KeptAway { get; init; } = 120.0;
+
+    /// <summary>
     /// How long a player must have watched a craft before it is let go of for them. Flicking the
     /// camera through the vessel list is looking, not wanting: one player's minute of it freed
     /// thirty craft, and those were handed round for twenty minutes after.
@@ -304,6 +310,10 @@ public sealed class GameServer : IDisposable
     private sealed class Craft
     {
         public byte Owner;
+
+        /// <summary>Who a craft owned by <see cref="Wire.Away"/> is kept for, by name and Discord id, and until when on the server's clock.</summary>
+        public string KeptName = "", KeptDiscord = "";
+        public double KeptUntil;
         public byte[]? Definition;
         public double Universe;
 
@@ -1674,7 +1684,15 @@ public sealed class GameServer : IDisposable
             // craft: KSA hands a destroyed piece's name to the next piece shed, and refused the name,
             // that piece stood in its maker's world as nobody's and in no other world at all --
             // three of the twenty-eight a rocket falling over broke into, and six of fifty.
-            if (_gone.ContainsKey(key) && !taking && !made) return null;
+            // Said gone to the game asking, too: one asking for a gone name still has the craft, and
+            // the name is forgotten here at the next save, after which the ask was granted. On
+            // ksamp.gg 25 craft a clear had taken came back that way as one player's, in no other
+            // world, until he left.
+            if (_gone.ContainsKey(key) && !taking && !made)
+            {
+                _udp.Send(new Wire.Gone(key), p.At);
+                return null;
+            }
             // Nor by flying it, where it went into another player's craft at a docking: the game
             // that was flying it asks for it every two seconds until it hears, and asked for once
             // more after the docking it came back as a craft no world had, flown by a player who
@@ -1700,6 +1718,12 @@ public sealed class GameServer : IDisposable
                 OwnersChanged();
             }
             return key;
+        }
+        // Kept for a player who has just left: theirs when they come back, and nobody else's before.
+        if (craft.Owner == Wire.Away && !KeptFor(craft, p))
+        {
+            if (!made || !RoomFor(p)) return null;
+            return Renamed($"{craft.KeptName}, who has just left, has a craft called {key}");
         }
         // Held by somebody only for being near them, and asked for by a player who means to have
         // it: given. That hold exists so a craft is in one place, not so that it is anybody's.
@@ -1984,7 +2008,7 @@ public sealed class GameServer : IDisposable
     private void OwnersChanged() =>
         _ownersNext = Math.Min(_ownersNext, _ownersSaidAt + Math.Clamp(_ownersPages * OwnersPerPageSeconds, OwnersAtLeastSeconds, OwnersEverySeconds));
 
-    private string Named(byte id) => _players.TryGetValue(id, out Player? p) ? p.Name : "somebody";
+    private string Named(byte id) => _players.TryGetValue(id, out Player? p) ? p.Name : id == Wire.Away ? "a player who has just left" : "somebody";
 
     // Somebody wants the world to run at another speed. While one is running it is the asker's alone
     // to change or stop; otherwise it is put to everyone, and the asking counts as their own yes.
@@ -2016,6 +2040,15 @@ public sealed class GameServer : IDisposable
             // same question at a different number, so the answers already given stand. Nobody else
             // gets a word in, since two warps put at once is a room that agrees to neither.
             if (p.Id != _warpWho || normal || Math.Abs(speed - _warpWanted) < 0.001f) return;
+            if (Unflyable(p, speed)) return;
+            // Except from slower than normal to faster: a game agrees by itself to anything that
+            // slows the world, and that yes stood for the 30x its asker went on to, which its player
+            // had set to be asked about.
+            if (_warpWanted <= 1f && speed > 1f)
+            {
+                _warpVotes.Clear();
+                (_warpVotes[p.Id], _warpAskedAt) = (true, now);
+            }
             (_warpWanted, _warpSpeed) = (speed, (float)Flyable(speed));
             Log($"{Named(_warpWho)} now asks for {speed:0.##}x");
             Broadcast(WarpState(), q => q.Loaded);
@@ -2026,6 +2059,7 @@ public sealed class GameServer : IDisposable
         // asker's own included, since a warp another player can pick up the instant it ends is a
         // warp nobody can get out of.
         if (now - _warpQuietSince < WarpQuietSeconds) return;
+        if (Unflyable(p, speed)) return;
 
         // Put at what the room can fly, not at what was asked: agreeing to a speed somebody's
         // machine cannot manage is agreeing to leave them behind.
@@ -2036,6 +2070,24 @@ public sealed class GameServer : IDisposable
         Log($"{p.Name} asks to run the world at {speed:0.##}x");
         Broadcast(WarpState(), q => q.Loaded);
         Counted(now);
+    }
+
+    // Under this a warp is not worth everybody's answer: 1.01x and 1.02x were put to the room.
+    private const double LeastWarpAsked = 1.25;
+
+    /// <summary>
+    /// Whether a speed above normal cannot be flown by somebody here at all, said to the asker. Put
+    /// to the room it was held to 1x and asked as "warp to 1x", which everyone was asked to agree to
+    /// and nobody understood; the asker learns whose machine it is instead.
+    /// </summary>
+    private bool Unflyable(Player p, float speed)
+    {
+        if (speed <= 1f || Flyable(speed) >= LeastWarpAsked) return false;
+        (double can, byte who) = Room();
+        Tell(p, who == p.Id
+            ? $"your game can't run the world faster than {can:0.##}x right now, so it stays at normal speed"
+            : $"{Named(who)}'s game can't run the world faster than {can:0.##}x right now, so it stays at normal speed");
+        return true;
     }
 
     private void OnWarpVote(Player p, bool yes)
@@ -2454,9 +2506,28 @@ public sealed class GameServer : IDisposable
     private void Lapse(double now)
     {
         bool any = false;
+        Dictionary<string, List<string>> back = [], lapsed = [];
         foreach ((string key, Craft craft) in _crafts)
         {
             if (craft.Owner == 0) continue;
+            if (craft.Owner == Wire.Away)
+            {
+                if (_players.Values.FirstOrDefault(q => q.Loaded && KeptFor(craft, q)) is { } again)
+                {
+                    (craft.Owner, craft.AttendedAt) = (again.Id, now);
+                    again.Crafts++;
+                    Add(back, again.Name, key);
+                }
+                else if (now >= craft.KeptUntil)
+                {
+                    craft.Owner = 0;
+                    Add(lapsed, craft.KeptName, key);
+                }
+                else continue;
+                (craft.KeptName, craft.KeptDiscord) = ("", "");
+                any = true;
+                continue;
+            }
             if (craft.Near)
             {
                 // Held for being near and not said to be for this long: its holder has gone
@@ -2472,7 +2543,7 @@ public sealed class GameServer : IDisposable
             {
                 continue;
             }
-            if (owner.Controlling == key || owner.Watching == key)
+            if (owner.Controlling == key || owner.Watching == key || FliesBeside(owner, key))
             {
                 craft.AttendedAt = now;
                 continue;
@@ -2492,8 +2563,34 @@ public sealed class GameServer : IDisposable
             any = true;
             Log($"{key} is {waiting.Name}'s to take: {owner.Name} has not been near it for {Options.LapseWithin:0} s, and {waiting.Name} has watched it for {now - waiting.WatchingSince:0} s");
         }
+        foreach ((string who, List<string> keys) in back) Log($"{who} is back, and has {Named(keys)} again");
+        foreach ((string who, List<string> keys) in lapsed) Log($"{who} did not come back within {Options.KeptAway:0} s, so {Named(keys)} {(keys.Count == 1 ? "is" : "are")} nobody's now");
         if (any) OwnersChanged();
+
+        static void Add(Dictionary<string, List<string>> to, string who, string key)
+        {
+            if (!to.TryGetValue(who, out List<string>? keys)) to[who] = keys = [];
+            keys.Add(key);
+        }
     }
+
+    // By Discord id where they left logged in, which a name is not proof of; by name otherwise.
+    private static bool KeptFor(Craft c, Player p) =>
+        c.KeptDiscord.Length > 0 ? c.KeptDiscord == p.DiscordId : string.Equals(c.KeptName, p.Name, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Whether a player flies something else close by a craft they hold, which is attending it as
+    /// much as looking at it: a player docking with a station they had taken earlier is flying
+    /// their own craft, with the camera on it. On ksamp.gg such a station was handed to a player
+    /// only watching it while the two were metres apart, and from then on the contact was between
+    /// one game's craft and another's: in each world the other's copy was pushed by the touch and
+    /// put back by the pull, and the station juddered against the craft docking with it.
+    /// </summary>
+    private bool FliesBeside(Player owner, string key) =>
+        owner.Controlling.Length > 0 && Apart(owner.Controlling, key) is { } metres && metres <= AttendsWithinM;
+
+    // As far as a game holds a craft for being near what its player flies (the mod's NearWithinM).
+    private const double AttendsWithinM = 10_000.0;
 
     // By its last word since it loaded, or by the world it loaded until it has said.
     private static double BehindBy(Player p) => p.LateAt >= p.LoadedAt ? p.Late : p.LoadedBehind;
@@ -2534,9 +2631,15 @@ public sealed class GameServer : IDisposable
         if (!_players.Remove(p.Id)) return;
         _udp.Send(new Wire.Bye(why == "has left" ? "" : why, p.Session), p.At);
         bool released = false;
+        // Kept for them a while, bar a kick, so a game that drops and comes straight back finds its
+        // craft where it left it. Let go of at once, a craft somebody was watching went to the
+        // watcher in the second its pilot was away: on ksamp.gg a rocket mid-docking, whose pilot
+        // came back two seconds later to find it taken and its RCS propellant spent.
+        bool keep = why is "has left" or "has gone quiet" && Options.KeptAway > 0.0;
         foreach (Craft c in _crafts.Values.Where(c => c.Owner == p.Id))
         {
-            (c.Owner, c.Near) = (0, false);
+            if (keep && !c.Near) (c.Owner, c.KeptName, c.KeptDiscord, c.KeptUntil) = (Wire.Away, p.Name, p.DiscordId, _clock() + Options.KeptAway);
+            else (c.Owner, c.Near) = (0, false);
             released = true;
         }
         foreach (Craft c in _crafts.Values.Where(c => c.WrittenBy == p.Id)) c.WrittenBy = 0;
@@ -3008,10 +3111,7 @@ public sealed class GameServer : IDisposable
                 return $"didn't load '{name}': couldn't save the current world first ({e.Message})";
             }
         }
-        _crafts.Clear();
-        _sweeps.Clear();
-        _gone.Clear();
-        _docked.Clear();
+        ForgetTheWorldsCraft();
         // A save on its way in is of the world that is going, and would be put back over this one.
         foreach (Player p in _players.Values) p.WorldAsked = false;
         UniverseClock.Forget();
@@ -3192,6 +3292,22 @@ public sealed class GameServer : IDisposable
     }
 
     /// <summary>
+    /// Every craft of a world being replaced forgotten, and that anybody flies one. Only a word of a
+    /// craft clears what a player flies, and a game left flying nothing in the new world says none:
+    /// on ksamp.gg a player tabbed out through a fresh start was said to fly the old world's station
+    /// until they were kicked, and spectating them found nothing. A game flying something in the
+    /// new world claims it again within a couple of seconds.
+    /// </summary>
+    private void ForgetTheWorldsCraft()
+    {
+        _crafts.Clear();
+        _sweeps.Clear();
+        _gone.Clear();
+        _docked.Clear();
+        foreach (Player p in _players.Values) Flying(p, "");
+    }
+
+    /// <summary>
     /// The world thrown away and an empty one put in its place: every craft gone, universe time
     /// started over, and everybody handed the new world where they stand.
     ///
@@ -3239,10 +3355,7 @@ public sealed class GameServer : IDisposable
             SaySaves();
         }
         if (_warpPhase != Wire.WarpPhase.None) EndWarp(_clock(), $"the warp ended because {by?.Name ?? "the operator"} is starting the world afresh");
-        _crafts.Clear();
-        _sweeps.Clear();
-        _gone.Clear();
-        _docked.Clear();
+        ForgetTheWorldsCraft();
         UniverseClock.Forget();
         // The craft they named went with the world, and a name left on the list would protect
         // whatever is next given it.

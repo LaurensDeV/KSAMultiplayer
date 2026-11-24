@@ -56,6 +56,28 @@ public class ClearAndNameTests
     }
 
     /// <summary>
+    /// A game that still has a swept craft and asks to hold it for being near is told it is gone,
+    /// rather than only refused until the next save forgets the name: on ksamp.gg 25 craft a clear
+    /// had taken came back that way as one player's, in no other world.
+    /// </summary>
+    [Fact]
+    public void AGameAskingForASweptCraftIsToldItIsGone()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        a.Claim("Debris", controlling: false, made: true);
+        rig.Until(() => rig.Server.OwnerOf("Debris") == a.Id, what: "Alice to hold the debris");
+
+        rig.Server.Sweep();
+        rig.Until(() => rig.Server.OwnerOf("Debris") == 0, what: "the debris to be swept");
+        b.Gone.Clear();
+        b.Claim("Debris", controlling: false, near: true);
+        rig.Until(() => b.Gone.Contains("Debris"), what: "Bob's game to be told the debris is gone");
+        Assert.Equal(0, rig.Server.OwnerOf("Debris"));
+    }
+
+    /// <summary>
     /// A game sent the world the same second as a clear is told of the clear once it is in: the
     /// world it loaded still has everything the clear took.
     /// </summary>
@@ -129,7 +151,7 @@ public class ClearAndNameTests
     [Fact]
     public void AProtectedCraftJustTakenOverIsNotGoneOnItsNewHoldersWord()
     {
-        using Rig rig = new();
+        using Rig rig = new(new ServerOptions { KeptAway = 0.0 });
         Client a = Seed(rig);
         Client b = JoinAndLoad(rig, "Bob");
         Client c = JoinAndLoad(rig, "Carol");

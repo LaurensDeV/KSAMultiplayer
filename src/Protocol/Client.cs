@@ -382,7 +382,7 @@ public sealed class Client : IDisposable
 
     /// <summary>Who a craft is kept from other players by, or 0: its owner, unless they hold it only for being near.</summary>
     public byte HeldBy(string key) => _near.Contains(key) ? (byte)0 : OwnerOf(key);
-    public string NameOf(byte id) => Players.FirstOrDefault(p => p.Id == id).Name ?? $"player {id}";
+    public string NameOf(byte id) => id == Wire.Away ? "a player who has just left" : Players.FirstOrDefault(p => p.Id == id).Name ?? $"player {id}";
 
     public Track TrackOf(string key)
     {

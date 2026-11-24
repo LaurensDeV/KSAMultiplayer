@@ -7,6 +7,40 @@ once it has been seen, and write what was seen into `docs/DESIGN.md`.
 The players' logs are on the server, under `player-logs/<day>/` in the `ksamp-world` volume. Type
 `playerlogs [name]` at the server's console for a session still running.
 
+## From 0.36.0
+
+The reconnect, the joiner, Editor Toggle, the map and the vessel list have been seen with two games
+on one machine; what is left of them is a busy room. The rest have been driven over loopback only.
+
+- **A quick reconnect.** A player who drops and rejoins within two minutes has their craft back:
+  `<name> is back, and has … again` in the server's log, and nobody else took it meanwhile.
+- **Joining into somebody's craft.** A player joining a room whose save was flying a craft nobody
+  holds is told `you've joined watching …, which isn't yours` and is not put at its controls.
+- **Editor Toggle while watching somebody else's craft.** Fly one craft, click a craft another
+  player is flying, then Debug > Editor Toggle: the editor should not open, and the player's log
+  should say `not opening the editor: <craft> is <owner>'s`. Back in their own craft the toggle
+  opens on it as before.
+
+- **Docking with a station you took earlier.** While a player docks with a craft they hold, a
+  player who only watches it should not be handed it: no `<craft> is <name>'s to take` in the
+  server's log until the docking player is 10 km away, and no juddering of the station in the
+  docking player's game.
+
+- **The map while spectating.** Spectate somebody and press M: the map should be centred on their
+  craft, and pressing M again should come back to it in the flight view. Spectating from the map
+  view should do the same the other way round.
+
+- **A warp nobody can fly.** With a player whose machine is the limit near 1x (beside a big
+  station), an ask for 10x should not be put to the room: the asker is told whose game it is.
+- **Clear with a game that kept the craft.** After a `clear`, the server's `craft known` should not
+  climb back by the count it swept with no `says how … is built` lines.
+- **Undocking.** The server's log should say `<name> undocked <craft> from <station>` when a player
+  flies away in the half that came off.
+
+- **Flicking through the vessel list.** Switching through craft nobody holds with `[` and `]`
+  should claim none of them until one has been flown for three seconds: one `claiming …` line in
+  the player's log, not one for each craft passed.
+
 ## From 0.35.3
 
 - **Copies of a craft whose owner's game is behind.** A breakup during a warp is what put a game

@@ -213,8 +213,17 @@ public static class Wire
     /// <para>35 is <see cref="Player.Watching"/> on every row of a <see cref="Roster"/>, which a game
     /// of 34 would read as the start of the next row; <see cref="Give"/>; and
     /// <see cref="State.Thrusters"/>.</para>
+    ///
+    /// <para>36 is <see cref="Away"/> as the owner of a craft, which a game of 35 would look up as a
+    /// player and treat as nobody's, taking a craft kept for somebody coming back.</para>
     /// </summary>
-    public const ushort Version = 35;
+    public const ushort Version = 36;
+
+    /// <summary>
+    /// The owner of a craft kept for a player who has just left, until they come back or it lapses.
+    /// No player is given it: a server takes at most 250.
+    /// </summary>
+    public const byte Away = 255;
 
     /// <summary>
     /// The version of <see cref="Ask"/> and <see cref="Facts"/> alone, in the first byte of each.

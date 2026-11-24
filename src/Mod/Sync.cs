@@ -634,6 +634,8 @@ internal static class Sync
 
         string key = KeyOf(v);
         if (c.HeldBy(key) != 0 || Owned.ContainsKey(key) || MadeHere.Contains(v)) return;
+        // Nor the craft a joiner was let go of (ClaimFlown): watching it is where joining left them.
+        if (ReferenceEquals(v, _watchedFromJoin)) return;
         // Not one the camera is passing over: flicking through the vessel list took every craft in
         // it that nobody had, each one moving the player into it.
         if (key != _eyed || Wall() - _eyedSince < WatchToTakeSeconds) return;
@@ -2091,9 +2093,30 @@ internal static class Sync
         foreach (Vehicle v in World.Vehicles()) Seen.Add(v);
         c.ForgetTracks();
         c.SayLoaded(World.Universe);
+        // A world this game gave the server is the one its player was already flying in.
+        (_cameFlying, _watchedFromJoin, _playingSince) = (Now == Stage.Seeding ? null : World.Controlled, null, Wall());
         Now = Stage.Playing;
         Say("you're in the shared world");
     }
+
+    // The craft the world was saved flying, which KSA puts a joiner at the controls of whoever it
+    // belongs to, until the player chooses it or anything else; and when this game began playing.
+    private static Vehicle? _cameFlying;
+    private static double _playingSince;
+
+    // Long enough for the owners to arrive after the world is in, so a craft that is this player's own,
+    // kept for them while they were away, is known to be theirs before anything is let go of.
+    private const double OwnersArriveSeconds = 2.0;
+
+    /// <summary>KSA is about to put this player at the controls of a craft: one they chose, so the one the save left them in is no longer a question.</summary>
+    public static void ChoseToFly(Vehicle? v)
+    {
+        if (v is null) return;
+        (_cameFlying, _watchedFromJoin) = (null, null);
+    }
+
+    // The craft a joiner was let go of, not taken for being watched until they choose something.
+    private static Vehicle? _watchedFromJoin;
 
     // The server has asked this game for a save of the world: sent, refused, or null while the ask
     // cannot be answered at all. KSA writes no save while the vehicle editor is open, and a player who
@@ -2434,6 +2457,10 @@ internal static class Sync
         }
     }
 
+    // The craft nobody held that this player switched to, and since when, until it is claimed.
+    private static string _settling = "";
+    private static double _settlingSince;
+
     // The craft this player flies, claimed whenever it changes and now and then after.
     private static void ClaimFlown(Client c, Vehicle? flown)
     {
@@ -2447,7 +2474,8 @@ internal static class Sync
             if (_watching != key)
             {
                 _watching = key;
-                Say($"{c.NameOf(held)} is flying {key}, so you're watching");
+                bool flies = c.Players.Any(q => q.Id == held && q.Controlling == key);
+                Say($"{c.NameOf(held)} {(flies ? "is flying" : "has")} {key}, so you're watching");
             }
             // Watching means watching: control is given up here, since a game that joined already
             // holding this craft would otherwise keep steering it.
@@ -2455,16 +2483,41 @@ internal static class Sync
             return;
         }
         _watching = "";
-        if (key == _claimed && Wall() < _claimNext) return;
         // Anything the loaded world did not have is one this game made, and may need a name of its own.
         bool made = flown is not null && !Seen.Contains(flown);
-        if (key != _claimed) Log.Info($"claiming {key}: this player is flying it" + (made ? ", and this game made it" : ""));
-        c.Claim(key, controlling: true, made: made);
+        // Taken from nobody only once it has been flown as long as a watched craft has to be watched
+        // (TakeWhatIsWatched): flicking through the vessel list claimed every craft in it, nine in
+        // four seconds on ksamp.gg, each then that player's to lapse and spared by a clear for
+        // having been flown. What this game made, or holds outright already, is claimed at once.
+        bool ours = (Owned.ContainsKey(key) || c.OwnerOf(key) == c.Id) && !c.NearOf(key);
+        // Nor the craft the world was saved flying, which is whoever saved it's and not the joiner's
+        // for having loaded it: on ksamp.gg a player joining an empty room was put at the controls of
+        // the shared station, took it, and undocked it in half within the minute. Let go of with the
+        // camera left on it; clicking it is choosing it.
+        if (ReferenceEquals(flown, _cameFlying) && !ours && !made)
+        {
+            if (Wall() - _playingSince < OwnersArriveSeconds) return;
+            _cameFlying = null;
+            _watchedFromJoin = flown;
+            if (World.LetGo(flown!)) Say($"you've joined watching {key}, which isn't yours: click it to fly it, or pick your own craft");
+            return;
+        }
+        if (!made && !ours && !DockedHere.ContainsKey(key))
+        {
+            if (key != _settling) (_settling, _settlingSince) = (key, Wall());
+            if (Wall() - _settlingSince < WatchToTakeSeconds) return;
+        }
+        if (key == _claimed && Wall() < _claimNext) return;
+        // The half of an undocking its player flies on in comes here before Adopt, which is what
+        // otherwise says so: told as a craft made, the server never logged an undocking all day.
+        bool undocked = made && SplitHere.Remove(flown!);
+        if (key != _claimed) Log.Info($"claiming {key}: this player is flying it" + (undocked ? ", undocked here" : made ? ", and this game made it" : ""));
+        c.Claim(key, controlling: true, made: made, undocked: undocked);
         (_claimed, _claimNext) = (key, Wall() + ClaimEverySeconds);
         if (flown is not null && Seen.Add(flown))
         {
             MadeHere.Add(flown);
-            if (!Owned.ContainsKey(key) && c.OwnerOf(key) == 0) Own(c, flown, define: true, made: true);
+            if (!Owned.ContainsKey(key) && c.OwnerOf(key) == 0) Own(c, flown, define: true, made: true, undocked: undocked);
         }
     }
 
@@ -3254,6 +3307,24 @@ internal static class Sync
     }
 
     // ------------------------------------------------------------------------- the vehicle editor
+
+    /// <summary>
+    /// KSA's debug Editor Toggle, put off while the camera is on another player's craft. It opens
+    /// the editor on the craft this game controls, and a click on another player's craft is refused
+    /// with the camera moved and the control left where it was: on ksamp.gg a player looking at a
+    /// station another player was flying toggled the editor to change it and was given their own
+    /// ship, Keystone, instead. A new vehicle is not asked about, being nothing of either craft.
+    /// Called last in the frame hook, after everything that can ask for the editor -- the menu
+    /// during KSA's frame, the bridge after the session -- and before KSA builds it next frame.
+    /// </summary>
+    public static void KeepTheEditorOffWhatIsWatched()
+    {
+        if (Observed is not { } seen || World.Controlled is not { } mine || !World.EditorAsked) return;
+        World.CancelEditor();
+        string owner = OwnerOf(seen), whose = owner.Length > 0 ? $"{owner}'s" : "another player's";
+        string ask = owner.Length > 0 ? $"ask {owner} to give it to you" : "wait until it's free";
+        Say($"not opening the editor: {KeyOf(seen)} is {whose}, and the editor opens on the craft you fly, {KeyOf(mine)}. To edit {KeyOf(seen)}, {ask}; to edit {KeyOf(mine)}, go back to it first");
+    }
 
     /// <summary>A craft held still while its pilot is in the vehicle editor, and how it is to be let go of.</summary>
     private sealed class EditorHold(Vehicle craft, World.Hold at)

@@ -96,6 +96,14 @@ public sealed class MultiplayerMod
         {
             Fault("bridge", e);
         }
+        try
+        {
+            Sync.KeepTheEditorOffWhatIsWatched();
+        }
+        catch (Exception e)
+        {
+            Fault("keeping the editor off another player's craft", e);
+        }
     }
 
     [StarMapAfterGui]

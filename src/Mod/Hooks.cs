@@ -1301,7 +1301,11 @@ internal static class Hooks
 
     private static bool BeforeControl(Vehicle? value)
     {
-        if (!Others(value)) return true;
+        if (!Others(value))
+        {
+            Sync.ChoseToFly(value);
+            return true;
+        }
         if (!ReferenceEquals(_refused, value))
         {
             _refused = value;

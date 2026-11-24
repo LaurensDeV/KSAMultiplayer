@@ -34,6 +34,7 @@ const string Usage = """
                              (default true)
       --speed <x>            how fast universe time runs (default 1)
       --lapse-within <s>     seconds a craft stays its owner's while they are not near it (default 10)
+      --kept-away <s>        seconds a player's craft are kept for them after they leave (default 120)
       --advertise            list this server in the public directories so players can find it.
                              Off by default: being listed publishes the address this server is
                              reached at, which is a decision for whoever runs the machine

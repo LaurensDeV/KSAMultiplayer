@@ -72,6 +72,65 @@ public class WatchingTests
     }
 
     /// <summary>
+    /// Alice drops and comes straight back. Bob, who was watching her rocket and flying nothing,
+    /// cannot take it in between, and she has it again once she is in.
+    /// </summary>
+    [Fact]
+    public void ACraftIsKeptForAPlayerWhoComesStraightBack()
+    {
+        using Rig rig = new(new ServerOptions { LapseWithin = 1.0, WatchToTake = 0.5 });
+        (Client a, Client b) = AliceWalkedAwayFromTheRocket(rig);
+        b.Watching = "Rocket";
+        rig.For(1.0);
+
+        a.Dispose();
+        rig.Until(() => rig.Server.OwnerOf("Rocket") == Wire.Away, what: "the rocket to be kept for Alice");
+        b.Claim("Rocket", controlling: true, made: false);
+        rig.For(1.0);
+        Assert.Equal(Wire.Away, rig.Server.OwnerOf("Rocket"));
+
+        Client again = JoinAndLoad(rig, "Alice");
+        rig.Until(() => rig.Server.OwnerOf("Rocket") == again.Id && rig.Server.OwnerOf("Lander") == again.Id, what: "Alice to have both again");
+        Assert.Contains(rig.Server.Said, s => s.Contains("Alice is back, and has"));
+    }
+
+    /// <summary>
+    /// Alice holds a station and docks her own craft with it. She flies and watches the lander,
+    /// but it is beside the station, so the station stays hers however long Bob watches it.
+    /// </summary>
+    [Fact]
+    public void ACraftIsNotLetGoOfWhileItsOwnerFliesBesideIt()
+    {
+        using Rig rig = new(new ServerOptions { LapseWithin = 1.0, WatchToTake = 0.5 });
+        (Client a, Client b) = AliceWalkedAwayFromTheRocket(rig);
+        a.Watching = "Lander";
+
+        b.Watching = "Rocket";
+        double until = rig.Now() + 4.0;
+        while (rig.Now() < until)
+        {
+            Said(rig, a, "Rocket", new Vec3(7_000_000, 0, 0), Wire.StateFlags.Rails);
+            Said(rig, a, "Lander", new Vec3(7_000_000, 30, 0), Wire.StateFlags.Controlled);
+            rig.For(0.2);
+        }
+        Assert.Equal(a.Id, rig.Server.OwnerOf("Rocket"));
+
+        // Flown away, she has walked away from it.
+        until = rig.Now() + 10.0;
+        while (rig.Server.OwnerOf("Rocket") != 0 && rig.Now() < until)
+        {
+            Said(rig, a, "Rocket", new Vec3(7_000_000, 0, 0), Wire.StateFlags.Rails);
+            Said(rig, a, "Lander", new Vec3(7_000_000, 50_000, 0), Wire.StateFlags.Controlled);
+            rig.For(0.2);
+        }
+        Assert.Equal(0, rig.Server.OwnerOf("Rocket"));
+    }
+
+    private static void Said(Rig rig, Client by, string key, Vec3 at, Wire.StateFlags flags) =>
+        by.SendState(new Wire.State(0, key, 0, rig.Server.UniverseClock.Now(rig.Now()), "Earth", at, Vec3.Zero, at, Vec3.Zero,
+                                    Quat.Identity, Vec3.Zero, 0, flags));
+
+    /// <summary>
     /// Let go of, the craft is in its last owner's physics, and their game holds it for being near
     /// before the watcher's has heard. Kept for the watcher, it does not go back.
     /// </summary>

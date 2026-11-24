@@ -103,6 +103,10 @@ stranger sent it.
   would all pass a limit none had reached.
   Loading one is `fresh` with a world that is not empty -- craft forgotten, the clock forgotten and
   set from the save, everybody handed it where they stand -- after two things `fresh` does not do.
+  Both forget what every player flies, which only a word of a craft would otherwise clear: a game
+  flying nothing in the new world says none, and on `ksamp.gg` a player tabbed out through a fresh
+  start was listed as flying the old world's station, which spectating could not find. A game
+  flying something claims it again within two seconds.
   The world it replaces is kept as `before load <when>`, so a load is the one command here that
   can be taken back -- the newest five, none when the world being replaced is already on the shelf
   (`_worldKept`: nobody has played since it was loaded or saved), and never written over, since
@@ -130,7 +134,10 @@ stranger sent it.
   whole, as a `Blob` of a fourth kind, at the join and whenever it changes. A `Swept` carries which
   state of the list it was made against and a game holds the sweep until it has that state, five
   seconds at most -- the list goes by a transfer and the sweep by a datagram, and swept in the wrong
-  order a craft protected a moment before goes with the debris. A craft that docks with a protected
+  order a craft protected a moment before goes with the debris. A game that asks to hold a swept
+  craft is told it is `Gone` along with the refusal: the server forgets a swept name at the next save,
+  and on `ksamp.gg` 25 craft one game had kept through a clear were asked for again then and became
+  that player's, in no other world. A craft that docks with a protected
   one is protected (`OnDock`), and the name that went stays on the list, being the name KSA gives
   the half that comes away again. `fresh` empties it: a name left behind would protect whatever was
   next called it -- which is also why a protected craft its owner says is `Gone` comes off the
@@ -230,17 +237,29 @@ stranger sent it.
   go of it with the camera left on it, as for any craft another player flies.
   Spectating lets go of the craft this player was flying: a spectator flies nothing. Left at
   the controls, their craft went on taking keys nobody could see it answer, and the room was told
-  they were flying it.
+  they were flying it. Spectating puts both of KSA's cameras on the craft, the flight view's and
+  the map's, which each follow something of their own: with only the one showing moved, pressing M
+  showed the map still on the spectator's own craft.
 - **A save before a player is gone.** What a player did since the last save is in no world the
   server has once they leave, so whoever is still in it is asked for a fresh one. Nothing can be
   asked of the last player to leave: that much is lost, and the clock waits at the world rather than
   pretending otherwise.
 - **Who flies what.** A table of craft Id to player. The first player to take a craft nobody holds
-  keeps it until they leave, when everything they owned is let go; while they hold it everyone else
-  only watches, whether or not they are flying it this second.
+  keeps it until they leave; while they hold it everyone else only watches, whether or not they are
+  flying it this second. What they owned is kept for them for `--kept-away` seconds, two minutes by
+  default, under `Wire.Away` (255, an owner no player is given), and is theirs again the moment they
+  are back in the world under the same Discord account, or the same name if they had none; after
+  that it is nobody's. Let go of at once, a rocket mid-docking went on `ksamp.gg` to the player
+  watching it in the second its pilot had dropped, and he came back two seconds later to find it
+  taken and its RCS propellant spent. Not after a kick. Protocol 36, since a game of 35 would look
+  255 up as a player, find nobody and take the craft.
 - **The world's speed.** One world has one time, so nobody changes it alone. A game asks, everyone
   else is asked, and it runs only if they all agree; saying nothing is not agreeing, and the ask runs
-  out after `--warp-answer` seconds, thirty by default. A pause is a warp like any other, since stopping the world stops it for
+  out after `--warp-answer` seconds, thirty by default. An ask above normal that some machine here cannot fly at
+  1.25x or more is refused, and the asker told whose machine it is: held to what the room can fly it
+  was put to everyone as "warp to 1x" and "warp to 1.02x". The answers already given stand when the
+  asker changes the speed, except from slower than normal to faster, since a game agrees by itself
+  to anything that slows the world and that yes stood for the 30x its asker went on to. A pause is a warp like any other, since stopping the world stops it for
   everyone. The warp is then the asker's to steer and theirs to stop, ends if they leave, and another
   cannot be asked for within five seconds of one ending. What makes the games warp together is that
   the server warps *its own clock*, which is the thing they all follow anyway. It gets to the speed
@@ -346,6 +365,15 @@ name, and a lost Sun is logged, told to the server and shown to the player once.
      holds it: then this player is watching it, is told so once, and claims nothing. A game that
      joins loads the world still flying whoever gave it that world, so two players begin on one
      craft every time, and watching is what the second one does until they fly something else.
+     One nobody holds is claimed only once it has been flown for three seconds, as long as a
+     watched craft has to be watched before it is taken: flicking through the vessel list claimed
+     every craft in it, nine in four seconds on `ksamp.gg`, each then that player's to lapse and
+     spared by a clear. One this game made, or holds outright already, is claimed at once.
+     Nor is a joiner flying the craft the world was saved flying when nobody holds it: that is
+     whoever saved it's, and on `ksamp.gg` a player joining an empty room was put at the controls
+     of the shared station, took it and undocked it in half within the minute. The game lets go of
+     it two seconds in, once the owners have arrived, leaves the camera on it and says so, and does
+     not take it for being watched; choosing it, by clicking it or switching to it, flies it.
    - **Craft this game made are adopted.** Anything that appears that was not in the world it loaded
      and was not built from someone's definition is this player's if it is the flown craft or nearer
      this player's craft than anyone else's: a launch, a dropped stage, a kitten out of the hatch. Its
@@ -661,6 +689,12 @@ camera moved away, as KSA does when its own control is switched off, and prefixe
 `Program.UpdateGauges` and `NavBallRenderer`'s two per-craft methods hand them the watched craft
 instead. The player still flies their own craft as far as everybody else is concerned, so it is not
 let go of meanwhile; the mission clock is still theirs.
+
+KSA's debug Editor Toggle opens the editor on the controlled craft, so while the camera is on
+another player's craft it would open on the player's own, out of sight, with the one they are looking
+at nowhere in it. The toggle is taken back the frame it is asked for and the player told whose the
+watched craft is and to ask for it (`Sync.KeepTheEditorOffWhatIsWatched`). A new vehicle opens as it
+always did.
 
 A puppet is spared when a crash in this world would wreck it -- a prefix on
 `Universe.DestroyVehicleFromEvent` refuses the destroy along with the explosion and the twelve pieces
@@ -1039,6 +1073,15 @@ back within the second. Not worth a flag, given that this mod places landed craf
 `Vehicle.TeleportToLocation` itself and a refusal would have to let its own calls through.
 
 ## What has been seen in a game
+
+- **Six changes from the 2026-11-24 logs** (two games on one machine, 2026-11-24): the editor
+  refused while Bravo flew Hunter with the camera on Alpha's Niric, saying why, and opened as before
+  on his own; spectating Alpha and pressing M left the map on Niric, and Bravo still said to be
+  watching it; switching through Rocket, Gemini7 and Hunter a second apart claimed Hunter alone;
+  Alpha dropping and coming back eight seconds later had Niric again, with Bravo spectating it and
+  flying nothing the whole time and not taking it; Alpha joining alone into a world saved flying
+  Rocket, once Rocket had lapsed, was let go of it, watched it for fifteen seconds without taking
+  it, and flew it on choosing it; and undocking Gemini7 from Rocket was logged as an undocking.
 
 - **A join by an address with no port, to a server on 50100 and to one on 28500** (two games on one
   machine, 2026-11-22): `127.0.0.1` typed alone found the server on each, in about four seconds from
@@ -1981,7 +2024,12 @@ for, in `docs/LIVE-CHECKS.md`.
   player to touch a thing held it until they left: in a session here one player came to own every
   craft in the world and the other could fly none of them. A craft its owner is neither in nor
   looking at goes to a player who is watching it after ten seconds, `--lapse-within`, and a player's camera counts as
-  being near it so stepping out to watch something is not walking away from it. Only a craft somebody
+  being near it so stepping out to watch something is not walking away from it. So does flying
+  something else within 10 km of it, by where the server last heard each was: on `ksamp.gg` a player
+  docking with a station they had taken earlier lost it to a player watching it while the two craft
+  were metres apart, and the contact became one game's craft against another's copy in both their
+  worlds, each pushed by the touch and put back by the pull. Driven over loopback; not seen in a
+  game. Only a craft somebody
   else is waiting on changes hands: a world is mostly parked craft nobody is looking at, and letting
   those go lapsed ownership 873 times in 70 minutes, each one moving the camera of whoever was
   watching a craft when it came free. Waiting means flying nothing, which is the only game that

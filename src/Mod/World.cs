@@ -427,6 +427,15 @@ internal static class World
     /// <summary>Whether the vehicle editor has been built, which is a frame after it is said to be open.</summary>
     public static bool EditorBuilt => Program.Editor is not null;
 
+    /// <summary>Whether the editor has been asked for on the craft being controlled and not yet built, which KSA does at the start of the next frame (Program.OnFrameEditor).</summary>
+    public static bool EditorAsked => Program.EditorFlag && Program.Editor is null;
+
+    /// <summary>Takes back an editor asked for and not yet built.</summary>
+    public static void CancelEditor()
+    {
+        if (Program.Editor is null) Program.EditorFlag = false;
+    }
+
     /// <summary>Whether the vehicle editor is open on a new vehicle rather than on the craft that was being flown.</summary>
     public static bool EditingNew => Program.Editor is { ExistingVehicle: null };
 
@@ -2445,6 +2454,7 @@ internal static class World
         {
             if (Program.GetMainCamera() is not { } camera) return false;
             camera.SetFollow(v, tidalLocking: true, changeControl: false);
+            FollowInTheOtherView(camera, v);
             return ReferenceEquals(camera.Following, v);
         }
         catch (Exception e)
@@ -2452,6 +2462,21 @@ internal static class World
             Log.Warn($"could not watch {v.Id}: {e.GetBaseException().Message}");
             return false;
         }
+    }
+
+    /// <summary>
+    /// The camera of the view not being shown put on the same craft. KSA's flight view and its map
+    /// each have a camera that follows something of its own, and the main camera is whichever is
+    /// showing: a player who spectated somebody and pressed M found the map still on their own
+    /// craft, and from then on was watching that, as far as this mod and the room could tell.
+    /// KSA's own craft switching sets both (<c>InputEvents</c>, <c>Universe.HandOffCameras</c>).
+    /// </summary>
+    private static void FollowInTheOtherView(Camera shown, Vehicle v)
+    {
+        if (Program.MainViewport is not { } view) return;
+        Camera other = ReferenceEquals(shown, view.MapCamera) ? view.BaseCamera : view.MapCamera;
+        if (other is not null && !ReferenceEquals(other, shown) && !ReferenceEquals(other.Following, v))
+            other.SetFollow(v, tidalLocking: false, changeControl: false, alert: false);
     }
 
     /// <summary>
@@ -2481,6 +2506,7 @@ internal static class World
         {
             if (Program.GetMainCamera() is not { } camera) return false;
             camera.SetFollow(v, tidalLocking: true);
+            FollowInTheOtherView(camera, v);
             Program.ControlledVehicle = v;
             // The hook on the setter refuses another player's craft without saying so, so whether it
             // took is read back rather than assumed.

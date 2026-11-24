@@ -149,15 +149,17 @@ public class ServerTests
         Client a = Seed(rig);
         rig.Until(() => rig.Server.CraftCount >= 0 && rig.Server.HasWorld, what: "a world");
         a.Upload(new Blob(BlobKind.Vehicle, "Rocket", a.Id, 5000, Rig.FakeWorld(2)));
-        rig.For(0.3);
+        a.Claim("Rocket", controlling: true, made: true);
+        rig.Until(() => rig.Server.Players.First(p => p.Id == a.Id).Controlling == "Rocket", what: "Alice to fly the rocket");
         byte[] was = rig.Server.World!.Data;
 
         string said = rig.Server.Fresh("a test asked");
         Assert.Contains("SolLite", said);
         Assert.NotEqual(was, rig.Server.World!.Data);
         Assert.Equal(StockWorld.Zip("SolLite"), rig.Server.World!.Data);
-        // Nothing of the old world is still known, and its time went with it.
+        // Nothing of the old world is still known, nor that anybody flies a craft of it, and its time went with it.
         Assert.Equal(0, rig.Server.CraftCount);
+        Assert.All(rig.Server.Players, p => Assert.Equal("", p.Controlling));
         Assert.False(rig.Server.UniverseClock.Known);
         // And it goes out: the player is put back on the new one rather than left in the old.
         rig.Until(() => a.Blobs.Any(x => x.Kind == BlobKind.World && x.Data.SequenceEqual(StockWorld.Zip("SolLite")!)),
@@ -185,6 +187,29 @@ public class ServerTests
         // An empty world nobody has played in is not kept again by a second fresh.
         rig.Server.Fresh("again");
         Assert.Single(rig.Server.Saves.List());
+    }
+
+    /// <summary>
+    /// A load replaces the world as fresh does, and nobody is still said to fly a craft of the one
+    /// it replaced. A game flying something in the loaded world claims it again.
+    /// </summary>
+    [Fact]
+    public void ALoadForgetsWhatEverybodyWasFlying()
+    {
+        using Rig rig = new(new ServerOptions { EmptyWorld = "SolLite" });
+        Client a = Seed(rig);
+        rig.Until(() => rig.Server.HasWorld, what: "a world");
+        rig.Server.Fresh("a test asked");
+        string name = Assert.Single(rig.Server.Saves.List()).Name;
+        rig.Until(() => a.Blobs.Any(x => x.Kind == BlobKind.World && x.Data.SequenceEqual(StockWorld.Zip("SolLite")!)),
+                  seconds: 20, what: "the empty world to arrive");
+        a.SayLoaded(0.0);
+        rig.Until(() => rig.Server.Players.First(p => p.Id == a.Id).Loaded, what: "Alice to load the empty world");
+        a.Claim("Rocket", controlling: true, made: true);
+        rig.Until(() => rig.Server.Players.First(p => p.Id == a.Id).Controlling == "Rocket", what: "Alice to fly the rocket");
+
+        Assert.Contains("loaded", rig.Server.LoadSave(name));
+        Assert.All(rig.Server.Players, p => Assert.Equal("", p.Controlling));
     }
 
     /// <summary>
@@ -300,7 +325,7 @@ public class ServerTests
     [Fact]
     public void NobodyTakesACraftAnotherPlayerHoldsUntilThatPlayerLeaves()
     {
-        using Rig rig = new();
+        using Rig rig = new(new ServerOptions { KeptAway = 0.0 });
         Client a = Seed(rig);
         Client b = JoinAndLoad(rig, "Bob");
         a.Claim("Rocket", controlling: true, made: false);
@@ -995,14 +1020,17 @@ public class ServerTests
     [Fact]
     public void APlayerWhoLeavesLetsGoOfWhatTheyFlew()
     {
-        using Rig rig = new();
+        using Rig rig = new(new ServerOptions { KeptAway = 1.0 });
         Client a = Seed(rig);
         Client b = JoinAndLoad(rig, "Bob");
         b.Claim("Rover", controlling: true, made: false);
         rig.Until(() => a.OwnerOf("Rover") == b.Id, what: "Alice to hear Bob flies the rover");
         b.Dispose();
         rig.Clients.Remove(b);
-        rig.Until(() => a.OwnerOf("Rover") == 0 && a.Players.Length == 1, what: "the rover to be let go");
+        // Kept for him a moment in case he comes straight back, and then nobody's.
+        rig.Until(() => a.OwnerOf("Rover") == Wire.Away && a.Players.Length == 1, what: "the rover to be kept for Bob");
+        rig.Until(() => a.OwnerOf("Rover") == 0, what: "the rover to be let go");
+        Assert.Contains(rig.Server.Said, s => s.Contains("Bob did not come back within 1 s, so Rover is nobody's now"));
         Assert.Contains(a.Chat, line => line.Text.Contains("Bob has left"));
     }
 
@@ -1836,6 +1864,48 @@ public class ServerTests
         rig.Until(() => Math.Abs(rig.Server.UniverseClock.Speed - 6.0) < 0.1, seconds: 15.0, what: "the warp to reach six");
         rig.For(2.5);
         Assert.Equal(6.0, rig.Server.UniverseClock.Speed, 1);
+    }
+
+    /// <summary>
+    /// A warp a machine in the room cannot fly at all is not put to the room as "warp to 1x": the
+    /// asker is told whose machine it is.
+    /// </summary>
+    [Fact]
+    public void AWarpNobodyCanFlyIsNotPutToTheRoom()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        b.Can = 1.03;
+        rig.Until(() => rig.Server.Players.Any(p => p.Name == "Bob" && p.Can is > 0.0 and < 1.1), seconds: 10.0, what: "Bob to say what he can fly");
+
+        a.AskWarp(10.0);
+        rig.Until(() => a.Chat.Any(l => l.Text.Contains("Bob's game can't run the world faster than 1.03x")), what: "Alice to be told why");
+        Assert.Equal(Wire.WarpPhase.None, rig.Server.Warp.Phase);
+        Assert.False(b.WarpWantsAnswer);
+    }
+
+    /// <summary>
+    /// A yes to slowing the world down, which a game gives by itself, is not a yes to the speed-up
+    /// its asker goes on to.
+    /// </summary>
+    [Fact]
+    public void AYesToSlowingDownIsNotAYesToSpeedingUp()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        // Carol has not answered yet, so the ask is still open when Alice changes it.
+        JoinAndLoad(rig, "Carol");
+        a.AskWarp(0.1);
+        rig.Until(() => b.WarpWantsAnswer, what: "Bob to be asked about slowing down");
+        b.VoteWarp(true);
+        rig.Until(() => !b.WarpWantsAnswer, what: "Bob's yes to count");
+        Assert.Equal(Wire.WarpPhase.Asking, rig.Server.Warp.Phase);
+
+        a.AskWarp(30.0);
+        rig.Until(() => b.WarpWantsAnswer, what: "Bob to be asked again about speeding up");
+        Assert.Equal(Wire.WarpPhase.Asking, rig.Server.Warp.Phase);
     }
 
     [Fact]
