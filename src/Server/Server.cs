@@ -388,6 +388,10 @@ public sealed class GameServer : IDisposable
     /// </summary>
     private const double QuietEnoughToReplaceSeconds = 3.0;
 
+    // How long a session from the same machine may go without answering its welcome before a new
+    // hello under its name is taken as the same game trying again. A round trip is a fraction of it.
+    private const double NeverAnsweredSeconds = 1.0;
+
     /// <summary>How long one join cookie stands, s. Two are accepted, so it is good for twice this.</summary>
     private const double CookieSeconds = 15.0;
 
@@ -885,6 +889,7 @@ public sealed class GameServer : IDisposable
         AskAgainForTheWorld(now);
         AskSomebodyElse(now);
         KeepLate(now);
+        GiveTheCaughtUp(now);
 
         // Players waiting on a fresh save are sent the one there is once it comes, or after a while without.
         if (_world is not null)
@@ -1316,9 +1321,16 @@ public sealed class GameServer : IDisposable
         //
         // A living game pings once a second, so a few seconds of silence is a session that has gone
         // and not a second player who happens to have chosen the same name.
+        //
+        // Or sooner, a session from the same machine that has said nothing at all since it was let
+        // in: a game answers its welcome within a frame or two, and one that never has gave up on
+        // the join while its hello was on the way. Waited for, it stood beside its own game for the
+        // two minutes a load is allowed, and on ksamp.gg a player asked why he was there twice, as
+        // "Spacecat Sawyer" and "Spacecat Sawyer 2", after pressing connect twice in a tenth of a second.
         string asked = hello.Name;
         foreach (Player ghost in _players.Values
-                     .Where(q => now - q.HeardAt > QuietEnoughToReplaceSeconds
+                     .Where(q => (now - q.HeardAt > QuietEnoughToReplaceSeconds
+                                  || (q.HeardAt <= q.JoinedAt && now - q.JoinedAt > NeverAnsweredSeconds && q.At.Address.Equals(from.Address)))
                                  && string.Equals(q.Name, asked, StringComparison.OrdinalIgnoreCase)
                                  && !q.At.Equals(from))
                      .ToArray())
@@ -2392,9 +2404,10 @@ public sealed class GameServer : IDisposable
         bool closing = _players.TryGetValue(lateWho, out Player? behind) && behind.Slip < 0.0 && late / -behind.Slip < GovernRepaySeconds;
 
         string why = "";
-        if (double.IsFinite(room) && room < at * GovernFall) (next, limits, why) = (Math.Max(1.0, room), roomWho, $"the room can fly {room:0.##}x");
+        // Named, because the game holding the room back is the one whose log says why.
+        if (double.IsFinite(room) && room < at * GovernFall) (next, limits, why) = (Math.Max(1.0, room), roomWho, $"the room can fly {room:0.##}x, {Named(roomWho)}'s game no faster");
         // Nobody has hit a ceiling, but somebody is losing ground all the same: back off and watch.
-        else if (late > GovernLateSeconds && !closing) (next, limits, why) = (Math.Max(1.0, at * GovernBackOff), lateWho, $"somebody is {late:0.#} s behind");
+        else if (late > GovernLateSeconds && !closing) (next, limits, why) = (Math.Max(1.0, at * GovernBackOff), lateWho, $"{Named(lateWho)} is {late:0.#} s behind");
         // Room to try: a machine's limit is only found by asking it for a little more, and never
         // again for as much as has already been found not to work. Not while anybody is being left,
         // which the server sees a second or two before the game has measured it. And never down:
@@ -2559,7 +2572,6 @@ public sealed class GameServer : IDisposable
         }
     }
 
-    /// <summary>Puts a player out, as an operator would from the console.</summary>
     /// <summary>Says something to one player, which their game shows in the chat as the server speaking.</summary>
     public void Tell(Player p, string text) => _udp.Send(new Wire.Chat(0, Wire.Clip(text, Wire.ChatChars)), p.At);
 
@@ -2643,6 +2655,7 @@ public sealed class GameServer : IDisposable
     private Player? Find(string name) =>
         _players.Values.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>Puts a player out, as an operator would from the console.</summary>
     public bool Kick(string name, string why)
     {
         if (Find(name) is not { } p) return false;
@@ -2692,16 +2705,6 @@ public sealed class GameServer : IDisposable
     public bool AnyonePlaying => _players.Values.Any(p => p.Loaded);
 
     /// <summary>
-    /// Counts every player down to the server stopping, on their screens, from now. Said again
-    /// each second, since a datagram can be lost, until <see cref="Dispose"/>.
-    /// </summary>
-    /// <summary>
-    /// Asks every game in the world, or one player's, for its logs now, this session's among them,
-    /// and lets each send a full set again. Kept only with <see cref="ServerOptions.CollectLogs"/>,
-    /// and sent only to the developer's test server: the games decide that.
-    /// </summary>
-    /// <returns>What came of asking, for whoever asked.</returns>
-    /// <summary>
     /// A craft handed by the player flying it to one spectating it: theirs at once, and their game
     /// told so it takes the controls. Only to somebody looking at it, so nobody is put in a craft
     /// they never asked to see; and only from its pilot, so nobody gives away what is not theirs.
@@ -2709,20 +2712,77 @@ public sealed class GameServer : IDisposable
     /// <returns>Why not, or null when it was given.</returns>
     public string? GiveCraft(Player from, string key, byte to)
     {
+        if (CannotGive(from, key, to, out Player? taker) is { } why) return why;
+        // Closer than any take: a game still catching up with the world after joining is flying the
+        // past, and a kitten given to one 3 s behind stood still in the giver's world while it walked.
+        // Given once it has, rather than asked for again: told to give it in a moment, a player on
+        // ksamp.gg pressed give fifty-five times in twenty seconds.
+        if (BehindBy(taker) is var behind && behind > GiveBehindSeconds)
+        {
+            if (!(_givesWaiting.TryGetValue(key, out (byte From, byte To, double Until) waiting) && waiting.From == from.Id && waiting.To == to))
+            {
+                _givesWaiting[key] = (from.Id, to, _clock() + GiveWaitsSeconds);
+            }
+            return $"{taker.Name}'s game is still catching up with the world ({behind:F1} s behind): {key} is theirs once it has";
+        }
+        return Hand(from, key, taker);
+    }
+
+    // Gives asked for while the taker was catching up, by craft: who gave it, to whom, and until when.
+    private readonly Dictionary<string, (byte From, byte To, double Until)> _givesWaiting = [];
+
+    // How long a give waits for its taker to catch up. Longer than a join takes to come level, and
+    // short enough that a craft is not handed over long after its pilot has forgotten asking.
+    private const double GiveWaitsSeconds = 60.0;
+
+    /// <summary>Each give waiting on its taker made once they have caught up, or dropped with its giver told why.</summary>
+    private void GiveTheCaughtUp(double now)
+    {
+        if (_givesWaiting.Count == 0) return;
+        foreach ((string key, (byte fromId, byte to, double until)) in _givesWaiting.ToArray())
+        {
+            if (!_players.TryGetValue(fromId, out Player? from))
+            {
+                _givesWaiting.Remove(key);
+                continue;
+            }
+            if (CannotGive(from, key, to, out Player? taker) is { } why)
+            {
+                _givesWaiting.Remove(key);
+                Tell(from, $"{key} wasn't given: {why}");
+                continue;
+            }
+            if (BehindBy(taker) > GiveBehindSeconds)
+            {
+                if (now <= until) continue;
+                _givesWaiting.Remove(key);
+                Tell(from, $"{key} wasn't given: {taker.Name}'s game didn't catch up within {GiveWaitsSeconds:F0} s");
+                continue;
+            }
+            _givesWaiting.Remove(key);
+            if (Hand(from, key, taker) is { } notGiven) Tell(from, notGiven);
+        }
+    }
+
+    // Why a craft cannot be given from one player to another at all, or null with the taker.
+    private string? CannotGive(Player from, string key, byte to, out Player taker)
+    {
+        taker = null!;
         if (!_crafts.TryGetValue(key, out Craft? craft) || craft.Owner != from.Id || craft.Near || from.Controlling != key)
         {
             return $"you can only give the craft you're flying";
         }
-        if (!_players.TryGetValue(to, out Player? taker) || taker == from || !taker.Loaded) return "that player isn't here any more";
-        if (taker.Watching != key) return $"{taker.Name} isn't spectating {key} any more";
-        // Closer than any take: a game still catching up with the world after joining is flying the
-        // past, and a kitten given to one 3 s behind stood still in the giver's world while it walked.
-        if (BehindBy(taker) is var behind && behind > GiveBehindSeconds)
-        {
-            return $"{taker.Name}'s game is still catching up with the world ({behind:F1} s behind): give {key} in a moment";
-        }
+        if (!_players.TryGetValue(to, out Player? found) || found == from || !found.Loaded) return "that player isn't here any more";
+        taker = found;
+        return taker.Watching != key ? $"{taker.Name} isn't spectating {key} any more" : null;
+    }
+
+    private string? Hand(Player from, string key, Player taker)
+    {
         if (!RoomFor(taker)) return $"{taker.Name} already has as many craft as this server allows";
+        Craft craft = _crafts[key];
         double now = _clock();
+        _givesWaiting.Remove(key);
         taker.Crafts++;
         Flying(from, "");
         (craft.Owner, craft.AttendedAt, craft.Near, craft.NearAt, craft.Said) = (taker.Id, now, false, now, null);
@@ -2734,6 +2794,12 @@ public sealed class GameServer : IDisposable
         return null;
     }
 
+    /// <summary>
+    /// Asks every game in the world, or one player's, for its logs now, this session's among them,
+    /// and lets each send a full set again. Kept only with <see cref="ServerOptions.CollectLogs"/>,
+    /// and sent only to the developer's test server: the games decide that.
+    /// </summary>
+    /// <returns>What came of asking, for whoever asked.</returns>
     public string AskLogs(string who, string why)
     {
         if (!Options.CollectLogs) return "this server keeps no players' logs: collect-logs is off";
@@ -2751,6 +2817,10 @@ public sealed class GameServer : IDisposable
         return $"asked {named} for their game's logs; they are kept under {PlayerLogs.Folder} as they arrive";
     }
 
+    /// <summary>
+    /// Counts every player down to the server stopping, on their screens, from now. Said again
+    /// each second, since a datagram can be lost, until <see cref="Dispose"/>.
+    /// </summary>
     public void Close(double seconds, string why)
     {
         double now = _clock();
@@ -2760,14 +2830,11 @@ public sealed class GameServer : IDisposable
     }
 
     /// <summary>
-    /// Asks the player in the world longest for a last save before stopping.
-    /// </summary>
-    /// <returns>The universe time a save has to reach to be that one, or null with nobody to ask.</returns>
-    /// <summary>
     /// The last save asked of every game that can write one, and the first to come taken: there is no
     /// time to go round them one by one. Asked of the one game it would have been, a player in the
     /// vehicle editor, ksamp.gg stopped without one and its world went back four and a half minutes.
     /// </summary>
+    /// <returns>The universe time a save has to reach to be that one, or null with nobody to ask.</returns>
     public double? AskLastSave()
     {
         List<Player> all = [.. Savers()];

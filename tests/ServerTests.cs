@@ -235,8 +235,10 @@ public class ServerTests
         using Rig rig = new();
         Client a = Seed(rig);
 
-        // Nobody calls Update: this is the game frozen, and only the server runs.
-        for (int i = 0; i < 8; i++) rig.Skip(2.0);
+        // Nobody calls Update: this is the game frozen, and only the server runs. Two minutes of
+        // it, which is a game in the vehicle editor standing still as one did on ksamp.gg. Each step
+        // long enough in real time for the keepalive, which wakes every quarter second, to speak.
+        for (int i = 0; i < 60; i++) rig.Skip(2.0, real: 0.15);
 
         Assert.Contains(rig.Server.Players, p => p.Id == a.Id);
         Assert.True(a.Joined);
@@ -245,14 +247,14 @@ public class ServerTests
 
     /// <summary>
     /// And the other end of it: a seat is not held open for ever by a process that has hung. Past
-    /// the minute a stall is spoken for, the keepalive stops and the server's own silence takes over.
+    /// the ten minutes a stall is spoken for, the keepalive stops and the server's own silence takes over.
     /// </summary>
     [Fact]
     public void AGameThatNeverComesBackIsLetGoOf()
     {
         using Rig rig = new();
         Client a = Seed(rig);
-        for (int i = 0; i < 40; i++) rig.Skip(2.0, real: 0.05);
+        for (int i = 0; i < 310; i++) rig.Skip(2.0, real: 0.05);
         Assert.DoesNotContain(rig.Server.Players, p => p.Id == a.Id);
     }
 
@@ -1166,6 +1168,55 @@ public class ServerTests
         Assert.Single(rig.Server.Players);
         Assert.Equal("Bob", rig.Server.Players.First().Name);
         a.Dispose();
+    }
+
+    /// <summary>
+    /// A join given up while its hello was on the way: the server lets it in all the same, and it
+    /// never answers. The game's next try takes its name back at once, rather than standing beside
+    /// its ghost for the two minutes a load is allowed.
+    /// </summary>
+    [Fact]
+    public void AJoinGivenUpOnTheWayIsNotLeftBesideItsGame()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+
+        // Driven as far as its second hello, the one that answers the server's word, and no further:
+        // the game that sent it has gone, so the welcome that comes back is never read.
+        Client lost = rig.Join("Bob");
+        rig.Clients.Remove(lost);
+        double giveUp = rig.Now() + 5.0;
+        while (rig.Server.Players.Count < 2 && rig.Now() < giveUp)
+        {
+            lost.Update();
+            rig.Server.Tick();
+            Thread.Sleep(5);
+        }
+        Assert.Equal(2, rig.Server.Players.Count);
+        Assert.False(lost.Joined);
+        rig.Skip(1.5);
+
+        Client back = rig.Join("Bob");
+        rig.Until(() => back.Joined, what: "Bob joining again");
+        Assert.Equal(2, rig.Server.Players.Count);
+        Assert.Contains(rig.Server.Players, p => p.Id == back.Id && p.Name == "Bob");
+        lost.Dispose();
+    }
+
+    /// <summary>But not a second game of the same name that is alive and answering, however new.</summary>
+    [Fact]
+    public void ASecondGameOfOneNameThatAnswersIsKept()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client first = rig.Join("Bob");
+        rig.Until(() => first.Joined, what: "the first Bob joining");
+        rig.For(1.5);
+
+        Client second = rig.Join("Bob");
+        rig.Until(() => second.Joined, what: "the second Bob joining");
+        Assert.Equal(3, rig.Server.Players.Count);
+        Assert.Contains(rig.Server.Players, p => p.Name == "Bob 2");
     }
 
     [Theory]

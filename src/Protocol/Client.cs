@@ -29,12 +29,14 @@ public sealed class Client : IDisposable
     /// <summary>
     /// How long a stalled frame loop is spoken for, s, before this end stops holding the place open.
     ///
-    /// <para>A stutter is seconds and a world loading is tens of them; a minute of nothing is a game
-    /// that is not coming back, and its thread would otherwise hold a seat and a rocket in the world
-    /// for as long as the process existed. Past this the server's own silence takes over and the
-    /// session is let go of, which is what used to happen the moment a frame ran long.</para>
+    /// <para>A stutter is seconds and a world loading is tens of them. A game that has died takes
+    /// this thread with it, so what is spoken for here is a game that is alive and drawing nothing:
+    /// on <c>ksamp.gg</c> one in the vehicle editor stood still for two minutes at a time, three
+    /// times in a day, and was let go of each time at a minute. Past this the server's own silence
+    /// takes over and the session is let go of, which is what used to happen the moment a frame ran
+    /// long; until then a hung game holds its seat, which its player gets back by closing it.</para>
     /// </summary>
-    private const double AliveWhileStalledSeconds = 60.0;
+    private const double AliveWhileStalledSeconds = 600.0;
 
     // A pong slower than this says nothing of the clocks: a game loading a world stands still for seconds with one on its way.
     private const double ClockRttSeconds = 0.5;
@@ -131,8 +133,18 @@ public sealed class Client : IDisposable
             // it has been gone long enough that this is holding a seat for a game that has died.
             if (now - _sentAt < AliveAfterSeconds || now - _tickedAt > AliveWhileStalledSeconds) continue;
             Send(new Wire.Alive());
+            Interlocked.Increment(ref _alivesSent);
         }
     }
+
+    private int _alivesSent;
+
+    /// <summary>
+    /// How many times the keepalive has spoken for this end. Read after a stall, it says whether
+    /// the thread ran while the frame loop did not: a game minimised on ksamp.gg was let go of
+    /// twenty seconds into a stall the keepalive should have covered, and nothing said why.
+    /// </summary>
+    public int AlivesSent => Volatile.Read(ref _alivesSent);
 
     public byte Id { get; private set; }
     public bool Joined => Id != 0;

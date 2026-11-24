@@ -80,9 +80,12 @@ public class GiveTests
         Assert.Empty(b.Given);
     }
 
-    /// <summary>A game still catching up after joining flies the past, and the craft stands still in every other world.</summary>
+    /// <summary>
+    /// A game still catching up after joining flies the past, and the craft stands still in every
+    /// other world: given once it has caught up, without its pilot having to ask again.
+    /// </summary>
     [Fact]
-    public void NobodyIsGivenACraftWhileTheirGameIsCatchingUp()
+    public void ACraftIsGivenOnceTheTakersGameHasCaughtUp()
     {
         using Rig rig = new();
         (Client a, Client b) = BobSpectatesAlice(rig);
@@ -90,13 +93,31 @@ public class GiveTests
         rig.Until(() => rig.Server.Players.First(p => p.Id == b.Id).Late > 2.0, what: "Bob's game to say it is behind");
 
         a.Give("Rocket", b.Id);
-        rig.Until(() => a.Chat.Any(l => l.Text.Contains("still catching up")), what: "Alice to be told to wait");
+        rig.Until(() => a.Chat.Any(l => l.Text.Contains("still catching up") && l.Text.Contains("theirs once it has")), what: "Alice to be told it waits");
         Assert.Equal(a.Id, rig.Server.OwnerOf("Rocket"));
 
         b.Late = 0.0;
-        rig.Until(() => rig.Server.Players.First(p => p.Id == b.Id).Late < 0.5, what: "Bob's game to catch up");
-        a.Give("Rocket", b.Id);
         rig.Until(() => rig.Server.OwnerOf("Rocket") == b.Id, what: "the rocket to be Bob's");
+        rig.Until(() => b.Given.Count > 0, what: "Bob's game to be told");
+    }
+
+    /// <summary>A give that waits is dropped, and its pilot told, when its taker looks away meanwhile.</summary>
+    [Fact]
+    public void AWaitingGiveIsDroppedWhenTheTakerLooksAway()
+    {
+        using Rig rig = new();
+        (Client a, Client b) = BobSpectatesAlice(rig);
+        b.Late = 3.0;
+        rig.Until(() => rig.Server.Players.First(p => p.Id == b.Id).Late > 2.0, what: "Bob's game to say it is behind");
+        a.Give("Rocket", b.Id);
+        rig.Until(() => a.Chat.Any(l => l.Text.Contains("still catching up")), what: "Alice to be told it waits");
+
+        b.Watching = "";
+        rig.Until(() => a.Chat.Any(l => l.Text.Contains("Rocket wasn't given") && l.Text.Contains("isn't spectating")), what: "Alice to be told it was dropped");
+        b.Late = 0.0;
+        rig.For(1.0);
+        Assert.Equal(a.Id, rig.Server.OwnerOf("Rocket"));
+        Assert.Empty(b.Given);
     }
 
     [Fact]
