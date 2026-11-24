@@ -3211,8 +3211,8 @@ internal static class Sync
         // steps, each started its life with a step of metres that everybody saw.
         // Not by a pull that was held: a copy built while this world was behind has not been put
         // anywhere yet, and is still owed its first place.
-        if (pulled is { Held: false }) Unpulled.TryRemove(v, out _);
-        PullDid[key] = (pulled switch { null => "found it out of physics", { Held: true } => "held it, with no word of now", { Rest: true } => "left it at rest", { Snap: true } => "put it where it is told", _ => "drew it on" }, Wall());
+        if (pulled is { Held: false, Warped: false }) Unpulled.TryRemove(v, out _);
+        PullDid[key] = (pulled switch { null => "found it out of physics", { Warped: true } => "turned it, in a warp", { Held: true } => "held it, with no word of now", { Rest: true } => "left it at rest", { Snap: true } => "put it where it is told", _ => "drew it on" }, Wall());
         if (pulled is { Snap: true } && (s.Flags & Wire.StateFlags.Rails) != 0 && (s.Flags & Wire.StateFlags.Landed) == 0) PutBack[key] = 0;
         if (Motion.On && pulled is { } found) Motion.Puppet(key, World.Universe, dt, found, s, track.HeardAt);
     }

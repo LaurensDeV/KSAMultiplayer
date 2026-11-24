@@ -393,7 +393,15 @@ name, and a lost Sun is logged, told to the server and shown to the player once.
      that shares its owner's bubble between freefall and manoeuvring by itself. While its owner
      burns and the copy is on rails here, which throws away what the pull writes, it is put on its
      owner's orbit every half second it is over 25 m out, and what the pull did is written down once
-     a second. Without physics it is placed once a second at most, and only if 25 m out.
+     a second. Without physics it is placed once a second at most, and only if 25 m out. A warp's
+     step is too long to draw a craft on over, so through a warp the pull only turns it as its
+     owner has it, in its physics state and in the craft's own attitude, which is what KSA's step
+     on rails starts from when there is no spin to carry on. Left alone on rails, KSA carries a
+     craft on from the spin it last had: on `ksamp.gg` a rocket being spectated was drawn sideways
+     through its pilot's warp, and swung back the moment the warp ended. Seen with two games, a
+     rocket held prograde in a 207 km orbit through an 80 to 100x warp: its copy within the degree
+     the bridge rounds to of its owner's, read in both games at once, through the warp and after it.
+     Not seen: the sideways rocket itself in the rig, to set against.
      `Track` says where each is at this world's own universe time, since every world keeps the same
      one: carried on from its newest state by the speed it had and the way that speed was changing.
      Not a little in the past, which is smooth and at orbital speed is a kilometre away from every

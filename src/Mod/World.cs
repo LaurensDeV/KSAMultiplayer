@@ -1118,7 +1118,24 @@ internal static class World
     }
 
     // Further out than this a craft is put where it is wanted outright; nearer, it is drawn there over a few steps, so a late datagram is not a jolt.
-    private const double SnapM = 5.0, PullSeconds = 0.15;
+    private const double SnapM = 5.0, PullSeconds = 0.15, LongestPullSeconds = 0.25;
+
+    // KSA writes these only from a step's results; a turn written between steps has nowhere else to go.
+    private static readonly Action<Vehicle, doubleQuat>? SetBody2Cce = Setter<doubleQuat>(nameof(Vehicle.Body2Cce));
+    private static readonly Action<Vehicle, double3>? SetBodyRates = Setter<double3>(nameof(Vehicle.BodyRates));
+
+    private static Action<Vehicle, T>? Setter<T>(string name)
+    {
+        try
+        {
+            return AccessTools.PropertySetter(typeof(Vehicle), name)?.CreateDelegate<Action<Vehicle, T>>();
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"a craft's {name} cannot be written, so another player's craft may turn by itself in a warp: {e.GetBaseException().Message}");
+            return null;
+        }
+    }
 
     /// <summary>
     /// The most of the drawing-there that may show up as speed, m/s, and the distance a kitten is
@@ -1162,7 +1179,7 @@ internal static class World
     /// <param name="patient">Whether a copy in another shape than its owner's is still being waited for to be built again, and so is not put where the other shape's centre stands.</param>
     public static Pulled? Pull(Vehicle v, Wire.State s, double dt, bool first = false, bool patient = true)
     {
-        if (!v.HasPhysicsBubble || dt <= 0.0 || dt > 0.25) return null;
+        if (!v.HasPhysicsBubble || dt <= 0.0) return null;
         // Across a change of body the two frames differ, so there is nothing to write. Nothing
         // takes this over either: the analytic placing is only for a craft with no bubble, and this
         // craft has one -- it runs on its own physics with its owner's engines until the two games
@@ -1183,6 +1200,21 @@ internal static class World
         if (v.Situation.IsOnRails() && Vec(D(s.VelocityCcf)) < 0.05 && Vec(off) < rest)
         {
             return new Pulled(V(positionCcf), V(velocityCcf), Vec(off), Snap: false, Held: false, Rest: true);
+        }
+
+        // A warp's step is too long to draw a craft on over, and its place is its orbit's to keep,
+        // but it is still turned as its owner has it. On rails KSA turns a craft by itself, carried
+        // on from the spin it last had, and left to that for a warp a rocket its owner held steady
+        // was drawn here sideways, and swung back the moment the warp ended.
+        if (dt > LongestPullSeconds)
+        {
+            states.Kinematic.Body2Phys = body2Phys * (ccf2Body * new doubleQuat(s.Body2Ccf.X, s.Body2Ccf.Y, s.Body2Ccf.Z, s.Body2Ccf.W));
+            states.Kinematic.AngularVelocityPhys = D(s.Spin).Transform(states.Kinematic.Body2Phys);
+            // And into the craft itself, which is where KSA's step on rails starts from when it has no
+            // spin to carry on: the physics state alone, it put back the attitude the craft had.
+            SetBody2Cce?.Invoke(v, states.GetBody2Cce());
+            SetBodyRates?.Invoke(v, states.GetBodyRates());
+            return new Pulled(V(positionCcf), V(velocityCcf), Vec(off), Snap: false, Held: false, Rest: false, Warped: true);
         }
 
         // Nothing heard for long enough that the state has stopped moving: Track carries a craft on
@@ -1241,7 +1273,8 @@ internal static class World
     /// <param name="Snap">Whether it was put there outright, which is the teleport.</param>
     /// <param name="Held">Whether the place it was told to stand had stopped moving, and it was left to coast.</param>
     /// <param name="Rest">Whether it stood near enough, on rails, to be left alone.</param>
-    public readonly record struct Pulled(Vec3 At, Vec3 Moving, double Off, bool Snap, bool Held, bool Rest);
+    /// <param name="Warped">Whether the step was a warp's, and the craft only turned.</param>
+    public readonly record struct Pulled(Vec3 At, Vec3 Moving, double Off, bool Snap, bool Held, bool Rest, bool Warped = false);
 
     /// <summary>Where a craft was held for the vehicle editor and how it was moving, against the ground under it.</summary>
     /// <param name="Body">What it was going round, whose fixed frame the rest is in.</param>

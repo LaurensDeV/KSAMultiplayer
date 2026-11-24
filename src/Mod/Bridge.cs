@@ -431,6 +431,10 @@ internal sealed class Bridge
                 ["engine_drawn_here"] = World.IsShown(v),
                 ["thrusters_drawn_here"] = World.IsPuffed(v),
                 ["thrusters_firing"] = World.ThrustersOf(v) is { } firing ? Convert.ToHexString(firing) : null,
+                // Against the ground under it, which is the same frame in every game, so two games' answers compare.
+                ["attitude_ccf"] = World.StateOf(v, key, controlled: false) is { } s
+                    ? new[] { Math.Round(s.Body2Ccf.X, 4), Math.Round(s.Body2Ccf.Y, 4), Math.Round(s.Body2Ccf.Z, 4), Math.Round(s.Body2Ccf.W, 4) } : null,
+                ["spin"] = World.StateOf(v, key, controlled: false) is { } t ? new[] { Math.Round(t.Spin.X, 4), Math.Round(t.Spin.Y, 4), Math.Round(t.Spin.Z, 4) } : null,
             });
         }
         return Done(new() { ["craft"] = all });
