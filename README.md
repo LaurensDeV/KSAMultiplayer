@@ -385,7 +385,8 @@ reconnects. `saves` lists what is kept and `delete <name>` throws one away.
 A save is of now, and of the game that asked: an admin's own game is asked for a fresh save first, or
 the player who has been in longest when the console asks. Nobody else's answer is taken for it. If
 none comes within twenty seconds -- KSA writes no save while the vehicle editor is open -- it is made
-of the world as the server last had it, and says so.
+of the world as the server last had it, and says so. The server's own saves, and the last one before it stops, are not
+asked of a player in the vehicle editor while anybody else can give one.
 
 The world a load replaces is kept first, as `before load <date and time>`, so loading that takes a
 load back. It is the world as last saved, which is up to `snapshot-every` seconds behind what the

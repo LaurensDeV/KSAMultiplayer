@@ -61,6 +61,82 @@ public class StoppingTests
         rig.Until(() => rig.Server.SavedSince(until.Value), what: "the last save");
     }
 
+    private static Client JoinAndLoad(Rig rig, string name)
+    {
+        Client b = rig.Join(name);
+        rig.Until(() => b.Blobs.Any(x => x.Kind == BlobKind.World), seconds: 20, what: $"{name} to get the world");
+        b.SayLoaded(b.Blobs.First(x => x.Kind == BlobKind.World).Universe);
+        rig.Until(() => rig.Server.Players.First(p => p.Id == b.Id).Loaded, what: $"{name} to load");
+        return b;
+    }
+
+    // Alice, in the world longest, takes the rocket she flies into the vehicle editor.
+    private static (Client Alice, Client Bob) AliceInTheEditor(Rig rig)
+    {
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        a.Claim("Rocket", controlling: true);
+        rig.Until(() => rig.Server.OwnerOf("Rocket") == a.Id, what: "Alice to fly the rocket");
+        a.SendState(new Wire.State(0, "Rocket", 0, 5001, "Earth", new Vec3(1, 2, 3), Vec3.Zero, new Vec3(1, 2, 3), Vec3.Zero,
+                                   Quat.Identity, Vec3.Zero, 0, Wire.StateFlags.Controlled | Wire.StateFlags.Editing));
+        rig.Until(() => rig.Server.Players.First(p => p.Id == a.Id).Editing, what: "the server to hear Alice is in the editor");
+        (a.SnapshotWanted, b.SnapshotWanted) = (null, null);
+        return (a, b);
+    }
+
+    /// <summary>KSA writes no save while its vehicle editor is open, so a game there asked for the last one answers nothing.</summary>
+    [Fact]
+    public void TheLastSaveIsNotAskedOfAPlayerInTheEditor()
+    {
+        using Rig rig = new();
+        (Client a, Client b) = AliceInTheEditor(rig);
+        rig.Server.Close(0, "the server is restarting");
+        double? until = rig.Server.AskLastSave();
+        Assert.NotNull(until);
+        rig.Until(() => b.SnapshotWanted is not null, what: "Bob to be asked for the last save");
+        rig.For(0.3);
+        Assert.Null(a.SnapshotWanted);
+        b.Upload(new Blob(BlobKind.World, "", b.Id, until!.Value, Rig.FakeWorld(42)));
+        rig.Until(() => rig.Server.SavedSince(until.Value), what: "the last save, from Bob");
+    }
+
+    [Fact]
+    public void TheLastSaveIsAskedOfEveryGameThatCanWriteOne()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        (a.SnapshotWanted, b.SnapshotWanted) = (null, null);
+        rig.Server.Close(0, "the server is restarting");
+        double? until = rig.Server.AskLastSave();
+        rig.Until(() => a.SnapshotWanted is not null && b.SnapshotWanted is not null, what: "both to be asked");
+        b.Upload(new Blob(BlobKind.World, "", b.Id, until!.Value, Rig.FakeWorld(43)));
+        rig.Until(() => rig.Server.SavedSince(until.Value), what: "the first save to come");
+    }
+
+    [Fact]
+    public void ASaveNowAndThenIsNotAskedOfAPlayerInTheEditor()
+    {
+        using Rig rig = new();
+        (Client a, Client b) = AliceInTheEditor(rig);
+        rig.Server.SnapshotNow();
+        rig.Until(() => b.SnapshotWanted is not null, what: "Bob to be asked for a save");
+        Assert.Null(a.SnapshotWanted);
+    }
+
+    [Fact]
+    public void APlayerOutOfTheEditorIsAskedAgain()
+    {
+        using Rig rig = new();
+        (Client a, Client b) = AliceInTheEditor(rig);
+        a.SendState(new Wire.State(0, "Rocket", 0, 5002, "Earth", new Vec3(1, 2, 3), Vec3.Zero, new Vec3(1, 2, 3), Vec3.Zero,
+                                   Quat.Identity, Vec3.Zero, 0, Wire.StateFlags.Controlled));
+        rig.Until(() => !rig.Server.Players.First(p => p.Id == a.Id).Editing, what: "the server to hear Alice is out");
+        rig.Server.SnapshotNow();
+        rig.Until(() => a.SnapshotWanted is not null, what: "Alice to be asked, being in the world longest");
+        Assert.Null(b.SnapshotWanted);
+    }
+
     [Fact]
     public void NobodyToSaveIsNoLastSave()
     {

@@ -57,7 +57,7 @@ stranger sent it.
   operator asking for that time anyway. Five times a second it tells every game the time and its rate.
 - **The world.** The latest save, zipped, kept on disk in `--data`. It comes from an operator
   (`--world`), from the first player to join an empty server, or as a fresh save asked of the player
-  who has been in longest: every `--snapshot-every` seconds, and whenever a player joins a world more
+  who has been in longest and is not in the vehicle editor, which the craft they fly says: every `--snapshot-every` seconds, and whenever a player joins a world more
   than 30 s old, the joiner waiting up to 15 s for it. A save up to 5 s behind the ask counts as that
   fresh one, since the game giving it is often a second or two behind the server. A game that has
   sent nothing 5 s after being asked, as one with the vehicle editor open does, is not waited on
@@ -86,8 +86,10 @@ stranger sent it.
   `KSAMP_DISCORD_OPERATORS` repository variable.
 - **The last save before stopping.** A stop asked for (SIGTERM, Ctrl+C, `quit [why]`) with players
   in the world is counted down on their screens for `--stop-notice` seconds (15) by a `Closing`,
-  said every second with the session's word; joins are refused meanwhile. Then the player in longest
-  is asked for a save and it is waited for up to 5 s, the goodbye carries the reason, and the
+  said every second with the session's word; joins are refused meanwhile. Then every game not in the
+  vehicle editor is asked for a save at once, and the first is waited for up to 5 s, since there is no
+  time to go round them: asked of the one in longest, who was in the editor, `ksamp.gg` stopped
+  without one and its world went back four and a half minutes. The goodbye carries the reason, and the
   directories are withdrawn from last, since that can take 4 s. A second stop ends it at once. A
   release replacing the container gave it no time at all, and the two minutes since the last save
   went with it. A game that does not know `Closing` drops it and gets the goodbye all the same, so

@@ -254,6 +254,12 @@ public sealed class GameServer : IDisposable
 
         public string Controlling { get; set; } = "";
 
+        /// <summary>
+        /// Whether the craft they fly says they are in the vehicle editor, where KSA writes no save:
+        /// asked for one there, a game answers nothing, and a server stopping waited on it in vain.
+        /// </summary>
+        public bool Editing { get; set; }
+
         /// <summary>Who this player logged in as on Discord, empty until they have.</summary>
         public string DiscordId { get; set; } = "";
         public string DiscordName { get; set; } = "";
@@ -1071,6 +1077,7 @@ public sealed class GameServer : IDisposable
                     Limit(player, $"more than {StatesASecond:F0} states a second for one craft");
                     return;
                 }
+                if (atTheControls) player.Editing = (state.Flags & Wire.StateFlags.Editing) != 0;
                 if (atTheControls && player.Controlling.Length == 0) Flying(player, state.Key);
                 else if (!atTheControls && player.Controlling == state.Key) Flying(player, "");
                 _crafts[state.Key].Said = state;
@@ -2152,12 +2159,16 @@ public sealed class GameServer : IDisposable
 
     private bool AskSnapshot(string why, byte notThisOne = 0)
     {
-        // The player in the world longest, whose world has had the most time to settle.
-        if (_players.Values.Where(p => p.Loaded && p.Id != notThisOne).OrderBy(p => p.LoadedAt).FirstOrDefault() is not { } from) return false;
+        if (Savers(notThisOne).FirstOrDefault() is not { } from) return false;
         _snapshotAskedAt = UniverseClock.Now(_clock());
         AskWorldOf(from, why);
         return true;
     }
+
+    // Who to ask for a save, first to last: the player in the world longest, whose world has had the
+    // most time to settle, unless they are in the vehicle editor and can write none.
+    private IEnumerable<Player> Savers(byte notThisOne = 0) =>
+        _players.Values.Where(p => p.Loaded && p.Id != notThisOne).OrderBy(p => p.Editing).ThenBy(p => p.LoadedAt);
 
     // Every ask for a world goes through here, because the asking is what makes the answer the
     // server's to keep: a world is written only for a player this was called for.
@@ -2204,7 +2215,7 @@ public sealed class GameServer : IDisposable
         if (_players.Values.Any(q => q.WorldAsked && q.Link.Arriving is not null)) return;
         List<Player> held = [.. _players.Values.Where(q => q.WorldAsked && q.Loaded && !q.Seeding)];
         if (held.Count == 0) return;
-        if (_players.Values.Where(q => q.Loaded && !q.WorldAsked).OrderBy(q => q.LoadedAt).FirstOrDefault() is not { } next)
+        if (Savers().FirstOrDefault(q => !q.WorldAsked) is not { } next)
         {
             // Nobody left to ask: the wait runs out and the save there is goes.
             _worldAskedLast = now;
@@ -2500,6 +2511,7 @@ public sealed class GameServer : IDisposable
     {
         if (p.Controlling == key) return;
         p.Controlling = key;
+        if (key.Length == 0) p.Editing = false;
         if (key.Length > 0 && _crafts.TryGetValue(key, out Craft? craft)) craft.FlownBy = p.Id;
         _rosterNext = 0.0;
     }
@@ -2751,7 +2763,19 @@ public sealed class GameServer : IDisposable
     /// Asks the player in the world longest for a last save before stopping.
     /// </summary>
     /// <returns>The universe time a save has to reach to be that one, or null with nobody to ask.</returns>
-    public double? AskLastSave() => AskSnapshot("the server is stopping") ? _snapshotAskedAt : null;
+    /// <summary>
+    /// The last save asked of every game that can write one, and the first to come taken: there is no
+    /// time to go round them one by one. Asked of the one game it would have been, a player in the
+    /// vehicle editor, ksamp.gg stopped without one and its world went back four and a half minutes.
+    /// </summary>
+    public double? AskLastSave()
+    {
+        List<Player> all = [.. Savers()];
+        if (all.Count == 0) return null;
+        _snapshotAskedAt = UniverseClock.Now(_clock());
+        foreach (Player p in all.Where(p => !p.Editing).DefaultIfEmpty(all[0])) AskWorldOf(p, "the server is stopping");
+        return _snapshotAskedAt;
+    }
 
     /// <summary>Whether the world held is at least as late as a universe time, give or take the second a save is allowed.</summary>
     public bool SavedSince(double universe) => _world is { } w && w.Universe >= universe - 1.0;
@@ -2801,7 +2825,7 @@ public sealed class GameServer : IDisposable
         }
         string who = by?.Name ?? "the operator";
         _keeping.RemoveAll(k => string.Equals(k.Name, name, StringComparison.OrdinalIgnoreCase));
-        Player? from = by is { Loaded: true } ? by : _players.Values.Where(p => p.Loaded).OrderBy(p => p.LoadedAt).FirstOrDefault();
+        Player? from = by is { Loaded: true, Editing: false } ? by : Savers().FirstOrDefault();
         _keeping.Add((name, by?.Id ?? 0, who, _clock(), from?.Id ?? 0));
         if (from is null) return KeepWaiting(fresh: false, answering: true) ?? $"couldn't save '{name}'";
         _snapshotAskedAt = UniverseClock.Now(_clock());
