@@ -389,6 +389,9 @@ internal static class Sync
     // once, and KSA loads nothing while the vehicle editor is open.
     private static Blob? _worldToLoad;
     private static string _notLoading = "", _notSaving = "";
+
+    /// <summary>Whether a world has come from the server and waits for the vehicle editor to close before it is loaded.</summary>
+    public static bool WorldWaitsOnTheEditor => _worldToLoad is not null && _notLoading.Length > 0 && World.InEditor;
     private static double _frameAt, _loadingSince, _claimNext;
     private static string _claimed = "", _address = "", _watching = "";
 

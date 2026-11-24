@@ -323,7 +323,9 @@ anything is written under it.
 KSA saves and loads nothing at all while the vehicle editor is open: both calls begin by asking, and
 the answer is a line in its own log and a return, with nothing said to whoever called. So the ask for
 a save is held until it can be answered and the world that has come is held until it can be loaded --
-the server sends it once -- and the save folder is emptied before a save and read only if something
+the server sends it once, and said over the editor until it is: said once in the log, it was missed
+by a player put back in a restarted `ksamp.gg` from the editor, who sat there waiting and gave up --
+and the save folder is emptied before a save and read only if something
 was written. Otherwise the handover save left there from last time is zipped and handed on as the
 world now, and a game counts its thirty frames over a world it never loaded and says it is in the
 shared one.

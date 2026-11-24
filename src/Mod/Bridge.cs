@@ -322,6 +322,7 @@ internal sealed class Bridge
         data["achieved"] = Math.Round(World.Achieved, 3);
         data["analytic"] = World.Analytic;
         data["in_editor"] = World.InEditor;
+        data["world_waits_on_editor"] = Sync.WorldWaitsOnTheEditor;
         data["window"] = Panel.Visible;
         data["editor_hold"] = Sync.EditorHeld;
         data["tag_draw"] = Panel.TagReport;

@@ -150,6 +150,7 @@ internal static class Panel
         // another because one is still going, so the field could be changed and nothing happened.
         if (!TheConfigurationIsAsking()) Sync.AnsweredAhead();
         PadsWindow();
+        WorldWaitsWindow();
         WarpWindow();
         ServerListWindow();
         if (atACraft)
@@ -222,7 +223,7 @@ internal static class Panel
     /// </summary>
     private static void PadsWindow()
     {
-        if (!KSA.Program.IsEditorOpen) return;
+        if (!KSA.Program.IsEditorOpen || Sync.WorldWaitsOnTheEditor) return;
         string site = Pads.Full;
         if (site.Length == 0) return;
 
@@ -241,6 +242,36 @@ internal static class Panel
             float4 warn = new(1.0f, 0.82f, 0.4f, 1.0f);
             Shown.Coloured(in warn, $"Every pad at {site} has a craft on it.");
             Shown.Dim("You can't launch until one is free. Move or recover a craft, or pick another site.");
+            ImGui.PopTextWrapPos();
+        }
+        ImGui.End();
+    }
+
+    /// <summary>
+    /// Said over the vehicle editor while the world a server has sent waits for it to close, since
+    /// KSA loads no save with it open. Said once in the log, it was missed: a player put back in a
+    /// restarted server from the editor sat in it waiting, and gave up after two minutes and a
+    /// second try.
+    /// </summary>
+    private static void WorldWaitsWindow()
+    {
+        if (!Sync.WorldWaitsOnTheEditor) return;
+
+        ImGuiViewportPtr screen = ImGui.GetMainViewport();
+        float2 at = new(screen.WorkPos.X + ((screen.WorkSize.X - WarpWidth) * 0.5f), screen.WorkPos.Y + 90f);
+        ImGui.SetNextWindowPos(in at, ImGuiCond.Always, null);
+        ImGui.SetNextWindowSize(new float2(WarpWidth, 0f), ImGuiCond.Always);
+        ImGui.SetNextWindowBgAlpha(0.9f);
+
+        const ImGuiWindowFlags flags = ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize
+                                       | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoSavedSettings
+                                       | ImGuiWindowFlags.NoNav | ImGuiWindowFlags.NoFocusOnAppearing;
+        if (ImGui.Begin("###KSAMultiplayerWorldWaits", flags))
+        {
+            ImGui.PushTextWrapPos(0f);
+            float4 warn = new(1.0f, 0.82f, 0.4f, 1.0f);
+            Shown.Coloured(in warn, "The shared world has arrived.");
+            Shown.Dim("Leave the vehicle editor to load it: KSA can't load a world while the editor is open.");
             ImGui.PopTextWrapPos();
         }
         ImGui.End();
