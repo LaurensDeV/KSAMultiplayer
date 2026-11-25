@@ -12,7 +12,8 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
 > shared world and staged while the other game watched, which rebuilt the dropped stage as its own
 > craft. What two games across the internet do is not known.
 > This release is built for KSA `2026.11.25.5949`, and two games on one machine have flown on it
-> through StarMap 0.5.3: a rocket staged apart with both worlds agreeing on every piece.
+> through StarMap 0.5.3: a rocket staged apart with both worlds agreeing on every piece, and both
+> games joining a world in another system by swapping theirs, Sol to Earth and its Moon and back.
 > See [docs/DESIGN.md](docs/DESIGN.md#what-has-not-been-tried).
 
 ## Playing
@@ -42,9 +43,10 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
    that screen's footer brings this window back, as does an entry in KSA's **Mods** menu once you
    are in a game.
 
-   With KSA's configuration screen turned off the game is already in a system when the window
-   comes up, and a world in another one cannot be joined from it. The window says so and offers
-   **START IN ... NEXT TIME**: press it, restart KSA, and it starts in the server's system.
+   From a game already in a system, a world in another one is joined by swapping your game into
+   that system, which the window says before you connect. If your graphics card cannot hold the
+   new system beside the old one, KSA is set to start in the server's system instead: restart it
+   and connect again.
 4. Connecting **replaces your open world with the server's**: save first. If the server has no world
    yet, yours becomes the server's world instead, and nothing is replaced: joined straight from
    the start, that is the new game KSA opens on. A game set to start in sandbox, at no craft, waits
@@ -397,8 +399,9 @@ replaced is already a save -- so loading one save after another does not push ou
 everybody was playing in. An admin can delete them like any other save, and the window says first
 that the load it came from can't be undone afterwards. Nothing can be saved under such a name.
 
-A load is refused while somebody playing could not follow: a game in another system, or one whose
-mods are not the save's. It ends a warp that is running.
+A load is refused while somebody playing could not follow: a game whose mods are not the save's.
+A save in another system is loaded, and every game swaps into that system to open it. It ends a
+warp that is running.
 
 A save holds which craft were protected when it was made, and a load puts that list back with the
 world -- the world a load replaces included, so taking a load back takes the list back too. A save

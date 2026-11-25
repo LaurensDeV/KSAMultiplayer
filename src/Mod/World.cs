@@ -709,22 +709,13 @@ internal static class World
         return true;
     }
 
-    /// <summary>Whether KSA shows its configuration at start, which is where this mod's window asks a server what system to start in.</summary>
-    public static bool AsksAtStart => GameSettings.Current.System.ConfigOnStart;
-
-    /// <summary>The system KSA starts in next time where nothing at start says otherwise.</summary>
-    public static string StartsNextIn => GameSettings.Current.System.LastSystemId ?? "";
-
     /// <summary>Whether a system is one this game can be started in.</summary>
     public static bool Has(string system) => SystemLibrary.PickerSystems().Any(s => s.Id == system);
 
     /// <summary>
-    /// The system KSA starts in next time, chosen from a game that is already in another.
-    ///
-    /// <para>For a player who has turned KSA's configuration at start off. KSA then starts in
-    /// the system it was last in and shows nothing, this mod's window among the nothing, so
-    /// there was no way into a world in another system: being told to restart led back to the
-    /// same one. The one setting KSA reads on that path is the one written here.</para>
+    /// The system KSA starts in next time, chosen from a game that is already in another: for a
+    /// world whose system the graphics card cannot hold beside this one, which it can on its own.
+    /// The one setting KSA reads at start, with or without its configuration, is the one written here.
     /// </summary>
     public static bool StartNextIn(string system, out string why)
     {
@@ -778,7 +769,17 @@ internal static class World
         }
     }
 
-    /// <summary>A world from the server written as the handover save and loaded in place of this one, or false and why not.</summary>
+    /// <summary>
+    /// A world from the server written as the handover save and loaded in place of this one, or
+    /// false and why not. In another system than this game's, the system is swapped first, which
+    /// KSA does on a later frame: <see cref="TakeLoadTrouble"/> says if that went wrong.
+    ///
+    /// <para>Swapped by <c>SaveSystemSwap.RequestJoin</c> rather than left to the load, because the
+    /// load alone reads a save into the running system wherever that system has all its bodies: a
+    /// world of Earth and its Moon opened in a game of Sol entire stays in Sol, and the next save
+    /// this game hands the server is a world of Sol for everybody. The join asks for the system
+    /// by name, and checks the graphics card has room for it before tearing this one down.</para>
+    /// </summary>
     public static bool LoadWorld(byte[] zip, out string why)
     {
         why = Refuses();
@@ -789,14 +790,64 @@ internal static class World
             Blob.UnzipInto(zip, folder);
             CallItTheHandover(folder);
             GameSaves.Refresh();
-            LoadNamed(HandoverSave);
-            return true;
+            _loadTrouble = null;
+            string system = (GameSaves.Find(HandoverSave) as UncompressedSave)?.MetaData.Systems.FirstOrDefault() ?? "";
+            if (system.Length == 0)
+            {
+                LoadNamed(HandoverSave);
+                return true;
+            }
+            string here = System;
+            switch (SaveSystemSwap.RequestJoin(system, LoadSwappedInto))
+            {
+                case SystemSwapRequest.NotInstalled:
+                    why = $"the server's world is in {system}, which your game doesn't have";
+                    return false;
+                case SystemSwapRequest.WontFit:
+                    // Started in it, the graphics card holds nothing else: what would not fit
+                    // beside this system fits on its own.
+                    why = StartNextIn(system, out _)
+                        ? $"your graphics card can't hold {system} as well as {here}: KSA will start in {system} next time, so restart it to join"
+                        : $"your graphics card can't hold {system} as well as {here}: start KSA in {system} to join";
+                    return false;
+                case SystemSwapRequest.Queued:
+                    Log.Info($"swapping this game from {here} to {system} for the server's world");
+                    return true;
+                default:
+                    why = TakeLoadTrouble() ?? "";
+                    return why.Length == 0;
+            }
         }
         catch (Exception e)
         {
             why = e.GetBaseException().Message;
             return false;
         }
+    }
+
+    // Called by KSA once the system is the world's, which after a swap is from inside its own
+    // frame: thrown on into it, this would take the game down.
+    private static void LoadSwappedInto()
+    {
+        try
+        {
+            LoadNamed(HandoverSave);
+        }
+        catch (Exception e)
+        {
+            _loadTrouble = e.GetBaseException().Message;
+            Log.Error("loading the server's world into the system it is in", e);
+        }
+    }
+
+    private static string? _loadTrouble;
+
+    /// <summary>Why the world asked for by <see cref="LoadWorld"/> did not go in after all, once; null while nothing has gone wrong.</summary>
+    public static string? TakeLoadTrouble()
+    {
+        string? why = _loadTrouble;
+        _loadTrouble = null;
+        return why;
     }
 
     /// <summary>

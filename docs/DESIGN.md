@@ -116,9 +116,10 @@ stranger sent it.
   admin is refused, and on a server run without a console that left them nobody's to tidy. An
   admin is trusted with `load` and `clear` already. And every outstanding ask for a save is withdrawn: one already on its way in is
   of the world that is going, and written down as the server's it would undo the load for everybody
-  who joined after. It is refused while a player here is in another system, lacks a mod the save
-  was made with, or runs one it was made without: their game would be handed a world it cannot
-  open, or be turned away for its mods at the next join of a world it had been playing in. A warp
+  who joined after. It is refused while a player here lacks a mod the save was made with, or runs
+  one it was made without: their game would be handed a world it cannot open, or be turned away
+  for its mods at the next join of a world it had been playing in. A save in another system is
+  not refused, since every game swaps into the system of the world it is handed. A warp
   that is running is ended first. A name is a file name on
   whichever system the server runs, so it is held to what is one on all of them
   (`SaveList.Name`; no `#` either, two of which end a label in the game's windows). A save holds
@@ -286,9 +287,16 @@ stranger sent it.
   and its shape after the last save went with them.
 
 It passes every state on to every other game in the world, checks a state comes from the craft's
-owner, and passes chat on. It refuses a player with another KSA build than it was built for (`KsaBuild` in `Directory.Build.props`, written into the server when it is built and checked against the assemblies whenever the mod is; the operator's `ksa-build` says another), one playing a different celestial system (a world of Sol
-entire is not a world of Earth and its Moon alone), or one whose mods are not the world's
-exactly. Without one the world's giver had enabled, a save holding a part of it does not load; with
+owner, and passes chat on. It refuses a player with another KSA build than it was built for (`KsaBuild` in `Directory.Build.props`, written into the server when it is built and checked against the assemblies whenever the mod is; the operator's `ksa-build` says another), or one whose mods are not the world's
+exactly. A player in another celestial system is let in: the mod swaps the game into the world's
+system before loading it (`World.LoadWorld`, through KSA's `SaveSystemSwap.RequestJoin`), and the
+server takes a player's system to be the world's once it has loaded it, and a saved world's to be
+the one its `meta.toml` names. The swap is asked for by name rather than left to KSA's load,
+which reads a save into a running system that merely contains its bodies: a world of Earth and its
+Moon opened in a game of Sol entire would stay in Sol, and that game's next save would hand
+everybody a world of Sol. A game that lacks the system, or whose graphics card cannot hold it
+beside the one it is in, leaves with a word of why; for the second, KSA is set to start in the
+world's system next time. Without one the world's giver had enabled, a save holding a part of it does not load; with
 one they had not, that player builds craft nobody else can put together, and all the others see is
 a craft arriving that their game refuses, which reads as the mod being broken. A world given by a player
 carries that player's system; one an operator imports carries whatever its own `meta.toml` says.
@@ -1595,11 +1603,15 @@ for, in `docs/LIVE-CHECKS.md`.
     core, which for a gas generator's turbine exhaust is the gas generator, where 5901 had one core
     a rocket. Seen: another player's Gemini 7 burned with the glow its own game drew. No
     gas-generator engine has been watched burning from the other game.
-  - **A save is loaded into its own system.** `UncompressedSave.Load` swaps the running system for
-    the save's when it lacks one of its bodies, which may put off `DeserializeSave` and
-    `Program.OnGameLoaded` past the frame the load was asked for, and loads nothing at all, with a
-    yellow alert, when the save's system is not installed. The server refuses a player in another
-    system than the world's, so a join does not reach it.
+  - **A save is loaded into its own system.** KSA swaps the running system mid-session, which the
+    mod uses to join a world in another system rather than refusing it. Seen with two games on
+    one machine and a Windows server: both joined a world of Sol from Earth and its Moon, swapping
+    in 13 and 15 s, and then one of Earth and its Moon from Sol, in 6 -- the second the direction
+    KSA's own load would have read into Sol without swapping. No errors after either, the server
+    kept the world labelled with its own system although the save came from a game that had joined
+    from the other, and the extra launchpads stayed laid out, because the two systems share their
+    body templates. The joins were a server restarted under the games, not a `fresh` while they
+    played, which differs only in what sends the world.
   - **A craft definition may carry where it has arrived** (`<At>`), so the protocol moved to 37.
     The worlds the server carries lack the new elements (`At`, `FirstVisit`, `BodyKnowledge`,
     `Visits`), which KSA leaves empty, so they are still those of 5801.
@@ -1843,10 +1855,13 @@ for, in `docs/LIVE-CHECKS.md`.
   (`World.VersionOf`, and `errors.md` for 2026-11-15). Read out of Borea's source and one
   player's account; the file's version was read by hand off both mods as Borea stores them, and
   no game has been started on it.
-- **A world in another system, from a game started without KSA's configuration.** The window
-  offers to have KSA start in the world's system next time (`World.StartNextIn`,
-  `Panel.PressStartThere`, the bridge's `mp {"start_there": true}`). Not pressed, and no game
-  has been restarted on it.
+- **A world in another system, short of video memory.** A game whose graphics card cannot hold
+  the world's system beside its own is told so and set to start there next time
+  (`SystemSwapRequest.WontFit` in `World.LoadWorld`), and KSA's own fallback, which restarts the
+  game into the system when a swap already under way does not fit, leaves it out of the server.
+  Neither has been seen: two games each swapping between Sol and Earth and its Moon on one 12 GB
+  card always fit. An admin's `load` of a save in another system has not been run either; it goes
+  through the same `World.LoadWorld` as the joins and the `fresh` start that were.
 - **CONNECT pressed once after a name is typed.** A look no longer greys the button and a new
   name no longer starts one (`Sync.AskingAhead`, and `errors.md` for 2026-11-12). Read out of two
   logs and not pressed: the bridge has no mouse.

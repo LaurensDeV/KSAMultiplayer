@@ -397,14 +397,28 @@ public class SaveTests
         using Rig rig = new();
         Seed(rig);
         byte[] before = rig.Server.World!.Data;
-        rig.Server.Saves.Keep("Sol", new Blob(BlobKind.World, "", 0, 10.0, World(8)), "B1", ["Core"], "Sol", true, "Alice");
         rig.Server.Saves.Keep("Modded", new Blob(BlobKind.World, "", 0, 10.0, World(9)), "B1", ["Core", "KSArmory@1.2.0"], "SolLite", true, "Alice");
 
-        Assert.Contains("Alice is playing SolLite", rig.Server.LoadSave("Sol"));
         Assert.Contains("needs KSArmory", rig.Server.LoadSave("Modded"));
         Assert.Contains("no save called 'Nothing'", rig.Server.LoadSave("Nothing"));
         Assert.Equal(before, rig.Server.World!.Data);
         Assert.DoesNotContain(rig.Server.Saves.List(), s => s.Auto);
+    }
+
+    [Fact]
+    public void ASaveInAnotherSystemIsLoadedAndEveryGameFollowsIt()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        rig.Server.Saves.Keep("Sol", new Blob(BlobKind.World, "", 0, 10.0, World(8)), "B1", ["Core"], "Sol", true, "Alice");
+
+        // Alice is in SolLite, and her game swaps into Sol to load it.
+        Assert.StartsWith("loaded 'Sol'", rig.Server.LoadSave("Sol"));
+        Assert.Equal(World(8), rig.Server.World!.Data);
+        rig.Until(() => a.Blobs.Any(b => b.Kind == BlobKind.World && b.Data.SequenceEqual(World(8))), seconds: 20, what: "Alice to be handed the Sol world");
+        a.SayLoaded(10.0);
+        rig.Until(() => rig.Server.Players.Single(p => p.Id == a.Id).Loaded, what: "Alice to load it");
+        Assert.Equal("Sol", rig.Server.Players.Single(p => p.Id == a.Id).System);
     }
 
     [Fact]

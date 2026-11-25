@@ -532,14 +532,6 @@ internal sealed class Bridge
                                 : Done(new() { ["link"] = link, ["said"] = said });
         }
 
-        // The button that has KSA start in a world's system next time, pressed: for a game
-        // started without KSA's configuration, which is in the system it was last in.
-        if (command.Flag("start_there", false))
-        {
-            (string? system, string why) = Panel.PressStartThere();
-            return system is null ? Failed(why) : Done(new() { ["system"] = system, ["starts_next_in"] = World.StartsNextIn });
-        }
-
         // A warp is asked for and answered through the panel; these are the same two things, for a
         // test that has no hands.
         if (command.Has("warp"))

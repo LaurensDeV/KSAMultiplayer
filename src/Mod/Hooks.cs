@@ -897,8 +897,8 @@ internal static class Hooks
             // PopulateBepuStatesFromKinematic -- the method in the crash logs. It runs once a
             // launch, so it was only ever a narrow window, but it is the same list that failed the
             // physics of every craft in the bubble when pads were taken out of it. Still here, and
-            // not only in BeforeRenderData, for a system loaded after the one the game started on:
-            // KSA builds the planets' render data once and never comes back to it.
+            // not only in BeforeRenderData, for a system that becomes current without the planets'
+            // render data being built for it.
             Pads.LayOut();
             Sync.Settle();
             World.WatchTheSun();

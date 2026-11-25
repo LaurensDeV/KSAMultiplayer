@@ -170,7 +170,8 @@ public sealed class GameServer : IDisposable
         public double JoinedAt { get; } = now;
         public string KsaBuild { get; init; } = "";
         public string[] Mods { get; init; } = [];
-        public string System { get; init; } = "";
+        /// <summary>The system this game is in: the one it joined from, then that of the world it last loaded.</summary>
+        public string System { get; set; } = "";
         public Link Link { get; } = new();
 
         /// <summary>Which commands this player's are run for: what the token offered at the join, or their Discord login, made them.</summary>
@@ -1477,12 +1478,6 @@ public sealed class GameServer : IDisposable
         {
             return $"this server runs KSA {build} and you have {hello.KsaBuild}: you need the same build to join";
         }
-        // A world of Sol entire is not a world of Earth and its Moon: the save would load into a game
-        // that has no such bodies, or put every craft of the others nowhere.
-        if (_worldSystem.Length > 0 && hello.System.Length > 0 && hello.System != _worldSystem)
-        {
-            return $"this world is in {_worldSystem} and your game is in {hello.System}: start a game in {_worldSystem} to join";
-        }
         string[] wanted = RequiredMods;
         (string[] missing, string[] extra, string[] wrong) = ModList.Against(string.Join(',', wanted), hello.Mods, OptionalMods);
         if (missing.Length > 0) return $"the server's world needs mods you don't have enabled: {string.Join(", ", missing)}";
@@ -1539,6 +1534,9 @@ public sealed class GameServer : IDisposable
             return;
         }
         (p.Loaded, p.LoadedAt, p.Seeding) = (true, now, false);
+        // A game swaps into the system of the world it loads, so the one it joined from is no
+        // longer the one it plays: its saves are of this world, and are labelled as this world.
+        if (_worldSystem.Length > 0) p.System = _worldSystem;
         p.LoadedBehind = UniverseClock.Known ? UniverseClock.Now(now) - universe : 0.0;
         if (!UniverseClock.Known)
         {
@@ -1593,7 +1591,9 @@ public sealed class GameServer : IDisposable
                     return;
                 }
                 p.WorldAsked = false;
-                SetWorld(blob, p.KsaBuild, p.Mods, p.System);
+                // The system the save says, where it says one: a game that has swapped into this
+                // world's system since it joined is not in the one it joined from.
+                SetWorld(blob, p.KsaBuild, p.Mods, WorldStore.SystemOf(blob.Data) is { Length: > 0 } saved ? saved : p.System);
                 Log($"{p.Name} saved the world: {Blob.Size(blob.Data.Length)} at universe time {blob.Universe:F0} s");
                 KeepWaiting(fresh: true, from: p.Id);
                 if (p.Seeding) OnLoaded(p, blob.Universe);
@@ -3055,9 +3055,10 @@ public sealed class GameServer : IDisposable
     /// would put a wait, and a game that may not answer, between an admin and the load they asked
     /// for.</para>
     ///
-    /// <para>Refused while somebody here could not follow -- a game in another system, or one
-    /// whose mods are not the save's. Their game would be handed a world it cannot open, or be
-    /// turned away for its mods the next time it joined a world it had been playing in.</para>
+    /// <para>Refused while somebody here could not follow: a game whose mods are not the save's
+    /// would be turned away for them the next time it joined a world it had been playing in. A
+    /// save in another system is not refused, since every game swaps into the system of the world
+    /// it is handed.</para>
     /// </summary>
     /// <param name="by">Who asked, named to everybody; null for the console.</param>
     public string LoadSave(string asked, Player? by = null)
@@ -3079,10 +3080,6 @@ public sealed class GameServer : IDisposable
         string[] needs = [.. save.Mods.SelectMany(ModList.Ids).Except(ModList.Ids(OptionalMods), StringComparer.OrdinalIgnoreCase)];
         foreach (Player p in _players.Values)
         {
-            if (save.System.Length > 0 && p.System.Length > 0 && p.System != save.System)
-            {
-                return $"can't load '{name}': it is a {save.System} world and {p.Name} is playing {p.System}";
-            }
             // A save copied in by hand says nothing of mods, and is taken to want what the room has.
             if (needs.Length == 0) continue;
             string[] has = [.. p.Mods.SelectMany(ModList.Ids)];

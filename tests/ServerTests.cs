@@ -108,9 +108,9 @@ public class ServerTests
         return a;
     }
 
-    private static Client JoinAndLoad(Rig rig, string name)
+    private static Client JoinAndLoad(Rig rig, string name, string system = "SolLite")
     {
-        Client b = rig.Join(name);
+        Client b = rig.Join(name, system: system);
         rig.Until(() => b.Blobs.Any(x => x.Kind == BlobKind.World), seconds: 20, what: $"{name} to get the world");
         Assert.True(b.ServerHasWorld);
         Blob world = b.Blobs.First(x => x.Kind == BlobKind.World);
@@ -1464,20 +1464,15 @@ public class ServerTests
     }
 
     [Fact]
-    public void APlayerInAnotherCelestialSystemIsTurnedAway()
+    public void APlayerInAnotherCelestialSystemIsLetInAndPlaysTheWorlds()
     {
         using Rig rig = new();
         Seed(rig);
 
-        // The world is Earth and its Moon; this player is playing the whole of Sol.
-        Client other = rig.Join("Bob", system: "Sol");
-        rig.Until(() => other.Out.Length > 0, what: "Bob to be turned away");
-        Assert.Contains("SolLite", other.Out);
-        Assert.Contains("Sol", other.Out);
-
-        // One in the same system is let in.
-        Client same = rig.Join("Carol");
-        rig.Until(() => same.Joined, what: "Carol to be let in");
+        // The world is Earth and its Moon; this game is in the whole of Sol, and swaps to load it.
+        Client other = JoinAndLoad(rig, "Bob", system: "Sol");
+        Assert.Equal("", other.Out);
+        Assert.Equal("SolLite", rig.Server.Players.Single(p => p.Id == other.Id).System);
     }
 
     [Fact]

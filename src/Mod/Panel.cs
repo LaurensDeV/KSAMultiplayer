@@ -1868,8 +1868,8 @@ internal static class Panel
     /// <param name="ahead">From KSA's configuration, where there is no world yet: Connect asks the server which one to start in.</param>
     /// <summary>
     /// The box in the window over a running game, which is the only way back to a server list once
-    /// KSA has a universe: disconnect, type another, connect. What it cannot do is change the system
-    /// this game was started in, so that is the one thing it says out loud before the attempt.
+    /// KSA has a universe: disconnect, type another, connect. A world in another system is joined
+    /// by swapping this game into it, which it says before the attempt.
     /// </summary>
     private static void Join(bool ahead = false)
     {
@@ -1912,33 +1912,17 @@ internal static class Panel
         // refuses, or before the player thinks better of it, is still the name they want next time.
         if (edited) Save();
 
-        // The one refusal this window can see coming and never fix: a universe is built once, and the
-        // system it was built in is the system this game has until it is started again. Above the
-        // button rather than under it, since the button is the floor of the window.
+        // Said above the button rather than under it, since the button is the floor of the window.
+        // Joining a world in another system swaps this game into it, which takes a while and puts
+        // everything here away: worth saying before the click, not after.
         string typed = AddressText.ToString().Trim();
         if (!ahead && Elsewhere(typed) is { } system)
         {
             string world = Named(system), here = Named(World.System);
-            // KSA started with its configuration is this mod's window at start, which asks the
-            // server and starts where it says. Started without, it is the system it was last in
-            // and no window: a restart alone comes back here, so the system is chosen from here.
-            if (World.AsksAtStart)
-            {
-                Shown.Coloured(in ConsoleStyle.Danger, $"This world is in {world} and you're in {here}. Restart KSA to join it.");
-            }
-            else if (World.StartsNextIn == system)
-            {
-                Shown.Coloured(in ConsoleStyle.Positive, $"KSA will start in {world} next time. Restart it to join this world.");
-            }
-            else if (!World.Has(system))
-            {
+            if (!World.Has(system))
                 Shown.Coloured(in ConsoleStyle.Danger, $"This world is in {world}, which your game doesn't have.");
-            }
             else
-            {
-                Shown.Coloured(in ConsoleStyle.Danger, $"This world is in {world}, but you're in {here} and KSA is set to start in {here} again.");
-                if (ConsoleWidgets.Button($"START IN {world.ToUpperInvariant()} NEXT TIME".AsSpan())) PressStartThere();
-            }
+                Shown.Coloured(in ConsoleStyle.Positive, $"This world is in {world}. Joining it moves your game from {here} to {world}.");
         }
 
         bool ready = typed.Length > 0 && NameText.ToString().Trim().Length > 0 && !Sync.AskingAhead && !WouldBeRefused;
@@ -1954,30 +1938,13 @@ internal static class Panel
     }
 
     /// <summary>
-    /// The system of the world at the address typed, where this game is in another: the one
-    /// refusal the window can see coming, a universe being built once.
+    /// The system of the world at the address typed, where this game is in another.
     /// </summary>
     private static string? Elsewhere(string typed) =>
         Sync.ServerAsked == typed && Sync.Server is { } there
         && there.HasWorld && there.System.Length > 0 && World.System.Length > 0 && there.System != World.System
             ? there.System
             : null;
-
-    /// <summary>
-    /// The button that has KSA start in the world's system next time, pressed, by the player or
-    /// by the bridge: the system chosen, or null and why nothing was.
-    /// </summary>
-    public static (string? System, string Why) PressStartThere()
-    {
-        if (Elsewhere(AddressText.ToString().Trim()) is not { } system) return (null, "the window names no world in another system");
-        if (!World.StartNextIn(system, out string why))
-        {
-            Log.Warn($"could not have KSA start in {system} next time: {why}");
-            return (null, why);
-        }
-        Log.Info($"KSA starts in {system} next time, for the world at {AddressText.ToString().Trim()}");
-        return (system, "");
-    }
 
     /// <summary>
     /// The window's one action, in KSA's outlined button and in the corner KSA's own modals put a

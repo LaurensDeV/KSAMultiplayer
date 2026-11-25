@@ -1990,6 +1990,14 @@ internal static class Sync
                         Disconnect();
                         return;
                     }
+                    // A world in another system goes in a frame or more after it was asked for, once
+                    // KSA has swapped the system, and can fail there.
+                    if (World.TakeLoadTrouble() is { } trouble)
+                    {
+                        Say($"couldn't load the world: {trouble}");
+                        Disconnect();
+                        return;
+                    }
                     // Either says the world is here: KSA saying it has finished loading one, which
                     // is the only word there is for a world with no craft in it, or a craft to fly,
                     // which is what said it before and still does if that patch did not take.
