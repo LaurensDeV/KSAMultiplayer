@@ -270,6 +270,9 @@ public sealed class GameServer : IDisposable
         /// </summary>
         public bool Editing { get; set; }
 
+        /// <summary>Whether their game says it is in the vehicle editor, which it does flying nothing as well.</summary>
+        public bool InEditor { get; set; }
+
         /// <summary>Who this player logged in as on Discord, empty until they have.</summary>
         public string DiscordId { get; set; } = "";
         public string DiscordName { get; set; } = "";
@@ -1069,6 +1072,8 @@ public sealed class GameServer : IDisposable
                     _rosterNext = Math.Min(_rosterNext, _clock() + RosterSoonSeconds);
                 }
                 player.Watching = ping.Watching;
+                if (ping.Editing != player.InEditor) _rosterNext = Math.Min(_rosterNext, _clock() + RosterSoonSeconds);
+                player.InEditor = ping.Editing;
                 _udp.Send(new Wire.Pong(ping.Sent, _clock()), from);
                 return;
             // Only a player the world has been handed to, saying a time that is a time: this is what
@@ -3525,7 +3530,8 @@ public sealed class GameServer : IDisposable
 
     private Wire.Roster Roster()
     {
-        Wire.Roster roster = new([.. _players.Values.OrderBy(p => p.Id).Select(p => new Wire.Player(p.Id, p.Name, p.Loaded, p.Controlling, p.Rtt, (float)p.Can, p.DiscordId.Length > 0, p.Watching))]);
+        Wire.Roster roster = new([.. _players.Values.OrderBy(p => p.Id).Select(p => new Wire.Player(p.Id, p.Name, p.Loaded, p.Controlling, p.Rtt, (float)p.Can, p.DiscordId.Length > 0, p.Watching,
+                                                                                                     p.InEditor || p.Editing))]);
         // A craft's name is up to 255 bytes, and thirty players flying such are more than a datagram:
         // the roster then went to nobody. Said with the names of craft cut short, it still says who is here.
         for (int chars = 32; chars >= 0 && !Fits(roster); chars -= 16)

@@ -39,6 +39,20 @@ public class WatchingTests
         return (a, b);
     }
 
+    /// <summary>A player on a new vehicle in the editor flies nothing, and every row still says where they are.</summary>
+    [Fact]
+    public void APlayerInTheEditorFlyingNothingIsSaidToBeThere()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+
+        a.Editing = true;
+        rig.Until(() => b.Players.Any(p => p.Id == a.Id && p.Editing && p.Controlling.Length == 0), seconds: 10.0, what: "Bob to see Alice in the editor");
+        a.Editing = false;
+        rig.Until(() => b.Players.Any(p => p.Id == a.Id && !p.Editing), seconds: 10.0, what: "Bob to see Alice out of it");
+    }
+
     [Fact]
     public void ACraftTheCameraPassesOverIsNotLetGoOf()
     {

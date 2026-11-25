@@ -51,7 +51,7 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
    yet, yours becomes the server's world instead, and nothing is replaced: joined straight from
    the start, that is the new game KSA opens on. A game set to start in sandbox, at no craft, waits
    until there is one to hand over.
-5. Hold **Tab** for who is playing, what their ping is, and who is spectating you; **Spectate** on
+5. Hold **Tab** for who is playing, what they fly or whether they are **In VAB**, what their ping is, and who is spectating you; **Spectate** on
    a player's row (or `/spectate <name>`) puts your camera on what they fly and lets go of your own
    craft, which stays yours for ten seconds as any craft you leave does, and **Give control** on the row of somebody
    spectating you hands them the craft you are flying, which you go on watching. **Enter** opens a chat line, **Enter** sends

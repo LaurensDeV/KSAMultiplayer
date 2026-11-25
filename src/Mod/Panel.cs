@@ -665,8 +665,10 @@ internal static class Panel
                     // Every game measures its own and tells the server, so this is each player's own line.
                     Shown.Dim(p.Rtt >= 0f ? $"{p.Rtt * 1000f:F0} ms" : "--");
                     ImGui.TableNextColumn();
+                    // What players call it, and what they asked to read: the craft a player went in
+                    // from is still theirs, but it is not what they are doing.
                     Shown.Dim(!p.Loaded ? "joining"
-                                       : Sync.InTheEditor(p) ? (p.Controlling.Length > 0 ? $"{p.Controlling}, in the vehicle editor" : "in the vehicle editor")
+                                       : Sync.InTheEditor(p) ? "In VAB"
                                        : p.Controlling.Length > 0 ? p.Controlling : "--");
                     ImGui.TableNextColumn();
                     PlayerButton(p, "board");

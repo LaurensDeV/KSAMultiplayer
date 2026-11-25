@@ -87,8 +87,14 @@ public class WireTests
         Assert.Null(RoundTrip(firing with { Thrusters = [] }).Thrusters);
         Assert.Equal(Wire.MostThrusterBytes, RoundTrip(firing with { Thrusters = new byte[100] }).Thrusters?.Length);
 
+        Wire.State burning = firing with { Thrusters = null, Engines = [0b0000_0110] };
+        Assert.Equal(burning.Engines, RoundTrip(burning).Engines);
+        Assert.Null(RoundTrip(burning).Thrusters);
+        Assert.Null(RoundTrip(firing).Engines);
+
         Wire.Roster roster = new([new Wire.Player(1, "Alice", true, "Rocket", 0.02f, 1f, Watching: "Rocket"),
-                                  new Wire.Player(2, "Bob", true, "", 0.03f, 1f, true, "Rocket")]);
+                                  new Wire.Player(2, "Bob", true, "", 0.03f, 1f, true, "Rocket"),
+                                  new Wire.Player(3, "Carol", true, "", 0.04f, 1f, Editing: true)]);
         Assert.Equal(roster.Players, RoundTrip(roster).Players);
         Assert.Equal(new Wire.Give("Rocket", 2, "s3ss10n"), RoundTrip(new Wire.Give("Rocket", 2, "s3ss10n")));
     }
@@ -121,6 +127,7 @@ public class WireTests
         Assert.Equal(new Wire.Ping(12.5, 0.035f, 0f, 1f, true, ""), RoundTrip(new Wire.Ping(12.5, 0.035f, 0f, 1f, true, "")));
         // A game that has not measured a round trip yet says so rather than claiming none.
         Assert.Equal(new Wire.Ping(12.5, -1f, 0f, 1f, true, ""), RoundTrip(new Wire.Ping(12.5, -1f, 0f, 1f, true, "")));
+        Assert.Equal(new Wire.Ping(12.5, 0.035f, 0f, 1f, true, "", Editing: true), RoundTrip(new Wire.Ping(12.5, 0.035f, 0f, 1f, true, "", Editing: true)));
         Assert.Equal(new Wire.Pong(1, 2), RoundTrip(new Wire.Pong(1, 2)));
         Assert.Equal(new Wire.Clock(1e6, 3.25, 1f), RoundTrip(new Wire.Clock(1e6, 3.25, 1f)));
         Assert.Equal(Wire.WorldRules.All, ((Wire.Clock)RoundTrip(new Wire.Clock(1e6, 3.25, 1f))).Rules);

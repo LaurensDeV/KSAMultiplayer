@@ -184,6 +184,9 @@ public sealed class Client : IDisposable
     /// <summary>The craft this game's camera is on, by the name the world knows it by, or empty.</summary>
     public string Watching { get; set; } = "";
 
+    /// <summary>Whether this game is in the vehicle editor.</summary>
+    public bool Editing { get; set; }
+
     /// <summary>The server's clock less this game's, s, once a ping has been answered.</summary>
     public double ServerOffset { get; private set; }
 
@@ -615,7 +618,7 @@ public sealed class Client : IDisposable
         {
             Send(new Wire.Ping(now, double.IsFinite(_lastRtt) ? (float)_lastRtt : -1f,
                                double.IsFinite(Late) ? (float)Late : 0f,
-                               double.IsFinite(Can) ? (float)Math.Max(Can, 0.0) : 0f, Here, Watching));
+                               double.IsFinite(Can) ? (float)Math.Max(Can, 0.0) : 0f, Here, Watching, Editing));
             _pingNext = now + PingEverySeconds;
         }
         SayGoneAgain(now);

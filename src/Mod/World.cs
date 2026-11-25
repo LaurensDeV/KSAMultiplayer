@@ -1149,7 +1149,7 @@ internal static class World
         Wire.State s = new(0, key, 0, Universe, parent.Id, V(positionCcf), V(velocityCcf), V(positionCci), V(velocityCci),
                            new Quat(body2Ccf.X, body2Ccf.Y, body2Ccf.Z, body2Ccf.W), V(spin),
                            float.IsFinite(throttle) ? Math.Clamp(throttle, 0f, 1f) : 0f, flags, (ushort)Math.Min(v.Parts.Count, ushort.MaxValue),
-                           ThrustersOf(v));
+                           ThrustersOf(v), EnginesOf(v));
         return s.PositionCcf.IsFinite && s.PositionCci.IsFinite && s.Body2Ccf.IsFinite ? s : null;
     }
 
@@ -2132,7 +2132,12 @@ internal static class World
     /// Which of this craft's RCS thrusters are firing, a bit each in the order its nozzles come in,
     /// or null when none is. Read from the last physics step, which is the only place KSA works it out.
     /// </summary>
-    public static byte[]? ThrustersOf(Vehicle v)
+    public static byte[]? ThrustersOf(Vehicle v) => FiringOf(v, thrusters: true);
+
+    /// <summary>Which of this craft's engine nozzles are firing, as <see cref="ThrustersOf"/> does its thrusters.</summary>
+    public static byte[]? EnginesOf(Vehicle v) => FiringOf(v, thrusters: false);
+
+    private static byte[]? FiringOf(Vehicle v, bool thrusters)
     {
         try
         {
@@ -2143,7 +2148,7 @@ internal static class World
             int n = 0, last = -1;
             for (int i = 0; i < states.Length && i < modules.Length; i++)
             {
-                if (!IsThruster(modules[i])) continue;
+                if (IsThruster(modules[i]) != thrusters) continue;
                 if (n >= Wire.MostThrusterBytes * 8) break;
                 if (states[i].DutyCycle > 0f || states[i].ThrustFraction > 0f)
                 {
@@ -2161,9 +2166,8 @@ internal static class World
     }
 
     /// <summary>
-    /// A puppet's engines lit or dark as its owner has them, so another player's craft is seen to
-    /// burn. What it does to this world is nothing that lasts: the craft is pulled back to where its
-    /// owner says it is every frame regardless.
+    /// A craft's engine key and throttle, which KSA fires the engines of the craft's active stage from
+    /// on its next physics step.
     /// </summary>
     public static void SetEngine(Vehicle v, bool on, float throttle)
     {
@@ -2182,7 +2186,7 @@ internal static class World
 
     // Craft whose engines were last drawn from here rather than out of KSA's own step. What is
     // written below is gone again by the next step, so a craft that has stopped burning needs
-    // writing dark once; and a craft KSA is burning for real is left to its own numbers.
+    // writing dark once.
     private static readonly HashSet<Vehicle> _shown = [];
 
     // Craft whose thrusters were last drawn from here, which KSA never fires for a craft nobody here flies.
@@ -2236,39 +2240,38 @@ internal static class World
     /// throttle nor the thrust fraction is written here, and the active nozzles that thrust and draw
     /// propellant are counted from the thrust fraction. What is written is read by this frame's
     /// renderers and overwritten by the next step from numbers this never touched.</para>
+    ///
+    /// <para>Which nozzles are lit is the owner's word, a bit each, and not this copy's staging,
+    /// which is whatever the craft's definition said when it was sent: lit from that, a rocket on
+    /// ksamp.gg was seen from another game with its launch escape tower burning, and more engines
+    /// than its owner had lit. The bits are in the order the nozzles come in, so a copy of another
+    /// shape than its owner's -- a stage its owner has dropped and it has not yet -- takes them from
+    /// nobody and lights its own active stage.</para>
     /// </summary>
-    public static void ShowEngine(Vehicle v, bool on, float throttle, byte[]? thrusters = null)
+    public static void ShowEngine(Vehicle v, bool on, float throttle, byte[]? thrusters = null, byte[]? engines = null, bool sameShape = true)
     {
-        bool puffing = thrusters is { Length: > 0 }, shown = _shown.Contains(v), puffed = _puffed.Contains(v);
+        bool puffing = sameShape && thrusters is { Length: > 0 }, shown = _shown.Contains(v), puffed = _puffed.Contains(v);
         if (!on && !puffing && !shown && !puffed) return;
         try
         {
             if (v.Parts is not { RocketNozzles: { } nozzles, RocketCores: { } cores }) return;
-            // KSA burning the engines itself, in a craft it is stepping: its numbers for those, and
-            // the thrusters, which it never fires for a craft nobody here is flying, from these.
-            bool kept = on && !shown && Drawn(nozzles);
             float ambient = v.PhysicsEnvironment.AtmosphericPressure;
             // Enough of a throttle to be something: a core at nothing has no conditions and makes no
             // plume, and a craft said to be burning at nothing is a craft whose throttle was not read.
             float open = float.IsFinite(throttle) ? Math.Clamp(throttle, 0.05f, 1f) : 1f;
             Span<RocketNozzle> modules = nozzles.Modules;
-            // The engines alone: an RCS thruster is a rocket nozzle too, one a ThrusterController
-            // fires, and lighting every nozzle had a burning rocket puffing every thruster it has in
-            // every direction at once. Those of the stage that is lit, unless this copy has none
-            // lit, when its staging is not what its owner's is and every engine is the better guess.
-            bool anyActive = false;
-            for (int i = 0; i < modules.Length; i++) anyActive |= modules[i].Rocket?.Controller is EngineController { IsActive: true };
-            int thruster = 0;
+            // An RCS thruster is a rocket nozzle too, one a ThrusterController fires: lighting every
+            // nozzle had a burning rocket puffing every thruster it has in every direction at once.
+            int thruster = 0, engine = 0;
             for (int i = 0; i < modules.Length; i++)
             {
                 RocketNozzle nozzle = modules[i];
                 bool isThruster = IsThruster(nozzle);
-                int bit = isThruster ? thruster++ : -1;
+                int bit = isThruster ? thruster++ : engine++;
                 if (nozzle.Core is not { } core) continue;
-                bool lit;
-                if (isThruster) lit = thrusters is { } t && bit / 8 < t.Length && (t[bit / 8] & (1 << (bit % 8))) != 0;
-                else if (kept) continue;
-                else lit = on && nozzle.Rocket.Controller is EngineController e && (e.IsActive || !anyActive);
+                bool lit = isThruster ? puffing && IsSet(thrusters, bit)
+                         : on && (sameShape && engines is not null ? IsSet(engines, bit)
+                                                                   : nozzle.Rocket.Controller is EngineController { IsActive: true });
                 if (!lit && !(isThruster ? puffed : shown)) continue;
                 ModuleStateful<RocketNozzle, RocketNozzleState, EmptyStruct, RocketNozzleFxState>.StateList.ModuleAndAllMutableStatesRef noz =
                     nozzles.GetModuleAndAllMutableStatesForInitialization(nozzle);
@@ -2289,8 +2292,8 @@ internal static class World
                 // which is what the engine's own sound is pitched by within earshot.
                 (noz.State.DutyCycle, noz.State.AverageThrustFraction) = (1f, isThruster ? 1f : open);
             }
-            if (on && !kept) _shown.Add(v);
-            else if (!on) _shown.Remove(v);
+            if (on) _shown.Add(v);
+            else _shown.Remove(v);
             if (puffing) _puffed.Add(v);
             else _puffed.Remove(v);
         }
@@ -2302,15 +2305,7 @@ internal static class World
         }
     }
 
-    // Whether KSA is already drawing this craft's engines, which it does for one it is stepping in
-    // physics: close to this player, or anywhere in an atmosphere. Its own numbers are the better ones.
-    private static bool Drawn(ModuleStateful<RocketNozzle, RocketNozzleState, EmptyStruct, RocketNozzleFxState>.StateList nozzles)
-    {
-        ReadOnlySpan<RocketNozzleState> states = nozzles.States;
-        Span<RocketNozzle> modules = nozzles.Modules;
-        for (int i = 0; i < states.Length && i < modules.Length; i++) if (states[i].DutyCycle > 0f && !IsThruster(modules[i])) return true;
-        return false;
-    }
+    private static bool IsSet(byte[]? bits, int bit) => bits is { } b && bit / 8 < b.Length && (b[bit / 8] & (1 << (bit % 8))) != 0;
 
     /// <summary>
     /// A craft's next sequence fired, which is what the space bar does, and the new active sequence

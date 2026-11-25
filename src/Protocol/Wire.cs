@@ -219,8 +219,12 @@ public static class Wire
     ///
     /// <para>37 is KSA 2026.11.25.5949's craft definition, which may carry the places a craft has
     /// arrived at (<c>At</c>). No datagram changed, but a craft's blob is no longer the same thing.</para>
+    ///
+    /// <para>38 is <see cref="State.Engines"/>, which a game of 37 would read as nothing and so draw
+    /// every engine of a copy whose staging is not its owner's; <see cref="Ping.Editing"/>; and
+    /// <see cref="Player.Editing"/> on every row of a <see cref="Roster"/>.</para>
     /// </summary>
-    public const ushort Version = 37;
+    public const ushort Version = 38;
 
     /// <summary>
     /// The owner of a craft kept for a player who has just left, until they come back or it lapses.
@@ -471,7 +475,10 @@ public static class Wire
     /// who they are on Discord, which is theirs to tell the room or not.</param>
     /// <param name="Watching">The craft that player's camera is on, as their game says on a <see cref="Ping"/>:
     /// how a player sees who is spectating them, and whom they can give their craft to.</param>
-    public readonly record struct Player(byte Id, string Name, bool Loaded, string Controlling, float Rtt, float Can, bool Discord = false, string Watching = "");
+    /// <param name="Editing">Whether that player is in the vehicle editor, as their game says on a
+    /// <see cref="Ping"/>: on a new vehicle they fly nothing, so no craft of theirs can say it.</param>
+    public readonly record struct Player(byte Id, string Name, bool Loaded, string Controlling, float Rtt, float Can, bool Discord = false, string Watching = "",
+                                         bool Editing = false);
 
     public sealed record Roster(Player[] Players) : Message(Kind.Roster);
 
@@ -489,7 +496,8 @@ public static class Wire
     /// <param name="Watching">The craft this game's camera is on, which need not be the one it flies:
     /// a craft its owner is neither in nor looking at is one they have walked away from, and after a
     /// while it goes back to being anybody's.</param>
-    public sealed record Ping(double Sent, float Rtt, float Late, float Can, bool Here, string Watching) : Message(Kind.Ping);
+    /// <param name="Editing">Whether this game is in the vehicle editor, whatever it flies.</param>
+    public sealed record Ping(double Sent, float Rtt, float Late, float Can, bool Here, string Watching, bool Editing = false) : Message(Kind.Ping);
 
     /// <summary>
     /// Nothing but "this game is still here", sent from a thread of its own so a frame loop that has
@@ -599,12 +607,17 @@ public static class Wire
     /// <see cref="MostThrusterBytes"/> bytes, so a craft with more thrusters than that shows only
     /// its first ones firing.
     /// </param>
+    /// <param name="Engines">
+    /// Which of its engines' nozzles are firing, the same way, counting every nozzle that is not an
+    /// RCS thruster. Which engines burn is the owner's staging, and a copy's own staging is whatever
+    /// its definition said when it was sent, so only this says which to draw.
+    /// </param>
     public sealed record State(byte Owner, string Key, uint Sequence, double Universe, string Body,
                                Vec3 PositionCcf, Vec3 VelocityCcf, Vec3 PositionCci, Vec3 VelocityCci,
                                Quat Body2Ccf, Vec3 Spin, float Throttle, StateFlags Flags, ushort Parts = 0,
-                               byte[]? Thrusters = null) : Message(Kind.State);
+                               byte[]? Thrusters = null, byte[]? Engines = null) : Message(Kind.State);
 
-    /// <summary>The most bytes of thrusters a <see cref="State"/> says, which is 256 thrusters.</summary>
+    /// <summary>The most bytes of thrusters, or of engines, a <see cref="State"/> says, which is 256 of each.</summary>
     public const int MostThrusterBytes = 32;
 
     /// <param name="Controlling">Whether the player is flying it now, which nobody may take it from; otherwise only kept, as debris it dropped.</param>
@@ -930,7 +943,7 @@ public static class Wire
                 {
                     w.U8(p.Id);
                     w.Text(p.Name, NameChars);
-                    w.U8((byte)((p.Loaded ? 1 : 0) | (p.Discord ? 2 : 0)));
+                    w.U8((byte)((p.Loaded ? 1 : 0) | (p.Discord ? 2 : 0) | (p.Editing ? 4 : 0)));
                     w.Text(p.Controlling, KeyChars);
                     w.F32(p.Rtt);
                     w.F32(p.Can);
@@ -950,6 +963,7 @@ public static class Wire
                 w.F32(p.Can);
                 w.U8(p.Here ? (byte)1 : (byte)0);
                 w.Text(p.Watching, KeyChars);
+                w.U8(p.Editing ? (byte)1 : (byte)0);
                 break;
             case Pong p:
                 w.F64(p.Echo);
@@ -997,9 +1011,8 @@ public static class Wire
                 w.F32(s.Throttle);
                 w.U8((byte)s.Flags);
                 w.U16(s.Parts);
-                ReadOnlySpan<byte> firing = s.Thrusters is { } t ? t.AsSpan(0, Math.Min(t.Length, MostThrusterBytes)) : [];
-                w.U8((byte)firing.Length);
-                w.Bytes(firing);
+                WriteNozzles(ref w, s.Thrusters);
+                WriteNozzles(ref w, s.Engines);
                 break;
             case Claim c:
                 w.Text(c.Key, KeyChars);
@@ -1152,7 +1165,7 @@ public static class Wire
                 Kind.Roster => ReadRoster(ref r),
                 Kind.Bye => new Bye(r.Text(200), r.More ? r.Text(CookieChars) : ""),
                 Kind.Alive => new Alive(),
-                Kind.Ping => new Ping(r.F64(), r.F32(), r.F32(), r.F32(), r.U8() != 0, r.Text(KeyChars)),
+                Kind.Ping => new Ping(r.F64(), r.F32(), r.F32(), r.F32(), r.U8() != 0, r.Text(KeyChars), r.U8() != 0),
                 Kind.Pong => new Pong(r.F64(), r.F64()),
                 Kind.Clock => new Clock(r.F64(), r.F64(), r.F32(), (WorldRules)r.U8() & WorldRules.All),
                 Kind.Chunk => new Chunk(r.U32(), r.U16(), r.U16(), r.Take(r.U16()).ToArray()),
@@ -1161,7 +1174,7 @@ public static class Wire
                 Kind.Loaded => new Loaded(r.F64()),
                 Kind.State => new State(r.U8(), r.Text(KeyChars), r.U32(), r.F64(), r.Text(64), r.V3d(), r.V3f(), r.V3d(), r.V3f(),
                                         new Quat(r.F32(), r.F32(), r.F32(), r.F32()).Normalized(), r.V3f(), r.F32(), (StateFlags)r.U8(), r.U16(),
-                                        ReadThrusters(ref r)),
+                                        ReadNozzles(ref r), ReadNozzles(ref r)),
                 Kind.Claim => new Claim(r.Text(KeyChars), r.U8() != 0, r.U8() != 0, r.U8() != 0, r.U8() != 0),
                 Kind.Rename => new Rename(r.Text(KeyChars), r.Text(KeyChars)),
                 Kind.WarpAsk => new WarpAsk(r.F32()),
@@ -1218,7 +1231,14 @@ public static class Wire
         return new Op(admin, token, role);
     }
 
-    private static byte[]? ReadThrusters(ref Reader r)
+    private static void WriteNozzles(ref Writer w, byte[]? firing)
+    {
+        ReadOnlySpan<byte> said = firing is { } f ? f.AsSpan(0, Math.Min(f.Length, MostThrusterBytes)) : [];
+        w.U8((byte)said.Length);
+        w.Bytes(said);
+    }
+
+    private static byte[]? ReadNozzles(ref Reader r)
     {
         int n = Math.Min((int)r.U8(), MostThrusterBytes);
         return n == 0 ? null : r.Take(n).ToArray();
@@ -1232,7 +1252,7 @@ public static class Wire
             byte id = r.U8();
             string name = r.Text(NameChars);
             byte flags = r.U8();
-            players[i] = new Player(id, name, (flags & 1) != 0, r.Text(KeyChars), r.F32(), r.F32(), (flags & 2) != 0, r.Text(KeyChars));
+            players[i] = new Player(id, name, (flags & 1) != 0, r.Text(KeyChars), r.F32(), r.F32(), (flags & 2) != 0, r.Text(KeyChars), (flags & 4) != 0);
         }
         return new Roster(players);
     }

@@ -223,6 +223,17 @@ stranger sent it.
 - **Every player's ping.** A game measures its own round trip to the server and says it with each
   `Ping`; the server passes them all on in the roster, so each game can show what everyone's line is
   like. Held Tab shows that list in game.
+- **Another player's engines, nozzle by nozzle.** A state says which of the craft's engine nozzles
+  are firing as it says its thrusters (below), and the others draw those and no others. Which
+  engines a copy would light by itself is its own active stage, which is whatever its definition
+  said when it was sent, and a craft that stages without losing a part sends no new one: lit from
+  that, a rocket on `ksamp.gg` was seen from a spectating game with its launch escape tower and
+  more engines burning than its owner had lit. A copy whose part count is not its owner's -- a
+  stage dropped there and not yet here -- cannot match bits to nozzles, and lights its own active
+  stage until it can. A copy's engine key is never turned on: on it, KSA fires the copy's own
+  active stage wherever it steps the craft in physics, near this player, which is where
+  spectating puts the camera. Every engine is drawn by the mod instead, and a craft taken over
+  burning has its owner's key put in as it is taken.
 - **Another player's RCS.** A state says which of the craft's RCS thrusters are firing, a bit
   each in the order its nozzles come in, which every game building it from one definition shares;
   the others light those and no others, as they light its engines. An RCS thruster is a rocket
@@ -515,7 +526,9 @@ name, and a lost Sun is logged, told to the server and shown to the player once.
      `ksamp.gg` a player went to a new vehicle to keep out of a warp's way, and the craft another
      player had just given them was drawn in every game as theirs, in the editor, the whole time. Held
      or standing, its states carry `Editing` while its pilot is in the editor, and every other game tints it with KSA's own purple picking tint and
-     writes **IN THE VEHICLE EDITOR** under its pilot's name; the scoreboard says so as well. The
+     writes **IN THE VEHICLE EDITOR** under its pilot's name. The Tab list says **In VAB** on the
+     row of anybody in the editor, on a new vehicle too, from what their game says on each `Ping`
+     and not from a craft, since one on a new vehicle flies nothing. The
      tint comes off as the craft stops being that player's, too: KSA never clears a tint it did not
      put on, and a craft taken over when its pilot left from the editor stayed purple for the player
      flying it. Held,
@@ -1922,9 +1935,11 @@ for, in `docs/LIVE-CHECKS.md`.
   player's own line, NAT and jitter are in play rather than one machine's loopback. WSL in its
   default NAT mode cannot be reached from a Windows game at all, which is why `two-games.sh`
   publishes a Windows server unless WSL is in mirrored mode.
-- **A puppet's engines where this game is stepping the craft.** The plume the mod writes for a craft
-  out of physics has been watched; the one KSA draws for a puppet close enough to be in this game's
-  own physics has not, so the rule that hands that case back to KSA is read off the source alone.
+- **A puppet's engines where this game is stepping the craft, and engines by the owner's nozzles.**
+  The plume the mod writes for a craft out of physics has been watched. Writing it for one this game
+  steps too, never lighting its key, and lighting only the nozzles its owner says, have not: that a
+  spectator now sees the engines its owner has burning and no others, and that a craft given
+  mid-burn goes on burning, are read off the source alone.
 - **An engine lit by a flight computer rather than by a hand.** What is sent is the nozzles' own duty
   cycle, which is what a node burn leaves behind, but no node burn has been watched from another game.
 - **Spectating and giving between more than two players, or off loopback.** In two games on one
@@ -2059,27 +2074,24 @@ for, in `docs/LIVE-CHECKS.md`.
   moves that field leaves engines dark and says so in the log. What is sent is not that field alone,
   because KSA sets it false every frame while the flight computer is running the burn, so a craft
   burning a manoeuvre node said its engines were cold: the nozzles' own duty cycle counts as lit too.
-  A puppet's engines are set from its owner's state, which changes nothing that lasts, since the
-  craft is pulled back to where its owner says it is every frame regardless.
+  A puppet's engine key is never lit, and its engines are drawn from its owner's state.
 
   What the plume, the exhaust light and the volumetric exhaust are all drawn from is
   `RocketNozzleState.DutyCycle`, and that is accumulated only inside a full physics step, from the
   chamber pressure the rocket model worked out. A craft of this game's own in its own bubble, in
   freefall or sitting still, is stepped down a cheaper path that clears the duty cycle every frame
-  and never accumulates one. So another player's craft is burning *here* only when it is in this
-  game's physics -- near this player, or anywhere in an atmosphere -- and out there it draws no
-  propellant, makes no thrust and leaves nothing to draw a plume from, however hard its owner says
-  it is burning.
+  and never accumulates one. And with its key never lit, another player's craft burns *here* not
+  at all: it draws no propellant, makes no thrust and leaves nothing to draw a plume from, however
+  hard its owner says it is burning.
 
-  So out there the mod writes what the step that never ran would have left: the chamber conditions
+  So the mod writes what the step that never ran would have left: the chamber conditions
   that engine's own design gives at the throttle its owner reports (`RocketCore.ComputeConditions`),
   the exhaust its nozzles make of those (`RocketNozzle.ComputePerformance`, which is what KSA's own
   engine window calls from the main thread), and a full duty cycle. It goes in through
   `GetModuleAndAllMutableStatesForInitialization`, in a prefix on the two passes that read it, which
   is the one place after the last physics step and before the frame is drawn -- `[StarMapAfterOnFrame]`
   is after the render, and anything written there for this frame is a frame late and cleared by the
-  next step first. A craft KSA is burning for real is left alone, since its own numbers are the
-  better ones, and a craft that stops burning is written dark once.
+  next step first. A craft that stops burning is written dark once.
 
   None of it changes what the craft does. KSA works a core's conditions out from its throttle and a
   nozzle's thrust fraction out from those conditions on every step it runs, and the nozzles that

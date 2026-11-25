@@ -225,7 +225,7 @@ internal static class Sync
     // What each puppet's owner last said its engines were doing. Kept because the frame hook and the
     // frame KSA draws are not the same moment: the plume is drawn from the render, after this mod has
     // run and from state a physics step would have left behind, so it is written there and read here.
-    private static readonly Dictionary<Vehicle, (bool On, float Throttle, byte[]? Thrusters)> Engines = [];
+    private static readonly Dictionary<Vehicle, (bool On, float Throttle, byte[]? Thrusters, byte[]? Nozzles, ushort Parts)> Engines = [];
     // Another player's craft built here, by what the shared world calls it. World.Vehicles() does not
     // list a craft the moment it is made, so asking the world whether a craft is here answers no for
     // a frame or two after it was built, and the answer is taken as leave to build it again. This is
@@ -1921,7 +1921,7 @@ internal static class Sync
         Observed = Now == Stage.Playing && eyed is not null && World.Controlled is { } mine && !ReferenceEquals(eyed, mine) && IsTheirs(eyed) ? eyed : null;
         if (_client is { } told)
         {
-            (told.Can, told.Here) = (_sustains, World.Focused);
+            (told.Can, told.Here, told.Editing) = (_sustains, World.Focused, World.InEditor);
             told.Watching = eyedKey;
         }
         // What the other mods are told of, every frame and whatever this game is doing: in a shared
@@ -3053,10 +3053,12 @@ internal static class Sync
             if (track.At(universe) is not { } s) continue;
             bool lit = (s.Flags & Wire.StateFlags.EngineOn) != 0;
             World.SetLights(v, (s.Flags & Wire.StateFlags.Lights) != 0);
-            // The input, which lights the engine for real in a craft this game is stepping, and the
-            // word for the renderer, which is all there is for one it is not.
-            World.SetEngine(v, lit, s.Throttle);
-            Engines[v] = (lit, s.Throttle, s.Thrusters);
+            // Never lit for real, only drawn. Lit, KSA fires the engines of the copy's own active
+            // stage, which is its definition's and not its owner's staging now, wherever this game
+            // steps it in physics: near this player, which is where a spectator's camera puts them.
+            // The pull puts it where its owner says every step regardless of thrust.
+            World.SetEngine(v, false, s.Throttle);
+            Engines[v] = (lit, s.Throttle, s.Thrusters, s.Engines, s.Parts);
             // Or when this game has it going round another body than its owner says: that is the one
             // case the pull cannot answer, and it does not fix itself. A craft standing on a pad is
             // inside the Earth's physics radius, where KSA's own SOI check gives up on its first
@@ -3133,7 +3135,13 @@ internal static class Sync
             if (World.IsAlive(v)) Orphaned[v] = now;
         }
         foreach (Vehicle v in Orphaned.Where(o => !World.IsAlive(o.Key) || now - o.Value >= OrphanSparedSeconds).Select(o => o.Key).ToArray()) Orphaned.Remove(v);
-        foreach (Vehicle v in Engines.Keys.Where(p => !Puppets.ContainsKey(p)).ToArray()) Engines.Remove(v);
+        foreach (Vehicle v in Engines.Keys.Where(p => !Puppets.ContainsKey(p)).ToArray())
+        {
+            // Taken over burning, it goes on burning: a puppet's engine key is never lit here, so
+            // the one its owner had is put in as this player takes the controls.
+            if (Engines[v] is { On: true } burning && World.IsAlive(v) && ReferenceEquals(v, World.Controlled)) World.SetEngine(v, true, burning.Throttle);
+            Engines.Remove(v);
+        }
         UnderWay.RemoveWhere(k => !Puppets.ContainsValue(k));
         foreach (string k in OffRailsSince.Keys.Where(k => !Puppets.ContainsValue(k)).ToArray()) OffRailsSince.Remove(k);
         foreach (string k in PullSaidAt.Keys.Where(k => !Puppets.ContainsValue(k)).ToArray())
@@ -3286,8 +3294,12 @@ internal static class Sync
     /// </summary>
     public static void ShowEngines(Vehicle v)
     {
-        (bool on, float throttle, byte[]? thrusters) = Engines.TryGetValue(v, out (bool On, float Throttle, byte[]? Thrusters) said) ? said : (false, 0f, null);
-        World.ShowEngine(v, on, throttle, thrusters);
+        if (!Engines.TryGetValue(v, out (bool On, float Throttle, byte[]? Thrusters, byte[]? Nozzles, ushort Parts) said))
+        {
+            World.ShowEngine(v, false, 0f);
+            return;
+        }
+        World.ShowEngine(v, said.On, said.Throttle, said.Thrusters, said.Nozzles, said.Parts == 0 || said.Parts == v.Parts.Count);
     }
 
     /// <summary>A puppet pulled to its owner's state, or this player's craft held for the editor, from the physics window.</summary>
@@ -3410,11 +3422,15 @@ internal static class Sync
     /// <summary>The craft held for the editor, for the bridge to say: null when there is none.</summary>
     public static string? EditorHeld => _editorHold is { } h ? h.Out ? $"{KeyOf(h.Craft)}, letting go" : KeyOf(h.Craft) : null;
 
-    /// <summary>Whether a player's flown craft is said to be in the vehicle editor with them.</summary>
+    /// <summary>
+    /// Whether a player is in the vehicle editor: as their game says, which it does on a new vehicle
+    /// with nothing flown, or as their flown craft says, which may be heard first.
+    /// </summary>
     public static bool InTheEditor(Wire.Player p)
     {
         if (_client is not { } c) return false;
         if (p.Id == c.Id) return World.InEditor;
+        if (p.Editing) return true;
         return p.Controlling.Length > 0 && c.TrackOf(p.Controlling).Newest is { } s && (s.Flags & Wire.StateFlags.Editing) != 0;
     }
 
