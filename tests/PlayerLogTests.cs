@@ -93,6 +93,61 @@ public class PlayerLogTests
         }
     }
 
+    private static Blob Piece(Client a, string log, int first, string text) =>
+        new(BlobKind.Log, LogPieces.Key(log, first), a.Id, 0.0, LogText.Pack(text));
+
+    /// <summary>
+    /// A log sent a piece at a time is kept in one file a join, each line once: a piece sent again,
+    /// as a game whose ack was lost does, adds only what is new of it, and the game hears that the
+    /// server has it.
+    /// </summary>
+    [Fact]
+    public void PiecesOfALogAreKeptInOneFileEachLineOnce()
+    {
+        string folder = Path.Combine(Path.GetTempPath(), "ksamp-logs-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            using Rig rig = new(new ServerOptions { CollectLogs = true }, store: new WorldStore(folder));
+            Client a = Seed(rig);
+            const string log = "KSAMultiplayer.261125-100000";
+            uint first = a.Upload(Piece(a, log, 0, "one at 203.0.113.7:50100\ntwo\n"));
+            rig.Until(() => a.Arrived(first), what: "the server to have the first piece");
+            Assert.False(a.Uploading(first));
+            uint again = a.Upload(Piece(a, log, 0, "one at 203.0.113.7:50100\ntwo\nthree\n"));
+            rig.Until(() => a.Arrived(again), what: "the piece sent again");
+            uint more = a.Upload(Piece(a, log, 3, "four\n"));
+            rig.Until(() => a.Arrived(more), what: "the next piece");
+
+            string[] files = Directory.GetFiles(rig.Server.PlayerLogs.Folder, "*.log.gz", SearchOption.AllDirectories);
+            string file = Assert.Single(files);
+            Assert.Contains($"no-discord.player-{a.Id}.KSAMultiplayer_261125-100000.", file);
+            string kept = LogText.Unpack(File.ReadAllBytes(file))!;
+            Assert.StartsWith($"player {a.Id}, playing as Alice, not logged in with Discord", kept);
+            Assert.EndsWith("\none at (address)\ntwo\nthree\nfour\n", kept);
+            Assert.Single(rig.Server.Said, s => s.StartsWith("keeping Alice's game log of KSAMultiplayer.261125-100000, from line 1"));
+        }
+        finally
+        {
+            if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    /// <summary>A piece that starts past what came says the lines that never did; one that starts a join past the first line says so.</summary>
+    [Fact]
+    public void LinesThatNeverCameAreSaidWhereTheyWouldHaveBeen()
+    {
+        PlayerLogs logs = new();
+        Dictionary<string, PlayerLogs.Open> open = [];
+        DateTime now = new(2026, 11, 25, 10, 0, 0, DateTimeKind.Utc);
+        Assert.Equal(2, logs.Append("Bob", 2, "", "", "KSAMultiplayer.261125-100000", 40, "a\nb\n", now, open));
+        Assert.Equal(1, logs.Append("Bob", 2, "", "", "KSAMultiplayer.261125-100000", 50, "c\n", now, open));
+        Assert.Equal(0, logs.Append("Bob", 2, "", "", "KSAMultiplayer.261125-100000", 40, "a\n", now, open));
+        string all = string.Concat(logs.Kept.Select(k => k.Text));
+        Assert.Contains("(from line 41: the lines before it were sent before this join)\na\nb\n", all);
+        Assert.EndsWith("b\n(lines 43 to 50 never arrived)\nc\n", all);
+        Assert.Equal(51, open["KSAMultiplayer.261125-100000"].Lines);
+    }
+
     /// <summary>An operator asks for logs mid-session: the game is told, and may send a full set again.</summary>
     [Fact]
     public void AnOperatorCanAskEveryGameForItsLogsNow()

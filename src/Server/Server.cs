@@ -282,8 +282,13 @@ public sealed class GameServer : IDisposable
         /// <summary>The player's round trip, s, as that player measured it; negative until it has one.</summary>
         public float Rtt { get; set; } = -1f;
 
-        /// <summary>How many of their game's logs have been kept this session.</summary>
+        /// <summary>How many of their game's logs sent whole have been kept this session, as games of 0.37.0 and before send them.</summary>
         public int LogsKept { get; set; }
+
+        /// <summary>The logs their game is sending in pieces this join, and how much of them has come.</summary>
+        public Dictionary<string, PlayerLogs.Open> LogFiles { get; } = [];
+
+        public long LogChars { get; set; }
 
         /// <summary>The share of this player's pings lost on the way over the last minute; NaN until there is enough to say.</summary>
         public double Loss => Pings.Share;
@@ -1601,10 +1606,24 @@ public sealed class GameServer : IDisposable
             // A game's own log of a session, which it sends only to the developer's test server.
             // Not kept on any other: a game that sent one anyway is somebody's own build.
             case BlobKind.Log when blob.Key.Length > 0:
-                if (!Options.CollectLogs || p.LogsKept >= PlayerLogs.MostPerSession) return;
+                if (!Options.CollectLogs) return;
+                (string Log, int First)? piece = LogPieces.Parse(blob.Key);
+                if (piece is null && p.LogsKept >= PlayerLogs.MostPerSession) return;
                 if (LogText.Unpack(blob.Data) is not { } text)
                 {
                     Log($"{p.Name}'s game sent a log that is not one, {Blob.Size(blob.Data.Length)}: not kept");
+                    return;
+                }
+                if (piece is { } part)
+                {
+                    if (p.LogChars + text.Length > PlayerLogs.MostCharsPerJoin) return;
+                    p.LogChars += text.Length;
+                    // Said once a log a join: a game sends what is new of each every few minutes.
+                    bool first = !p.LogFiles.ContainsKey(part.Log);
+                    if (PlayerLogs.Append(p.Name, p.Id, p.DiscordId, p.DiscordName, part.Log, part.First, text, DateTime.UtcNow, p.LogFiles) is > 0 && first)
+                    {
+                        Log($"keeping {p.Name}'s game log of {Wire.Clip(part.Log, Wire.KeyChars)}, from line {part.First + 1}, as it comes");
+                    }
                     return;
                 }
                 p.LogsKept++;
@@ -2898,8 +2917,9 @@ public sealed class GameServer : IDisposable
     }
 
     /// <summary>
-    /// Asks every game in the world, or one player's, for its logs now, this session's among them,
-    /// and lets each send a full set again. Kept only with <see cref="ServerOptions.CollectLogs"/>,
+    /// Asks every game in the world, or one player's, for its logs now, this session's among them:
+    /// what is new of each, from a game that sends them in pieces, and a full set again from one
+    /// that sends them whole. Kept only with <see cref="ServerOptions.CollectLogs"/>,
     /// and sent only to the developer's test server: the games decide that.
     /// </summary>
     /// <returns>What came of asking, for whoever asked.</returns>

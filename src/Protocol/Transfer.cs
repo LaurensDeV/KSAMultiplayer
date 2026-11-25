@@ -267,6 +267,8 @@ public sealed class Link
     private readonly Dictionary<uint, Incoming> _in = [];
     private readonly Queue<uint> _finished = new();
     private readonly HashSet<uint> _finishedSet = [];
+    private readonly Queue<uint> _gotQueue = new();
+    private readonly HashSet<uint> _got = [];
     private uint _next;
 
     /// <summary>How many transfers are going out or coming in.</summary>
@@ -274,6 +276,16 @@ public sealed class Link
 
     /// <summary>The share of the newest transfer coming in that has come, while one is.</summary>
     public double? Arriving => _in.Values.Where(i => !i.Complete).OrderByDescending(i => i.Count).FirstOrDefault() is { } c ? (double)c.Have / c.Count : null;
+
+    /// <summary>
+    /// Whether the other end has said it has the whole of what <see cref="Send"/> numbered so:
+    /// false while it is still going and for one given up on, which went nowhere. The newest 256 are
+    /// remembered.
+    /// </summary>
+    public bool Arrived(uint id) => _got.Contains(id);
+
+    /// <summary>Whether <see cref="Send"/>'s transfer of this number is still going out.</summary>
+    public bool Going(uint id) => _out.ContainsKey(id);
 
     /// <summary>Starts sending something; its pieces go out from <see cref="Pump"/>.</summary>
     public uint Send(byte[] data, double now)
@@ -342,7 +354,11 @@ public sealed class Link
                 o.Need(need.Missing, now);
                 return null;
             case Wire.Got got:
-                _out.Remove(got.Transfer);
+                if (_out.Remove(got.Transfer) && _got.Add(got.Transfer))
+                {
+                    _gotQueue.Enqueue(got.Transfer);
+                    while (_gotQueue.Count > 256) _got.Remove(_gotQueue.Dequeue());
+                }
                 return null;
         }
         return null;

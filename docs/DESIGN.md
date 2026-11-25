@@ -598,32 +598,51 @@ a part's modules scale by follow the largest of the three (`ScaleFactors(double3
 every game. Whether that is fair is the operator's call, and why the list is theirs rather than a
 mod's word about itself. Not yet seen with such a mod in a game.
 
-**Players' logs go to the developer's test server and nowhere else.** As a game joins it sends its
-logs of the sessions before this one, the newest three of the mod's and the newest three of KSA's
-own not sent before -- KSA's says what it did to its own world, a name registered twice or an
-exception in the editor, which the mod's cannot; one KSA names `.abnormal-exit` is a crash, and
-the session being written now is told by its process id and left out, every file of each KSA
-session going together, since one that ended badly leaves an `.abnormal-exit` summary of its last
-lines beside the full log. `playerlogs [name]` at the server's console, and only there -- a game
-that types it is told there is no such command -- asks every game, or one, for its logs
-now (`Wire.LogsWanted`, for which the protocol is 34, so no game on the server can leave it unanswered), this session's as it stands among them,
-for something going wrong while people are still in it; each ask lets a game send a full set again
-(`src/Mod/PlayerLogs.cs`), each cleaned of addresses and of the user's name in its paths
-(`LogText.Scrubbed`), as a `BlobKind.Log` the server has always been able to read. Which server is
-the game's decision, not the server's: only when the address it joined is what `ksamp.gg` resolves
-to, on port 50100, so another operator cannot have players' logs by saying anything, and the
-setting a server has, `collect-logs`, only decides whether that server keeps what it is sent --
-on, in `infra/server/server.tf`, for that one container. There is no switch to stop it in the
-game; the chat says when it has happened. A previous session is what is worth having: a crash or
-a mod that switched itself off is written there, and a player cannot be asked for it once two
-more launches have written over it. The server cleans each again, keeps them
-under `player-logs/<day>/`, at most eight a session, and takes away days older than two weeks. Each is filed as
-`discord-<id>.player-<n>.<session>.<time>.log.gz`, or `no-discord.` for a player not logged in
-with Discord: by the account the server has checked and their number on it, never by name, which
-a player types, another can type too, and would land in a path. The name heads the text instead,
-on one line with the number and the Discord account. The number is this join's, so a player not
-logged in with Discord is told apart within a session and not across them. `KSAMP_LOGS_TO=host:port` in
-a game's own environment points it elsewhere, for trying it with two games on one machine.
+**Players' logs go to the developer's test server and nowhere else.** A game sends what of its
+logs the server does not have yet, and nothing it has: as it joins, every ten minutes after that,
+and whenever `playerlogs [name]` is typed at the server's console, and only there -- a game that
+types it is told there is no such command (`Wire.LogsWanted`, for which the protocol is 34, so no
+game on the server can leave it unanswered). The logs are the mod's and KSA's own, of the newest
+three sessions before this one and of this one: KSA's says what it did to its own world, a name
+registered twice or an exception in the editor, which the mod's cannot; one KSA names
+`.abnormal-exit` is a crash, and every file of each KSA session goes, since one that ended badly
+leaves an `.abnormal-exit` summary of its last lines beside the full log. A previous session is
+where a crash or a mod that switched itself off is written, and a player cannot be asked for it
+once two more launches have written over it; this one, for a player who never joins again, who
+takes at most the last ten minutes of it with them.
+
+Each file goes a piece at a time, each line once (`LogPieces`). `KSAMultiplayer.sent` beside the
+logs says how far each has gone, in bytes and in lines, under the name the next launch leaves it
+-- the mod's own log of this session is `KSAMultiplayer.log` until then -- and is written only
+once the server has said it has the piece (`Link.Arrived`), so a piece lost on the way goes again
+and nothing is read while one is on its way. A piece ends with a line: what cleans a log of
+addresses and of the user's name in its paths (`LogText.Scrubbed`) reads whole lines, and half an
+address each side of a cut is neither. A session nothing has written to for five minutes is over
+and goes to its end, since a crash's last line may have no newline. Past 8 MB, a piece is the end
+of what is left, from a line. Only the first send of a join is said in the chat, and only an
+operator's ask after it; the rest goes without a word, and without a line in the mod's log, which
+would otherwise be the next piece.
+
+Which server is the game's decision, not the server's: only when the address it joined is what
+`ksamp.gg` resolves to, on port 50100, so another operator cannot have players' logs by saying
+anything, and the setting a server has, `collect-logs`, only decides whether that server keeps
+what it is sent -- on, in `infra/server/server.tf`, for that one container. There is no switch to
+stop it in the game. The server cleans each piece again and keeps a log's pieces in one file a
+join under `player-logs/<day>/`, a gzip member a piece, which `zcat` reads as one; lines it has
+already had of that log this join are left out, as a game whose ack was lost sends them again,
+and lines that never came are said where they would have been. Counted in lines, not bytes, since
+cleaning changes a piece's length and never its lines. At most 64 MB of text a join, and days
+older than two weeks are taken away. Each is filed as
+`discord-<id>.player-<n>.<log>.<time>.log.gz`, or `no-discord.` for a player not logged in with
+Discord: by the account the server has checked and their number on it, never by name, which a
+player types, another can type too, and would land in a path, and by the join, so that no game can
+write into another's file. The name heads the text instead, on one line with the number and the
+Discord account. The number is this join's, so a player not logged in with Discord is told apart
+within a session and not across them. A game of 0.37.0 or before sends each log whole, the
+session being written as `now-<time>` on an ask, and is kept as before, eight logs a session;
+the pieces need no protocol of their own, since such a server keeps each as a whole log.
+`KSAMP_LOGS_TO=host:port` in a game's own environment points it elsewhere, for trying it with two
+games on one machine.
 
 **A game turned away for its mods is handed a link to them.** `ModLink` writes the world's list
 as Borea's `borea://modlist?mods=Id@1.2.3,...&name=...&id=...`, and the connect window puts a
@@ -1519,6 +1538,15 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
 
 What is waiting on a session with several players on the live server is listed, as things to look
 for, in `docs/LIVE-CHECKS.md`.
+
+- **Players' logs a piece at a time, short of the two-games rig.** Seen with two games and a
+  Windows server on one machine on 2026-11-25, `KSAMP_LOGS_TO` pointing the games at it: each sent
+  its last three sessions and this one's first 33 lines at join, KSA 5949's `.abnormal-exit`
+  summaries to their ends, and ten minutes later only lines 34 to 43 and KSA's own log of this
+  session, which had been empty at join, the kept file going on without a line twice; left and
+  joined again, a game sent lines 44 on of this session and nothing else. KSA 5949 leaves only
+  the `.abnormal-exit` summary of a session that was killed, and none of a full log. Not seen: a
+  piece whose ack was lost sent again, a log past 8 MB, and any of it on `ksamp.gg`.
 
 - **A copy left to coast while there is no word of now, and the editor's tint taken off a craft
   taken over.** Both from one session on `ksamp.gg` on 2026-11-24: a game that joined behind,

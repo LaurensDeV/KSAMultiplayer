@@ -495,10 +495,14 @@ public sealed class Client : IDisposable
         }
     }
 
-    public void Upload(Blob blob)
-    {
-        if (Joined) _link.Send(blob.Encode(), _clock());
-    }
+    /// <returns>The transfer's number, for <see cref="Arrived"/>; 0 when not in a world, and nothing is sent.</returns>
+    public uint Upload(Blob blob) => Joined ? _link.Send(blob.Encode(), _clock()) : 0;
+
+    /// <summary>Whether the server has the whole of what <see cref="Upload"/> numbered so.</summary>
+    public bool Arrived(uint upload) => _link.Arrived(upload);
+
+    /// <summary>Whether what <see cref="Upload"/> numbered so is still on its way: neither arrived nor given up on.</summary>
+    public bool Uploading(uint upload) => _link.Going(upload);
 
     /// <summary>
     /// Tells the server this game is in the world, and goes on telling it until the roster says so.

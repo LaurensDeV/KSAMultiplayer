@@ -294,7 +294,7 @@ like `quit`.
 | `--kept-away` | `KSAMP_KEPT_AWAY` | `120` | seconds a player's craft are kept for them after they leave, nobody else's, and theirs again if they rejoin under the same Discord account (or name); `0` lets them go at once. Not after a kick |
 | `--speed` | `KSAMP_SPEED` | `1` | how fast universe time runs |
 | `--empty-world` | `KSAMP_EMPTY_WORLD` | | start with an empty world of this system (`SolLite` or `Sol`) instead of waiting for a player; also what `fresh` puts in place |
-| `--collect-logs` | `KSAMP_COLLECT_LOGS` | off | keep the mod's and KSA's logs players' games send as they join, or whenever `playerlogs [name]` is typed at the server's console, which no game can type, under `player-logs/` in the data folder, for two weeks. Games send them only to the developer's test server at `ksamp.gg`, so on any other server this does nothing |
+| `--collect-logs` | `KSAMP_COLLECT_LOGS` | off | keep the mod's and KSA's logs players' games send, each line once: as they join, every ten minutes while they play, and whenever `playerlogs [name]` is typed at the server's console, which no game can type. Under `player-logs/` in the data folder, for two weeks. Games send them only to the developer's test server at `ksamp.gg`, so on any other server this does nothing |
 | `--advertise` | `KSAMP_ADVERTISE` | off | list this server publicly so players can find it, which publishes its address |
 | `--advertise-as` | `KSAMP_ADVERTISE_AS` | the address seen | the hostname to be listed under |
 | `--directories` | `KSAMP_DIRECTORIES` | the shared list | where to announce, separated by commas; the shared list in `directories.txt` otherwise, read hourly while advertising |
