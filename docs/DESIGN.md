@@ -795,8 +795,9 @@ nothing to say about a craft it does not own, so the two players watched one roc
 Refusing `Apply` wedges nothing: the caller nulls the event on its next line whatever the prefix
 answers, so the next frame raises another and has it refused too.
 
-**A craft read from saved data keeps what its tanks held, which KSA `2026.11.16.5901` does not
-manage by itself. This is a workaround for a bug in KSA and comes out when KSA fixes it.**
+**A craft read from saved data keeps what its tanks held, which KSA `2026.11.16.5901` and
+`2026.11.25.5949` do not manage by themselves. This is a workaround for a bug in KSA and comes out
+when KSA fixes it.**
 `Vehicle.DeserializeSave` puts each tank's contents back and then applies the craft's fuel lines,
 and with one line or more that runs `PartTree.ReconfigureTanks` before the craft's resource managers
 exist: no tank has a consumer yet, so every tank not manually assigned is given no mix and emptied.
@@ -1010,8 +1011,8 @@ Debris asks for every piece in the system at once; the server saves the world th
 same way: it sends the crew home before it asks for the craft to go.
 
 **Clear Debris finds the debris the manifest lists while KSA's debug "Override Is Controllable" is
-on, which KSA `2026.11.16.5901` does not. This is a workaround for a bug in KSA and comes out when
-KSA fixes it.** The manifest calls a craft debris by its own `IsDebris` flag, and
+on, which KSA `2026.11.16.5901` and `2026.11.25.5949` do not. This is a workaround for a bug in
+KSA and comes out when KSA fixes it.** The manifest calls a craft debris by its own `IsDebris` flag, and
 Clear Debris counts what it takes by `PartFailure.IsExpendable`, which passes over any craft with a
 control module, and KSA's debug "Override Is Controllable" (in a craft's debug window) makes every
 craft have one: with it ticked, a player on `ksamp.gg` had a manifest listing a page of debris
@@ -1587,11 +1588,25 @@ for, in `docs/LIVE-CHECKS.md`.
   for long enough to see whether the place it is held drifts against the ground; and the tag's
   line was read off the bridge, since a capture hides the interface. A craft in orbit is not held,
   and goes round with nobody at the controls.
-- **KSA `2026.11.16.5901`.** The server holds players to it and the mod compiles against it
-  unchanged. Every patch target and private field the mod reaches has the signature it had on 5801,
-  each patched method's body and callers are as they were, and the save format did not move, so
-  the protocol and the worlds the server carries are those of 5801. StarMap 0.5.3 has been seen
-  starting on 5901; the mod itself has not been flown on it.
+- **KSA `2026.11.25.5949`.** The server holds players to it. Every patch target and private field
+  the mod reaches has the signature it had on 5901, and `PrepareWorker` and the exhaust hooks are as
+  they were. Three things did move:
+  - **A rocket has several cores.** A puppet's plume takes its conditions from the nozzle's own
+    core, which for a gas generator's turbine exhaust is the gas generator, where 5901 had one core
+    a rocket. Seen: another player's Gemini 7 burned with the glow its own game drew. No
+    gas-generator engine has been watched burning from the other game.
+  - **A save is loaded into its own system.** `UncompressedSave.Load` swaps the running system for
+    the save's when it lacks one of its bodies, which may put off `DeserializeSave` and
+    `Program.OnGameLoaded` past the frame the load was asked for, and loads nothing at all, with a
+    yellow alert, when the save's system is not installed. The server refuses a player in another
+    system than the world's, so a join does not reach it.
+  - **A craft definition may carry where it has arrived** (`<At>`), so the protocol moved to 37.
+    The worlds the server carries lack the new elements (`At`, `FirstVisit`, `BodyKnowledge`,
+    `Visits`), which KSA leaves empty, so they are still those of 5801.
+
+  StarMap 0.5.3, the copy beside the game, starts on 5949 and installs every patch: no `KSA has
+  moved` or `could not patch` in either game's log. `tools/breakup.sh` held every claim, flying
+  a rocket apart on one game while the other watched.
 - **Two rows for one server of another version.** A server that answers in another protocol
   version now keeps where it answered from, so a directory's row for it and the player's own
   collapse into one as they do for a server this game can join. Seen the other way in a game of

@@ -25,7 +25,7 @@
     held to a build its own mod was not compiled against is a server nobody can join.
   -->
   <PropertyGroup>
-    <KsaBuild>2026.11.16.5901</KsaBuild>
+    <KsaBuild>2026.11.25.5949</KsaBuild>
   </PropertyGroup>
 
   <!--

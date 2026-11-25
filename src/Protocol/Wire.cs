@@ -216,8 +216,11 @@ public static class Wire
     ///
     /// <para>36 is <see cref="Away"/> as the owner of a craft, which a game of 35 would look up as a
     /// player and treat as nobody's, taking a craft kept for somebody coming back.</para>
+    ///
+    /// <para>37 is KSA 2026.11.25.5949's craft definition, which may carry the places a craft has
+    /// arrived at (<c>At</c>). No datagram changed, but a craft's blob is no longer the same thing.</para>
     /// </summary>
-    public const ushort Version = 36;
+    public const ushort Version = 37;
 
     /// <summary>
     /// The owner of a craft kept for a player who has just left, until they come back or it lapses.

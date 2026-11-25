@@ -11,7 +11,8 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
 > (391 tests, real UDP over loopback, a lossy line included). An 89-part rocket has been flown in a
 > shared world and staged while the other game watched, which rebuilt the dropped stage as its own
 > craft. What two games across the internet do is not known.
-> This release is built for KSA `2026.11.16.5901`, and has not been flown on it yet.
+> This release is built for KSA `2026.11.25.5949`, and two games on one machine have flown on it
+> through StarMap 0.5.3: a rocket staged apart with both worlds agreeing on every piece.
 > See [docs/DESIGN.md](docs/DESIGN.md#what-has-not-been-tried).
 
 ## Playing

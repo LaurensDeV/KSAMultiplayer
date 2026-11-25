@@ -443,7 +443,7 @@ internal static class Hooks
     /// eight. Written over KSA's own answer rather than added to it, there being no room to add.
     /// </summary>
     private static void AfterExclusionZones(GroundClutterPlacementData __instance,
-                                            ref ClutterCubeCellGrid.ExclusionZoneArray __0)
+                                            ref GroundClutterGpuResources.ExclusionZoneArray __0)
     {
         try
         {

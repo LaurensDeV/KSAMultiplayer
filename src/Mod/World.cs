@@ -2213,7 +2213,7 @@ internal static class World
                 RocketNozzle nozzle = modules[i];
                 bool isThruster = IsThruster(nozzle);
                 int bit = isThruster ? thruster++ : -1;
-                if (nozzle.Rocket?.Core is not { } core) continue;
+                if (nozzle.Core is not { } core) continue;
                 bool lit;
                 if (isThruster) lit = thrusters is { } t && bit / 8 < t.Length && (t[bit / 8] & (1 << (bit % 8))) != 0;
                 else if (kept) continue;
