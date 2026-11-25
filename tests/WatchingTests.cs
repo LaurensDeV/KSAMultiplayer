@@ -186,6 +186,74 @@ public class WatchingTests
     }
 
     /// <summary>
+    /// The save asked for every few minutes, with nobody joining: the game in longest answers
+    /// nothing, and the next is asked rather than the world staying where it was. On ksamp.gg one
+    /// such game kept the world an hour old, and three players joined into it.
+    /// </summary>
+    [Fact]
+    public void TheTimedSaveIsAskedOfTheNextGameWhenTheOneAskedWillNotAnswer()
+    {
+        using Rig rig = new(new ServerOptions { SnapshotEverySeconds = 30 });
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        a.SnapshotWanted = b.SnapshotWanted = null;
+        Age(rig, 31);
+        rig.Until(() => a.SnapshotWanted is not null, what: "Alice to be asked for the timed save");
+        Assert.Null(b.SnapshotWanted);
+        Age(rig, 6);
+        rig.Until(() => b.SnapshotWanted is not null, what: "Bob to be asked as well");
+        Assert.Contains(rig.Server.Said, s => s.Contains("Alice sent no save in 5 s, so Bob is asked too"));
+        b.Upload(new Blob(BlobKind.World, "", b.Id, 5100, Rig.FakeWorld(45)));
+        rig.Until(() => rig.Server.Said.Any(s => s.StartsWith("Bob saved the world")), what: "Bob's save to be taken");
+
+        // Alice has still answered nothing, so the next ask goes to Bob first.
+        a.SnapshotWanted = b.SnapshotWanted = null;
+        Age(rig, 31);
+        rig.Until(() => b.SnapshotWanted is not null, what: "Bob to be asked first");
+        Assert.Null(a.SnapshotWanted);
+    }
+
+    /// <summary>
+    /// A player joining waits past the usual wait for a save asked of a game late in it: on
+    /// ksamp.gg one came a second after the wait ran out, and the joiner was sent a world 3351 s old.
+    /// </summary>
+    [Fact]
+    public void AJoinerWaitsForASaveAskedLateInTheWait()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        Age(rig, 40);
+        a.SnapshotWanted = b.SnapshotWanted = null;
+
+        Client c = rig.Join("Carol");
+        rig.Until(() => a.SnapshotWanted is not null, what: "Alice to be asked for a save");
+        rig.Until(() => b.SnapshotWanted is not null, seconds: 9.0, what: "Bob to be asked as well");
+        // Past the 15 s from the join, short of 15 from Bob's ask.
+        Age(rig, 12);
+        Assert.DoesNotContain(c.Blobs, x => x.Kind == BlobKind.World);
+        b.Upload(new Blob(BlobKind.World, "", b.Id, 5200, Rig.FakeWorld(46)));
+        rig.Until(() => c.Blobs.Any(x => x.Kind == BlobKind.World), seconds: 5.0, what: "Carol to get the world");
+        Assert.Equal(5200, c.Blobs.First(x => x.Kind == BlobKind.World).Universe);
+    }
+
+    /// <summary>With nobody else to ask, a joiner is sent the world there is after the usual wait, not the longest.</summary>
+    [Fact]
+    public void AJoinerWithNobodyLeftToAskWaitsOnlyTheUsualWait()
+    {
+        using Rig rig = new();
+        Client a = Seed(rig);
+        Age(rig, 40);
+        a.SnapshotWanted = null;
+        Client c = rig.Join("Carol");
+        rig.Until(() => a.SnapshotWanted is not null, what: "Alice to be asked for a save");
+        Age(rig, 14);
+        Assert.DoesNotContain(c.Blobs, x => x.Kind == BlobKind.World);
+        Age(rig, 3);
+        rig.Until(() => c.Blobs.Any(x => x.Kind == BlobKind.World), seconds: 3.0, what: "Carol to get the world there is");
+    }
+
+    /// <summary>
     /// A save a couple of seconds behind the ask is the fresh one: the game giving it is often that
     /// far behind the server, and was taken only once the wait for a fresh one had run out.
     /// </summary>

@@ -256,6 +256,9 @@ public sealed class GameServer : IDisposable
         public double WorldAskedAt { get; set; }
         public string WorldAskedWhy { get; set; } = "";
 
+        /// <summary>When it was first asked of the asks it has not answered, however many times it was asked since.</summary>
+        public double WorldAskedSince { get; set; }
+
         /// <summary>Whether the world has been handed to this player: nobody is in a world they were never given.</summary>
         public bool WorldGiven => !Seeding && !WaitingForWorld;
 
@@ -422,6 +425,12 @@ public sealed class GameServer : IDisposable
 
     // How long a player joining waits for a fresh save before it is sent the one there is.
     private const double FreshWithinSeconds = 15.0;
+
+    // The most a player joining waits for a fresh save while one is still to come: on its way in, or
+    // asked of a game less than FreshWithinSeconds ago. A join on ksamp.gg was sent a world 3351 s
+    // old one second before the fresh one came, which the next game asked had been asked for 5 s
+    // into the wait and taken 11 to send.
+    private const double FreshAtMostSeconds = 60.0;
 
     // How far a save may be behind the ask and still be the fresh one a joiner waits for. The game
     // giving it is often a second or two behind the server's time, and a test of one second sent
@@ -910,7 +919,8 @@ public sealed class GameServer : IDisposable
         // Players waiting on a fresh save are sent the one there is once it comes, or after a while without.
         if (_world is not null)
         {
-            foreach (Player p in _players.Values.Where(p => p.WaitingForWorld && (_world.Universe >= _snapshotAskedAt - FreshBehindSeconds || now - p.WaitingSince > FreshWithinSeconds)).ToArray())
+            bool coming = _players.Values.Any(q => q.WorldAsked && q.Link.Arriving is not null) || now - _worldAskSent <= FreshWithinSeconds;
+            foreach (Player p in _players.Values.Where(p => p.WaitingForWorld && (Fresh() || now - p.WaitingSince > (coming ? FreshAtMostSeconds : FreshWithinSeconds))).ToArray())
             {
                 SendWorld(p);
             }
@@ -2240,6 +2250,9 @@ public sealed class GameServer : IDisposable
             ? [.. _players.Values.Where(q => q.Loaded && !_warpVotes.ContainsKey(q.Id)).Select(q => q.Id).Order()]
             : []);
 
+    // Whether the world held is the save last asked for, give or take the seconds a game is behind.
+    private bool Fresh() => _world is not null && _world.Universe >= _snapshotAskedAt - FreshBehindSeconds;
+
     private bool AskSnapshot(string why, byte notThisOne = 0)
     {
         if (Savers(notThisOne).FirstOrDefault() is not { } from) return false;
@@ -2249,15 +2262,24 @@ public sealed class GameServer : IDisposable
     }
 
     // Who to ask for a save, first to last: the player in the world longest, whose world has had the
-    // most time to settle, unless they are in the vehicle editor and can write none.
-    private IEnumerable<Player> Savers(byte notThisOne = 0) =>
-        _players.Values.Where(p => p.Loaded && p.Id != notThisOne).OrderBy(p => p.Editing).ThenBy(p => p.LoadedAt);
+    // most time to settle, unless they are in the vehicle editor and can write none, or have let an
+    // ask go unanswered: on ksamp.gg one game in longest sat an hour answering nothing, and every
+    // ask went to it first.
+    private IEnumerable<Player> Savers(byte notThisOne = 0)
+    {
+        double now = _clock();
+        return _players.Values.Where(p => p.Loaded && p.Id != notThisOne)
+            .OrderBy(p => p.Editing)
+            .ThenBy(p => p.WorldAsked && now - p.WorldAskedSince > AskNextAfterSeconds)
+            .ThenBy(p => p.LoadedAt);
+    }
 
     // Every ask for a world goes through here, because the asking is what makes the answer the
     // server's to keep: a world is written only for a player this was called for.
     private void AskWorldOf(Player p, string why)
     {
-        _worldAskedLast = _clock();
+        _worldAskedLast = _worldAskSent = _clock();
+        if (!p.WorldAsked) p.WorldAskedSince = _clock();
         (p.WorldAsked, p.WorldAskedAt, p.WorldAskedWhy) = (true, _clock(), why);
         _udp.Send(new Wire.Snapshot(why), p.At);
     }
@@ -2288,13 +2310,19 @@ public sealed class GameServer : IDisposable
 
     private double _worldAskedLast = double.NegativeInfinity;
 
+    // When a game was last actually asked: _worldAskedLast also moves when there is nobody left to ask.
+    private double _worldAskSent = double.NegativeInfinity;
+
     /// <summary>
-    /// The next game in asked for a save, while a player waits on one and the game asked has sent
-    /// nothing. Each game is asked once a round; an answer from any of them is taken.
+    /// The next game in asked for a save, while the one last asked for has not come and the game
+    /// asked has sent nothing: for a player waiting on it, and for the save every
+    /// <see cref="ServerOptions.SnapshotEverySeconds"/>, or one game that will not answer keeps the
+    /// world where it was for as long as it stays. Each game is asked once a round; an answer from
+    /// any of them is taken.
     /// </summary>
     private void AskSomebodyElse(double now)
     {
-        if (now - _worldAskedLast < AskNextAfterSeconds || !_players.Values.Any(q => q.WaitingForWorld)) return;
+        if (now - _worldAskedLast < AskNextAfterSeconds || Fresh() && !_players.Values.Any(q => q.WaitingForWorld)) return;
         if (_players.Values.Any(q => q.WorldAsked && q.Link.Arriving is not null)) return;
         List<Player> held = [.. _players.Values.Where(q => q.WorldAsked && q.Loaded && !q.Seeding)];
         if (held.Count == 0) return;

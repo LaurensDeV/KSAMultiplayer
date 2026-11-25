@@ -58,10 +58,14 @@ stranger sent it.
 - **The world.** The latest save, zipped, kept on disk in `--data`. It comes from an operator
   (`--world`), from the first player to join an empty server, or as a fresh save asked of the player
   who has been in longest and is not in the vehicle editor, which the craft they fly says: every `--snapshot-every` seconds, and whenever a player joins a world more
-  than 30 s old, the joiner waiting up to 15 s for it. A save up to 5 s behind the ask counts as that
+  than 30 s old, the joiner waiting up to 15 s for it, or up to 60 s while a save is on its way in
+  or a game was asked for one less than 15 s ago. A save up to 5 s behind the ask counts as that
   fresh one, since the game giving it is often a second or two behind the server. A game that has
   sent nothing 5 s after being asked, as one with the vehicle editor open does, is not waited on
-  alone: the next in longest is asked too, and whichever save comes first is taken. Only ever from the player it was asked of: one
+  alone, whether a player is joining or not: the next in longest is asked too, and whichever save
+  comes first is taken. A game that has let an ask go unanswered that long is asked after everyone
+  else until it answers, as one in the vehicle editor is: on ksamp.gg one game in longest answered
+  nothing for an hour, every ask went to it first, and the world stayed where it was. Only ever from the player it was asked of: one
   arriving unasked is left where it came from, since the world is written to disk with its sender's
   build and mods and everybody else is then held to those, so a single client could otherwise lock
   every other player out of the server and out of each restart of it.
