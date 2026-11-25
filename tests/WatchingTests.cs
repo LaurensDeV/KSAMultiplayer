@@ -254,6 +254,26 @@ public class WatchingTests
     }
 
     /// <summary>
+    /// A save asked of a player who left without answering is waited on by nobody: on ksamp.gg,
+    /// with the world empty, two joins each waited out the full 15 s for one.
+    /// </summary>
+    [Fact]
+    public void AJoinerIntoAnEmptyWorldIsSentItAtOnce()
+    {
+        using Rig rig = new(new ServerOptions { SnapshotEverySeconds = 30 });
+        Client a = Seed(rig);
+        a.SnapshotWanted = null;
+        Age(rig, 31);
+        rig.Until(() => a.SnapshotWanted is not null, what: "Alice to be asked for the timed save");
+        a.Dispose();
+        rig.Clients.Remove(a);
+        rig.Until(() => rig.Server.Players.Count == 0, seconds: 10.0, what: "Alice to be gone");
+
+        Client c = rig.Join("Carol");
+        rig.Until(() => c.Blobs.Any(x => x.Kind == BlobKind.World), seconds: 3.0, what: "Carol to get the world at once");
+    }
+
+    /// <summary>
     /// A save a couple of seconds behind the ask is the fresh one: the game giving it is often that
     /// far behind the server, and was taken only once the wait for a fresh one had run out.
     /// </summary>

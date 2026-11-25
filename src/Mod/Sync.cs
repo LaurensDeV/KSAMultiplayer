@@ -531,11 +531,17 @@ internal static class Sync
         Stage.Off => "not connected",
         Stage.Joining => "connecting...",
         Stage.Seeding => "sending your world to the server...",
-        Stage.Waiting => _client?.Arriving is { } share ? $"receiving the world: {share * 100:F0}%" : "waiting for the world...",
+        Stage.Waiting => _worldToLoad is not null && _notLoading.Length > 0 ? WaitsOn(_notLoading)
+            : _client?.Arriving is { } share ? $"receiving the world: {share * 100:F0}%" : "waiting for the world...",
         Stage.Loading => "loading the world...",
         Stage.Playing => Behind is { } b && Math.Abs(b) > ClockFollow.CatchUpAboveSeconds ? $"catching up: {b:F0} s behind" : AllWell,
         _ => "",
     };
+
+    // The world has come and waits on this game: "waiting for the world" kept a player in the
+    // vehicle editor on ksamp.gg looking at a connection for two minutes, and they quit.
+    private static string WaitsOn(string why) =>
+        World.InEditor ? "the world is here: close the vehicle editor to load it" : $"the world is here, but {why}";
 
     public static bool IsPuppet(Vehicle v) => Puppets.ContainsKey(v);
 

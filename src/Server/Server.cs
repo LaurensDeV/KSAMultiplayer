@@ -919,8 +919,12 @@ public sealed class GameServer : IDisposable
         // Players waiting on a fresh save are sent the one there is once it comes, or after a while without.
         if (_world is not null)
         {
+            // Waited for only while a game in the world has been asked for one and not answered: on
+            // ksamp.gg, with nobody in it, two joins each waited out the 15 s for a save asked of a
+            // player who had since left.
+            bool asked = _players.Values.Any(q => q.WorldAsked && q.Loaded && !q.Seeding);
             bool coming = _players.Values.Any(q => q.WorldAsked && q.Link.Arriving is not null) || now - _worldAskSent <= FreshWithinSeconds;
-            foreach (Player p in _players.Values.Where(p => p.WaitingForWorld && (Fresh() || now - p.WaitingSince > (coming ? FreshAtMostSeconds : FreshWithinSeconds))).ToArray())
+            foreach (Player p in _players.Values.Where(p => p.WaitingForWorld && (!asked || Fresh() || now - p.WaitingSince > (coming ? FreshAtMostSeconds : FreshWithinSeconds))).ToArray())
             {
                 SendWorld(p);
             }
