@@ -7,6 +7,13 @@ once it has been seen, and write what was seen into `docs/DESIGN.md`.
 The players' logs are on the server, under `player-logs/<day>/` in the `ksamp-world` volume. Type
 `playerlogs [name]` at the server's console for a session still running.
 
+## Not yet released
+
+- **A watched station keeps its RCS propellant.** With one player flying a station at RATE and
+  another near it, the server's saved world should hold the station's RCS tanks at what its owner's
+  game shows, after the watcher has saved it and after a restart. Seen in two games with a 5 t
+  capsule; not with a station of hundreds of thrusters, or with a world saved by the watcher.
+
 ## From 0.36.0
 
 The reconnect, the joiner, Editor Toggle, the map and the vessel list have been seen with two games

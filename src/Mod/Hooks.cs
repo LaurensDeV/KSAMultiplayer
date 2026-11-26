@@ -342,6 +342,11 @@ internal static class Hooks
                   "tanks stop being reassigned in the editor once a craft has been read");
             Patch(AccessTools.Method(typeof(PartTree), nameof(PartTree.ReconfigureTanks)), nameof(BeforeReconfigureTanks),
                   "a craft with a fuel line arrives with every tank empty, from a save or from another player");
+            // Private, and named by string: see BeforeFlightComputer.
+            Patch(AccessTools.Method(typeof(PhysicsBubble), "RunFlightComputer", [typeof(VehicleUpdateState)]), nameof(BeforeFlightComputer),
+                  "another player's craft burns its RCS propellant in every game near it");
+            PatchFinally(AccessTools.Method(typeof(PhysicsBubble), "RunFlightComputer", [typeof(VehicleUpdateState)]), nameof(AfterFlightComputer),
+                  "another player's craft burns its RCS propellant in every game near it");
         }
         catch (Exception e)
         {
@@ -386,6 +391,49 @@ internal static class Hooks
         if (_readingCraft == 0) return true;
         __result = false;
         return false;
+    }
+
+    // ---------------------------------------------------------------- another player's RCS, held off
+    //
+    // KSA runs the flight computer of every craft in a physics bubble, not only the one its player
+    // flies. A copy of another player's craft carries the RCS switch and the attitude hold its
+    // definition was sent with, and a hold of RATE fires its own thrusters against every turn the
+    // pull puts into it, for as long as the owner's craft turns any way but the one it holds. Its
+    // owner's craft burns none of that. What this game saves is the copy, tanks and all, and the
+    // world a server keeps is whichever game it last asked.
+    //
+    // So the flight computer of a craft pulled here for another player runs with RCS off. It still
+    // runs, so every thruster is commanded to nothing rather than left lit from before the craft
+    // was handed on. RCS is put back when the run ends, so the craft is saved, and given to this
+    // player, with the switch it came with.
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Vehicle, object> _pulledHere = new();
+
+    private static readonly object Pulled = new();
+
+    [ThreadStatic] private static FlightComputer? _rcsHeldOff;
+
+    /// <summary>Whether the next physics step of this craft runs its flight computer with RCS off. Main thread.</summary>
+    public static void HoldRcsOff(Vehicle v, bool off)
+    {
+        if (off) _pulledHere.AddOrUpdate(v, Pulled);
+        else _pulledHere.Remove(v);
+    }
+
+    private static void BeforeFlightComputer(VehicleUpdateState vehicleState)
+    {
+        if (!_pulledHere.TryGetValue(vehicleState.ReadOnlyVehicle, out _)) return;
+        FlightComputer fc = vehicleState.FlightComputer;
+        if (fc.RCSMode != FlightComputerRCSMode.Enabled) return;
+        fc.RCSMode = FlightComputerRCSMode.Disabled;
+        _rcsHeldOff = fc;
+    }
+
+    // A finalizer, so a run that throws still hands the craft back its owner's switch.
+    private static void AfterFlightComputer()
+    {
+        if (_rcsHeldOff is not { } fc) return;
+        fc.RCSMode = FlightComputerRCSMode.Enabled;
+        _rcsHeldOff = null;
     }
 
     /// <summary>
@@ -990,6 +1038,7 @@ internal static class Hooks
         {
             World.PointAsAsked(__instance);
             Sync.Physics(__instance, simStep.DeltaTime);
+            HoldRcsOff(__instance, Sync.IsPuppet(__instance));
             // A key held as the camera moved away: its release goes nowhere now, and the engine
             // would stay at it. KSA clears the same when its own control is switched off.
             if (Unseen(__instance)) __instance.ClearHeldPlayerInput();

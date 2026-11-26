@@ -433,6 +433,11 @@ internal sealed class Bridge
                 ["thrusters_drawn_here"] = World.IsPuffed(v),
                 ["thrusters_firing"] = World.ThrustersOf(v) is { } firing ? Convert.ToHexString(firing) : null,
                 ["engines_firing"] = World.EnginesOf(v) is { } burning ? Convert.ToHexString(burning) : null,
+                // This game's own count, which for another player's craft is its copy's and not its owner's.
+                ["rcs_propellant_kg"] = Math.Round(World.PropellantOf(v).Thrusters, 1),
+                ["propellant_kg"] = Math.Round(World.PropellantOf(v).All, 1),
+                ["rcs"] = v.FlightComputer.RCSMode.ToString(),
+                ["attitude_mode"] = v.FlightComputer.AttitudeMode.ToString(),
                 // Against the ground under it, which is the same frame in every game, so two games' answers compare.
                 ["attitude_ccf"] = World.StateOf(v, key, controlled: false) is { } s
                     ? new[] { Math.Round(s.Body2Ccf.X, 4), Math.Round(s.Body2Ccf.Y, 4), Math.Round(s.Body2Ccf.Z, 4), Math.Round(s.Body2Ccf.W, 4) } : null,

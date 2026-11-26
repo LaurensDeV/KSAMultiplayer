@@ -2206,6 +2206,27 @@ internal static class World
     /// <summary>Whether this craft's RCS thrusters were last drawn firing from the mod.</summary>
     public static bool IsPuffed(Vehicle v) => _puffed.Contains(v);
 
+    /// <summary>What this craft's tanks hold in this game, in kilograms: those that feed its RCS thrusters, and all of them.</summary>
+    public static (double Thrusters, double All) PropellantOf(Vehicle v)
+    {
+        try
+        {
+            ReadOnlySpan<MoleState> moles = v.Parts.Moles.States;
+            double thrusters = 0.0, all = 0.0;
+            foreach (Tank tank in v.Parts.Modules.Get<Tank>())
+            {
+                double held = tank.ComputeSubstanceMass(moles);
+                all += held;
+                if (tank.RoleAffinity.IsSet(ConsumerRole.Thruster)) thrusters += held;
+            }
+            return (thrusters, all);
+        }
+        catch (Exception)
+        {
+            return (double.NaN, double.NaN);
+        }
+    }
+
     /// <summary>The duty cycle this craft's engines would be drawn from now: what every engine visual reads.</summary>
     public static double DutyOf(Vehicle v)
     {

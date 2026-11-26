@@ -242,6 +242,21 @@ stranger sent it.
   RCS alone was said to be burning, which lit their main engines everywhere else. Tried in two
   games: Bravo fired Rocket's thrusters up, Alpha drew the same nine, engines dark, and both went
   out together; Bravo's main engines drew in Alpha with no thruster lit.
+- **Another player's craft burns no RCS here.** KSA runs the flight computer of every craft in a
+  physics bubble, not only the one its player flies, and a copy carries the RCS switch and attitude
+  hold of the definition it was built from. Held at RATE, a copy fires its own thrusters against
+  every turn the pull puts into it, and burns its own tanks dry while its owner's craft burns
+  nothing; the copy is what that game saves, tanks and all. So a craft pulled here for another
+  player runs its flight computer with RCS off (`Hooks.BeforeFlightComputer`, on the private
+  `PhysicsBubble.RunFlightComputer`), and has the switch back when the run ends, so it is saved and
+  handed on as it came. On `ksamp.gg` Purrpose One was found with no RCS propellant by the first
+  player to fly it after a restart that had loaded another player's save, and nobody had flown it
+  between. A tank KSA's own reassignment empties is saved with no contents; these were saved with
+  their mix at 0 kg, which is propellant spent. Tried in two games
+  with Gemini7 at RATE in LVLH, Alpha flying and turning it for three seconds: before, Alpha's craft
+  spent 62 kg and settled while Bravo's copy fired on at 6 kg/s, 5,000 kg to 4,452 kg in 90 s; after,
+  Bravo's copy spent nothing and drew Alpha's puffs, and Bravo, taking it over, turned it on RCS for
+  the same 62 kg.
 - **Who is spectating whom, and giving a craft to them.** The craft a game's camera is on goes to
   the server with each `Ping` already; the roster passes it on, sooner than its own round when it
   changes, so every game can say on a player's row that they are spectating you: their camera on
