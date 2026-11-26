@@ -185,6 +185,31 @@ internal static class Hooks
         }
     }
 
+    private static void BeforeKill(KittenRosterEntryData __instance, KittenDeathCause cause)
+    {
+        try
+        {
+            // Kill does nothing to a kitten already dead, and says nothing here either.
+            if (!__instance.Kia) Sync.KittenDied(__instance, cause);
+        }
+        catch (Exception e)
+        {
+            Complain("telling the server a kitten died", e);
+        }
+    }
+
+    private static void AfterMemorialRow(KittenRosterEntryData kitten, bool memorial)
+    {
+        try
+        {
+            if (memorial) Panel.DrawLostBy(kitten);
+        }
+        catch (Exception e)
+        {
+            Complain("saying on the memorial whose game a kitten died in", e);
+        }
+    }
+
     private static bool BeforePopups()
     {
         // The only hook of this mod's that runs while the start window is up, so the only place the
@@ -327,6 +352,14 @@ internal static class Hooks
             Patch(AccessTools.Method(typeof(EVADoor), nameof(EVADoor.SpawnEva),
                                      [typeof(Vehicle), typeof(IVASeat), typeof(KittenRosterEntryData), typeof(Camera)]), nameof(BeforeSpawnEva),
                   "a kitten can be let out of another player's craft by its hatch");
+            // Where every death meets, whatever it was: a wreck, a craft abandoned or deleted, an
+            // empty tank, a dose. Before it, while the kitten is still assigned to what it was in.
+            Patch(AccessTools.Method(typeof(KittenRosterEntryData), nameof(KittenRosterEntryData.Kill)), nameof(BeforeKill),
+                  "the memorial names nobody for a kitten that dies in this game");
+            // Private, in a private class, and named by string: the one row of the roster's
+            // Memorial tab, whose last cell is the cause of death.
+            PatchAfter(AccessTools.Method(AccessTools.Inner(typeof(KittenRosterWindow), "Window"), "DrawPastCrewRow"), nameof(AfterMemorialRow),
+                       "the memorial does not say whose game a kitten died in");
             // Two of the three passes the engine visuals are drawn in, since nothing between them
             // touches the state again and either one alone leaves the others with nothing to draw.
             Patch(AccessTools.Method(typeof(Vehicle), nameof(Vehicle.AddVolumetricExhaustInstances),

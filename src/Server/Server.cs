@@ -195,6 +195,10 @@ public sealed class GameServer : IDisposable
         public double Notes { get; set; } = NotesAtOnce;
         public double NotesAt { get; set; } = now;
 
+        /// <summary>How many deaths this game may still have put on the memorial, and when that was last counted.</summary>
+        public double Deaths { get; set; } = DeathsAtOnce;
+        public double DeathsAt { get; set; } = now;
+
         /// <summary>How far behind the server's time this player's world was when it last said, s.</summary>
         public double Late { get; set; }
 
@@ -538,6 +542,8 @@ public sealed class GameServer : IDisposable
         (Options, _clock, _store, _discordGiven) = (options, clock, store, discord);
         Protected = protect ?? new ProtectedCraft(store?.Folder ?? "");
         _protectedSerial = Protected.Names.Count > 0 ? 1u : 0u;
+        Memorial = new KittenMemorial(store?.Folder ?? "");
+        _memorialSerial = Memorial.Deaths.Count > 0 ? 1u : 0u;
         Admins = admins ?? new Admins(store?.Folder ?? "");
         Audit = new AuditLog(store?.Folder ?? "");
         PlayerLogs = new PlayerLogs(store?.Folder ?? "");
@@ -608,6 +614,9 @@ public sealed class GameServer : IDisposable
 
     /// <summary>The craft <c>clear</c> leaves standing unless asked for by name.</summary>
     public ProtectedCraft Protected { get; }
+
+    /// <summary>The kittens that have died in this world, and whose game each died in.</summary>
+    public KittenMemorial Memorial { get; }
 
     /// <summary>KSA's rules as this server's settings have them, as the clock says them.</summary>
     public Wire.WorldRules Rules =>
@@ -971,6 +980,14 @@ public sealed class GameServer : IDisposable
             Broadcast(Roster(), _ => true);
             _rosterNext = now + RosterEverySeconds;
         }
+        if (_memorialDue && now >= _memorialSaidAt + MemorialEverySeconds)
+        {
+            _memorialDue = false;
+            _memorialSaidAt = now;
+            _memorialSerial++;
+            byte[] list = MemorialBlob();
+            foreach (Player p in _players.Values) p.Link.Send(list, now);
+        }
         if (now >= _craftCountNext)
         {
             _craftCountNext = now + CraftCountEverySeconds;
@@ -1210,6 +1227,23 @@ public sealed class GameServer : IDisposable
                 player.Notes -= 1.0;
                 Log($"{player.Name}'s game notes: {seen}");
                 return;
+            // Whose game it was is the server's word for the sender, never anything the game says.
+            // The list that comes back with it is what tells the game to stop saying it.
+            case Wire.Died died when player.Loaded:
+                string kitten = Wire.Clip(died.Kitten, Wire.KeyChars).Trim();
+                if (kitten.Length == 0) return;
+                player.Deaths = Math.Min(DeathsAtOnce, player.Deaths + ((arrived - player.DeathsAt) * DeathsASecond));
+                player.DeathsAt = arrived;
+                if (player.Deaths < 1.0) return;
+                MemorialList.Death death = new(kitten, player.Name, Wire.Clip(died.Cause, MemorialList.CauseChars).Trim(),
+                                               Wire.Clip(died.Craft, Wire.KeyChars).Trim(), UniverseClock.Now(_clock()));
+                // Said again only because this game has not seen the list yet, which is on its way
+                // already: the list goes as a transfer, which asks for what it lost.
+                if (!Memorial.Add(death)) return;
+                player.Deaths -= 1.0;
+                Log($"{player.Name}'s game: {kitten} died{(death.Craft.Length > 0 && death.Craft != kitten ? $" aboard {death.Craft}" : "")}{(death.Cause.Length > 0 ? $" ({death.Cause})" : "")}");
+                SayMemorial();
+                return;
             case Wire.Name name when player.Loaded:
                 if (RenameCraft(name.Was, name.Now, player) is { } refused) Tell(player, refused);
                 return;
@@ -1404,6 +1438,7 @@ public sealed class GameServer : IDisposable
         }
         // To everybody, before there is anything to sweep: a game sweeps its own world.
         if (_protectedSerial > 0) p.Link.Send(ProtectedBlob(), now);
+        if (_memorialSerial > 0) p.Link.Send(MemorialBlob(), now);
         Broadcast(new Wire.Chat(0, $"{name} has joined"), q => q != p);
         _rosterNext = 0.0;
 
@@ -3291,6 +3326,21 @@ public sealed class GameServer : IDisposable
 
     private byte[] ProtectedBlob() => new Blob(BlobKind.Protected, "", 0, 0.0, ProtectedList.Encode(Protected.Names.Order(), _protectedSerial)).Encode();
 
+    // Which state the memorial is in, counted from the server starting, so a game never takes an
+    // older list over a newer one. Nothing while it is empty, which is a list no game needs.
+    private uint _memorialSerial;
+
+    // Whether a death has come since the list was last sent, and when that was. Sent at most once
+    // a second: the list is the whole memorial, and a crew dying together is a death each.
+    private bool _memorialDue;
+    private double _memorialSaidAt = double.NegativeInfinity;
+    private const double MemorialEverySeconds = 1.0;
+
+    /// <summary>Tells every game who the dead kittens were lost by, on the next tick that may: each draws its own roster.</summary>
+    private void SayMemorial() => _memorialDue = true;
+
+    private byte[] MemorialBlob() => new Blob(BlobKind.Memorial, "", 0, 0.0, MemorialList.Encode(Memorial.Deaths, _memorialSerial)).Encode();
+
     /// <summary>Tells every admin here which worlds are kept: whenever that changes, so a window showing them never asks.</summary>
     public void SaySaves()
     {
@@ -3599,6 +3649,9 @@ public sealed class GameServer : IDisposable
 
     // How many notes a game may have written down in a burst, and how fast that fills again.
     private const double NotesAtOnce = 5.0, NotesASecond = 0.2;
+
+    // A craft of seven coming apart is seven at once, and nothing honest says more than that often.
+    private const double DeathsAtOnce = 16.0, DeathsASecond = 0.5;
 
     // On one line, whatever was in it: a craft's name and a game's build come from other machines,
     // and one with a line break in it wrote a line of the log that never happened.

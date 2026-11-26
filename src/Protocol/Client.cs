@@ -243,6 +243,20 @@ public sealed class Client : IDisposable
     private HashSet<string> _protected = [];
     private uint _protectedSerial;
 
+    // The memorial as the server last said it, by kitten, and the deaths this game has said and not
+    // yet seen on it, each with when it is said next and how many more times.
+    private Dictionary<string, MemorialList.Death> _memorial = new(StringComparer.Ordinal);
+    private uint _memorialSerial;
+    private readonly List<(Wire.Died Said, double Next, int Left)> _dying = [];
+
+    // Often enough that a lost datagram costs a second, few enough that a server which never
+    // answers is not told for ever.
+    private const double DiedEverySeconds = 1.0;
+    private const int DiedTimes = 10;
+
+    /// <summary>Every kitten the server has been told died in its world, by name, with whose game it was.</summary>
+    public IReadOnlyDictionary<string, MemorialList.Death> Memorial => _memorial;
+
     // A sweep is not held for ever on a list that never comes: the craft it would spare are a few,
     // and the debris it is for is the reason anybody asked.
     private const double SweepWaitsSeconds = 5.0;
@@ -406,6 +420,8 @@ public sealed class Client : IDisposable
         (_server, Id, Out, ServerName, ServerHasWorld) = (server, 0, "", "", false);
         (Role, Saves, _savesSerial) = (Wire.Role.Player, null, 0);
         (_protected, _protectedSerial, Rules) = ([], 0, null);
+        (_memorial, _memorialSerial) = (new(StringComparer.Ordinal), 0);
+        _dying.Clear();
         _sweeps.Clear();
         (_told, _kept) = (null, "");
         (DiscordNonce, Discord, _discordAsk) = ("", null, null);
@@ -575,6 +591,32 @@ public sealed class Client : IDisposable
         if (Joined && t.Length > 0) Send(new Wire.Note(t));
     }
 
+    /// <summary>Tells the server a kitten died in this game, until the memorial it sends back has it. See <see cref="Wire.Died"/>.</summary>
+    public void Died(string kitten, string cause, string craft)
+    {
+        Wire.Died said = new(Wire.Clip(kitten, Wire.KeyChars), Wire.Clip(cause, MemorialList.CauseChars), Wire.Clip(craft, Wire.KeyChars));
+        if (!Joined || said.Kitten.Length == 0) return;
+        _dying.RemoveAll(d => d.Said.Kitten == said.Kitten);
+        _dying.Add((said, 0.0, DiedTimes));
+    }
+
+    // Done with once the memorial says it, or once it has been said as often as it is going to be.
+    private void SayDiedAgain(double now)
+    {
+        for (int i = _dying.Count - 1; i >= 0; i--)
+        {
+            (Wire.Died said, double next, int left) = _dying[i];
+            if ((_memorial.TryGetValue(said.Kitten, out MemorialList.Death d) && d.Cause == said.Cause && d.Craft == said.Craft) || left <= 0)
+            {
+                _dying.RemoveAt(i);
+                continue;
+            }
+            if (now < next) continue;
+            Send(said);
+            _dying[i] = (said, now + DiedEverySeconds, left - 1);
+        }
+    }
+
     /// <summary>Handles what has arrived and sends what is due. Once a frame.</summary>
     public void Update()
     {
@@ -622,6 +664,7 @@ public sealed class Client : IDisposable
             _pingNext = now + PingEverySeconds;
         }
         SayGoneAgain(now);
+        SayDiedAgain(now);
         if (_discordAsk is { } discord && now >= _discordNext)
         {
             if (now > _discordUntil)
@@ -865,6 +908,16 @@ public sealed class Client : IDisposable
                         if (ProtectedList.Decode(blob.Data, out uint state) is { } names && state >= _protectedSerial)
                         {
                             (_protected, _protectedSerial) = (new HashSet<string>(names, StringComparer.Ordinal), state);
+                        }
+                        return;
+                    }
+                    if (blob.Kind == BlobKind.Memorial)
+                    {
+                        if (MemorialList.Decode(blob.Data, out uint state) is { } deaths && state >= _memorialSerial)
+                        {
+                            Dictionary<string, MemorialList.Death> next = new(StringComparer.Ordinal);
+                            foreach (MemorialList.Death d in deaths) next[d.Kitten] = d;
+                            (_memorial, _memorialSerial) = (next, state);
                         }
                         return;
                     }

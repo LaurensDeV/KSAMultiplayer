@@ -152,6 +152,22 @@ stranger sent it.
   list: deleting and recovering one are refused, so gone is destroyed. A named save carries the list and a load restores it (above). In a game, a protected craft is not removed by Abandon, Recover or the manifest's
   Delete either (`BeforeDelete`, `BeforeRecover`). That half is the mod's alone: the server cannot
   tell a craft deleted from one that crashed, and one that crashed has to go from every world.
+- **Whose game each kitten died in.** `memorial.json` in `--data` (`KittenMemorial`), the newest
+  death of each kitten by name: its cause, the craft, the universe time, and the player. KSA's save
+  keeps a death and nothing of who flew the kitten, every game launches crew from the one roster, and
+  the save comes from whichever game was asked last -- so the killer's own save is as often not the
+  one taken, and nothing in the world said who. A game says `Died` from a prefix on
+  `KittenRosterEntryData.Kill`, which every death meets while the kitten is still assigned to its
+  craft, unless that craft is another player's copy in this world (`Sync.KittenDied`): their game
+  kills it there or does not. It says it once a second, ten times at most, until the list it is sent
+  has it. The player is the server's name for the sender and never anything the game says, from a
+  game that has loaded the world, sixteen at once and one every two seconds after. Every game is
+  sent the list whole, as a `Blob` of a sixth kind, at the join and at most once a second after a
+  death, and draws the name after the cause on KSA's Memorial tab (`Panel.DrawLostBy`, a postfix on
+  the private `DrawPastCrewRow`) only where the cause matches the one its own roster shows. That is
+  why the list is kept across `load` and `fresh`, and is not part of a named save: a world loaded
+  from before can hold a kitten of the same name dead of something else, and a fresh world's
+  deaths are all said.
 - **KSA's rules.** Whether life support and radiation are on is the `life-support` and `radiation`
   settings, both on unless the operator says otherwise, and said in every `Clock`
   (`Wire.WorldRules`): five times a second to everybody, so a change is every game's within the
@@ -1561,6 +1577,15 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
 
 What is waiting on a session with several players on the live server is listed, as things to look
 for, in `docs/LIVE-CHECKS.md`.
+
+- **The memorial's names, and the chat brought down to a new line.** Neither has been seen in a
+  game. The server's half of the memorial is in its tests (`MemorialTests`): a death named for the
+  game that said it in every game, one joining later and one after a restart, said again changing
+  nothing, a later death replacing it, and a game that has not loaded putting nobody on it. Not seen:
+  `KittenRosterEntryData.Kill` patched and reached by an abandoned craft, a wreck, life support and
+  radiation; a kitten dying in a watcher's copy of another player's craft and not said; the name
+  drawn after the cause on the Memorial tab; and the chat's history scrolling above a line that
+  stays put, taken back down by a new line or by Enter.
 
 - **Players' logs a piece at a time, short of the two-games rig.** Seen with two games and a
   Windows server on one machine on 2026-11-25, `KSAMP_LOGS_TO` pointing the games at it: each sent

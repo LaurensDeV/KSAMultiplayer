@@ -89,7 +89,12 @@ Once you're in:
   slow-down; *Always* agrees to everything. *Ask me* is the default. The world is never warped past what the slowest machine in it is managing, and slows to
   that machine rather than leaving it behind. After joining, your game may run fast for a few
   seconds to catch up.
-- **Chat** from the window.
+- **Chat** from the window. Scroll up to read back; a new line brings the chat down to it, and so
+  does opening a line to type.
+- **The kitten roster's Memorial** says whose game each kitten died in, after the cause: `Abandoned
+  by Kitten 5192`, with the craft it was aboard when you hover the name. Every player launches crew from the one
+  roster, and Abandon kills whoever is aboard, so this is how you find out who lost yours. A kitten
+  that died before a server had this, or in a world loaded from before, shows only its cause.
 - **On the developer's test server at `ksamp.gg`**, and on no other, your game sends the server its
   logs of your last few sessions when you join, the mod's and KSA's own, with addresses and your user name taken out,
   so what went wrong can be found. The chat says when it has.
@@ -369,6 +374,9 @@ Recover and the universe manifest's Delete all say that it is protected. Two cra
 `unprotect <craft>` takes it off the list and `protected` lists them. The list is `protected.json` in
 `--data`; `fresh` empties it, a loaded save brings back its own, and a craft that crashes is gone
 whether it was protected or not, and taken off the list when it is.
+
+Whose game each dead kitten died in is `memorial.json` beside it, and every death is a line in the
+server's log, such as `Kitten 5192's game: Pebean died aboard NewRocket_3 (Abandoned)`.
 
 `reload`, or `reset`, is the other half and is asked for on its own: the world as it stands goes out
 to everybody again, and each game loads it and comes back in a few seconds. Nobody reconnects, and

@@ -54,10 +54,12 @@ internal static class Panel
     // read like one.
     private static readonly float4 ServerSaid = new(0.56f, 0.80f, 1f, 1f);
     private const float WarpWidth = 340f;
-    private const int ChatShown = 14;
 
     // Whether a chat line is being typed: only then does any window of this mod hold the keyboard.
     private static bool _typing, _focusChat;
+
+    // The chat lines already drawn, by Sync.ChatSaid: one more brings the history down to it.
+    private static long _chatSeen;
 
     // Enter is read as a press, not as a hold: it both opens a line and sends it, and the key is
     // still down the frame a line is sent.
@@ -730,14 +732,26 @@ internal static class Panel
                                       | ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.NoFocusOnAppearing;
         if (ImGui.Begin("###KSAMultiplayerChat", chat))
         {
-            // 0: wrap at the edge of the window, which TextColored honours as TextWrapped does.
+            // The history scrolls in a region of its own above the line typed into, so reading back
+            // never takes the line out of sight. Its height leaves room for what is drawn under it.
+            float under = _typing
+                ? ImGui.GetFrameHeightWithSpacing() + (_choices.Length > 0 ? ImGui.GetTextLineHeightWithSpacing() : 0f)
+                : ImGui.GetTextLineHeightWithSpacing();
+            ImGui.BeginChild("###KSAMultiplayerChatLines", new float2(0f, -under), ImGuiChildFlags.None, ImGuiWindowFlags.NoBackground);
+            // 0: wrap at the edge of the region, which TextColored honours as TextWrapped does.
             ImGui.PushTextWrapPos(0f);
-            foreach (Sync.Line line in Sync.Chat.TakeLast(ChatShown))
+            foreach (Sync.Line line in Sync.Chat)
             {
                 if (line.NotAPlayer) Shown.Coloured(in ServerSaid, line.Text);
                 else Shown.Wrapped(line.Text);
             }
             ImGui.PopTextWrapPos();
+            // A new line is brought into sight wherever the history was scrolled to, and so is the
+            // end of it when a line is begun: ImGui holds a scroll offset still as what is under it
+            // grows, so a player who had read back would otherwise never see what came.
+            if (Sync.ChatSaid != _chatSeen || _focusChat) ImGui.SetScrollHereY(1f);
+            _chatSeen = Sync.ChatSaid;
+            ImGui.EndChild();
 
             if (_typing)
             {
@@ -756,6 +770,24 @@ internal static class Panel
             }
         }
         ImGui.End();
+    }
+
+    /// <summary>
+    /// Whose game a kitten on KSA's memorial died in, after its cause in the same cell. Only where
+    /// the death the server has for it is the one this world shows: a world loaded from before can
+    /// hold a kitten of the same name dead of something else, or one that died before anybody said.
+    /// </summary>
+    public static void DrawLostBy(KittenRosterEntryData kitten)
+    {
+        if (Sync.Client is not { Joined: true } c || !c.Memorial.TryGetValue(kitten.Name, out MemorialList.Death d)) return;
+        if (d.By.Length == 0 || d.Cause != kitten.CauseOfDeath.ToString()) return;
+        ImGui.SameLine();
+        Shown.Dim($"by {d.By}");
+        if (d.Craft.Length > 0 && d.Craft != kitten.Name && ImGui.IsItemHovered() && ImGui.BeginTooltip())
+        {
+            ImGui.Text($"aboard {d.Craft}");
+            ImGui.EndTooltip();
+        }
     }
 
     // The line said and the box closed; an empty one just closes it.

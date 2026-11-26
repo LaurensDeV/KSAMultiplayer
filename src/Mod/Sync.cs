@@ -432,6 +432,9 @@ internal static class Sync
 
     public static Client? Client => _client;
     public static IReadOnlyList<Line> Chat => ChatLines;
+
+    /// <summary>Every chat line this game has been given, counted on past the ones kept: the kept list stops growing once it is full, so its length cannot say a line came.</summary>
+    public static long ChatSaid { get; private set; }
     public static IReadOnlyList<string> Said => SaidLines;
 
     /// <summary>
@@ -544,6 +547,26 @@ internal static class Sync
         World.InEditor ? "the world is here: close the vehicle editor to load it" : $"the world is here, but {why}";
 
     public static bool IsPuppet(Vehicle v) => Puppets.ContainsKey(v);
+
+    /// <summary>
+    /// A kitten dying in this game, said to the server so the memorial can name whose game it was.
+    /// Not aboard another player's craft: their game kills it there or does not, and this world's
+    /// copy runs on a life support and a roster that are only a reflection of theirs.
+    /// </summary>
+    public static void KittenDied(KittenRosterEntryData kitten, KittenDeathCause cause)
+    {
+        if (_client is not { Joined: true } c) return;
+        // A kitten on EVA is a craft of its own, under the kitten's name.
+        string aboard = kitten.AssignedVehicleId.Length > 0 ? kitten.AssignedVehicleId : kitten.Name;
+        Vehicle? v = World.Vehicles().FirstOrDefault(x => x.Id == aboard);
+        if (v is not null && IsPuppet(v))
+        {
+            Log.Info($"{kitten.Name} died ({cause}) aboard {v.Id} in this world, which is {(OwnerOf(v) is { Length: > 0 } who ? who : "another player")}'s to say");
+            return;
+        }
+        Log.Info($"{kitten.Name} died ({cause}){(v is null ? "" : $" aboard {v.Id}")}: telling the server");
+        c.Died(kitten.Name, cause.ToString(), v?.Id ?? "");
+    }
 
     /// <summary>
     /// Whether a craft is another player's to fly and not this one's: held here for them, unless
@@ -3723,6 +3746,7 @@ internal static class Sync
         Log.Info($"chat: {line}");
         ChatLines.Add(new Line(notAPlayer, line));
         if (ChatLines.Count > ChatKept) ChatLines.RemoveAt(0);
+        ChatSaid++;
     }
 
     /// <summary>Says goodbye on the way out of the game; nothing of the world is touched, which is going with it.</summary>

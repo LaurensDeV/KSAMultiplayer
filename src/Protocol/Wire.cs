@@ -223,8 +223,12 @@ public static class Wire
     /// <para>38 is <see cref="State.Engines"/>, which a game of 37 would read as nothing and so draw
     /// every engine of a copy whose staging is not its owner's; <see cref="Ping.Editing"/>; and
     /// <see cref="Player.Editing"/> on every row of a <see cref="Roster"/>.</para>
+    ///
+    /// <para>39 is <see cref="Died"/> and the <see cref="MemorialList"/> it is answered with. A game
+    /// of 38 would play on and never say a kitten died, and a death nobody says is one the memorial
+    /// names nobody for: the room cannot tell that game's player from a kitten lost to a cause.</para>
     /// </summary>
-    public const ushort Version = 38;
+    public const ushort Version = 39;
 
     /// <summary>
     /// The owner of a craft kept for a player who has just left, until they come back or it lapses.
@@ -386,6 +390,7 @@ public static class Wire
         Closing = 35,
         LogsWanted = 36,
         Give = 37,
+        Died = 38,
     }
 
     /// <summary>Where a warp has got to: nobody has asked, somebody has and is waiting, or it is running.</summary>
@@ -792,6 +797,15 @@ public static class Wire
     public sealed record Note(string Text) : Message(Kind.Note);
 
     /// <summary>
+    /// A kitten died in this game, aboard a craft that is not another player's here. Said again
+    /// until the <see cref="MemorialList"/> the server sends back has it, since it is the one
+    /// moment anybody knows whose game it was.
+    /// </summary>
+    /// <param name="Cause">KSA's cause of death, by its name in the save: the server knows nothing of KSA.</param>
+    /// <param name="Craft">What the kitten was aboard, or its own name on EVA; nothing where this game did not know.</param>
+    public sealed record Died(string Kitten, string Cause, string Craft) : Message(Kind.Died);
+
+    /// <summary>
     /// The server is about to stop, and how long it has left: said again every second until it
     /// does, so a game shows the time running out and a player can land before the world goes.
     /// A game that does not know the kind drops it, so a server may say it to games older than
@@ -1083,6 +1097,11 @@ public static class Wire
             case Note n2:
                 w.LongText(n2.Text, NoteChars);
                 break;
+            case Died dd:
+                w.Text(dd.Kitten, KeyChars);
+                w.Text(dd.Cause, MemorialList.CauseChars);
+                w.Text(dd.Craft, KeyChars);
+                break;
             case Closing cl:
                 w.F32(cl.Seconds);
                 w.Text(cl.Why, 200);
@@ -1188,6 +1207,7 @@ public static class Wire
                 Kind.Chat => new Chat(r.U8(), r.Text(ChatChars)),
                 Kind.Command => new Command(r.Text(ChatChars), r.More ? r.Text(CookieChars) : ""),
                 Kind.Note => new Note(r.LongText(NoteChars)),
+                Kind.Died => new Died(r.Text(KeyChars), r.Text(MemorialList.CauseChars), r.Text(KeyChars)),
                 Kind.Closing => new Closing(r.F32(), r.Text(200), r.Text(CookieChars)),
                 Kind.LogsWanted => new LogsWanted(r.Text(200), r.Text(CookieChars)),
                 Kind.Give => new Give(r.Text(KeyChars), r.U8(), r.Text(CookieChars)),
