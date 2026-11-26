@@ -240,6 +240,9 @@ public sealed class GameServer : IDisposable
         public double SentAt { get; set; }
         public double SentUniverse { get; set; }
 
+        /// <summary>The craft the world it was sent holds, or null where that world could not be read.</summary>
+        public HashSet<string>? SentHolds { get; set; }
+
         /// <summary>How far behind the server's time its world was when it said it was in, s: its lateness until it next says.</summary>
         public double LoadedBehind { get; set; }
 
@@ -902,7 +905,7 @@ public sealed class GameServer : IDisposable
         (_world, _worldKept) = (world, false);
         (_worldBuild, _worldMods, _worldSystem, _worldTimeKnown) = (ksaBuild, mods, system, timeKnown);
         if (timeKnown && !UniverseClock.Known) UniverseClock.Set(world.Universe, _clock());
-        if (timeKnown) Prune(world.Universe);
+        if (timeKnown) Prune(world.Universe, Holds(world));
         _store?.Save(world, ksaBuild, mods, system, timeKnown);
     }
 
@@ -986,7 +989,7 @@ public sealed class GameServer : IDisposable
             _memorialSaidAt = now;
             _memorialSerial++;
             byte[] list = MemorialBlob();
-            foreach (Player p in _players.Values) p.Link.Send(list, now);
+            foreach (Player p in _players.Values) p.Link.Send(list, now, first: true);
         }
         if (now >= _craftCountNext)
         {
@@ -1437,8 +1440,8 @@ public sealed class GameServer : IDisposable
             SendSaves(p);
         }
         // To everybody, before there is anything to sweep: a game sweeps its own world.
-        if (_protectedSerial > 0) p.Link.Send(ProtectedBlob(), now);
-        if (_memorialSerial > 0) p.Link.Send(MemorialBlob(), now);
+        if (_protectedSerial > 0) p.Link.Send(ProtectedBlob(), now, first: true);
+        if (_memorialSerial > 0) p.Link.Send(MemorialBlob(), now, first: true);
         Broadcast(new Wire.Chat(0, $"{name} has joined"), q => q != p);
         _rosterNext = 0.0;
 
@@ -1554,8 +1557,8 @@ public sealed class GameServer : IDisposable
     {
         if (_world is null) return;
         p.WaitingForWorld = false;
-        (p.SentAt, p.SentUniverse) = (_clock(), _world.Universe);
-        p.Link.Send(_world.Encode(), _clock());
+        (p.SentAt, p.SentUniverse, p.SentHolds) = (_clock(), _world.Universe, Holds(_world));
+        p.Link.Send(_world.Encode(), _clock(), first: true);
         Log($"sending {p.Name} the world, {Blob.Size(_world.Data.Length)}");
     }
 
@@ -1615,7 +1618,10 @@ public sealed class GameServer : IDisposable
         }
         foreach ((string key, Craft c) in _crafts)
         {
-            if (c.Definition is not null && c.Universe >= since && c.Owner != 0 && c.Owner != p.Id) p.Link.Send(c.Definition, now);
+            // Or older, and in no world this game was sent: kept because the save after it was of a
+            // game that had never built it, and the only way this game can.
+            bool lacks = p.SentHolds is { } held && !held.Contains(key);
+            if (c.Definition is not null && (c.Universe >= since || lacks) && c.Owner != 0 && c.Owner != p.Id) p.Link.Send(c.Definition, now, replaces: key);
         }
         foreach ((string key, double at) in _gone) if (at >= since) _udp.Send(new Wire.Gone(key), p.At);
         // Before the owners, which list each craft under the name it has now.
@@ -1650,6 +1656,17 @@ public sealed class GameServer : IDisposable
                     return;
                 }
                 p.WorldAsked = false;
+                if (!p.Seeding && LacksTheAways(blob) is { Count: > 0 } lacks)
+                {
+                    // Not while what a player who has just left had is kept for them: the save is of
+                    // a game that never built it, and it would be gone from the world they come back
+                    // to. On ksamp.gg one went quiet when his game fell over, the save asked of the
+                    // game still in held none of his 359 craft, and he came back a minute later to
+                    // nothing. Taken again once those craft are nobody's, which is --kept-away.
+                    Log($"kept the world as it was rather than {p.Name}'s save of it: that lacks {Named(lacks)}, kept for a player who has just left");
+                    KeepWaiting(fresh: false, from: p.Id);
+                    return;
+                }
                 // The system the save says, where it says one: a game that has swapped into this
                 // world's system since it joined is not in the one it joined from.
                 SetWorld(blob, p.KsaBuild, p.Mods, WorldStore.SystemOf(blob.Data) is { Length: > 0 } saved ? saved : p.System);
@@ -1729,7 +1746,7 @@ public sealed class GameServer : IDisposable
                     + (craft.Described > 1 ? $" -- {craft.Described} times now" : ""));
                 craft.Universe = stamped.Universe;
                 _gone.Remove(blob.Key);
-                foreach (Player other in _players.Values.Where(q => q.Loaded && q != p)) other.Link.Send(craft.Definition, _clock());
+                foreach (Player other in _players.Values.Where(q => q.Loaded && q != p)) other.Link.Send(craft.Definition, _clock(), replaces: blob.Key);
                 return;
         }
     }
@@ -3321,7 +3338,7 @@ public sealed class GameServer : IDisposable
         _worldKept = false;
         _protectedSerial++;
         byte[] list = ProtectedBlob();
-        foreach (Player p in _players.Values) p.Link.Send(list, _clock());
+        foreach (Player p in _players.Values) p.Link.Send(list, _clock(), first: true);
     }
 
     private byte[] ProtectedBlob() => new Blob(BlobKind.Protected, "", 0, 0.0, ProtectedList.Encode(Protected.Names.Order(), _protectedSerial)).Encode();
@@ -3347,7 +3364,7 @@ public sealed class GameServer : IDisposable
         Player[] admins = [.. _players.Values.Where(p => p.Role >= Wire.Role.Trusted)];
         if (admins.Length == 0) return;
         byte[] list = SavesBlob();
-        foreach (Player p in admins) p.Link.Send(list, _clock());
+        foreach (Player p in admins) p.Link.Send(list, _clock(), first: true);
     }
 
     /// <summary>Hands an operator's game the server's log, as <see cref="LogText"/> packs it, under the days it covers.</summary>
@@ -3358,7 +3375,7 @@ public sealed class GameServer : IDisposable
         Log($"sending {p.Name} the log of {covers}, {Blob.Size(packed.Length)}");
     }
 
-    private void SendSaves(Player p) => p.Link.Send(SavesBlob(), _clock());
+    private void SendSaves(Player p) => p.Link.Send(SavesBlob(), _clock(), first: true);
 
     private uint _savesSaid;
 
@@ -3562,8 +3579,31 @@ public sealed class GameServer : IDisposable
     private static string Named(List<string> keys) =>
         string.Join(", ", keys.Take(6)) + (keys.Count > 6 ? $" and {keys.Count - 6} more" : "");
 
+    // The craft kept for players who have just left that the world held now has and this save does
+    // not: none where either cannot be read.
+    private List<string>? LacksTheAways(Blob save)
+    {
+        if (_world is null || Holds(_world) is not { } had) return null;
+        string[] kept = [.. _crafts.Where(c => c.Value.Owner == Wire.Away && had.Contains(c.Key)).Select(c => c.Key)];
+        if (kept.Length == 0 || WorldStore.CraftIn(save.Data) is not { } holds) return null;
+        return [.. kept.Where(k => !holds.Contains(k)).Order(StringComparer.Ordinal)];
+    }
+
+    // The craft in the world last read, by the world it was read from: a world is read once, whoever asks.
+    private Blob? _heldOf;
+    private HashSet<string>? _held;
+
+    private HashSet<string>? Holds(Blob world)
+    {
+        if (!ReferenceEquals(world, _heldOf)) (_heldOf, _held) = (world, WorldStore.CraftIn(world.Data));
+        return _held;
+    }
+
     // Craft defined and gone before this were saved with the world, and need not be handed out again.
-    private void Prune(double universe)
+    // Only those the save holds: a save is of the game that made it, which need not have built
+    // another player's craft at all, and a definition dropped for one it lacks was the last of it.
+    // A save that cannot be read is taken at its time, as before.
+    private void Prune(double universe, HashSet<string>? holds)
     {
         // Nor anything a game still loading an older world is yet to be told when it is in.
         foreach (Player p in _players.Values)
@@ -3572,8 +3612,11 @@ public sealed class GameServer : IDisposable
         }
         foreach ((string key, Craft c) in _crafts.ToArray())
         {
-            if (c.Definition is not null && c.Universe < universe - SaveMarginSeconds) c.Definition = null;
-            if (c.Definition is null && c.Owner == 0) _crafts.Remove(key);
+            bool saved = c.Universe < universe - SaveMarginSeconds;
+            if (c.Definition is not null && saved && (holds is null || holds.Contains(key))) c.Definition = null;
+            // Nobody's and in no world is nowhere: no game builds a craft from its definition for
+            // nobody, so one kept for that would only be listed.
+            if (c.Owner == 0 && (c.Definition is null || (saved && holds is not null && !holds.Contains(key)))) _crafts.Remove(key);
         }
         foreach ((string key, double at) in _gone.ToArray()) if (at < universe - SaveMarginSeconds) _gone.Remove(key);
     }

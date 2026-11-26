@@ -1,3 +1,4 @@
+using System.Text;
 using KSAMultiplayer.Server;
 using Xunit;
 
@@ -476,5 +477,85 @@ public class SaveTests
         {
             Directory.Delete(folder, true);
         }
+    }
+
+    // A save holding these craft and nothing else, as KSA writes them.
+    internal static byte[] WorldHolding(params string[] craft) =>
+        Blob.Zip([("universe.xml", Encoding.UTF8.GetBytes($"<Universe><System><Id Id=\"SolLite\"/>{string.Concat(craft.Select(c => $"<Vehicle Id=\"{c}\"/>"))}</System></Universe>"))]);
+
+    [Fact]
+    public void TheCraftsOfAWorldAreReadFromIt()
+    {
+        Assert.Equal(["Cube", "Station"], WorldStore.CraftIn(WorldHolding("Station", "Cube"))!.Order());
+        Assert.Empty(WorldStore.CraftIn(Rig.FakeWorld(2))!);
+        Assert.Null(WorldStore.CraftIn([1, 2, 3]));
+    }
+
+    // On ksamp.gg a player's 359 craft were in no game but his own: every other game's save lacked
+    // them, the server forgot how each was built once a save came after it, and nobody who joined
+    // could build them again. A definition goes only once a save holds its craft.
+    [Fact]
+    public void ACraftASaveLacksIsStillHandedToAGameJoiningLater()
+    {
+        using Rig rig = new();
+        Client bob = Seed(rig, "Bob");
+        Client alice = JoinAndLoad(rig, "Alice");
+        foreach (string craft in new[] { "Cube", "Station" })
+        {
+            alice.Claim(craft, controlling: false, made: true);
+            rig.Until(() => alice.Owns(craft), what: $"Alice to have {craft}");
+            alice.Upload(new Blob(BlobKind.Vehicle, craft, alice.Id, 5001, Rig.FakeWorld(2)));
+        }
+        rig.Until(() => bob.Blobs.Count(x => x.Kind == BlobKind.Vehicle) >= 2, what: "Bob to be told how both are built");
+
+        // Bob's game built the station and never the cube, and its save is the world from now on.
+        // Past the age at which a joiner is given a fresh save, a few seconds at a time so neither game goes quiet.
+        for (int i = 0; i < 10; i++)
+        {
+            rig.Skip(4.0, real: 0.02);
+            rig.For(0.05);
+        }
+        Client carol = rig.Join("Carol");
+        rig.Until(() => bob.SnapshotWanted is not null, what: "Bob to be asked for a save");
+        bob.SnapshotWanted = null;
+        bob.Upload(new Blob(BlobKind.World, "", bob.Id, rig.Server.UniverseClock.Now(rig.Now()), WorldHolding("Station")));
+        rig.Until(() => carol.Blobs.Any(x => x.Kind == BlobKind.World && WorldStore.CraftIn(x.Data)!.Contains("Station")), seconds: 20, what: "Carol to get Bob's world");
+        carol.SayLoaded(carol.Blobs.Last(x => x.Kind == BlobKind.World).Universe);
+        rig.Until(() => carol.Blobs.Any(x => x.Kind == BlobKind.Vehicle && x.Key == "Cube"), what: "Carol to be told how the cube is built");
+        rig.Skip(2.0);
+        Assert.DoesNotContain(carol.Blobs, x => x.Kind == BlobKind.Vehicle && x.Key == "Station");
+    }
+
+    // On ksamp.gg a player's game fell over, the save asked of the one game still in held none of
+    // his craft, and he came back a minute later to a world without them. While what he had is
+    // kept for him, a save without it is not the world; once it is nobody's, it is.
+    [Fact]
+    public void ASaveLackingWhatIsKeptForAPlayerWhoLeftIsNotTheWorld()
+    {
+        using Rig rig = new(new ServerOptions { KeptAway = 3.0 });
+        Client alice = rig.Join("Alice");
+        rig.Until(() => alice.Joined && alice.SnapshotWanted is not null, what: "Alice to be asked for a world");
+        alice.SnapshotWanted = null;
+        alice.Upload(new Blob(BlobKind.World, "", alice.Id, 5000, WorldHolding("Cube", "Hab")));
+        rig.Until(() => rig.Server.HasWorld && rig.Server.Players.First(p => p.Id == alice.Id).Loaded, what: "Alice's world");
+        Client bob = JoinAndLoad(rig, "Bob");
+        alice.Claim("Cube", controlling: true, made: true);
+        rig.Until(() => bob.OwnerOf("Cube") == alice.Id, what: "Bob to hear the cube is Alice's");
+
+        alice.Dispose();
+        rig.Clients.Remove(alice);
+        rig.Until(() => bob.SnapshotWanted is not null, what: "Bob to be asked for a save as Alice goes");
+        bob.SnapshotWanted = null;
+        bob.Upload(new Blob(BlobKind.World, "", bob.Id, rig.Server.UniverseClock.Now(rig.Now()), WorldHolding("Hab")));
+        rig.Until(() => rig.Server.Said.Any(s => s.Contains("kept the world as it was rather than Bob's save of it: that lacks Cube")), what: "Bob's save to be refused");
+        Assert.Contains("Cube", WorldStore.CraftIn(rig.Server.World!.Data)!);
+
+        // Nobody's once Alice has not come back for it, and a save without it is taken again.
+        rig.Until(() => bob.OwnerOf("Cube") == 0, what: "the cube to be let go");
+        Assert.Contains("saving the world as 'After'", rig.Server.Keep("After"));
+        rig.Until(() => bob.SnapshotWanted is not null, what: "Bob to be asked again");
+        bob.SnapshotWanted = null;
+        bob.Upload(new Blob(BlobKind.World, "", bob.Id, rig.Server.UniverseClock.Now(rig.Now()), WorldHolding("Hab")));
+        rig.Until(() => !WorldStore.CraftIn(rig.Server.World!.Data)!.Contains("Cube"), what: "Bob's save to be the world");
     }
 }

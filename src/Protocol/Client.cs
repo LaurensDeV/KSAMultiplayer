@@ -515,7 +515,12 @@ public sealed class Client : IDisposable
     }
 
     /// <returns>The transfer's number, for <see cref="Arrived"/>; 0 when not in a world, and nothing is sent.</returns>
-    public uint Upload(Blob blob) => Joined ? _link.Send(blob.Encode(), _clock()) : 0;
+    public uint Upload(Blob blob) =>
+        // A save goes ahead of this game's own craft and logs: the server gives up on one that does
+        // not start arriving and asks somebody else, and the busiest game is the one holding most.
+        // A craft's definition replaces one of it still waiting, since only the last word counts.
+        Joined ? _link.Send(blob.Encode(), _clock(), first: blob.Kind == BlobKind.World,
+                            replaces: blob.Kind == BlobKind.Vehicle && blob.Key.Length > 0 ? blob.Key : null) : 0;
 
     /// <summary>Whether the server has the whole of what <see cref="Upload"/> numbered so.</summary>
     public bool Arrived(uint upload) => _link.Arrived(upload);

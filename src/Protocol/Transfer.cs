@@ -267,6 +267,12 @@ public sealed class Link
     private const int MostIncoming = 4;
 
     private readonly Dictionary<uint, Outgoing> _out = [];
+
+    // How many bytes the line may be given now: one pace for the whole link, never one each, so a
+    // burst of transfers is the same few hundred kilobytes a second as one. Forty definitions of a
+    // craft coming apart, each at its own pace, put ten times their size on the wire and lost it
+    // at the player's router.
+    private double _allowance = 8.0 * ChunkBytes, _allowedAt = double.NaN;
     private readonly Dictionary<uint, Incoming> _in = [];
     private readonly Queue<uint> _finished = new();
     private readonly HashSet<uint> _finishedSet = [];
@@ -290,25 +296,48 @@ public sealed class Link
     /// <summary>Whether <see cref="Send"/>'s transfer of this number is still going out.</summary>
     public bool Going(uint id) => _out.ContainsKey(id);
 
-    /// <summary>Starts sending something; its pieces go out from <see cref="Pump"/>.</summary>
-    public uint Send(byte[] data, double now)
+    /// <summary>
+    /// Starts sending something; its pieces go out from <see cref="Pump"/>, at most
+    /// <see cref="MostIncoming"/> transfers at once, which is all the other end takes, and the rest
+    /// in turn.
+    /// </summary>
+    /// <param name="first">Ahead of everything not yet begun: a world, or a list the other end acts on.
+    /// A save asked for that waits behind its own game's craft is a save the server gives up on and
+    /// asks of somebody else, whose world may not hold them.</param>
+    /// <param name="replaces">What it is the newest of, such as a craft's name: one of the same that
+    /// has not begun is dropped, since only the last word about a craft is any use.</param>
+    public uint Send(byte[] data, double now, bool first = false, string? replaces = null)
     {
+        if (replaces is not null)
+        {
+            foreach (Outgoing waiting in _out.Values.Where(o => !o.Started && o.Replaces == replaces).ToArray()) _out.Remove(waiting.Id);
+        }
         uint id = ++_next;
-        _out[id] = new Outgoing(id, data, now);
+        _out[id] = new Outgoing(id, data, first, replaces);
         return id;
     }
 
     /// <summary>The pieces due and the pieces to ask for again, said through <paramref name="say"/>.</summary>
     public void Pump(double now, Action<Wire.Message> say)
     {
-        foreach (Outgoing o in _out.Values.ToArray())
+        _allowance = Math.Min(_allowance + (double.IsNaN(_allowedAt) ? 0.0 : (now - _allowedAt) * BytesPerSecond), 64.0 * ChunkBytes);
+        _allowedAt = now;
+        foreach (Outgoing o in _out.Values.Where(o => o.Started).ToArray())
         {
-            if (now - o.ActiveAt > GiveUpSeconds)
-            {
-                _out.Remove(o.Id);
-                continue;
-            }
-            foreach (Wire.Chunk c in o.Next(now)) say(c);
+            if (now - o.ActiveAt > GiveUpSeconds) _out.Remove(o.Id);
+        }
+        // Begun in turn, the first ones first and otherwise in the order asked: one not begun has
+        // put nothing on the wire, and is not given up on for waiting.
+        int going = _out.Values.Count(o => o.Started);
+        foreach (Outgoing o in _out.Values.Where(o => !o.Started).OrderByDescending(o => o.First).ThenBy(o => o.Id).ToArray())
+        {
+            if (going >= MostIncoming) break;
+            o.Start(now);
+            going++;
+        }
+        foreach (Outgoing o in _out.Values.Where(o => o.Started).OrderBy(o => o.Id).ToArray())
+        {
+            foreach (Wire.Chunk c in o.Next(now, ref _allowance)) say(c);
         }
         foreach (Incoming i in _in.Values.ToArray())
         {
@@ -379,30 +408,38 @@ public sealed class Link
         private readonly byte[] _data;
         private readonly Queue<ushort> _due = new();
         private readonly HashSet<ushort> _queued = [];
-        private double _allowance, _at, _heardAt;
+        private double _heardAt;
         private bool _unasked;
 
-        public Outgoing(uint id, byte[] data, double now)
+        public Outgoing(uint id, byte[] data, bool first, string? replaces)
         {
             int count = (data.Length + ChunkBytes - 1) / ChunkBytes;
             if (count > ushort.MaxValue) throw new InvalidDataException($"{data.Length} bytes is too big to send");
-            // A first burst goes at once, so a small craft is not held for the pace to allow it.
-            (Id, _data, ActiveAt, _at, _heardAt, _allowance) = (id, data, now, now, now, 8.0 * ChunkBytes);
+            (Id, _data, First, Replaces) = (id, data, first, replaces);
             Count = (ushort)Math.Max(1, count);
-            for (ushort i = 0; i < Count; i++) Queue(i);
         }
 
         public uint Id { get; }
         public ushort Count { get; }
+        public bool First { get; }
+        public string? Replaces { get; }
+
+        /// <summary>Whether a piece of it may have gone: until then it is only waiting its turn.</summary>
+        public bool Started { get; private set; }
+
+        public void Start(double now)
+        {
+            Started = true;
+            (ActiveAt, _heardAt) = (now, now);
+            for (ushort i = 0; i < Count; i++) Queue(i);
+        }
 
         /// <summary>When a piece last went that was due or asked for, or the other end was last heard: not the sending of it all again to an end that says nothing.</summary>
         public double ActiveAt { get; private set; }
 
-        public List<Wire.Chunk> Next(double now)
+        public List<Wire.Chunk> Next(double now, ref double allowance)
         {
             List<Wire.Chunk> chunks = [];
-            _allowance = Math.Min(_allowance + ((now - _at) * BytesPerSecond), 64.0 * ChunkBytes);
-            _at = now;
             if (_due.Count == 0 && now - _heardAt > ResendAfterSeconds)
             {
                 // Nothing heard: the first pieces may all have been lost, and the receiver knows of nothing to ask for.
@@ -410,12 +447,12 @@ public sealed class Link
                 _heardAt = now;
                 _unasked = true;
             }
-            while (_allowance >= ChunkBytes && _due.TryDequeue(out ushort i))
+            while (allowance >= ChunkBytes && _due.TryDequeue(out ushort i))
             {
                 _queued.Remove(i);
                 int from = i * ChunkBytes;
                 chunks.Add(new Wire.Chunk(Id, i, Count, _data[from..Math.Min(from + ChunkBytes, _data.Length)]));
-                _allowance -= ChunkBytes;
+                allowance -= ChunkBytes;
             }
             if (chunks.Count > 0 && !_unasked) ActiveAt = now;
             return chunks;

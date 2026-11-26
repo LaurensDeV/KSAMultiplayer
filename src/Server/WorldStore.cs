@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Xml;
 
 namespace KSAMultiplayer.Server;
 
@@ -75,6 +76,40 @@ public sealed class WorldStore(string folder)
             // A save that cannot be read here is reported when it is handed out, not now.
         }
         return "";
+    }
+
+    /// <summary>
+    /// The name of every craft a save holds, or null where it cannot be read: KSA writes each as a
+    /// <c>Vehicle</c> of the system, a kitten on EVA among them, under the name the shared world knows.
+    ///
+    /// <para>What the server forgets is decided by it. Forgetting a craft's definition because a save
+    /// came after it took the save to hold that craft, and the save was of a game that had never
+    /// built it: a player's 359 craft were in no world but his own, and went when he did.</para>
+    /// </summary>
+    public static HashSet<string>? CraftIn(byte[] zip)
+    {
+        try
+        {
+            List<(string Name, byte[] Data)> files = Blob.Unzip(zip);
+            string root = SaveRoot(files.Select(f => f.Name));
+            string path = root.Length > 0 ? root + "/universe.xml" : "universe.xml";
+            byte[] universe = files.First(f => f.Name == path).Data;
+            HashSet<string> held = new(StringComparer.Ordinal);
+            using XmlReader r = XmlReader.Create(new MemoryStream(universe), new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null });
+            // The root's systems, and in each the craft: Universe > System > Vehicle.
+            string under = "";
+            while (r.Read())
+            {
+                if (r.NodeType != XmlNodeType.Element) continue;
+                if (r.Depth == 1) under = r.LocalName;
+                else if (r.Depth == 2 && under == "System" && r.LocalName == "Vehicle" && r.GetAttribute("Id") is { Length: > 0 } id) held.Add(id);
+            }
+            return held;
+        }
+        catch (Exception e) when (e is InvalidDataException or IOException or ArgumentException or XmlException or InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     // The folder universe.xml is in, which is the top of a KSA save; nothing if it is at the top already.

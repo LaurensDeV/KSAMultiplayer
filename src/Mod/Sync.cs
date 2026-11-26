@@ -35,6 +35,14 @@ internal static class Sync
     // each rather than ten.
     private const double UnderWayEverySeconds = 0.1, MostUnderWayASecond = 200.0;
 
+    // And every craft this game owns but does not fly, moving or not, no more than this many times a
+    // second between them: each is said to every other game in the world. Kept to before only for
+    // craft under way, so a player who held 359 pieces of craft they had built and broken said
+    // 718 states a second, and every other game in the world was sent all of them -- on the line
+    // that was meant to bring those games the craft. Past it every one is said less often alike.
+    private const double MostOwnedASecond = 240.0;
+    private const double SaidAtLeastEverySeconds = LostSeconds / 3.0;
+
     // A claim is said again this often, since a datagram can be lost.
     private const double ClaimEverySeconds = 2.0;
 
@@ -2812,6 +2820,11 @@ internal static class Sync
             if (World.IsAlive(other.Craft) && !ReferenceEquals(other.Craft, flown) && World.UnderWay(other.Craft)) underWay++;
         }
         double underWayEvery = Math.Min(OwnedEverySeconds, Math.Max(UnderWayEverySeconds, underWay / MostUnderWayASecond));
+        int resting = Owned.Values.Count(o => World.IsAlive(o.Craft) && !ReferenceEquals(o.Craft, flown)) - underWay;
+        double slower = Math.Max(1.0, ((underWay / underWayEvery) + (resting / OwnedEverySeconds)) / MostOwnedASecond);
+        // Never so seldom that two words lost in a row are a craft another game lets go of as lost
+        // (LostSeconds): a game holding more than that allows says more than the budget.
+        (underWayEvery, double restingEvery) = (Math.Min(underWayEvery * slower, SaidAtLeastEverySeconds), Math.Min(OwnedEverySeconds * slower, SaidAtLeastEverySeconds));
         _earlyTokens = Math.Min(EarlyAtOnce, _earlyTokens + (Math.Clamp(now - _earlyAt, 0.0, 0.25) * EarlyASecond));
         _earlyAt = now;
         foreach ((string key, Mine entry) in Owned.ToArray())
@@ -2885,7 +2898,7 @@ internal static class Sync
             // Said at once when it is set moving, and not at the next turn it was given while it lay still.
             if (moving && !m.UnderWay) m.SendNext = now;
             m.UnderWay = moving;
-            double every = controlled ? ControlledEverySeconds : moving ? underWayEvery : OwnedEverySeconds;
+            double every = controlled ? ControlledEverySeconds : moving ? underWayEvery : restingEvery;
             // A craft that has just been set moving is not left waiting out the half second it was
             // given while it stood still.
             if (m.SendNext - now > every) m.SendNext = now + (every * Random.Shared.NextDouble());

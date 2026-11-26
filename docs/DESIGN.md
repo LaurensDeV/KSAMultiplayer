@@ -293,7 +293,11 @@ stranger sent it.
 - **A save before a player is gone.** What a player did since the last save is in no world the
   server has once they leave, so whoever is still in it is asked for a fresh one. Nothing can be
   asked of the last player to leave: that much is lost, and the clock waits at the world rather than
-  pretending otherwise.
+  pretending otherwise. A save that lacks craft the world holds and that are kept for a player who
+  has just left is not taken (`LacksTheAways`): the world stays as it was, and named saves waiting
+  on it are made of that. It was the save of a game that never built them, and on `ksamp.gg` a
+  player whose game fell over came back a minute later to a world without his 359 craft. Taken
+  again once they are nobody's, which is `--kept-away`; a world that never held them is no reason.
 - **Who flies what.** A table of craft Id to player. The first player to take a craft nobody holds
   keeps it until they leave; while they hold it everyone else only watches, whether or not they are
   flying it this second. What they owned is kept for them for `--kept-away` seconds, two minutes by
@@ -331,9 +335,14 @@ stranger sent it.
   that name, and keeps flying it under its own.
 - **How each new craft is built**: the definition of every craft made since the world was saved, handed
   to every game in it and to each game that loads that world later; and which craft have gone since.
-  A new save drops what it already holds. A game that loads the world later is handed only the
-  definitions of craft another player has: one described by somebody who has since left is nobody's,
-  and its shape after the last save went with them.
+  A new save drops what it holds and nothing else (`WorldStore.CraftIn` reads the save's `Vehicle`
+  Ids; one it cannot read is taken at its time, as before). Dropping every definition older than a
+  save took the save to hold those craft, and a save is of whichever game made it: on `ksamp.gg`
+  every other game's save lacked one player's 359 craft, the server forgot how each was built, and
+  nobody who joined after could build them again. A game that loads the world later is handed the
+  definitions newer than the world it was sent and those that world lacks -- only of craft another
+  player has: one described by somebody who has since left is nobody's, and a craft that is
+  nobody's and in no world is forgotten.
 
 It passes every state on to every other game in the world, checks a state comes from the craft's
 owner, and passes chat on. It refuses a player with another KSA build than it was built for (`KsaBuild` in `Directory.Build.props`, written into the server when it is built and checked against the assemblies whenever the mod is; the operator's `ksa-build` says another), or one whose mods are not the world's
@@ -610,7 +619,12 @@ states a second, a fifth of a second each for forty pieces, and most of them spe
 as their last word said. A game carries each on from its last word as the others will, and one
 that is a quarter of a metre from where that puts it takes its turn at once, out of two hundred
 more a second. `Track` carries a change of speed on only where three states agree on it: two
-say it changed, not that it goes on changing.
+say it changed, not that it goes on changing. Every craft a game owns and does not fly, moving or
+not, shares 240 states a second, each said less often alike past that (`MostOwnedASecond`) and
+never less than once in a second and a half (`SaidAtLeastEverySeconds`), a third of the five
+seconds after which another game lets a copy go as lost. Before, only craft under way had a share:
+a player on `ksamp.gg` who held 359 pieces of craft he had built and broken said 718 states a
+second, and every other game was sent all of them on the line that was meant to bring it the craft.
 
 **How a craft is built is taken in the order it was written.** A definition carries the universe
 time its owner's game wrote it at. The server drops one written before the one it already has
@@ -884,7 +898,14 @@ with three and four lines each, held theirs to the kilogram.
 ## Transfers
 
 A world or a definition goes as a `Link` transfer: cut into 1,100-byte pieces, each whole in a datagram
-under the 1,280 bytes any path carries, sent at 400 KB/s after a first burst of eight. The receiver asks
+under the 1,280 bytes any path carries, sent at 400 KB/s after a first burst of eight -- the link's pace,
+shared by every transfer on it, and at most four transfers at once, which is all a receiver holds; the
+rest wait their turn, and are not given up on for waiting. A world, a save and the server's lists go
+ahead of everything not yet begun, and a craft's definition replaces one of the same craft still waiting.
+Each transfer had its own pace before: forty definitions of a craft coming apart were sent at forty
+times it, and the player's router dropped ten times their size (`LinkTests`, over a line of 250 KB/s).
+A save that waits behind its own game's craft is a save the server gives up on and asks of somebody
+else, whose world may not hold them. The receiver asks
 four times a second for what it is missing below the highest piece it has, and for everything after a
 second with nothing; a sender that has heard nothing two seconds after sending everything sends it all
 again. The receiver gives up two minutes after the last piece, the sender two minutes after it last
@@ -1577,6 +1598,14 @@ against KSA `2026.11.10.5801` with StarMap 0.5.3:
 
 What is waiting on a session with several players on the live server is listed, as things to look
 for, in `docs/LIVE-CHECKS.md`.
+
+- **A player's craft that only their game built, kept.** The server's half is in its tests: a save
+  lacking a craft leaves its definition for a game joining later (`SaveTests`), a save lacking what
+  is kept for a player who left is not the world until it is nobody's, and over a simulated home line
+  forty definitions at once arrive in 18 s with 2,000 pieces lost where they took 39 s and lost 29,000
+  (`LinkTests`). Not seen: any of it in a game; a room where one player owns hundreds of craft, with
+  every game sent them and their states held to 240 a second; and a line slower than the link's own
+  400 KB/s, where the pace still loses pieces at the router however few transfers go at once.
 
 - **The memorial's names, and the chat brought down to a new line.** Neither has been seen in a
   game. The server's half of the memorial is in its tests (`MemorialTests`): a death named for the

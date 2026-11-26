@@ -296,7 +296,7 @@ like `quit`.
 | `--warp-answer` | `KSAMP_WARP_ANSWER` | `30` | seconds everyone has to answer a warp |
 | `--stop-notice` | `KSAMP_STOP_NOTICE` | `15` | seconds the players are shown a countdown before the server stops; `0` for none |
 | `--lapse-within` | `KSAMP_LAPSE_WITHIN` | `10` | seconds a craft stays its owner's once another player flying nothing has watched it for 3 s and they are neither in it, looking at it, nor flying something within 10 km of it |
-| `--kept-away` | `KSAMP_KEPT_AWAY` | `120` | seconds a player's craft are kept for them after they leave, nobody else's, and theirs again if they rejoin under the same Discord account (or name); `0` lets them go at once. Not after a kick |
+| `--kept-away` | `KSAMP_KEPT_AWAY` | `120` | seconds a player's craft are kept for them after they leave, nobody else's, and theirs again if they rejoin under the same Discord account (or name); `0` lets them go at once. Meanwhile a save from another game that lacks them is not taken as the world. Not after a kick |
 | `--speed` | `KSAMP_SPEED` | `1` | how fast universe time runs |
 | `--empty-world` | `KSAMP_EMPTY_WORLD` | | start with an empty world of this system (`SolLite` or `Sol`) instead of waiting for a player; also what `fresh` puts in place |
 | `--collect-logs` | `KSAMP_COLLECT_LOGS` | off | keep the mod's and KSA's logs players' games send, each line once: as they join, every ten minutes while they play, and whenever `playerlogs [name]` is typed at the server's console, which no game can type. Under `player-logs/` in the data folder, for two weeks. Games send them only to the developer's test server at `ksamp.gg`, so on any other server this does nothing |
