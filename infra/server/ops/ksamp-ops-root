@@ -21,6 +21,7 @@ import fcntl
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import syslog
@@ -109,14 +110,17 @@ def stream(argv: list[str]) -> int:
                 sys.stdout.flush()
         except BrokenPipeError:
             pass
+        except KeyboardInterrupt:
+            # Ctrl+C at the prompt's terminal: the end of a follow, not a fault.
+            return 130
         finally:
             p.kill()
     return p.returncode
 
 
-def run(argv: list[str], seconds: int = 60) -> subprocess.CompletedProcess:
+def run(argv: list[str], seconds: int = 60, alone: bool = False) -> subprocess.CompletedProcess:
     return subprocess.run(argv, env=ENV, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                          errors="replace", timeout=seconds)
+                          errors="replace", timeout=seconds, start_new_session=alone)
 
 
 def status(names: list[str]) -> None:
@@ -149,7 +153,10 @@ def restart(name: str) -> None:
         if os.fstat(stamp.fileno()).st_size > 0 and since < RESTART_GAP:
             refuse(f"{name} was restarted {since:.0f} s ago; once every {RESTART_GAP // 60} minutes")
         say(f"restarting {name}: players are counted down, and it saves before it stops")
-        r = run(["docker", "restart", "-t", str(STOP_SECONDS), name], STOP_SECONDS + 60)
+        # Out of reach of Ctrl+C: the daemon carries on with a restart whose client is gone, and
+        # this would never write down that it happened.
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        r = run(["docker", "restart", "-t", str(STOP_SECONDS), name], STOP_SECONDS + 60, alone=True)
         stamp.seek(0)
         stamp.truncate()
         stamp.write(f"{who} {time.time():.0f}\n")
@@ -160,11 +167,12 @@ def restart(name: str) -> None:
 
 
 def usage() -> None:
-    say("ssh ops@ksamp.gg status [container]         whether each runs, since when, how often it restarted")
-    say(f"ssh ops@ksamp.gg logs <container> [hours]   its log, past redeploys too (1 h, up to {MOST_HOURS})")
-    say("ssh ops@ksamp.gg follow <container>          its log as it is written; Ctrl+C stops")
-    say(f"ssh ops@ksamp.gg restart <container>         a clean restart, once every {RESTART_GAP // 60} minutes")
+    say("status [container]         whether each runs, since when, how often it restarted")
+    say(f"logs <container> [hours]   its log, past redeploys too (1 h, up to {MOST_HOURS})")
+    say("follow <container>         its log as it is written; Ctrl+C stops")
+    say(f"restart <container>        a clean restart, once every {RESTART_GAP // 60} minutes")
     say(f"containers: {', '.join(containers())}")
+    say("Each works at the prompt or after ssh: ssh ops@ksamp.gg logs ksamp-server 6")
 
 
 def main() -> None:
@@ -190,9 +198,12 @@ def main() -> None:
     elif verb == "restart" and len(args) == 1:
         restart(container(args[0]))
     else:
-        refuse("that is not a command; ssh ops@ksamp.gg help says what is")
+        refuse("that is not a command; help says what is")
 
 
 # Imported only by tests/OpsTests.cs, which holds scrubbed() to LogText.
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        sys.exit(130)

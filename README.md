@@ -532,7 +532,7 @@ few hundred kilobytes, and gzipped on the way about a tenth of that. At the cons
 the files are.
 
 On `ksamp.gg` an operator can also look at the containers themselves with an SSH key that does
-nothing else -- `ssh ops@ksamp.gg status`, `logs`, `follow`, `restart` -- which
+nothing else -- `ssh ops@ksamp.gg` is a prompt for `status`, `logs`, `follow` and `restart` -- which
 [infra/README.md](infra/README.md#operators-over-ssh) describes.
 
 #### Admins by Discord

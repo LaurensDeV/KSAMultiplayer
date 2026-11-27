@@ -307,7 +307,15 @@ once rather than the way the server is run. `admins.json` in the `ksamp-world` v
 ## Operators over SSH
 
 An operator who looks after the servers without being given the machine has a key for the `ops`
-user, which can do four things to the KSA server containers and nothing else:
+user, which can do four things to the KSA server containers and nothing else. `ssh ops@ksamp.gg`
+is a prompt for them, with history, that `exit` or Ctrl+D leaves and half an hour of nothing typed
+closes; Ctrl+C ends a `follow` and goes back to it. Each also runs on its own after the address:
+
+```
+$ ssh ops@ksamp.gg
+ksamp.gg as onyx. help lists the commands; exit or Ctrl+D leaves.
+ops> status
+```
 
 ```bash
 ssh ops@ksamp.gg status                    # each one: running, since when, restarts, memory; the machine's load and disk
@@ -338,14 +346,15 @@ Why it holds, since the docker group, the Docker socket and the journal are each
 machine and an operator is given none of them:
 
 - **The key.** Its line in `/etc/ssh/authorized_keys/ops`, which is root's, says `restrict` (no
-  forwarding, no terminal, no `~/.ssh/rc`) and forces `/usr/local/sbin/ksamp-ops`. A port forward
+  forwarding, no `~/.ssh/rc`) and `pty`, and forces `/usr/local/sbin/ksamp-ops`. A port forward
   into the machine, to anything listening on it, is refused.
 - **sshd.** `90-ksamp-ops.conf` says the same again for the user, whatever its key lines say, and
   hands `ksamp-ops` the key that logged in, which is how it knows who is asking.
 - **sudo.** The user may run `/usr/local/libexec/ksamp-ops-root` as root and nothing else. That checks
-  every word itself, runs every program by its path with no shell and no pager (`less` runs a shell
-  on `!`), and names a container's fields rather than inspecting it whole, so no environment is ever
-  printed. Every command and every refusal is in the machine's log:
+  every word itself, runs every program by its path with no shell, and reads what Docker and the
+  journal say through a pipe, so the terminal is never theirs and neither pages through `less`,
+  which runs a shell on `!`. It names a container's fields rather than inspecting it whole, so no
+  environment is ever printed. Every command and every refusal is in the machine's log:
 
 ```bash
 journalctl -t ksamp-ops --since today

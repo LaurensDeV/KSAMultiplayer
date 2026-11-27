@@ -1,5 +1,6 @@
-# Operators who look after the servers without being given the machine: `ssh ops@ksamp.gg status`,
-# `logs`, `follow` and `restart`, for the KSA server containers alone (ops/ksamp-ops-root).
+# Operators who look after the servers without being given the machine: `ssh ops@ksamp.gg` is a
+# prompt for `status`, `logs`, `follow` and `restart`, for the KSA server containers alone
+# (ops/ksamp-ops-root), and `ssh ops@ksamp.gg status` runs one.
 #
 # This machine runs other repositories' services too, and the usual ways in to a container --
 # the docker group, the Docker socket, the journal -- are each root on all of it, so an operator is
@@ -21,11 +22,12 @@ locals {
     sudoers    = file("${path.module}/ops/sudoers")
     containers = join("", [for c in local.ops_containers : "${c}\n"])
     names      = join("", [for name, k in var.ops_keys : "${name} ${k.key}\n"])
-    # `restrict` takes forwarding, the terminal and ~/.ssh/rc away from the key itself, so that
-    # sshd's block is the second thing keeping an operator in and not the only one.
+    # `restrict` takes forwarding and ~/.ssh/rc away from the key itself, so that sshd's block is
+    # the second thing keeping an operator in and not the only one; `pty` gives the terminal back,
+    # for the prompt.
     authorized = join("", [
       for name, k in var.ops_keys :
-      "restrict,expiry-time=\"${k.expires}\",command=\"/usr/local/sbin/ksamp-ops\" ${k.key} ${name}\n"
+      "restrict,pty,expiry-time=\"${k.expires}\",command=\"/usr/local/sbin/ksamp-ops\" ${k.key} ${name}\n"
     ])
   })
 }
