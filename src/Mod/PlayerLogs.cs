@@ -98,6 +98,8 @@ internal static class PlayerLogs
             }
             bool joining = !_saidJoined;
             _saidJoined = true;
+            // Once a session, and only as it joins: read every ten minutes, it would say it every ten.
+            if (joining && _noKsaLog is { } missing) Log.Info(missing);
             if (reading.Result.Count == 0) return;
             foreach (Piece piece in reading.Result)
             {
@@ -124,6 +126,9 @@ internal static class PlayerLogs
     }
 
     private static bool _saidJoined;
+
+    // Written by the read, on its own thread, and said by the frame that takes up what it read.
+    private static volatile string? _noKsaLog;
 
     // Pieces the server has said it has are written down; those given up on are let go, and go again.
     private static void Settle(Client c)
@@ -193,6 +198,16 @@ internal static class PlayerLogs
             string session = KsaSession(f.Name);
             bool mine = session.EndsWith(own, StringComparison.Ordinal);
             if (mine || before.Contains(session)) Add(f, Path.GetFileNameWithoutExtension(f.Name), mine);
+        }
+        // KSA's log of this very session is the one that says what KSA did to a craft, and on
+        // ksamp.gg one player's never came while the sessions before it did. What was there instead
+        // is what tells a log KSA had not written yet from one it wrote somewhere else.
+        _noKsaLog = null;
+        if (!ksa.Any(f => KsaSession(f.Name).EndsWith(own, StringComparison.Ordinal)))
+        {
+            string[] seen = [.. folder.GetFiles("KittenSpaceAgency*").OrderByDescending(f => f.LastWriteTimeUtc).Take(4)
+                                      .Select(f => $"{f.Name} ({f.Length / 1024} KB)")];
+            _noKsaLog = $"no KSA log of this session (process {Environment.ProcessId}) beside the mod's; the newest of KSA's there: {(seen.Length > 0 ? string.Join(", ", seen) : "none")}";
         }
         return found;
 

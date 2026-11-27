@@ -2475,6 +2475,46 @@ internal static class World
     /// <summary>Whatever the camera follows, a craft or a body, or null for nothing.</summary>
     public static object? Following => Program.GetMainCamera()?.Following;
 
+    /// <summary>What a craft or a body is called, for a log line about what the camera is on.</summary>
+    public static string NameOf(object? followed) => followed switch
+    {
+        null => "nothing",
+        Astronomical a => a.Id,
+        _ => followed.GetType().Name,
+    };
+
+    // Why KSA will not fly a craft is a private field; its public tooltip is a localised string.
+    private static readonly System.Reflection.FieldInfo? ControlState = AccessTools.Field(typeof(Vehicle), "_control");
+
+    /// <summary>
+    /// Why KSA will not answer this craft's controls, or null while it does: no control module
+    /// left, a probe core without power, or no crew able to fly it. A craft that has broken apart
+    /// keeps its name on the half with its root part, which need not be the half with the pod.
+    /// </summary>
+    public static string? NoControl(Vehicle v)
+    {
+        try
+        {
+            if (v.IsControllable) return null;
+            if (!v.HasControlModule) return "it has no control module";
+            return ControlState?.GetValue(v) is VehicleControl c ? c switch
+            {
+                VehicleControl.CrewIncapacitated => "its crew are incapacitated",
+                VehicleControl.NoCrew => "it has no crew to fly it",
+                VehicleControl.ProbeCoreUnpowered => "its probe core has no power",
+                VehicleControl.ProbeCoreOff => "its probe core is off",
+                VehicleControl.ProbeCoreFailed => "its probe core has failed",
+                VehicleControl.ProbeCoreStormStandby => "its probe core is standing by for a storm",
+                VehicleControl.ProbeCoreRebooting => "its probe core is rebooting",
+                _ => c.ToString(),
+            } : "KSA will not say why";
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     /// <summary>How the camera looks at a craft it follows: KSA keeps it on the craft, not the camera.</summary>
     public readonly record struct View(CameraReferenceFrame Frame, double Azimuth, double Elevation, double DistancePower);
 

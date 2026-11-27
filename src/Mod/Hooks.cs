@@ -1331,9 +1331,11 @@ internal static class Hooks
     }
 
     // The camera is already on it by the time this runs: KSA follows first and takes control after,
-    // so a refusal leaves the player watching rather than nowhere. Said once a craft, since every
-    // click on it comes back through here.
-    private static Vehicle? _refused;
+    // so a refusal leaves the player watching rather than nowhere. Said once a minute a craft, since
+    // every click on it comes back through here: said whenever it was another craft than the last,
+    // stepping between two of somebody's craft said it twelve times in three seconds.
+    private static readonly Dictionary<Vehicle, double> Refused = [];
+    private const double RefusedSaidEverySeconds = 60.0;
 
     private static bool BeforeControl(Vehicle? value)
     {
@@ -1342,9 +1344,11 @@ internal static class Hooks
             Sync.ChoseToFly(value);
             return true;
         }
-        if (!ReferenceEquals(_refused, value))
+        double now = Sync.Wall();
+        if (now - Refused.GetValueOrDefault(value!, double.NegativeInfinity) >= RefusedSaidEverySeconds)
         {
-            _refused = value;
+            foreach (Vehicle gone in Refused.Keys.Where(v => !World.IsAlive(v)).ToArray()) Refused.Remove(gone);
+            Refused[value!] = now;
             string whose = Sync.OwnerOf(value!) is { Length: > 0 } name ? $"{name}'s" : "another player's";
             Sync.Say($"{value!.Id} is {whose}, so you're watching it rather than flying it: the gauges are its, and your keys do nothing until you go back to your own");
         }

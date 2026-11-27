@@ -676,7 +676,9 @@ registered twice or an exception in the editor, which the mod's cannot; one KSA 
 leaves an `.abnormal-exit` summary of its last lines beside the full log. A previous session is
 where a crash or a mod that switched itself off is written, and a player cannot be asked for it
 once two more launches have written over it; this one, for a player who never joins again, who
-takes at most the last ten minutes of it with them.
+takes at most the last ten minutes of it with them. A game that finds no KSA log of its own
+session says so once as it joins, with the newest of KSA's files it did find: one player's never
+came on `ksamp.gg` while the sessions before it did, and nothing said whether KSA had written it.
 
 Each file goes a piece at a time, each line once (`LogPieces`). `KSAMultiplayer.sent` beside the
 logs says how far each has gone, in bytes and in lines, under the name the next launch leaves it
@@ -1030,6 +1032,31 @@ has a size again -- and a player on `ksamp.gg` was let go of about twenty second
 inside what the keepalive covers. With the rig, a game minimised that way for forty seconds stayed
 in the world, its keepalive speaking once every two seconds; what stopped it on that player's
 machine is not known, and the next such line will say whether it spoke.
+
+**A game falling behind, and what that does to everybody else, is written down where each part of
+it happens, and none of it more than a line a minute.** A game more than 5 s behind with its craft
+is a game every other game stops pulling those craft from, and 30 s later their own physics may
+break them (`Spared`). On `ksamp.gg` a station came apart that way in one watching game while its
+owner's was whole, and which game fell behind, for how long, and whether the owner's game ever
+noticed had to be pieced together from three logs and asked of a player. Now:
+
+- The server says a game is more than 2 s behind the world, and again when it is within 0.5 s:
+  `<name>'s game is 3.1 s behind the world`, then `... is level with the world again after 14 s,
+  6.2 s behind at worst`. From the lateness every ping already carries, so it needs no newer game.
+- The game with the craft says a frame took over half a second (`a frame took 1.2 s`), and a craft
+  of its own went over 2.5 s unsaid: half the 5 s the others wait.
+- A watching game says per player, not per craft, when it lost word of their craft (`lost word of
+  <name>'s craft: <craft> and 7 more, the newest word 5.3 s old`), when it has word again, and when
+  it stops sparing a craft from its own physics (`no longer sparing ...`). It also says when the
+  flown craft stops answering its controls, with KSA's reason (`<craft> does not answer its
+  controls: it has no control module`), and when KSA moved the camera off a craft that broke up.
+
+Each of these is a `Tally`: the first is said at once, since it is the one anybody reading the log
+back is looking for, and the rest within its minute are counted into one line when the minute is
+over, with how many and the worst. A thousand a minute are two lines. The server's goes per player,
+the watching game's per owner. The refusal to fly another player's craft (`you're watching it
+rather than flying it`) is said once a minute a craft: said whenever it was another craft than the
+last, stepping between two of somebody's craft said it twelve times in three seconds.
 
 **An admin's game is told which worlds are kept without asking.** The list goes to every admin
 when they join or are opped and whenever it changes, as a `Blob` of a third kind (`BlobKind.Saves`,
@@ -2004,6 +2031,9 @@ for, in `docs/LIVE-CHECKS.md`.
   craft and the Tab list held to a narrow window have been seen. A kitten given to a game still
   2.9 s behind the world stood still in the giver's until it was put 28 m on, which is why such a
   game is now refused; any craft flown in a player's first seconds after joining does the same.
+- **The lines about a game falling behind.** The server's is driven over loopback. The game's, of
+  hitches, of craft unsaid or no longer heard, of control and of the camera, are built against
+  the game and not yet seen written in one.
 - **Spectating, and finishing a name with Tab.** Both are the game's own, answered without the
   server hearing of them, and both are driven only by hand so far: no run has watched a camera land
   on another player's craft, nor a half-typed name fill itself in.

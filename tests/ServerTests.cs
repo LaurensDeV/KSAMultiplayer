@@ -2122,6 +2122,41 @@ public class ServerTests
         rig.Until(() => rig.Server.OwnerOf("Station") == b.Id, what: "Bob to take the station");
     }
 
+    /// <summary>
+    /// A game falling behind the world is written down as it falls and as it is level again, and a
+    /// game dipping behind again and again in a minute is counted rather than written down each time.
+    /// </summary>
+    [Fact]
+    public void AGameFallingBehindIsSaidAsItFallsAndAsItCatchesUpAndNotAtEveryDip()
+    {
+        using Rig rig = new();
+        Seed(rig);
+        Client b = JoinAndLoad(rig, "Bob");
+        int Fell() => rig.Server.Said.Count(s => s.StartsWith("Bob's game is") && s.Contains("behind the world"));
+        int Level() => rig.Server.Said.Count(s => s.StartsWith("Bob's game is level with the world again"));
+        bool Late(Func<double, bool> said) => rig.Server.Players.Any(p => p.Id == b.Id && said(p.Late));
+
+        b.Late = 10.0;
+        rig.Until(() => Fell() == 1, what: "Bob falling behind to be said");
+        b.Late = 0.0;
+        rig.Until(() => Level() == 1, what: "Bob being level again to be said");
+
+        for (int i = 0; i < 3; i++)
+        {
+            b.Late = 10.0;
+            rig.Until(() => Late(l => l > 5.0), what: "the server to hear Bob behind again");
+            b.Late = 0.0;
+            rig.Until(() => Late(l => l < 0.5), what: "the server to hear Bob level again");
+        }
+        Assert.Equal((1, 1), (Fell(), Level()));
+
+        // A minute on, each step long enough for the keepalive to speak for both games.
+        for (int i = 0; i < 31; i++) rig.Skip(2.0, real: 0.15);
+        b.Late = 10.0;
+        rig.Until(() => Fell() == 2, what: "Bob falling behind a minute later to be said");
+        Assert.Contains(rig.Server.Said, s => s.StartsWith("Bob's game is 10 s behind the world, and fell behind 3 more times"));
+    }
+
     [Fact]
     public void AGameThatWillNotHandOverItsWorldHasSomebodyElseAskedInstead()
     {

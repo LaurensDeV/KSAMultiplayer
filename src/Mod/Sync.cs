@@ -612,6 +612,108 @@ internal static class Sync
 
     // Craft that stopped being another player's, and when.
     private static readonly Dictionary<Vehicle, double> Orphaned = [];
+    private static readonly Tally Unspared = new();
+
+    // Whose craft this game has heard nothing of now for longer than it waits, this frame, and the
+    // freshest word of any of them; whose it has heard of this frame; whose it had not since when,
+    // and whether that was said. Said per
+    // player and not per craft: one game falling behind is every craft it owns at once, and on
+    // ksamp.gg that was eight craft lost and found again every few seconds for twenty seconds.
+    private static readonly Dictionary<byte, (string Key, int Craft, double Stale)> Silent = [];
+    private static readonly HashSet<byte> HeardFrom = [];
+    private static readonly Dictionary<byte, (double Since, double Stale, bool Said)> Unheards = [];
+    private static readonly Dictionary<byte, Tally> UnheardTallies = [];
+
+    private static void Unheard(Client c, byte owner, string key, double stale)
+    {
+        // Not a player who has left, whose craft are kept and not said, nor one before a word of it.
+        if (owner == Wire.Away || !double.IsFinite(stale)) return;
+        if (!c.Players.Any(p => p.Id == owner && p.Loaded)) return;
+        Silent[owner] = Silent.TryGetValue(owner, out (string Key, int Craft, double Stale) had)
+            ? (had.Key, had.Craft + 1, Math.Min(had.Stale, stale))
+            : (key, 1, stale);
+    }
+
+    private static void SayWhoseWordCameBack(Client c, double now)
+    {
+        foreach ((byte owner, (string key, int craft, double stale)) in Silent)
+        {
+            if (Unheards.TryGetValue(owner, out (double Since, double Stale, bool Said) was))
+            {
+                Unheards[owner] = was with { Stale = Math.Max(was.Stale, stale) };
+                continue;
+            }
+            if (!UnheardTallies.TryGetValue(owner, out Tally? tally)) UnheardTallies[owner] = tally = new Tally();
+            bool say = tally.Add(now, stale, key);
+            Unheards[owner] = (now, stale, say);
+            if (say) Log.Info($"lost word of {c.NameOf(owner)}'s craft: {key}{(craft > 1 ? $" and {craft - 1} more" : "")}, the newest word {stale:0.0} s old; they are not pulled until it comes");
+        }
+        foreach ((byte owner, (double since, double stale, bool said)) in Unheards.ToArray())
+        {
+            if (Silent.ContainsKey(owner)) continue;
+            Unheards.Remove(owner);
+            // Only on a word heard: their craft taken out of the world, or kept unsaid for a player
+            // who has left, is not silent any more either.
+            if (said && HeardFrom.Contains(owner)) Log.Info($"word of {c.NameOf(owner)}'s craft again after {now - since:0.0} s, {stale:0.0} s stale at worst");
+        }
+        foreach ((byte owner, Tally tally) in UnheardTallies)
+        {
+            if (tally.Due(now) is { } more)
+            {
+                Log.Info($"lost word of {c.NameOf(owner)}'s craft {more.Count} more {(more.Count == 1 ? "time" : "times")} in the {now - more.Since:0} s since");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whose craft were heard again this frame and whose were not, and which craft are no longer
+    /// spared from this world's physics, said as they change. Read before <see cref="Orphaned"/>
+    /// lets go of the craft whose spared seconds are over, which is what names them.
+    /// </summary>
+    private static void SayWhatWasHeardAndSpared(Client c, double now)
+    {
+        SayWhoseWordCameBack(c, now);
+        List<string> unspared = [];
+        foreach ((Vehicle v, double since) in Orphaned)
+        {
+            if (!World.IsAlive(v) || now - since < OrphanSparedSeconds) continue;
+            // Not one followed again since, which its being a puppet spares, nor one on its way out.
+            if (!ReferenceEquals(v, World.Controlled) && !Puppets.ContainsKey(v) && !ToRemove.Contains(v)) unspared.Add(KeyOf(v));
+        }
+        // The moment this world's own physics may break a craft its owner's game has whole.
+        if (unspared.Count > 0 && Unspared.Add(now, unspared.Count, unspared[0]))
+        {
+            Log.Info($"no longer sparing {Several(unspared)} from this world's physics: {OrphanSparedSeconds:0} s since {(unspared.Count == 1 ? "it was" : "they were")} last another player's");
+        }
+        if (Unspared.Due(now) is { } more)
+        {
+            Log.Info($"stopped sparing craft {more.Count} more {(more.Count == 1 ? "time" : "times")} in the {now - more.Since:0} s since, {more.Of} among them");
+        }
+    }
+
+    /// <summary>
+    /// What only says what happened, run so that it cannot be what stops the mod: a fault in the
+    /// frame counts towards switching the mod off for the session and putting the player out of
+    /// the world, and a log line is not worth that. Said once, and skipped from then on.
+    /// </summary>
+    private static void Quietly(string what, Action say)
+    {
+        if (QuietlyFailed.Contains(what)) return;
+        try
+        {
+            say();
+        }
+        catch (Exception e)
+        {
+            QuietlyFailed.Add(what);
+            Log.Warn($"stopped saying {what} for this session: {e.GetBaseException().GetType().Name}: {e.GetBaseException().Message}");
+        }
+    }
+
+    private static readonly HashSet<string> QuietlyFailed = [];
+
+    private static string Several(List<string> keys) =>
+        keys.Count <= 3 ? string.Join(", ", keys) : $"{string.Join(", ", keys.Take(3))} and {keys.Count - 3} more";
     private const double OrphanSparedSeconds = 30.0;
 
     /// <summary>
@@ -636,8 +738,9 @@ internal static class Sync
 
 
     /// <summary>
-    /// Said once a craft when a copy built here is wrecked before it is anybody's puppet, which is
-    /// the one way such a copy can still come apart in this world: with what did it, how hard it
+    /// Said once a craft when a copy built here is wrecked while it is nobody's puppet -- not yet
+    /// one, or no longer one once its owner's game has gone quiet past its spared seconds -- which
+    /// is the one way such a copy can still come apart in this world: with what did it, how hard it
     /// was being pushed and whether it was touching anything.
     /// </summary>
     public static void WreckedUnspared(Vehicle v, string how)
@@ -655,7 +758,7 @@ internal static class Sync
         {
             // Said without them, which is still the line that was missing.
         }
-        Log.Warn($"{key}, built here from its owner's, was {how} before it was anybody's puppet: {g:0.0} g, {(touching ? "touching something" : "touching nothing")}");
+        Log.Warn($"{key}, built here from its owner's, was {how} while nobody's puppet: {g:0.0} g, {(touching ? "touching something" : "touching nothing")}");
     }
 
     private static readonly HashSet<string> WreckSaid = [];
@@ -935,12 +1038,82 @@ internal static class Sync
             return;
         }
         int spoke = c.AlivesSent;
-        if (_frameAt > 0 && now - _frameAt > StallSaidSeconds)
+        double frame = now - _frameAt;
+        if (_frameAt > 0 && frame > StallSaidSeconds)
         {
-            Noted($"the game stood still for {now - _frameAt:0.0} s{(World.Focused ? "" : ", not in front")}, and the keepalive spoke {spoke - _alivesAtFrame} times for it");
+            Noted($"the game stood still for {frame:0.0} s{(World.Focused ? "" : ", not in front")}, and the keepalive spoke {spoke - _alivesAtFrame} times for it");
+        }
+        else if (_frameAt > 0 && frame > HitchSeconds && Now == Stage.Playing && Hitches.Add(now, frame))
+        {
+            Log.Info($"a frame took {frame:0.0} s{(World.Focused ? "" : ", not in front")}");
+        }
+        if (Hitches.Due(now) is { } hitches)
+        {
+            Log.Info($"{hitches.Count} more {(hitches.Count == 1 ? "frame" : "frames")} took over {HitchSeconds} s in the {now - hitches.Since:0} s since, the longest {hitches.Worst:0.0} s");
+        }
+        if (SendGaps.Due(now) is { } gaps)
+        {
+            Log.Info($"{gaps.Count} more {(gaps.Count == 1 ? "time" : "times")} a craft of this player's went over {SendGapSeconds} s unsaid in the {now - gaps.Since:0} s since, the longest {gaps.Worst:0.0} s, {gaps.Of}");
         }
         _alivesAtFrame = spoke;
     }
+
+    // What the flown craft and the camera were last frame, and whether that craft answered its
+    // controls. A player said they kept losing control and their log had nothing to say about it:
+    // KSA leaving a craft's name on a half with no pod, or moving the camera off a craft that broke
+    // up, happens without this mod, which only wrote down what it did itself.
+    private static Vehicle? _controlOf;
+    private static string? _noControl;
+    private static object? _followed;
+    private static bool _followedAlive;
+    private static readonly Tally ControlChanges = new(), CameraHandOffs = new();
+
+    private static void SayWhatControlDid(double now)
+    {
+        Vehicle? flown = World.Controlled;
+        string? noControl = flown is null ? null : World.NoControl(flown);
+        if (!ReferenceEquals(flown, _controlOf) || noControl != _noControl)
+        {
+            // Said when it stops answering, or when one flown now does not, and when it answers again.
+            bool worth = flown is not null && (noControl is not null || (ReferenceEquals(flown, _controlOf) && _noControl is not null));
+            if (worth && ControlChanges.Add(now, 1.0, KeyOf(flown!)))
+            {
+                Log.Info(noControl is not null ? $"{KeyOf(flown!)} does not answer its controls: {noControl}" : $"{KeyOf(flown!)} answers its controls again");
+            }
+            (_controlOf, _noControl) = (flown, noControl);
+        }
+        if (ControlChanges.Due(now) is { } control)
+        {
+            Log.Info($"what the flown craft answers changed {control.Count} more {(control.Count == 1 ? "time" : "times")} in the {now - control.Since:0} s since, last of {control.Of}");
+        }
+
+        object? following = World.Following;
+        if (!ReferenceEquals(following, _followed))
+        {
+            // Off a craft that has gone is KSA's doing (Universe.HandOffCameras), not the player's.
+            if (_followed is Vehicle was && _followedAlive && !World.IsAlive(was) && CameraHandOffs.Add(now, 1.0, World.NameOf(following)))
+            {
+                Log.Info($"the camera was on {KeyOf(was)}, which has gone, and KSA put it on {World.NameOf(following)}");
+            }
+            _followed = following;
+        }
+        _followedAlive = following is Vehicle v && World.IsAlive(v);
+        if (CameraHandOffs.Due(now) is { } handed)
+        {
+            Log.Info($"KSA moved the camera off a craft that went {handed.Count} more {(handed.Count == 1 ? "time" : "times")} in the {now - handed.Since:0} s since, last onto {handed.Of}");
+        }
+    }
+
+    // A frame this long is a hitch the player feels, and while a craft is pulled from a game that
+    // hitches, every other game draws it jumping. Five seconds (the stall) was the only line there
+    // was, and a game whose craft other games lost again and again for twenty seconds had written none.
+    private const double HitchSeconds = 0.5;
+    private static readonly Tally Hitches = new();
+
+    // A craft is said at least every SaidAtLeastEverySeconds and every other game gives it up at
+    // LostSeconds: past half of that unsaid, it is on its way to being lost to them.
+    private const double SendGapSeconds = LostSeconds / 2.0;
+    private static readonly Tally SendGaps = new();
 
     /// <summary>When this game last began to join a server, on <see cref="Wall"/>.</summary>
     public static double ConnectedAt { get; private set; } = double.NegativeInfinity;
@@ -981,6 +1154,10 @@ internal static class Sync
         // whether this game is in a shared world or its own again.
         PlacedAt.Clear();
         Engines.Clear();
+        Silent.Clear();
+        Unheards.Clear();
+        UnheardTallies.Clear();
+        HeardFrom.Clear();
         World.ForgetEngines();
         ForgetTheEditor();
         (_worldToLoad, _notLoading, _notSaving) = (null, "", "");
@@ -1942,6 +2119,7 @@ internal static class Sync
         SayTheStall(now);
         _frameAt = now;
         MeasureWhatThisMachineDoes(now);
+        if (Now == Stage.Playing) Quietly("what control and the camera did", () => SayWhatControlDid(now));
         while (NotesWaiting.TryDequeue(out string? note)) _client?.Note(note);
         SayTheControlOverride();
         if (_client is { } logs && Now == Stage.Playing) PlayerLogs.Update(logs);
@@ -2079,6 +2257,10 @@ internal static class Sync
         Built.Clear();
         MadeHere.Clear();
         Engines.Clear();
+        Silent.Clear();
+        Unheards.Clear();
+        UnheardTallies.Clear();
+        HeardFrom.Clear();
         World.ForgetEngines();
         // A world of its own coming: nothing in this one is left to hold or to let go of.
         ForgetTheEditor();
@@ -2922,6 +3104,10 @@ internal static class Sync
             if (c.NearOf(key) && Near(v, flown)) state = state with { Flags = state.Flags | Wire.StateFlags.Near };
             // Flown into the editor, which its pilot is in now: the others tint it and say so.
             if (controlled && World.InEditor) state = state with { Flags = state.Flags | Wire.StateFlags.Editing };
+            if (m.SaidAt > 0 && now - m.SaidAt > SendGapSeconds && SendGaps.Add(now, now - m.SaidAt, key))
+            {
+                Log.Info($"{key} went {now - m.SaidAt:0.0} s unsaid{(controlled ? ", flown" : "")}: every other game gives a craft up at {LostSeconds:0} s");
+            }
             c.SendState(state);
             // And what other mods say of it, which is as new as its state and as soon out of date.
             foreach ((string channel, byte[] data) in Guests.Of(v)) c.SendExtra(key, channel, data);
@@ -3057,6 +3243,8 @@ internal static class Sync
         bool builtOne = false;
         double universe = World.Universe, now = Wall();
         double lost = LostSeconds * Math.Max(1.0, World.Speed);
+        Silent.Clear();
+        HeardFrom.Clear();
         foreach ((string key, byte owner) in c.Owners)
         {
             if (owner == c.Id || Owned.ContainsKey(key)) continue;
@@ -3082,8 +3270,13 @@ internal static class Sync
                 ToBuild[key] = (definition, c.NameOf(owner));
                 continue;
             }
-            if (universe - track.HeardAt > lost) continue;
+            if (universe - track.HeardAt > lost)
+            {
+                Unheard(c, owner, key, universe - track.HeardAt);
+                continue;
+            }
             wanted.Add(v);
+            HeardFrom.Add(owner);
             Puppets[v] = key;
             PuppetOf[key] = owner;
             if (track.At(universe) is not { } s) continue;
@@ -3170,6 +3363,7 @@ internal static class Sync
             Puppets.Remove(v);
             if (World.IsAlive(v)) Orphaned[v] = now;
         }
+        Quietly("whose craft were heard and spared", () => SayWhatWasHeardAndSpared(c, now));
         foreach (Vehicle v in Orphaned.Where(o => !World.IsAlive(o.Key) || now - o.Value >= OrphanSparedSeconds).Select(o => o.Key).ToArray()) Orphaned.Remove(v);
         foreach (Vehicle v in Engines.Keys.Where(p => !Puppets.ContainsKey(p)).ToArray())
         {

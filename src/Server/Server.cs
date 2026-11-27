@@ -202,6 +202,18 @@ public sealed class GameServer : IDisposable
         /// <summary>How far behind the server's time this player's world was when it last said, s.</summary>
         public double Late { get; set; }
 
+        /// <summary>
+        /// Since when, on the server's clock, its world has been more than <see cref="BehindSaidAbove"/>
+        /// behind, and the most it was meanwhile; zero while it is not.
+        /// </summary>
+        public double BehindSince { get; set; }
+        public double BehindWorst { get; set; }
+
+        /// <summary>When its falling behind was last written down, whether this time's was, and how many since were too soon to be.</summary>
+        public double BehindSaidAt { get; set; } = double.NegativeInfinity;
+        public bool BehindSaid { get; set; }
+        public int BehindUnsaid { get; set; }
+
         /// <summary>When it last said, on the server's clock, and what universe time the server had then; zero until it has.</summary>
         public double LateAt { get; set; }
         public double LateUniverse { get; set; }
@@ -1082,6 +1094,7 @@ public sealed class GameServer : IDisposable
                 // way it is going. Nor does any word while the clock stands still.
                 player.Slip = player.LateAt > 0.0 && apart is > SlipOverAtLeast and < SlipOverAtMost && ran > 1e-6 ? (late - player.Late) / ran : 0.0;
                 (player.Late, player.LateAt, player.LateUniverse) = (late, heard, universe);
+                if (player.Loaded) SayBehind(player, late, heard);
                 player.Can = float.IsFinite(ping.Can) && ping.Can > 0f ? ping.Can : 0.0;
                 player.Here = ping.Here;
                 if (ping.Watching != player.Watching)
@@ -2717,6 +2730,52 @@ public sealed class GameServer : IDisposable
     }
 
     private const double ToldBehindEverySeconds = 60.0;
+
+    // A game falling behind the world is what makes every other game lose its craft: past five
+    // seconds without a word of now, they stop pulling them, and thirty seconds on their own physics
+    // may break them up. On ksamp.gg a station came apart in one game that way while its owner's
+    // game was intact, and nothing anywhere said which game had fallen behind or for how long.
+    // Two seconds is past what a round trip and a hitch explain; level again is well under it, so a
+    // game hovering at the line is not written down at every ping.
+    private const double BehindSaidAbove = 2.0, LevelAgainBelow = 0.5;
+
+    // One line a minute a player at most: a game that dips behind every few seconds is counted into
+    // its next line rather than written down each time. One that dipped too soon to be said and has
+    // stayed behind is said once it has been for this long.
+    private const double BehindSaidEverySeconds = 60.0, BehindLongSeconds = 30.0;
+
+    /// <summary>A game's falling behind the world written down as it starts, and again as it ends.</summary>
+    private void SayBehind(Player p, double late, double now)
+    {
+        if (p.BehindSince == 0.0)
+        {
+            if (late <= BehindSaidAbove) return;
+            (p.BehindSince, p.BehindWorst) = (now, late);
+            p.BehindSaid = now - p.BehindSaidAt >= BehindSaidEverySeconds;
+            if (p.BehindSaid) SayFellBehind(p, late, now, $"{p.Name}'s game is {late:0.#} s behind the world");
+            else p.BehindUnsaid++;
+            return;
+        }
+        p.BehindWorst = Math.Max(p.BehindWorst, late);
+        if (late < LevelAgainBelow)
+        {
+            if (p.BehindSaid) Log($"{p.Name}'s game is level with the world again after {now - p.BehindSince:0} s, {p.BehindWorst:0.#} s behind at worst");
+            p.BehindSince = 0.0;
+            return;
+        }
+        if (!p.BehindSaid && now - p.BehindSince >= BehindLongSeconds)
+        {
+            p.BehindSaid = true;
+            SayFellBehind(p, late, now, $"{p.Name}'s game has been behind the world for {now - p.BehindSince:0} s, {late:0.#} s now");
+        }
+    }
+
+    private void SayFellBehind(Player p, double late, double now, string what)
+    {
+        string more = p.BehindUnsaid > 0 ? $", and fell behind {p.BehindUnsaid} more {(p.BehindUnsaid == 1 ? "time" : "times")} since it was last said" : "";
+        Log(what + more);
+        (p.BehindSaidAt, p.BehindUnsaid) = (now, 0);
+    }
 
     // How long after a craft was written down an older word of it can still be on its way.
     private const double OlderWordWithinSeconds = 30.0;
