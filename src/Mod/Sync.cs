@@ -605,10 +605,23 @@ internal static class Sync
     /// while it was theirs, and went through the instant it was not. A protected station was wrecked
     /// in one game nine seconds after its owner left, and that game, holding it for being near, said
     /// it gone everywhere. Not one this player is flying, which is theirs to crash.</para>
+    ///
+    /// <para>Or one whose owner is still in the room and whose game has gone quiet about it, for as
+    /// long as it stays quiet (<see cref="QuietCopies"/>). A copy stops being pulled once nothing of
+    /// now has come for <see cref="LostSeconds"/>; spared only the thirty seconds after that, a station
+    /// on ksamp.gg came apart in one watching game while its owner's game, twenty seconds behind and
+    /// still playing, had it whole.</para>
     /// </summary>
     public static bool Spared(Vehicle v) =>
-        Puppets.ContainsKey(v) || ToRemove.Contains(v)
+        Puppets.ContainsKey(v) || ToRemove.Contains(v) || QuietCopies.ContainsKey(v)
         || (Orphaned.TryGetValue(v, out double since) && Wall() - since < OrphanSparedSeconds && !ReferenceEquals(v, World.Controlled));
+
+    // Copies of craft whose owner is still in the room and has said nothing of them for longer than
+    // this game waits, and who that is. Read by the hooks above, from KSA's vehicle update job, so
+    // changed an entry at a time and never cleared while a frame runs: emptied and filled again, a
+    // craft still quiet would be missing from it for the moment in between.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Vehicle, byte> QuietCopies = new();
+    private static readonly HashSet<Vehicle> QuietNow = [];
 
     // Craft that stopped being another player's, and when.
     private static readonly Dictionary<Vehicle, double> Orphaned = [];
@@ -624,11 +637,13 @@ internal static class Sync
     private static readonly Dictionary<byte, (double Since, double Stale, bool Said)> Unheards = [];
     private static readonly Dictionary<byte, Tally> UnheardTallies = [];
 
-    private static void Unheard(Client c, byte owner, string key, double stale)
+    private static void Unheard(Client c, byte owner, string key, Vehicle v, double stale)
     {
         // Not a player who has left, whose craft are kept and not said, nor one before a word of it.
         if (owner == Wire.Away || !double.IsFinite(stale)) return;
         if (!c.Players.Any(p => p.Id == owner && p.Loaded)) return;
+        QuietNow.Add(v);
+        QuietCopies[v] = owner;
         Silent[owner] = Silent.TryGetValue(owner, out (string Key, int Craft, double Stale) had)
             ? (had.Key, had.Craft + 1, Math.Min(had.Stale, stale))
             : (key, 1, stale);
@@ -678,7 +693,7 @@ internal static class Sync
         {
             if (!World.IsAlive(v) || now - since < OrphanSparedSeconds) continue;
             // Not one followed again since, which its being a puppet spares, nor one on its way out.
-            if (!ReferenceEquals(v, World.Controlled) && !Puppets.ContainsKey(v) && !ToRemove.Contains(v)) unspared.Add(KeyOf(v));
+            if (!ReferenceEquals(v, World.Controlled) && !Puppets.ContainsKey(v) && !ToRemove.Contains(v) && !QuietCopies.ContainsKey(v)) unspared.Add(KeyOf(v));
         }
         // The moment this world's own physics may break a craft its owner's game has whole.
         if (unspared.Count > 0 && Unspared.Add(now, unspared.Count, unspared[0]))
@@ -729,7 +744,9 @@ internal static class Sync
         SparedSaid[key] = now;
         bool touching = false;
         try { touching = v.Situation.HasAnyContact(); } catch (Exception) { }
-        string whose = Puppets.ContainsKey(v) ? "another player's" : ToRemove.Contains(v) ? "on its way out" : "nobody's since moments ago";
+        string whose = Puppets.ContainsKey(v) ? "another player's"
+            : QuietCopies.ContainsKey(v) ? "another player's, whose game has said nothing of it lately"
+            : ToRemove.Contains(v) ? "on its way out" : "nobody's since moments ago";
         Log.Info($"spared {key}, {whose}, from {what} in this world, {(touching ? "touching something" : "touching nothing")}");
     }
 
@@ -1158,6 +1175,8 @@ internal static class Sync
         Unheards.Clear();
         UnheardTallies.Clear();
         HeardFrom.Clear();
+        QuietCopies.Clear();
+        QuietNow.Clear();
         World.ForgetEngines();
         ForgetTheEditor();
         (_worldToLoad, _notLoading, _notSaving) = (null, "", "");
@@ -2278,6 +2297,8 @@ internal static class Sync
         Unheards.Clear();
         UnheardTallies.Clear();
         HeardFrom.Clear();
+        QuietCopies.Clear();
+        QuietNow.Clear();
         World.ForgetEngines();
         // A world of its own coming: nothing in this one is left to hold or to let go of.
         ForgetTheEditor();
@@ -3262,6 +3283,7 @@ internal static class Sync
         double lost = LostSeconds * Math.Max(1.0, World.Speed);
         Silent.Clear();
         HeardFrom.Clear();
+        QuietNow.Clear();
         foreach ((string key, byte owner) in c.Owners)
         {
             if (owner == c.Id || Owned.ContainsKey(key)) continue;
@@ -3289,7 +3311,7 @@ internal static class Sync
             }
             if (universe - track.HeardAt > lost)
             {
-                Unheard(c, owner, key, universe - track.HeardAt);
+                Unheard(c, owner, key, v, universe - track.HeardAt);
                 continue;
             }
             wanted.Add(v);
@@ -3379,6 +3401,15 @@ internal static class Sync
         {
             Puppets.Remove(v);
             if (World.IsAlive(v)) Orphaned[v] = now;
+        }
+        // No longer quiet: heard again and a puppet, or gone, or its owner has left. For the last,
+        // the thirty seconds a craft that was another player's moments ago is spared start now, and
+        // not from when its owner's game went quiet, which may have been minutes ago.
+        foreach (Vehicle v in QuietCopies.Keys)
+        {
+            if (QuietNow.Contains(v)) continue;
+            QuietCopies.TryRemove(v, out _);
+            if (World.IsAlive(v) && !Puppets.ContainsKey(v)) Orphaned[v] = now;
         }
         Quietly("whose craft were heard and spared", () => SayWhatWasHeardAndSpared(c, now));
         foreach (Vehicle v in Orphaned.Where(o => !World.IsAlive(o.Key) || now - o.Value >= OrphanSparedSeconds).Select(o => o.Key).ToArray()) Orphaned.Remove(v);
