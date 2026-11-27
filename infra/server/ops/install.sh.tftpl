@@ -22,7 +22,7 @@ reload_sshd() {
 
 %{ if length(keys) == 0 ~}
 rm -f "$conf" "$sudoers" /etc/ssh/authorized_keys/ops
-rm -rf /etc/ksamp-ops /run/ksamp-ops
+rm -rf /etc/ksamp-ops /run/ksamp-ops /var/lib/ksamp-ops
 rm -f /usr/local/sbin/ksamp-ops /usr/local/libexec/ksamp-ops-root
 if id ops >/dev/null 2>&1; then userdel ops; fi
 reload_sshd
@@ -44,12 +44,14 @@ put 644 /etc/ksamp-ops/containers <<< '${base64encode(containers)}'
 put 644 /etc/ksamp-ops/keys <<< '${base64encode(names)}'
 put 644 /etc/ssh/authorized_keys/ops <<< '${base64encode(authorized)}'
 
-# A shell, since sshd runs the forced command through it; no home; and `*` rather than a locked
-# password, which is no password either way and is not read as a disabled account.
+# A shell, since sshd runs the forced command through it; a home that is root's and empty, which
+# sshd changes into before every command and complains of on each one when it is missing; and `*`
+# rather than a locked password, which is no password either way and is not read as a disabled account.
+install -d -m 755 -o root -g root /var/lib/ksamp-ops
 if ! id ops >/dev/null 2>&1; then
-    useradd --system --no-create-home --home-dir /nonexistent --shell /bin/sh ops
+    useradd --system --no-create-home --home-dir /var/lib/ksamp-ops --shell /bin/sh ops
 fi
-usermod --password '*' --shell /bin/sh --home /nonexistent ops
+usermod --password '*' --shell /bin/sh --home /var/lib/ksamp-ops ops
 # Nothing on this machine is the ops user's to read beyond what ksamp-ops-root shows it.
 for group in $(id -nG ops); do
     if [[ "$group" != ops ]]; then gpasswd --delete ops "$group" >/dev/null; fi
