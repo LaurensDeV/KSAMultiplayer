@@ -151,6 +151,9 @@ jobs:
           TF_VAR_discord_operators: ${{ vars.KSAMP_DISCORD_OPERATORS }}
           TF_VAR_discord_client_secret: ${{ secrets.KSAMP_DISCORD_CLIENT_SECRET }}
           TF_VAR_discord_signing_key: ${{ secrets.KSAMP_DISCORD_SIGNING_KEY }}
+          # Operators' SSH keys (infra/server/ops.tf), HCL as KSAMP_WORLDS is. An apply without them
+          # takes the ops user off the machine, so every apply here says them.
+          TF_VAR_ops_keys: ${{ vars.KSAMP_OPS_KEYS || '{}' }}
         run: |
           tofu init -input=false -backend-config=backend.hcl >/dev/null
           running=$(tofu state show -no-color 'docker_image.server[0]' 2>/dev/null | sed -n 's/^ *name *= *"\(.*\)"$/\1/p' | head -1)

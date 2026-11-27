@@ -239,3 +239,38 @@ variable "discord_trusted" {
   type        = string
   default     = ""
 }
+
+# ------------------------------------------------------------------ operators over SSH
+
+# Who may `ssh ops@ksamp.gg`, by a short name the machine's log calls them by: their public key,
+# copied here once rather than fetched (a key read from GitHub at every login is a GitHub account
+# away from this machine), and the day it stops working, so that access nobody renews ends by
+# itself. Empty takes the ops user off the machine. See ops.tf.
+variable "ops_keys" {
+  description = "Operators' SSH keys by name: { onyx = { key = \"ssh-ed25519 AAAA...\", expires = \"20270527\" } }."
+  type = map(object({
+    key     = string
+    expires = string
+  }))
+  default = {}
+
+  # A key or a date is written into authorized_keys as it is, so anything but a key and a date --
+  # a newline above all, which is a second key line with nothing restricting it -- is refused here.
+  validation {
+    condition     = alltrue([for name in keys(var.ops_keys) : can(regex("^[a-z0-9][a-z0-9_-]{0,31}$", name))])
+    error_message = "An operator's name is lower case letters, digits, - and _, up to 32."
+  }
+
+  validation {
+    condition = alltrue([
+      for k in values(var.ops_keys) :
+      can(regex("^(ssh-ed25519|sk-ssh-ed25519@openssh\\.com|ecdsa-sha2-nistp256|sk-ecdsa-sha2-nistp256@openssh\\.com) [A-Za-z0-9+/]+={0,2}$", k.key))
+    ])
+    error_message = "A key is its type and its base64 and nothing else: ssh-ed25519 AAAA..., without a comment."
+  }
+
+  validation {
+    condition     = alltrue([for k in values(var.ops_keys) : can(regex("^20[0-9]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$", k.expires))])
+    error_message = "expires is a day, YYYYMMDD."
+  }
+}

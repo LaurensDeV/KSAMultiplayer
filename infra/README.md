@@ -8,7 +8,7 @@ domain's other infrastructure uses.
 | Layer | State key | What it owns |
 | --- | --- | --- |
 | `infra/dns` | `ksamultiplayer/dns.tfstate` | the Cloudflare records |
-| `infra/server` | `ksamultiplayer/server.tfstate` | the game containers, the world's volume, the directory container |
+| `infra/server` | `ksamultiplayer/server.tfstate` | the game containers, the world's volume, the directory container, the `ops` user |
 
 The split is by change cadence: the record never changes, the image changes on every release. It
 also means a deploy never sources a token that could rewrite the zone.
@@ -31,7 +31,13 @@ by that machine's Caddy. It joins the `ksarmory` network **by name**, which is a
 ownership: this layer never creates or destroys that network, so the repository that does is
 unaffected. Set `directory_network` to `""` to publish a loopback port instead and share nothing.
 
-A `tofu destroy` here removes this project's DNS records, its containers and nothing else.
+The other exception is the `ops` user, which is the machine's and not a container's: an account, a
+block in `/etc/ssh/sshd_config.d`, a rule in `/etc/sudoers.d` and two scripts, all named for this
+project ([Operators over SSH](#operators-over-ssh)). Nothing of the machine's own is edited; they are
+files beside its own.
+
+A `tofu destroy` here removes this project's DNS records, its containers and nothing else. It leaves
+the `ops` user: set `KSAMP_OPS_KEYS` to `{}` and apply first, which takes it away.
 
 ## The directory
 
@@ -297,6 +303,57 @@ to be opped, since what makes them one is a token said once to their game.
 
 From then on they type the same commands into the game's chat behind a `/`, so this is a thing done
 once rather than the way the server is run. `admins.json` in the `ksamp-world` volume is the list.
+
+## Operators over SSH
+
+An operator who looks after the servers without being given the machine has a key for the `ops`
+user, which can do four things to the KSA server containers and nothing else:
+
+```bash
+ssh ops@ksamp.gg status                    # each one: running, since when, restarts, memory; the machine's load and disk
+ssh ops@ksamp.gg logs ksamp-server 6       # the last 6 hours, past redeploys too (1 to 72)
+ssh ops@ksamp.gg follow ksamp-mpcars       # as it is written, for up to an hour
+ssh ops@ksamp.gg restart ksamp-server      # a clean restart, once every 5 minutes
+```
+
+The containers are `ksamp-server` and `ksamp-<world>` for every world, and never `ksamp-directory`,
+whose environment holds the key every Discord login is signed with. What comes out has every address
+and user folder taken out, as the log an operator downloads in the game has, and every control
+character. There is no console: that is `docker attach`, which is the machine's.
+
+The keys are the `KSAMP_OPS_KEYS` repository variable, HCL as `KSAMP_WORLDS` is, by the name the
+machine's log calls each operator, with the day the key stops working:
+
+```bash
+gh variable set KSAMP_OPS_KEYS --body '{ onyx = { key = "ssh-ed25519 AAAA...", expires = "20270527" } }'
+gh workflow run Worlds -f apply=true
+```
+
+Copy a key in rather than pointing at `github.com/<name>.keys`: one read from GitHub at every login
+lets whoever gets into that GitHub account onto this machine. Check its fingerprint with the operator
+somewhere other than where it was sent (`ssh-keygen -lf key.pub`). An operator taken out of the map,
+or past their day, is refused at the next login; `{}` takes the user off the machine.
+
+Why it holds, since the docker group, the Docker socket and the journal are each root on the whole
+machine and an operator is given none of them:
+
+- **The key.** Its line in `/etc/ssh/authorized_keys/ops`, which is root's, says `restrict` (no
+  forwarding, no terminal, no `~/.ssh/rc`) and forces `/usr/local/sbin/ksamp-ops`. A port forward
+  into the machine, to anything listening on it, is refused.
+- **sshd.** `90-ksamp-ops.conf` says the same again for the user, whatever its key lines say, and
+  hands `ksamp-ops` the key that logged in, which is how it knows who is asking.
+- **sudo.** The user may run `/usr/local/libexec/ksamp-ops-root` as root and nothing else. That checks
+  every word itself, runs every program by its path with no shell and no pager (`less` runs a shell
+  on `!`), and names a container's fields rather than inspecting it whole, so no environment is ever
+  printed. Every command and every refusal is in the machine's log:
+
+```bash
+journalctl -t ksamp-ops --since today
+```
+
+The sshd block and the sudo rule are checked before either is used (`sshd -t`, `visudo -c`), and a
+bad one is taken back out, since either is a machine nobody can log in to. `tests/OpsTests.cs` holds
+what the scripts hide to what `LogText` hides.
 
 ## The world
 

@@ -1,0 +1,198 @@
+#!/usr/bin/python3 -I
+# The one thing an operator's key can make root do: look at, or restart, a KSA server container.
+#
+#   ksamp-ops-root <who> help
+#   ksamp-ops-root <who> status [container]
+#   ksamp-ops-root <who> logs <container> [hours]
+#   ksamp-ops-root <who> follow <container>
+#   ksamp-ops-root <who> restart <container>
+#
+# Every word is checked here and not trusted from the caller, every program is run by its path with
+# a list of arguments and no shell, and nothing is ever said that a container's environment holds:
+# Docker and the journal are root on the whole machine, and the machine runs more than KSA. The
+# containers are the ones /etc/ksamp-ops/containers names, which the directory is never among: its
+# environment holds the key every Discord login is signed with.
+#
+# What comes out has every address and user folder taken out, as the log an operator downloads in
+# the game has (src/Protocol/LogText.cs), and every control character, so that a player's name
+# cannot move the cursor in an operator's terminal.
+
+import fcntl
+import os
+import re
+import shutil
+import subprocess
+import sys
+import syslog
+import time
+
+CONTAINERS = "/etc/ksamp-ops/containers"
+RESTARTS = "/run/ksamp-ops"
+
+MOST_HOURS = 72
+MOST_BYTES = 8 * 1024 * 1024
+FOLLOW_SECONDS = 3600
+# Twice in five minutes is a loop, or two operators each fixing the same thing.
+RESTART_GAP = 300
+# The containers' own stop_timeout: the countdown, the last save and the goodbye.
+STOP_SECONDS = 40
+
+# No pager, ever: journalctl and docker page through less on a terminal, and less runs a shell as
+# root on `!`. There is no terminal (restrict, PermitTTY no), and this is the second reason there
+# is none.
+ENV = {
+    "PATH": "/usr/sbin:/usr/bin:/sbin:/bin",
+    "LANG": "C.UTF-8",
+    "PAGER": "cat",
+    "SYSTEMD_PAGER": "",
+    "SYSTEMD_COLORS": "0",
+    "DOCKER_CLI_HINTS": "false",
+}
+
+# As LogText.Address and LogText.UserFolder, character for character; tests/OpsTests.cs holds them to it.
+ADDRESS = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?(?!\w|\.\d)|\[[0-9A-Fa-f:.%]+\](?::\d{1,5})?")
+# Python's lookbehind is one width, so the folder's two names are two of them.
+USER_FOLDER = re.compile(r"(?i)(?:(?<=[\\/]Users[\\/])|(?<=[\\/]home[\\/]))[^\\/\r\n:*?\"<>|]+")
+# C0 but the tab, DEL and C1. ESC is the one that matters; the rest cost nothing to take.
+CONTROL = re.compile(r"[\x00-\x08\x0a-\x1f\x7f-\x9f]")
+
+who = "nobody"
+
+WHO = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}")
+NAME = re.compile(r"ksamp-[a-z0-9][a-z0-9_.-]{0,62}")
+
+
+def scrubbed(line: str) -> str:
+    return CONTROL.sub("", USER_FOLDER.sub("(user)", ADDRESS.sub("(address)", line)))
+
+
+def say(text: str) -> None:
+    sys.stdout.write(scrubbed(text) + "\n")
+
+
+def refuse(why: str) -> None:
+    syslog.syslog(syslog.LOG_WARNING, f"{who} refused: {' '.join(sys.argv[2:])!r}: {why}")
+    print(f"ksamp-ops: {why}", file=sys.stderr)
+    sys.exit(1)
+
+
+def containers() -> list[str]:
+    with open(CONTAINERS, encoding="ascii") as f:
+        return [line.strip() for line in f if NAME.fullmatch(line.strip())]
+
+
+def container(word: str) -> str:
+    if word not in containers():
+        refuse(f"{word} is not one of {', '.join(containers())}")
+    return word
+
+
+def hours(word: str) -> int:
+    if not re.fullmatch(r"[0-9]{1,2}", word) or not 1 <= int(word) <= MOST_HOURS:
+        refuse(f"hours is a whole number from 1 to {MOST_HOURS}")
+    return int(word)
+
+
+def stream(argv: list[str]) -> int:
+    """Runs argv and passes on what it says, scrubbed, up to MOST_BYTES."""
+    sent = 0
+    with subprocess.Popen(argv, env=ENV, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT) as p:
+        try:
+            for raw in p.stdout:
+                line = scrubbed(raw.decode("utf-8", "replace").rstrip("\r\n"))
+                sent += len(line) + 1
+                if sent > MOST_BYTES:
+                    say(f"... cut at {MOST_BYTES // (1024 * 1024)} MB: ask for fewer hours")
+                    break
+                sys.stdout.write(line + "\n")
+                sys.stdout.flush()
+        except BrokenPipeError:
+            pass
+        finally:
+            p.kill()
+    return p.returncode
+
+
+def run(argv: list[str], seconds: int = 60) -> subprocess.CompletedProcess:
+    return subprocess.run(argv, env=ENV, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                          errors="replace", timeout=seconds)
+
+
+def status(names: list[str]) -> None:
+    # Only state: .Config.Env is the one field that must never be printed, and a template that
+    # names its fields cannot print it by accident.
+    shape = ("{{.Name}}  {{.State.Status}}  since {{.State.StartedAt}}  restarts {{.RestartCount}}"
+             "  last exit {{.State.ExitCode}}  out of memory {{.State.OOMKilled}}  {{.Config.Image}}")
+    for name in names:
+        r = run(["docker", "inspect", "--type", "container", "--format", shape, name])
+        say(r.stdout.strip() if r.returncode == 0 else f"/{name}  not on this machine")
+    r = run(["docker", "stats", "--no-stream", "--format", "{{.Name}}  cpu {{.CPUPerc}}  memory {{.MemUsage}}", *names])
+    for line in r.stdout.splitlines():
+        say(line)
+    load = " ".join(f"{x:.2f}" for x in os.getloadavg())
+    with open("/proc/meminfo", encoding="ascii") as f:
+        mem = {k: int(v.split()[0]) // 1024 for k, v in (line.split(":", 1) for line in f)}
+    disk = shutil.disk_usage("/")
+    say(f"machine  load {load}  memory {mem['MemAvailable']} of {mem['MemTotal']} MB free"
+        f"  disk {disk.free // 2**30} of {disk.total // 2**30} GB free")
+
+
+def restart(name: str) -> None:
+    os.makedirs(RESTARTS, mode=0o700, exist_ok=True)
+    with open(os.path.join(RESTARTS, name), "a+") as stamp:
+        try:
+            fcntl.flock(stamp, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            refuse(f"{name} is being restarted already")
+        since = time.time() - os.fstat(stamp.fileno()).st_mtime
+        if os.fstat(stamp.fileno()).st_size > 0 and since < RESTART_GAP:
+            refuse(f"{name} was restarted {since:.0f} s ago; once every {RESTART_GAP // 60} minutes")
+        say(f"restarting {name}: players are counted down, and it saves before it stops")
+        r = run(["docker", "restart", "-t", str(STOP_SECONDS), name], STOP_SECONDS + 60)
+        stamp.seek(0)
+        stamp.truncate()
+        stamp.write(f"{who} {time.time():.0f}\n")
+        if r.returncode != 0:
+            say(r.stderr.strip())
+            sys.exit(1)
+        say(f"{name} is running again")
+
+
+def usage() -> None:
+    say("ssh ops@ksamp.gg status [container]         whether each runs, since when, how often it restarted")
+    say(f"ssh ops@ksamp.gg logs <container> [hours]   its log, past redeploys too (1 h, up to {MOST_HOURS})")
+    say("ssh ops@ksamp.gg follow <container>          its log as it is written; Ctrl+C stops")
+    say(f"ssh ops@ksamp.gg restart <container>         a clean restart, once every {RESTART_GAP // 60} minutes")
+    say(f"containers: {', '.join(containers())}")
+
+
+def main() -> None:
+    syslog.openlog("ksamp-ops", 0, syslog.LOG_AUTH)
+    global who
+    if len(sys.argv) < 2 or not WHO.fullmatch(sys.argv[1]):
+        refuse("ksamp-ops-root is run by ksamp-ops, with who is asking")
+    who, verb, args = sys.argv[1], (sys.argv[2:3] or ["help"])[0], sys.argv[3:]
+    syslog.syslog(syslog.LOG_NOTICE, f"{who}: {' '.join([verb, *args])}")
+
+    if verb == "help" and not args:
+        usage()
+    elif verb == "status" and len(args) <= 1:
+        status([container(a) for a in args] or containers())
+    elif verb == "logs" and 1 <= len(args) <= 2:
+        name, h = container(args[0]), hours(args[1]) if len(args) == 2 else 1
+        # The journal and not `docker logs`: it holds what the containers before this one said.
+        sys.exit(stream(["journalctl", f"CONTAINER_NAME={name}", f"--since=@{int(time.time()) - h * 3600}",
+                         "--output=cat", "--no-pager", "--quiet"]))
+    elif verb == "follow" and len(args) == 1:
+        # Bounded, since a quiet server writes nothing to find a closed connection by.
+        sys.exit(stream(["timeout", str(FOLLOW_SECONDS), "docker", "logs", "--follow", "--tail", "200", container(args[0])]))
+    elif verb == "restart" and len(args) == 1:
+        restart(container(args[0]))
+    else:
+        refuse("that is not a command; ssh ops@ksamp.gg help says what is")
+
+
+# Imported only by tests/OpsTests.cs, which holds scrubbed() to LogText.
+if __name__ == "__main__":
+    main()

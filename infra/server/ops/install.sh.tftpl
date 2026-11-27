@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Puts the ops user in place, or takes it away when no operator has a key. Run as root by ops.tf,
+# again whenever anything it writes changes; it must stay idempotent.
+#
+# sshd and sudo are checked before either is told: a bad file in either is a machine nobody can log
+# in to or become root on, so the file is taken back out instead.
+set -euo pipefail
+umask 022
+
+conf=/etc/ssh/sshd_config.d/90-ksamp-ops.conf
+sudoers=/etc/sudoers.d/ksamp-ops
+
+reload_sshd() {
+    if ! sshd -t; then
+        rm -f "$conf"
+        echo "sshd refused 90-ksamp-ops.conf; it is taken out again" >&2
+        exit 1
+    fi
+    # Reload, not restart: sessions open now, the deploy's own included, go on.
+    systemctl try-reload-or-restart ssh
+}
+
+%{ if length(keys) == 0 ~}
+rm -f "$conf" "$sudoers" /etc/ssh/authorized_keys/ops
+rm -rf /etc/ksamp-ops /run/ksamp-ops
+rm -f /usr/local/sbin/ksamp-ops /usr/local/libexec/ksamp-ops-root
+if id ops >/dev/null 2>&1; then userdel ops; fi
+reload_sshd
+echo "no operator has a key: the ops user is gone"
+%{ else ~}
+put() { # mode, path; the content arrives base64 on stdin, so nothing in it is read by this shell
+    local tmp
+    tmp=$(mktemp "$2.XXXXXX")
+    base64 -d > "$tmp"
+    chmod "$1" "$tmp"
+    mv -f "$tmp" "$2"
+}
+
+install -d -m 755 /usr/local/sbin /usr/local/libexec /etc/ksamp-ops /etc/ssh/authorized_keys
+
+put 755 /usr/local/sbin/ksamp-ops <<< '${base64encode(gate)}'
+put 755 /usr/local/libexec/ksamp-ops-root <<< '${base64encode(root)}'
+put 644 /etc/ksamp-ops/containers <<< '${base64encode(containers)}'
+put 644 /etc/ksamp-ops/keys <<< '${base64encode(names)}'
+put 644 /etc/ssh/authorized_keys/ops <<< '${base64encode(authorized)}'
+
+# A shell, since sshd runs the forced command through it; no home; and `*` rather than a locked
+# password, which is no password either way and is not read as a disabled account.
+if ! id ops >/dev/null 2>&1; then
+    useradd --system --no-create-home --home-dir /nonexistent --shell /bin/sh ops
+fi
+usermod --password '*' --shell /bin/sh --home /nonexistent ops
+# Nothing on this machine is the ops user's to read beyond what ksamp-ops-root shows it.
+for group in $(id -nG ops); do
+    if [[ "$group" != ops ]]; then gpasswd --delete ops "$group" >/dev/null; fi
+done
+
+tmp=$(mktemp /etc/sudoers.d/.ksamp-ops.XXXXXX)
+base64 -d > "$tmp" <<< '${base64encode(sudoers)}'
+chmod 440 "$tmp"
+if ! visudo -c -q -f "$tmp"; then
+    rm -f "$tmp"
+    echo "visudo refused the ops rule; nothing is changed" >&2
+    exit 1
+fi
+mv -f "$tmp" "$sudoers"
+
+put 644 "$conf" <<< '${base64encode(sshd)}'
+reload_sshd
+echo "operators with a key: ${join(", ", sort(keys))}"
+%{ endif ~}

@@ -1,0 +1,2 @@
+# KSAMultiplayer's, from its infra/server/ops.tf. ksamp-ops-root checks every argument itself.
+ops ALL=(root) NOPASSWD: /usr/local/libexec/ksamp-ops-root

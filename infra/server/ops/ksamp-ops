@@ -1,0 +1,42 @@
+#!/usr/bin/python3 -I
+# What `ssh ops@ksamp.gg <words>` runs, as the ops user, whatever the words: sshd forces it. It
+# decides nothing but who is asking, and hands the words to ksamp-ops-root, which alone has the
+# rules, so they are written once and read as root.
+#
+# Who is asking comes from the key sshd accepted (ExposeAuthInfo), never from anything sent: the
+# name goes into the machine's log beside every restart.
+
+import os
+import sys
+
+KEYS = "/etc/ksamp-ops/keys"
+ROOT = "/usr/local/libexec/ksamp-ops-root"
+
+
+def refuse(why: str) -> None:
+    print(f"ksamp-ops: {why}", file=sys.stderr)
+    sys.exit(1)
+
+
+def who() -> str:
+    # Each line of SSH_USER_AUTH is a method that succeeded: "publickey <type> <base64>".
+    try:
+        with open(os.environ["SSH_USER_AUTH"], encoding="ascii") as f:
+            used = [line.split()[1:3] for line in f if line.startswith("publickey ")]
+        with open(KEYS, encoding="ascii") as f:
+            known = {tuple(line.split()[1:3]): line.split()[0] for line in f if len(line.split()) == 3}
+    except (KeyError, OSError, IndexError, UnicodeDecodeError):
+        refuse("this login did not say which key it used")
+    for key in used:
+        if tuple(key) in known:
+            return known[tuple(key)]
+    refuse("the key this login used is not one of the operators'")
+    raise AssertionError
+
+
+name = who()
+words = os.environ.get("SSH_ORIGINAL_COMMAND", "").split()
+# Long before anything real: these are a verb, a container and a number.
+if len(words) > 4 or any(len(w) > 64 for w in words):
+    refuse("that is not a command; ssh ops@ksamp.gg help says what is")
+os.execv("/usr/bin/sudo", ["sudo", "-n", "--", ROOT, name, *words])

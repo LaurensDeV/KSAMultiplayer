@@ -531,6 +531,10 @@ file, with every IP address said as `(address)`, and the game saves it to
 few hundred kilobytes, and gzipped on the way about a tenth of that. At the console, `logs` says where
 the files are.
 
+On `ksamp.gg` an operator can also look at the containers themselves with an SSH key that does
+nothing else -- `ssh ops@ksamp.gg status`, `logs`, `follow`, `restart` -- which
+[infra/README.md](infra/README.md#operators-over-ssh) describes.
+
 #### Admins by Discord
 
 A token belongs to one machine. To make somebody an admin as **their Discord account** -- on any
