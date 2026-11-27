@@ -14,6 +14,20 @@ The players' logs are on the server, under `player-logs/<day>/` in the `ksamp-wo
   game shows, after the watcher has saved it and after a restart. Seen in two games with a 5 t
   capsule; not with a station of hundreds of thrusters, or with a world saved by the watcher.
 
+## From 0.41.0
+
+The spectator's readout and the lines about a game falling behind were seen with two games on one
+machine; what is left needs a room flying something real.
+
+- **The readout during somebody's burn.** Spectate a player burning: the readout's throttle,
+  delta-v and propellant should follow what that player's own gauges say, a second or so behind.
+- **A game falling behind, and what it does.** When a player's game hitches or falls behind, the
+  server's log should say `<name>'s game is N s behind the world` and then `level with the world
+  again`, the player's own log `a frame took` or `went N s unsaid`, and each watching game's
+  `lost word of <name>'s craft` and `word of <name>'s craft again`. Nothing should come more often
+  than once a minute a kind. If a copy breaks up in only one game, that game's log should say
+  `no longer sparing` about 30 s before it.
+
 ## From 0.36.0
 
 The reconnect, the joiner, Editor Toggle, the map and the vessel list have been seen with two games

@@ -2043,12 +2043,23 @@ for, in `docs/LIVE-CHECKS.md`.
   craft and the Tab list held to a narrow window have been seen. A kitten given to a game still
   2.9 s behind the world stood still in the giver's until it was put 28 m on, which is why such a
   game is now refused; any craft flown in a player's first seconds after joining does the same.
-- **The lines about a game falling behind.** The server's is driven over loopback. The game's, of
-  hitches, of craft unsaid or no longer heard, of control and of the camera, are built against
-  the game and not yet seen written in one.
-- **The spectator's readout.** Built against the game and not yet drawn in it. Not seen: that it
-  sits clear of the chat at the sizes people play at, that KSA's font draws everything in it, or
-  that the owner's Δv and propellant match what that player's own gauges say.
+- **The lines about a game falling behind, in a busy room.** Seen in two games on one machine
+  on 2026-11-27: Bravo joining 18 s behind and level 29 s later, on the server; Alpha's process
+  suspended for 8 s, which wrote the stall and `Niric went 8.0 s unsaid, flown` in Alpha's log,
+  `lost word of Alpha's craft: Niric, the newest word 5.0 s old` 5 s in and `word of Alpha's
+  craft again after 4.1 s` in Bravo's, and `Alpha's game is 5.2 s behind the world` and level
+  26 s later on the server; a part failed off Bravo's rocket killing its pilot, which wrote
+  `does not answer its controls: it has no crew to fly it`; and the rocket deleted under Alpha's
+  camera, `the camera was on NewRocket_1, which has gone, and KSA put it on Earth`. Not seen: a
+  hitch under five seconds, `no longer sparing`, which needs a game silent for 30 s and the server
+  drops one at 10, nor the missing-KSA-log line, which only a game on `ksamp.gg` writes. A game
+  taking back a craft as a stall ends counts one more loss of word: its newest word of the craft
+  is from before.
+- **The spectator's readout, beside a real pilot's gauges.** Drawn in two games on one machine on
+  2026-11-27, at 800x500: under the chat and clear of it, every character drawn, a kitten on the
+  pad (76 m, 1 m above ground, its owner's 73 kg of EVA propellant) and a craft in a 180 km
+  circular orbit (7,800 m/s, apoapsis and periapsis with their times). Not seen: whether the
+  owner's delta-v and propellant match what that player's own gauges say during a burn.
 - **Spectating, and finishing a name with Tab.** Both are the game's own, answered without the
   server hearing of them, and both are driven only by hand so far: no run has watched a camera land
   on another player's craft, nor a half-typed name fill itself in.
