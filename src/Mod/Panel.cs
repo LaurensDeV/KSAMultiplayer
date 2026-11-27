@@ -159,6 +159,7 @@ internal static class Panel
         {
             Scoreboard();
             ChatWindow();
+            WatchedGauges();
         }
 
         // Joined by whatever means, the bridge's included, is a choice made.
@@ -215,6 +216,92 @@ internal static class Panel
             Visible = false;
             Save();
         }
+    }
+
+    /// <summary>
+    /// The watched craft's flight readings while this player flies nothing. KSA draws its gauges,
+    /// navball and resources only for the craft being flown, so a spectator saw a rocket climbing and
+    /// not one number about it. Read-only: KSA's own gauges have buttons that act on the craft they
+    /// show, and this one is another player's. In the navball's corner, which is empty while nothing
+    /// is flown, and under the chat, which clears the navball.
+    /// </summary>
+    private static void WatchedGauges()
+    {
+        // Not over the editor, which lets go of the craft it opens on and leaves the camera on it.
+        if (Sync.Now == Sync.Stage.Off || KSA.Program.IsEditorOpen || World.Controlled is not null) return;
+        if (World.Watched is not { } v || !World.IsAlive(v) || World.GaugesOf(v) is not { } g) return;
+        (Wire.State Said, string Whose)? owner = Sync.OwnerSays(v);
+
+        ImGuiViewportPtr screen = ImGui.GetMainViewport();
+        float2 at = new(screen.WorkPos.X + 24f, screen.WorkPos.Y + screen.WorkSize.Y - 24f);
+        ImGui.SetNextWindowPos(in at, ImGuiCond.Always, new float2(0f, 1f));
+        ImGui.SetNextWindowBgAlpha(0.6f);
+        const ImGuiWindowFlags flags = ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoMove
+                                       | ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.NoNav
+                                       | ImGuiWindowFlags.NoFocusOnAppearing | ImGuiWindowFlags.NoInputs;
+        if (ImGui.Begin("###KSAMultiplayerWatchedGauges", flags))
+        {
+            ImGui.Text(Sync.KeyOf(v));
+            Shown.Dim(owner is { } o ? $"{o.Whose}, around {g.Body}" : $"nobody is flying it, around {g.Body}");
+            ImGui.Separator();
+            if (ImGui.BeginTable("###KSAMultiplayerWatchedRows", 2, ImGuiTableFlags.SizingFixedFit))
+            {
+                Reading("Altitude", Distance(g.Altitude));
+                if (g.AboveGround < g.Altitude - 1.0) Reading("Above ground", Distance(g.AboveGround));
+                Reading("Surface speed", Speed(g.SurfaceSpeed));
+                Reading("Orbital speed", Speed(g.OrbitalSpeed));
+                Reading("Vertical speed", Speed(g.VerticalSpeed));
+                if (!g.Landed)
+                {
+                    Reading("Apoapsis", double.IsFinite(g.Apoapsis) ? Distance(g.Apoapsis) + In(g.ToApoapsis) : "none, escaping");
+                    Reading("Periapsis", g.Periapsis > 0.0 ? Distance(g.Periapsis) + In(g.ToPeriapsis) : "under the surface");
+                    Reading("Inclination", Number(g.Inclination, "F1") + " deg");
+                }
+                if (owner is { Said: var s })
+                {
+                    bool burning = (s.Flags & Wire.StateFlags.EngineOn) != 0;
+                    // Another player's game says these, so whatever it says is shown no lower than nothing.
+                    Reading("Throttle", Number(Math.Clamp(s.Throttle, 0f, 1f) * 100.0, "F0") + (burning ? "%, burning" : "%"));
+                    if (float.IsFinite(s.DeltaV)) Reading("Delta-v", Speed(Math.Max(0f, s.DeltaV)));
+                    if (float.IsFinite(s.Propellant)) Reading("Propellant", Mass(Math.Max(0f, s.Propellant)));
+                    if (float.IsFinite(s.ThrustWeight) && burning) Reading("TWR", Number(Math.Max(0f, s.ThrustWeight), "F2"));
+                }
+                ImGui.EndTable();
+            }
+        }
+        ImGui.End();
+    }
+
+    private static void Reading(string name, string value)
+    {
+        ImGui.TableNextColumn();
+        Shown.Dim(name);
+        ImGui.TableNextColumn();
+        ImGui.Text(value);
+    }
+
+    // Invariant: the player's own culture groups thousands with characters such as a narrow
+    // no-break space, which a game font need not have.
+    private static string Number(double x, string format) => x.ToString(format, System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string Distance(double m) =>
+        Math.Abs(m) < 10_000.0 ? Number(m, "N0") + " m"
+        : Math.Abs(m) < 10_000_000.0 ? Number(m / 1000.0, "N1") + " km"
+        : Number(m / 1000.0, "N0") + " km";
+
+    private static string Speed(double ms) => Math.Abs(ms) < 10_000.0 ? Number(ms, "N1") + " m/s" : Number(ms / 1000.0, "N2") + " km/s";
+
+    private static string Mass(double kg) => kg < 10_000.0 ? Number(kg, "N0") + " kg" : Number(kg / 1000.0, "N1") + " t";
+
+    /// <summary>How long until a moment, the way a countdown reads it, or nothing if it is not coming.</summary>
+    private static string In(double seconds)
+    {
+        if (!double.IsFinite(seconds) || seconds < 0.0) return "";
+        TimeSpan t = TimeSpan.FromSeconds(Math.Min(seconds, TimeSpan.MaxValue.TotalSeconds - 1.0));
+        return t.TotalDays >= 1.0 ? $" in {(int)t.TotalDays}d {t.Hours}h"
+            : t.TotalHours >= 1.0 ? $" in {t.Hours}h {t.Minutes:D2}m"
+            : t.TotalMinutes >= 1.0 ? $" in {t.Minutes}m {t.Seconds:D2}s"
+            : $" in {t.Seconds}s";
     }
 
     /// <summary>

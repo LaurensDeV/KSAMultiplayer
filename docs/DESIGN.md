@@ -290,6 +290,18 @@ stranger sent it.
   they were flying it. Spectating puts both of KSA's cameras on the craft, the flight view's and
   the map's, which each follow something of their own: with only the one showing moved, pressing M
   showed the map still on the spectator's own craft.
+- **What a spectator is shown of the craft.** KSA updates and draws its gauges, navball and
+  resources only while a craft is being flown. A spectator flies nothing, so they saw no number
+  about the craft they were watching. The hooks that hand the gauges a watched craft only help a
+  player who is still flying their own. Drawing KSA's own canvases with nothing flown would mean
+  rewriting checks inside half a dozen of its methods, and its gauges have buttons that act on the
+  craft they show. So while nothing is flown and the camera is on a craft, the mod draws a
+  read-only readout of it in the navball's empty corner (`Panel.WatchedGauges`). Altitude, speeds,
+  apoapsis, periapsis and inclination come from this game's copy, which the pull keeps where its
+  owner has it. Throttle and whether it is burning come from the owner's last `State`. So do Δv,
+  propellant and thrust-to-weight, which the owner's game puts on every `State` (protocol 40):
+  a copy never burns, so its own tanks are not its owner's. A player who watches while flying
+  their own craft still reads Δv and propellant off the copy in KSA's gauges.
 - **A save before a player is gone.** What a player did since the last save is in no world the
   server has once they leave, so whoever is still in it is asked for a fresh one. Nothing can be
   asked of the last player to leave: that much is lost, and the clock waits at the world rather than
@@ -2034,6 +2046,9 @@ for, in `docs/LIVE-CHECKS.md`.
 - **The lines about a game falling behind.** The server's is driven over loopback. The game's, of
   hitches, of craft unsaid or no longer heard, of control and of the camera, are built against
   the game and not yet seen written in one.
+- **The spectator's readout.** Built against the game and not yet drawn in it. Not seen: that it
+  sits clear of the chat at the sizes people play at, that KSA's font draws everything in it, or
+  that the owner's Δv and propellant match what that player's own gauges say.
 - **Spectating, and finishing a name with Tab.** Both are the game's own, answered without the
   server hearing of them, and both are driven only by hand so far: no run has watched a camera land
   on another player's craft, nor a half-typed name fill itself in.

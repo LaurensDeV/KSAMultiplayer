@@ -1829,6 +1829,23 @@ internal static class Sync
         p.Controlling.Length > 0 && World.Watched is { } seen && World.IsAlive(seen) && KeyOf(seen) == p.Controlling
         && !(Flown is { } mine && ReferenceEquals(mine, seen));
 
+    /// <summary>
+    /// What the owner of another player's craft built here last said of it, and whose it is: what
+    /// a spectator is shown of it. Null for a craft of this game's own or nobody's. Its owner is
+    /// not always flying it: a player owns the debris they dropped, and a craft is kept a while for
+    /// a player who has just left.
+    /// </summary>
+    public static (Wire.State Said, string Whose)? OwnerSays(Vehicle v)
+    {
+        if (_client is not { Joined: true } c || !Puppets.TryGetValue(v, out string? key) || !PuppetOf.TryGetValue(key, out byte owner)) return null;
+        // Not TrackOf alone, which makes a track for a name forgotten this frame and lists it.
+        if (!c.Tracked.Contains(key) || c.TrackOf(key).Newest is not { } said) return null;
+        string whose = owner == Wire.Away ? "kept for a player who has just left"
+            : c.Players.Any(p => p.Id == owner && p.Controlling == key) ? $"{c.NameOf(owner)} is flying it"
+            : $"{c.NameOf(owner)}'s, and not being flown";
+        return (said, whose);
+    }
+
     /// <summary>Hands the craft this player flies to a player spectating it, if the server agrees.</summary>
     public static void GiveControl(Wire.Player to)
     {

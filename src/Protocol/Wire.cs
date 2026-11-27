@@ -227,8 +227,11 @@ public static class Wire
     /// <para>39 is <see cref="Died"/> and the <see cref="MemorialList"/> it is answered with. A game
     /// of 38 would play on and never say a kitten died, and a death nobody says is one the memorial
     /// names nobody for: the room cannot tell that game's player from a kitten lost to a cause.</para>
+    ///
+    /// <para>40 is <see cref="State.DeltaV"/>, <see cref="State.Propellant"/> and
+    /// <see cref="State.ThrustWeight"/>, which a game of 39 would read past the end of a state.</para>
     /// </summary>
-    public const ushort Version = 39;
+    public const ushort Version = 40;
 
     /// <summary>
     /// The owner of a craft kept for a player who has just left, until they come back or it lapses.
@@ -617,10 +620,18 @@ public static class Wire
     /// RCS thruster. Which engines burn is the owner's staging, and a copy's own staging is whatever
     /// its definition said when it was sent, so only this says which to draw.
     /// </param>
+    /// <param name="DeltaV">
+    /// What its owner's game makes of its Δv, m/s, NaN where that is not said. With
+    /// <see cref="Propellant"/> and <see cref="ThrustWeight"/> it is what a spectator is shown of the
+    /// craft: a copy never burns, so its own tanks, Δv and thrust are not its owner's.
+    /// </param>
+    /// <param name="Propellant">What its tanks hold in its owner's game, kg, NaN where that is not said.</param>
+    /// <param name="ThrustWeight">Its thrust over its weight at its parent body's surface, in its owner's game, NaN where that is not said.</param>
     public sealed record State(byte Owner, string Key, uint Sequence, double Universe, string Body,
                                Vec3 PositionCcf, Vec3 VelocityCcf, Vec3 PositionCci, Vec3 VelocityCci,
                                Quat Body2Ccf, Vec3 Spin, float Throttle, StateFlags Flags, ushort Parts = 0,
-                               byte[]? Thrusters = null, byte[]? Engines = null) : Message(Kind.State);
+                               byte[]? Thrusters = null, byte[]? Engines = null,
+                               float DeltaV = float.NaN, float Propellant = float.NaN, float ThrustWeight = float.NaN) : Message(Kind.State);
 
     /// <summary>The most bytes of thrusters, or of engines, a <see cref="State"/> says, which is 256 of each.</summary>
     public const int MostThrusterBytes = 32;
@@ -1027,6 +1038,9 @@ public static class Wire
                 w.U16(s.Parts);
                 WriteNozzles(ref w, s.Thrusters);
                 WriteNozzles(ref w, s.Engines);
+                w.F32(s.DeltaV);
+                w.F32(s.Propellant);
+                w.F32(s.ThrustWeight);
                 break;
             case Claim c:
                 w.Text(c.Key, KeyChars);
@@ -1193,7 +1207,7 @@ public static class Wire
                 Kind.Loaded => new Loaded(r.F64()),
                 Kind.State => new State(r.U8(), r.Text(KeyChars), r.U32(), r.F64(), r.Text(64), r.V3d(), r.V3f(), r.V3d(), r.V3f(),
                                         new Quat(r.F32(), r.F32(), r.F32(), r.F32()).Normalized(), r.V3f(), r.F32(), (StateFlags)r.U8(), r.U16(),
-                                        ReadNozzles(ref r), ReadNozzles(ref r)),
+                                        ReadNozzles(ref r), ReadNozzles(ref r), r.F32(), r.F32(), r.F32()),
                 Kind.Claim => new Claim(r.Text(KeyChars), r.U8() != 0, r.U8() != 0, r.U8() != 0, r.U8() != 0),
                 Kind.Rename => new Rename(r.Text(KeyChars), r.Text(KeyChars)),
                 Kind.WarpAsk => new WarpAsk(r.F32()),

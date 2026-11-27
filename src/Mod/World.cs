@@ -1149,7 +1149,7 @@ internal static class World
         Wire.State s = new(0, key, 0, Universe, parent.Id, V(positionCcf), V(velocityCcf), V(positionCci), V(velocityCci),
                            new Quat(body2Ccf.X, body2Ccf.Y, body2Ccf.Z, body2Ccf.W), V(spin),
                            float.IsFinite(throttle) ? Math.Clamp(throttle, 0f, 1f) : 0f, flags, (ushort)Math.Min(v.Parts.Count, ushort.MaxValue),
-                           ThrustersOf(v), EnginesOf(v));
+                           ThrustersOf(v), EnginesOf(v), (float)v.NavBallData.DeltaV, v.PropellantMass, (float)v.NavBallData.ThrustWeightRatio);
         return s.PositionCcf.IsFinite && s.PositionCci.IsFinite && s.Body2Ccf.IsFinite ? s : null;
     }
 
@@ -2452,6 +2452,40 @@ internal static class World
     /// can be watched and never taken.
     /// </summary>
     public static Vehicle? Watched => Program.GetMainCamera()?.Following as Vehicle;
+
+    /// <summary>
+    /// What KSA's instruments would say of a craft, as far as this game's copy of it can say it: m,
+    /// m/s, and seconds from now. Its tanks are left out, since a copy of another player's craft
+    /// never burns them. Apoapsis is NaN for a craft not coming back, the times NaN where none comes.
+    /// </summary>
+    public readonly record struct Gauges(string Body, bool Landed, double Altitude, double AboveGround, double OrbitalSpeed,
+                                         double SurfaceSpeed, double VerticalSpeed, double Apoapsis, double ToApoapsis,
+                                         double Periapsis, double ToPeriapsis, double Inclination);
+
+    /// <summary>
+    /// KSA's HUD is drawn for the craft being flown and for nothing else, and a spectator flies
+    /// nothing; these are the same readings off the craft being watched instead.
+    /// </summary>
+    public static Gauges? GaugesOf(Vehicle v)
+    {
+        try
+        {
+            Orbit o = v.Orbit;
+            double3 at = o.StateVectors.PositionCci, moving = o.StateVectors.VelocityCci;
+            double r = at.Length();
+            double now = KSA.Universe.GetElapsedSeconds();
+            double Until(UniverseTime t) => t == UniverseTime.EndOfTime ? double.NaN : t.Seconds() - now;
+            bool escaping = o.Eccentricity >= 1.0;
+            return new Gauges(o.Parent.Id, v.Situation.HasAnyContact(), v.GetBarometricAltitude(), v.GetRadarAltitude(),
+                              v.GetInertialSpeed(), v.GetSurfaceSpeed(), r > 0.0 ? double3.Dot(at, moving) / r : 0.0,
+                              escaping ? double.NaN : o.ApoapsisAltitude, escaping ? double.NaN : Until(v.NextApoapsisTime),
+                              o.PeriapsisAltitude, Until(v.NextPeriapsisTime), o.Inclination * (180.0 / Math.PI));
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
 
     /// <summary>
     /// The camera put on a planet or a moon, as picking one in the map puts it. KSA's camera takes

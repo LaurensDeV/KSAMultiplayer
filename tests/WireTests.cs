@@ -160,6 +160,21 @@ public class WireTests
         Assert.Equal([1, 2, 3], chunk.Data);
     }
 
+    /// <summary>What a spectator is shown of a craft's tanks comes back as its owner said it, and unsaid is unsaid.</summary>
+    [Fact]
+    public void AStateSaysItsOwnersDeltaVPropellantAndThrust()
+    {
+        Wire.State s = new(1, "Rocket", 7, 100.0, "Earth", new Vec3(1, 2, 3), Vec3.Zero, new Vec3(1, 2, 3), Vec3.Zero,
+                           Quat.Identity, Vec3.Zero, 0.5f, Wire.StateFlags.EngineOn, DeltaV: 3412.5f, Propellant: 18_250f, ThrustWeight: 1.42f);
+        Wire.State back = RoundTrip(s);
+        Assert.Equal(3412.5f, back.DeltaV);
+        Assert.Equal(18_250f, back.Propellant);
+        Assert.Equal(1.42f, back.ThrustWeight);
+
+        Wire.State unsaid = RoundTrip(s with { DeltaV = float.NaN, Propellant = float.NaN, ThrustWeight = float.NaN });
+        Assert.True(float.IsNaN(unsaid.DeltaV) && float.IsNaN(unsaid.Propellant) && float.IsNaN(unsaid.ThrustWeight));
+    }
+
     [Fact]
     public void AStateKeepsItsPositionToTheMillimetreFarFromItsBody()
     {
