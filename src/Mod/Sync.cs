@@ -422,6 +422,12 @@ internal static class Sync
     /// </summary>
     public static Vehicle? Observed { get; private set; }
 
+    /// <summary>
+    /// The craft the camera is on while this player flies nothing, in a shared world: what KSA's
+    /// gauges show (<see cref="Hud"/>). Set once a frame, since KSA asks for it many times in one.
+    /// </summary>
+    public static Vehicle? Spectated { get; private set; }
+
     // Near holds asked for, and when each was last written down: asked again every second until
     // the server answers, which is no reason to say it every second.
     private static readonly Dictionary<string, double> NearSaid = [];
@@ -2156,6 +2162,7 @@ internal static class Sync
         _frameAt = now;
         MeasureWhatThisMachineDoes(now);
         if (Now == Stage.Playing) Quietly("what control and the camera did", () => SayWhatControlDid(now));
+        Spectated = Now == Stage.Playing && World.Controlled is null && World.Watched is { } watched && World.IsAlive(watched) ? watched : null;
         while (NotesWaiting.TryDequeue(out string? note)) _client?.Note(note);
         SayTheControlOverride();
         if (_client is { } logs && Now == Stage.Playing) PlayerLogs.Update(logs);

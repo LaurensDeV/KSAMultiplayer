@@ -76,6 +76,8 @@ public sealed class MultiplayerMod
         {
             Fault("frame", e);
         }
+        // Guarded within: a gauge not filled is not worth a fault.
+        Hud.AfterFrame(dtPlayer);
         // Last of all: a speed the player asked for is spent by the write that follows it in the same
         // breath, and anything still standing here was an input event that never reached a setter.
         try

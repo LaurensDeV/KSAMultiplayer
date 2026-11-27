@@ -53,9 +53,9 @@ id are `KSAMultiplayer`, and the server is one executable, `ksamp-server`.
    until there is one to hand over.
 5. Hold **Tab** for who is playing, what they fly or whether they are **In VAB**, what their ping is, and who is spectating you; **Spectate** on
    a player's row (or `/spectate <name>`) puts your camera on what they fly and lets go of your own
-   craft, which stays yours for ten seconds as any craft you leave does. The game's gauges are for a
-   craft you fly, so while you spectate, the bottom left shows theirs instead: altitude, speeds,
-   apoapsis and periapsis, throttle, and the Δv and propellant their game has. **Give control** on the row of somebody
+   craft, which stays yours for ten seconds as any craft you leave does. While you spectate, the
+   game's own gauges and navball show their craft, with the Δv and propellant their game has; the
+   gauges' buttons do nothing, since the craft is theirs. **Give control** on the row of somebody
    spectating you hands them the craft you are flying, which you go on watching. **Enter** opens a chat line, **Enter** sends
    it; a line behind a `/` goes to the server as a command instead, and is said to nobody. Another player's craft carries their name, and is theirs: you can watch it, not fly it. While you watch it the gauges are its, and your keys do nothing until you go back to your own craft. One its owner has left for ten seconds is yours if you have watched it for three while flying nothing.
 

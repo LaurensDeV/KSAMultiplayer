@@ -16,11 +16,16 @@ The players' logs are on the server, under `player-logs/<day>/` in the `ksamp-wo
 
 ## From 0.41.0
 
-The spectator's readout and the lines about a game falling behind were seen with two games on one
-machine; what is left needs a room flying something real.
+KSA's HUD for a spectator and the lines about a game falling behind were seen with two games on
+one machine; what is left needs a room flying something real.
 
-- **The readout during somebody's burn.** Spectate a player burning: the readout's throttle,
-  delta-v and propellant should follow what that player's own gauges say, a second or so behind.
+- **The HUD during somebody's burn.** Spectate a player burning: the gauges' throttle, delta-v and
+  propellant should follow what that player's own gauges say, a second or so behind, and clicking
+  a flight-computer or navball button should do nothing.
+- **A copy kept whole while its owner's game lags.** When a player's game falls well behind while
+  others watch their craft up close, no watching game should break that craft up: their logs
+  should say `spared <craft>, another player's, whose game has said nothing of it lately` rather
+  than `no longer sparing`.
 - **A game falling behind, and what it does.** When a player's game hitches or falls behind, the
   server's log should say `<name>'s game is N s behind the world` and then `level with the world
   again`, the player's own log `a frame took` or `went N s unsaid`, and each watching game's

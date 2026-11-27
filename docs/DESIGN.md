@@ -290,18 +290,28 @@ stranger sent it.
   they were flying it. Spectating puts both of KSA's cameras on the craft, the flight view's and
   the map's, which each follow something of their own: with only the one showing moved, pressing M
   showed the map still on the spectator's own craft.
-- **What a spectator is shown of the craft.** KSA updates and draws its gauges, navball and
-  resources only while a craft is being flown. A spectator flies nothing, so they saw no number
-  about the craft they were watching. The hooks that hand the gauges a watched craft only help a
-  player who is still flying their own. Drawing KSA's own canvases with nothing flown would mean
-  rewriting checks inside half a dozen of its methods, and its gauges have buttons that act on the
-  craft they show. So while nothing is flown and the camera is on a craft, the mod draws a
-  read-only readout of it in the navball's empty corner (`Panel.WatchedGauges`). Altitude, speeds,
-  apoapsis, periapsis and inclination come from this game's copy, which the pull keeps where its
-  owner has it. Throttle and whether it is burning come from the owner's last `State`. So do Δv,
-  propellant and thrust-to-weight, which the owner's game puts on every `State` (protocol 40):
-  a copy never burns, so its own tanks are not its owner's. A player who watches while flying
-  their own craft still reads Δv and propellant off the copy in KSA's gauges.
+- **What a spectator is shown of the craft: KSA's own HUD.** KSA updates and draws its gauges,
+  navball and markers only while a craft is flown, reading `Program.ControlledVehicle` and nothing
+  else, and a spectator flies nothing, so they saw no number about the craft they watched.
+  `Hud` hands KSA another craft where it reads that one to show something: the craft flown, or
+  while nothing is and the camera is on a craft in a shared world, that one (`Hud.Craft`,
+  `Sync.Spectated`), never over the editor. A transpiler swaps the getter for it in the methods
+  that only show (`UpdateShaderData` for the navball, `ShouldDrawVehicleCanvas`, `UpdateGauges` for
+  the mission clock, `GaugeCanvas`'s visibility, coverage and render, the digits' `SourceMissing`
+  and the buttons' `PackData` and `IsDisabled`), and in `RenderGame` only at the read that gates
+  the gauges, since the same method reads the craft for its seated crew and its ground track. KSA
+  steps and fills its gauges for the craft it flies, so with nothing flown the mod does: the
+  canvases after `PrepareFrame`, where KSA would, and `UpdateGauges` and `GaugeData.AnimateAll`
+  after the frame; neither while a burn is being edited, when KSA steps the burn's own canvas.
+  Where KSA reads the craft to act -- a flight-computer mode, the navball's frame, a warp to the
+  next apsis -- the click is refused while the gauges show a craft watched (`Hud.Watching`): it
+  is another player's, and a player watching while flying their own would have changed their own
+  out of sight. The resources, staging and crew panels say nothing while spectating: they would
+  show the copy's tanks and staging, which are not its owner's, and staging edits would act on
+  it. A copy never burns, so its own delta-v, propellant and thrust-to-weight are not its
+  owner's either: the owner's game puts them on every `State` (protocol 40), and after
+  `UpdateGauges` the digits are set from those, for a player watching while flying their own as
+  well.
 - **A save before a player is gone.** What a player did since the last save is in no world the
   server has once they leave, so whoever is still in it is asked for a fresh one. Nothing can be
   asked of the last player to leave: that much is lost, and the clock waits at the world rather than
@@ -809,6 +819,15 @@ A puppet is spared when a crash in this world would wreck it -- a prefix on
 that go with it -- and is taken away only when its owner's game says it is gone. Otherwise one game's
 collision would wreck a craft that is fine in its owner's world, and the pieces would be taken for
 this player's.
+
+So is a copy whose owner is still in the room while their game says nothing of it, for as long as
+it says nothing (`Sync.QuietCopies`). A copy stops being pulled once nothing of now has come for
+5 s, and was spared only 30 s after that: on `ksamp.gg` a station came apart in one watching game
+while its owner's game, behind and still playing, had it whole. Once the owner leaves, the 30 s
+start then. Seen in two games on one machine on 2026-11-27: Alpha's main thread frozen for 40 s,
+its keepalive keeping it in the room, and three parts failed on Bravo's copy of Alpha's Gemini7
+36 s in were refused, all 21 parts left. A craft its owner's game only held for being near is
+not covered: that hold lapses when the game goes quiet, and the craft is nobody's.
 
 A craft waiting to be taken out of this world is spared the same way. One its owner says has
 crashed is no puppet for the frame it is told in, and the crash this world's own physics had ready
@@ -2055,11 +2074,12 @@ for, in `docs/LIVE-CHECKS.md`.
   drops one at 10, nor the missing-KSA-log line, which only a game on `ksamp.gg` writes. A game
   taking back a craft as a stall ends counts one more loss of word: its newest word of the craft
   is from before.
-- **The spectator's readout, beside a real pilot's gauges.** Drawn in two games on one machine on
-  2026-11-27, at 800x500: under the chat and clear of it, every character drawn, a kitten on the
-  pad (76 m, 1 m above ground, its owner's 73 kg of EVA propellant) and a craft in a 180 km
-  circular orbit (7,800 m/s, apoapsis and periapsis with their times). Not seen: whether the
-  owner's delta-v and propellant match what that player's own gauges say during a burn.
+- **KSA's HUD for a spectator, during a burn, and its clicks refused.** Seen in two games on one
+  machine on 2026-11-27: Bravo spectating Alpha's Gemini7 in a 180 km orbit, flying nothing, had
+  KSA's own gauges, navball and flight-computer panel filled from Gemini7 (the bridge's
+  `gauges_of`, `watched Gemini7`), the same as Alpha's own screen down to the 32,794 of
+  propellant, with no exception in either game. Not seen: a click on a gauge button refused, which
+  no run can make, the burn editor open while spectating, or the digits following a pilot's burn.
 - **Spectating, and finishing a name with Tab.** Both are the game's own, answered without the
   server hearing of them, and both are driven only by hand so far: no run has watched a camera land
   on another player's craft, nor a half-typed name fill itself in.

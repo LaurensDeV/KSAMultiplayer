@@ -333,6 +333,7 @@ internal static class Hooks
                   "keys pressed while watching another player's craft fly this player's own, off screen");
             Patch(AccessTools.Method(typeof(KittenEva), nameof(KittenEva.OnKey)), nameof(BeforeVehicleKey),
                   "keys pressed while watching another player's craft walk this player's kitten, off screen");
+            Hud.Install(_harmony!);
             Patch(AccessTools.Method(typeof(Program), "UpdateGauges"), nameof(BeforeGauges),
                   "the gauges show this player's own craft while they watch another player's");
             Patch(AccessTools.Method(typeof(NavBallRenderer), nameof(NavBallRenderer.GetNavBallTransform), [typeof(Vehicle)]), nameof(BeforeNavBall),

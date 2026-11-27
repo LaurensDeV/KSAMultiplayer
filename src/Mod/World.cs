@@ -2454,40 +2454,6 @@ internal static class World
     public static Vehicle? Watched => Program.GetMainCamera()?.Following as Vehicle;
 
     /// <summary>
-    /// What KSA's instruments would say of a craft, as far as this game's copy of it can say it: m,
-    /// m/s, and seconds from now. Its tanks are left out, since a copy of another player's craft
-    /// never burns them. Apoapsis is NaN for a craft not coming back, the times NaN where none comes.
-    /// </summary>
-    public readonly record struct Gauges(string Body, bool Landed, double Altitude, double AboveGround, double OrbitalSpeed,
-                                         double SurfaceSpeed, double VerticalSpeed, double Apoapsis, double ToApoapsis,
-                                         double Periapsis, double ToPeriapsis, double Inclination);
-
-    /// <summary>
-    /// KSA's HUD is drawn for the craft being flown and for nothing else, and a spectator flies
-    /// nothing; these are the same readings off the craft being watched instead.
-    /// </summary>
-    public static Gauges? GaugesOf(Vehicle v)
-    {
-        try
-        {
-            Orbit o = v.Orbit;
-            double3 at = o.StateVectors.PositionCci, moving = o.StateVectors.VelocityCci;
-            double r = at.Length();
-            double now = KSA.Universe.GetElapsedSeconds();
-            double Until(UniverseTime t) => t == UniverseTime.EndOfTime ? double.NaN : t.Seconds() - now;
-            bool escaping = o.Eccentricity >= 1.0;
-            return new Gauges(o.Parent.Id, v.Situation.HasAnyContact(), v.GetBarometricAltitude(), v.GetRadarAltitude(),
-                              v.GetInertialSpeed(), v.GetSurfaceSpeed(), r > 0.0 ? double3.Dot(at, moving) / r : 0.0,
-                              escaping ? double.NaN : o.ApoapsisAltitude, escaping ? double.NaN : Until(v.NextApoapsisTime),
-                              o.PeriapsisAltitude, Until(v.NextPeriapsisTime), o.Inclination * (180.0 / Math.PI));
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
-
-    /// <summary>
     /// The camera put on a planet or a moon, as picking one in the map puts it. KSA's camera takes
     /// control of whatever it follows, and a planet is no craft: the craft being flown is let go of.
     /// </summary>
